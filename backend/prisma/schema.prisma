@@ -1,0 +1,225 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+model Proveedor {
+  id                 Int      @id @default(autoincrement())
+  razonSocial        String
+  cuit               String   @unique
+  contacto           String?
+  condicionComercial String?
+  rubros             String?
+  activo             Boolean  @default(true)
+  creadoEn           DateTime @default(now())
+  actualizadoEn      DateTime @updatedAt
+
+  cotizaciones  Cotizacion[]
+  ordenesCompra OrdenCompra[]
+  facturas      FacturaProveedor[]
+
+  @@map("proveedores")
+}
+
+model Deposito {
+  id          Int     @id @default(autoincrement())
+  nombre      String  @unique
+  ubicacion   String?
+  responsable String?
+  activo      Boolean @default(true)
+
+  articulos          ArticuloDeposito[]
+  movimientosOrigen  Movimiento[]       @relation("MovimientoOrigen")
+  movimientosDestino Movimiento[]       @relation("MovimientoDestino")
+
+  @@map("depositos")
+}
+
+model Articulo {
+  id           Int     @id @default(autoincrement())
+  codigo       String  @unique
+  descripcion  String
+  unidadMedida String
+  categoria    String
+  activo       Boolean @default(true)
+
+  depositos         ArticuloDeposito[]
+  movimientos       Movimiento[]
+  detalleOC         OrdenCompraDetalle[]
+  detalleCotizacion CotizacionDetalle[]
+
+  @@map("articulos")
+}
+
+model ArticuloDeposito {
+  id          Int      @id @default(autoincrement())
+  articuloId  Int
+  depositoId  Int
+  stock       Decimal  @default(0) @db.Decimal(12, 2)
+  stockMinimo Decimal  @default(0) @db.Decimal(12, 2)
+  stockMaximo Decimal? @db.Decimal(12, 2)
+
+  articulo Articulo @relation(fields: [articuloId], references: [id])
+  deposito Deposito @relation(fields: [depositoId], references: [id])
+
+  @@unique([articuloId, depositoId])
+  @@map("articulo_deposito")
+}
+
+enum TipoMovimiento {
+  ENTRADA
+  SALIDA
+  TRANSFERENCIA_ENVIO
+  TRANSFERENCIA_RECEPCION
+  AJUSTE
+}
+
+enum EstadoTransferencia {
+  EN_TRANSITO
+  RECIBIDA
+}
+
+model Movimiento {
+  id                  Int                  @id @default(autoincrement())
+  tipo                TipoMovimiento
+  articuloId          Int
+  depositoOrigenId    Int?
+  depositoDestinoId   Int?
+  cantidad            Decimal              @db.Decimal(12, 2)
+  areaDestino         String?
+  motivo              String?
+  ordenCompraId       Int?
+  estadoTransferencia EstadoTransferencia?
+  transferenciaRefId  Int?
+  fecha               DateTime             @default(now())
+  usuario             String?
+
+  articulo        Articulo     @relation(fields: [articuloId], references: [id])
+  depositoOrigen  Deposito?    @relation("MovimientoOrigen", fields: [depositoOrigenId], references: [id])
+  depositoDestino Deposito?    @relation("MovimientoDestino", fields: [depositoDestinoId], references: [id])
+  ordenCompra     OrdenCompra? @relation(fields: [ordenCompraId], references: [id])
+
+  @@map("movimientos")
+}
+
+model SolicitudCompra {
+  id     Int      @id @default(autoincrement())
+  estado String   @default("Pendiente")
+  fecha  DateTime @default(now())
+
+  cotizaciones Cotizacion[]
+  adjudicacion Adjudicacion?
+
+  @@map("solicitudes_compra")
+}
+
+model Cotizacion {
+  id                Int      @id @default(autoincrement())
+  solicitudCompraId Int
+  proveedorId       Int
+  fechaEnvio        DateTime @default(now())
+  estado            String   @default("Recibida")
+  motivoRechazo     String?
+
+  solicitudCompra SolicitudCompra     @relation(fields: [solicitudCompraId], references: [id])
+  proveedor       Proveedor           @relation(fields: [proveedorId], references: [id])
+  detalle         CotizacionDetalle[]
+
+  @@unique([solicitudCompraId, proveedorId])
+  @@map("cotizaciones")
+}
+
+model CotizacionDetalle {
+  id             Int     @id @default(autoincrement())
+  cotizacionId   Int
+  articuloId     Int
+  cantidad       Decimal @db.Decimal(12, 2)
+  precioUnitario Decimal @db.Decimal(12, 2)
+
+  cotizacion Cotizacion @relation(fields: [cotizacionId], references: [id])
+  articulo   Articulo   @relation(fields: [articuloId], references: [id])
+
+  @@map("cotizacion_detalle")
+}
+
+model Adjudicacion {
+  id                 Int      @id @default(autoincrement())
+  solicitudCompraId  Int      @unique
+  proveedorGanadorId Int
+  motivo             String
+  fecha              DateTime @default(now())
+
+  solicitudCompra SolicitudCompra @relation(fields: [solicitudCompraId], references: [id])
+
+  @@map("adjudicaciones")
+}
+
+model OrdenCompra {
+  id              Int      @id @default(autoincrement())
+  numero          String   @unique
+  proveedorId     Int
+  estado          String   @default("Pendiente")
+  montoTotal      Decimal  @default(0) @db.Decimal(12, 2)
+  motivoAnulacion String?
+  fecha           DateTime @default(now())
+
+  proveedor   Proveedor            @relation(fields: [proveedorId], references: [id])
+  detalle     OrdenCompraDetalle[]
+  movimientos Movimiento[]
+  facturas    FacturaProveedor[]
+
+  @@map("ordenes_compra")
+}
+
+model OrdenCompraDetalle {
+  id             Int     @id @default(autoincrement())
+  ordenCompraId  Int
+  articuloId     Int
+  cantidad       Decimal @db.Decimal(12, 2)
+  precioUnitario Decimal @db.Decimal(12, 2)
+
+  ordenCompra OrdenCompra @relation(fields: [ordenCompraId], references: [id])
+  articulo    Articulo    @relation(fields: [articuloId], references: [id])
+
+  @@unique([ordenCompraId, articuloId])
+  @@map("orden_compra_detalle")
+}
+
+model FacturaProveedor {
+  id                Int      @id @default(autoincrement())
+  proveedorId       Int
+  ordenCompraId     Int
+  numeroComprobante String
+  fecha             DateTime @default(now())
+  monto             Decimal  @db.Decimal(12, 2)
+  iva               Decimal  @default(0) @db.Decimal(12, 2)
+  estado            String   @default("Pendiente")
+
+  proveedor   Proveedor       @relation(fields: [proveedorId], references: [id])
+  ordenCompra OrdenCompra     @relation(fields: [ordenCompraId], references: [id])
+  pagos       PagoProveedor[]
+
+  @@unique([proveedorId, numeroComprobante])
+  @@map("facturas_proveedor")
+}
+
+model PagoProveedor {
+  id        Int      @id @default(autoincrement())
+  facturaId Int
+  monto     Decimal  @db.Decimal(12, 2)
+  medioPago String
+  fecha     DateTime @default(now())
+
+  factura FacturaProveedor @relation(fields: [facturaId], references: [id])
+
+  @@map("pagos_proveedor")
+}
