@@ -12,22 +12,19 @@ datasource db {
   provider = "mysql"
 }
 
-model Proveedor {
-  id                 Int      @id @default(autoincrement())
-  razonSocial        String
-  cuit               String   @unique
-  contacto           String?
-  condicionComercial String?
-  rubros             String?
-  activo             Boolean  @default(true)
-  creadoEn           DateTime @default(now())
-  actualizadoEn      DateTime @updatedAt
+model Articulo {
+  id           Int     @id @default(autoincrement())
+  codigo       String  @unique
+  descripcion  String
+  unidadMedida String
+  categoria    String
+  activo       Boolean @default(true)
 
-  cotizaciones  Cotizacion[]
-  ordenesCompra OrdenCompra[]
-  facturas      FacturaProveedor[]
+  articuloDepositos  ArticuloDeposito[]
+  detalleMovimientos MovimientoStockDetalle[]
+  detalleOC          OrdenCompraDetalle[]
 
-  @@map("proveedores")
+  @@map("articulos")
 }
 
 model Deposito {
@@ -37,145 +34,110 @@ model Deposito {
   responsable String?
   activo      Boolean @default(true)
 
-  articulos          ArticuloDeposito[]
-  movimientosOrigen  Movimiento[]       @relation("MovimientoOrigen")
-  movimientosDestino Movimiento[]       @relation("MovimientoDestino")
+  articulos   ArticuloDeposito[]
+  movimientos MovimientoStock[]
 
   @@map("depositos")
 }
 
-model Articulo {
-  id           Int     @id @default(autoincrement())
-  codigo       String  @unique
-  descripcion  String
-  unidadMedida String
-  categoria    String
-  activo       Boolean @default(true)
-
-  depositos         ArticuloDeposito[]
-  movimientos       Movimiento[]
-  detalleOC         OrdenCompraDetalle[]
-  detalleCotizacion CotizacionDetalle[]
-
-  @@map("articulos")
-}
-
+// Relación / habilitación: qué artículos están habilitados en qué depósito
 model ArticuloDeposito {
-  id          Int      @id @default(autoincrement())
-  articuloId  Int
-  depositoId  Int
-  stock       Decimal  @default(0) @db.Decimal(12, 2)
-  stockMinimo Decimal  @default(0) @db.Decimal(12, 2)
-  stockMaximo Decimal? @db.Decimal(12, 2)
+  id         Int     @id @default(autoincrement())
+  articuloId Int
+  depositoId Int
+  activo     Boolean @default(true)
 
-  articulo Articulo @relation(fields: [articuloId], references: [id])
-  deposito Deposito @relation(fields: [depositoId], references: [id])
+  articulo Articulo               @relation(fields: [articuloId], references: [id])
+  deposito Deposito               @relation(fields: [depositoId], references: [id])
+  stock    ArticuloDepositoStock?
 
   @@unique([articuloId, depositoId])
-  @@map("articulo_deposito")
+  @@map("articulos_depositos")
 }
 
-enum TipoMovimiento {
-  ENTRADA
-  SALIDA
-  TRANSFERENCIA_ENVIO
-  TRANSFERENCIA_RECEPCION
-  AJUSTE
-}
-
-enum EstadoTransferencia {
-  EN_TRANSITO
-  RECIBIDA
-}
-
-model Movimiento {
-  id                  Int                  @id @default(autoincrement())
-  tipo                TipoMovimiento
-  articuloId          Int
-  depositoOrigenId    Int?
-  depositoDestinoId   Int?
-  cantidad            Decimal              @db.Decimal(12, 2)
-  areaDestino         String?
-  motivo              String?
-  ordenCompraId       Int?
-  estadoTransferencia EstadoTransferencia?
-  transferenciaRefId  Int?
-  fecha               DateTime             @default(now())
-  usuario             String?
-
-  articulo        Articulo     @relation(fields: [articuloId], references: [id])
-  depositoOrigen  Deposito?    @relation("MovimientoOrigen", fields: [depositoOrigenId], references: [id])
-  depositoDestino Deposito?    @relation("MovimientoDestino", fields: [depositoDestinoId], references: [id])
-  ordenCompra     OrdenCompra? @relation(fields: [ordenCompraId], references: [id])
-
-  @@map("movimientos")
-}
-
-model SolicitudCompra {
-  id     Int      @id @default(autoincrement())
-  estado String   @default("Pendiente")
-  fecha  DateTime @default(now())
-
-  cotizaciones Cotizacion[]
-  adjudicacion Adjudicacion?
-
-  @@map("solicitudes_compra")
-}
-
-model Cotizacion {
-  id                Int      @id @default(autoincrement())
-  solicitudCompraId Int
-  proveedorId       Int
-  fechaEnvio        DateTime @default(now())
-  estado            String   @default("Recibida")
-  motivoRechazo     String?
-
-  solicitudCompra SolicitudCompra     @relation(fields: [solicitudCompraId], references: [id])
-  proveedor       Proveedor           @relation(fields: [proveedorId], references: [id])
-  detalle         CotizacionDetalle[]
-
-  @@unique([solicitudCompraId, proveedorId])
-  @@map("cotizaciones")
-}
-
-model CotizacionDetalle {
-  id             Int     @id @default(autoincrement())
-  cotizacionId   Int
-  articuloId     Int
-  cantidad       Decimal @db.Decimal(12, 2)
-  precioUnitario Decimal @db.Decimal(12, 2)
-
-  cotizacion Cotizacion @relation(fields: [cotizacionId], references: [id])
-  articulo   Articulo   @relation(fields: [articuloId], references: [id])
-
-  @@map("cotizacion_detalle")
-}
-
-model Adjudicacion {
+// Stock real (separado de la relación, se actualiza con cada movimiento)
+model ArticuloDepositoStock {
   id                 Int      @id @default(autoincrement())
-  solicitudCompraId  Int      @unique
-  proveedorGanadorId Int
-  motivo             String
-  fecha              DateTime @default(now())
+  articuloDepositoId Int      @unique
+  stockActual        Decimal  @default(0) @db.Decimal(12, 2)
+  stockMinimo        Decimal  @default(0) @db.Decimal(12, 2)
+  stockMaximo        Decimal? @db.Decimal(12, 2)
+  actualizadoEn      DateTime @updatedAt
 
-  solicitudCompra SolicitudCompra @relation(fields: [solicitudCompraId], references: [id])
+  articuloDeposito ArticuloDeposito @relation(fields: [articuloDepositoId], references: [id])
 
-  @@map("adjudicaciones")
+  @@map("articulos_depositos_stock")
+}
+
+// Catálogo de tipos de movimiento (Entrada / Salida)
+model TipoMovimientoStock {
+  id          Int     @id @default(autoincrement())
+  descripcion String  @unique
+  tipo        String // "E" = Entrada | "S" = Salida
+  activo      Boolean @default(true)
+
+  movimientos MovimientoStock[]
+
+  @@map("tipo_movimientos_stock")
+}
+
+// Cabecera del movimiento: UN solo depósito por fila (como en el ejemplo del profesor).
+// Una transferencia entre 2 depósitos se registra como 2 filas vinculadas:
+// una "Salida" en el depósito origen y una "Entrada" en el depósito destino.
+model MovimientoStock {
+  id                      Int      @id @default(autoincrement())
+  fecha                   DateTime @default(now())
+  detalle                 String?
+  depositoId              Int
+  tipoMovStockId          Int
+  movimientoRelacionadoId Int? // apunta a la fila "par" cuando es una transferencia (Salida <-> Entrada)
+  activo                  Boolean  @default(true)
+  usuario                 String?
+
+  deposito           Deposito                 @relation(fields: [depositoId], references: [id])
+  tipoMovStock       TipoMovimientoStock      @relation(fields: [tipoMovStockId], references: [id])
+  detalleMovimientos MovimientoStockDetalle[]
+
+  @@map("movimientos_stock")
+}
+
+// Detalle: artículo + cantidad por movimiento (estructura similar a ArticuloDeposito)
+model MovimientoStockDetalle {
+  id         Int     @id @default(autoincrement())
+  movStockId Int
+  articuloId Int
+  cantidad   Decimal @db.Decimal(12, 2)
+
+  movimientoStock MovimientoStock @relation(fields: [movStockId], references: [id])
+  articulo        Articulo        @relation(fields: [articuloId], references: [id])
+
+  @@map("movimientos_stock_detalle")
+}
+
+model Proveedor {
+  id                 Int     @id @default(autoincrement())
+  razonSocial        String
+  cuit               String  @unique
+  contacto           String?
+  condicionComercial String?
+  rubros             String?
+  activo             Boolean @default(true)
+
+  ordenesCompra OrdenCompra[]
+
+  @@map("proveedores")
 }
 
 model OrdenCompra {
-  id              Int      @id @default(autoincrement())
-  numero          String   @unique
-  proveedorId     Int
-  estado          String   @default("Pendiente")
-  montoTotal      Decimal  @default(0) @db.Decimal(12, 2)
-  motivoAnulacion String?
-  fecha           DateTime @default(now())
+  id          Int      @id @default(autoincrement())
+  numero      String   @unique
+  proveedorId Int
+  estado      String   @default("Pendiente")
+  montoTotal  Decimal  @default(0) @db.Decimal(12, 2)
+  fecha       DateTime @default(now())
 
-  proveedor   Proveedor            @relation(fields: [proveedorId], references: [id])
-  detalle     OrdenCompraDetalle[]
-  movimientos Movimiento[]
-  facturas    FacturaProveedor[]
+  proveedor Proveedor            @relation(fields: [proveedorId], references: [id])
+  detalle   OrdenCompraDetalle[]
 
   @@map("ordenes_compra")
 }
@@ -192,34 +154,4 @@ model OrdenCompraDetalle {
 
   @@unique([ordenCompraId, articuloId])
   @@map("orden_compra_detalle")
-}
-
-model FacturaProveedor {
-  id                Int      @id @default(autoincrement())
-  proveedorId       Int
-  ordenCompraId     Int
-  numeroComprobante String
-  fecha             DateTime @default(now())
-  monto             Decimal  @db.Decimal(12, 2)
-  iva               Decimal  @default(0) @db.Decimal(12, 2)
-  estado            String   @default("Pendiente")
-
-  proveedor   Proveedor       @relation(fields: [proveedorId], references: [id])
-  ordenCompra OrdenCompra     @relation(fields: [ordenCompraId], references: [id])
-  pagos       PagoProveedor[]
-
-  @@unique([proveedorId, numeroComprobante])
-  @@map("facturas_proveedor")
-}
-
-model PagoProveedor {
-  id        Int      @id @default(autoincrement())
-  facturaId Int
-  monto     Decimal  @db.Decimal(12, 2)
-  medioPago String
-  fecha     DateTime @default(now())
-
-  factura FacturaProveedor @relation(fields: [facturaId], references: [id])
-
-  @@map("pagos_proveedor")
 }
