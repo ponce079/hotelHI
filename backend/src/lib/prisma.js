@@ -1,9 +1,9 @@
-// lib/prisma.js
+// src/lib/prisma.js
 // Prisma 7 requiere pasar explícitamente un "driver adapter" al constructor
-// de PrismaClient (ya no conecta solo con la DATABASE_URL del schema).
-// Para MySQL/MariaDB (como Clever Cloud) se usa @prisma/adapter-mariadb.
-// Clever Cloud exige conexión SSL, por eso el bloque "ssl" es necesario
-// (sin esto, la conexión se queda colgada hasta hacer timeout).
+// de PrismaClient. Para MySQL/MariaDB (como Clever Cloud) se usa
+// @prisma/adapter-mariadb. Clever Cloud exige conexión SSL, y el plan
+// gratuito tiene más latencia que una base local, por eso los timeouts
+// están ajustados más arriba de lo normal.
 
 const { PrismaClient } = require("@prisma/client");
 const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
