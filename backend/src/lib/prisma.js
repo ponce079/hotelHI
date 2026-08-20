@@ -1,11 +1,17 @@
-import { PrismaClient } from "../../generated/prisma/client.ts";
-import { PrismaMariaDb } from "@prisma/adapter-mariadb";
+// src/lib/prisma.js
+// Prisma 7 requiere pasar explícitamente un "driver adapter" al constructor
+// de PrismaClient. Para MySQL/MariaDB (como Clever Cloud) se usa
+// @prisma/adapter-mariadb. Clever Cloud exige conexión SSL, y el plan
+// gratuito tiene más latencia que una base local, por eso los timeouts
+// están ajustados más arriba de lo normal.
 
-// El plan de MySQL compartido por el equipo solo permite 5 conexiones simultaneas en total.
-// El driver "mariadb" abre hasta 10 por proceso por defecto: lo bajamos a 2 para que
-// levantar el server (+ Prisma Studio en paralelo) no agote el limite del equipo.
-// (mariadb.defaultOptions() no sirve aca: exige el prefijo "mariadb://" y nuestra
-// DATABASE_URL usa "mysql://", como pide Prisma. Parseamos la URL nosotros mismos.)
+const { PrismaClient } = require("@prisma/client");
+const { PrismaMariaDb } = require("@prisma/adapter-mariadb");
+
+if (!process.env.DATABASE_URL) {
+  throw new Error("Falta DATABASE_URL en el .env");
+}
+
 const dbUrl = new URL(process.env.DATABASE_URL);
 
 const adapter = new PrismaMariaDb({
@@ -14,7 +20,14 @@ const adapter = new PrismaMariaDb({
   user: decodeURIComponent(dbUrl.username),
   password: decodeURIComponent(dbUrl.password),
   database: dbUrl.pathname.replace(/^\//, ""),
-  connectionLimit: 2,
+  ssl: {
+    rejectUnauthorized: false,
+  },
+  connectionLimit: 3,
+  connectTimeout: 20000,
+  acquireTimeout: 20000,
 });
 
-export const prisma = new PrismaClient({ adapter });
+const prisma = new PrismaClient({ adapter });
+
+module.exports = prisma;
