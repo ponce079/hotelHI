@@ -1,10 +1,13 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { Package } from "lucide-react";
+import { Package, Warehouse } from "lucide-react";
 
 // Cada pantalla nueva agrega su propia entrada aca (misma logica que las
 // rutas de index.js en el backend): un ítem por historia, sin pisar los
 // de los demas.
-const ITEMS = [{ to: "/articulos", label: "Artículos", icon: Package }];
+const ITEMS = [
+  { to: "/articulos", label: "Artículos", icon: Package },
+  { to: "/depositos", label: "Depósitos", icon: Warehouse },
+];
 
 export function Layout() {
   return (
