@@ -7,6 +7,5 @@ const movimientosStockControlador = require("./movimientosStock.controlador");
 const router = express.Router();
 
 router.post("/entrada", movimientosStockControlador.registrarEntrada);
-router.post("/salida", movimientosStockControlador.registrarSalida);
 
 module.exports = router;
