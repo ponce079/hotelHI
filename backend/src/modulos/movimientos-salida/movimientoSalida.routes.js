@@ -1,4 +1,4 @@
-// src/modulos/movimiento-salida/movimientoSalida.routes.js
+// src/modulos/movimientos-salida/movimientoSalida.routes.js
 // Solo define endpoints -> controlador. Nada de lógica acá.
 
 const express = require("express");
