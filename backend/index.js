@@ -16,7 +16,10 @@ app.use("/api/stock", require("./src/modulos/stock/stock.routes"));
 app.use("/api/articulos", require("./src/modulos/articulos/articulos.routes"));
 app.use("/api/articulo-depositos", require("./src/modulos/articulo-deposito/articulo-deposito.routes"));
 app.use("/api/movimientos-salida", require("./src/modulos/movimientos-salida/movimientoSalida.routes"));
+feature/HU-10-tipos-movimiento
+app.use("/api/tipos-movimiento", require("./src/modulos/tipos-movimiento/tiposMovimiento.routes"));
 app.use("/api/depositos", require("./src/modulos/depositos/depositos.routes"));
+master
 
 app.get("/", (req, res) => {
   res.json({ status: "ok", proyecto: "Sistema de Gestión Hotelera - Holiday Inn" });
