@@ -5,7 +5,7 @@ import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
 import { crearArticulo } from "./articulos.api";
-import { UNIDADES_MEDIDA, CATEGORIAS } from "./articulos.constantes";
+import { UNIDADES_MEDIDA, UNIDADES_MEDIDA_NOMBRES, CATEGORIAS } from "./articulos.constantes";
 
 const VACIO = { codigo: "", descripcion: "", unidadMedida: "", categoria: "" };
 
@@ -82,7 +82,7 @@ export function ArticuloForm() {
           <option value="">Seleccionar…</option>
           {UNIDADES_MEDIDA.map((u) => (
             <option key={u} value={u}>
-              {u}
+              {UNIDADES_MEDIDA_NOMBRES[u]}
             </option>
           ))}
         </Select>
