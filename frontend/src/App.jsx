@@ -1,6 +1,7 @@
 import { Routes, Route, Navigate } from "react-router-dom";
 import { Layout } from "./componentes/Layout";
 import { ArticulosPage } from "./modulos/articulos/ArticulosPage";
+import { DepositosPage } from "./modulos/depositos/DepositosPage";
 
 export default function App() {
   return (
@@ -8,6 +9,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route index element={<Navigate to="/articulos" replace />} />
         <Route path="/articulos" element={<ArticulosPage />} />
+        <Route path="/depositos" element={<DepositosPage />} />
       </Route>
     </Routes>
   );
