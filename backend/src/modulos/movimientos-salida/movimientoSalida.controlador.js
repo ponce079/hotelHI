@@ -1,4 +1,4 @@
-// src/modulos/movimiento-salida/movimientoSalida.controlador.js
+// src/modulos/movimientos-salida/movimientoSalida.controlador.js
 //
 // Traduce HTTP <-> servicio. No tiene lógica de negocio, solo lee el
 // request, llama al servicio, y arma la respuesta (o el error) correcta.

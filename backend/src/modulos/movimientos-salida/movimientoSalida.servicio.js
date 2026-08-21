@@ -1,4 +1,4 @@
-// src/modulos/movimiento-salida/movimientoSalida.servicio.js
+// src/modulos/movimientos-salida/movimientoSalida.servicio.js
 //
 // Lógica de negocio pura (HU-13: Movimiento de Salida). Mismo patrón que
 // movimientos-stock/movimientosStock.servicio.js (HU-12, Entrada): no sabe
