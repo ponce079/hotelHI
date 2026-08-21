@@ -7,7 +7,7 @@ export function FilterBar({ children, onClear }) {
       {onClear && (
         <button
           onClick={onClear}
-          className="ml-auto inline-flex items-center gap-1 text-sm font-semibold text-piedra hover:text-error"
+          className="ml-auto inline-flex cursor-pointer items-center gap-1 text-sm font-semibold text-piedra hover:text-error"
         >
           <X size={14} /> Limpiar filtros
         </button>

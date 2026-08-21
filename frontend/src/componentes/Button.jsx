@@ -7,7 +7,7 @@ const VARIANTES = {
 export function Button({ variante = "primario", className = "", ...props }) {
   return (
     <button
-      className={`inline-flex items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${VARIANTES[variante]} ${className}`}
+      className={`inline-flex cursor-pointer items-center gap-2 rounded-md px-4 py-2 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${VARIANTES[variante]} ${className}`}
       {...props}
     />
   );
