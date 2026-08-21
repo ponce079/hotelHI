@@ -18,4 +18,17 @@ async function registrarEntrada(req, res) {
   }
 }
 
-module.exports = { registrarEntrada };
+async function registrarSalida(req, res) {
+  try {
+    const resultado = await movimientosStockServicio.registrarSalida(req.body);
+    return res.status(201).json(resultado);
+  } catch (err) {
+    if (err instanceof movimientosStockServicio.ErrorDeNegocio) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
+    console.error("Error al registrar movimiento de Salida:", err);
+    return res.status(500).json({ error: "No se pudo registrar el movimiento de Salida." });
+  }
+}
+
+module.exports = { registrarEntrada, registrarSalida };
