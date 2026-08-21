@@ -5,7 +5,7 @@ import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
 import { crearArticulo } from "./articulos.api";
-import { UNIDADES_MEDIDA, UNIDADES_MEDIDA_NOMBRES, CATEGORIAS } from "./articulos.constantes";
+import { FORMATO_CODIGO, UNIDADES_MEDIDA, UNIDADES_MEDIDA_NOMBRES, CATEGORIAS } from "./articulos.constantes";
 
 const VACIO = { codigo: "", descripcion: "", unidadMedida: "", categoria: "" };
 
@@ -35,7 +35,11 @@ export function ArticuloForm() {
 
   function validar() {
     const nuevosErrores = {};
-    if (!form.codigo.trim()) nuevosErrores.codigo = "El código es obligatorio.";
+    if (!form.codigo.trim()) {
+      nuevosErrores.codigo = "El código es obligatorio.";
+    } else if (!FORMATO_CODIGO.test(form.codigo)) {
+      nuevosErrores.codigo = "Formato inválido. Usá 3 letras + guión + 3 números, ej: ART-001.";
+    }
     if (!form.descripcion.trim()) nuevosErrores.descripcion = "La descripción es obligatoria.";
     if (!form.unidadMedida) nuevosErrores.unidadMedida = "Elegí una unidad de medida.";
     if (!form.categoria) nuevosErrores.categoria = "Elegí una categoría.";
@@ -62,7 +66,7 @@ export function ArticuloForm() {
         <Input
           label="Código"
           value={form.codigo}
-          onChange={(e) => setForm({ ...form, codigo: e.target.value })}
+          onChange={(e) => setForm({ ...form, codigo: e.target.value.toUpperCase() })}
           error={errores.codigo}
           placeholder="ART-001"
         />

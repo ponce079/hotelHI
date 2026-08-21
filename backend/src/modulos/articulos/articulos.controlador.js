@@ -1,13 +1,17 @@
 // src/modulos/articulos/articulos.controlador.js
 
-const { UNIDADES_MEDIDA, CATEGORIAS } = require("./articulos.constantes");
+const { FORMATO_CODIGO, UNIDADES_MEDIDA, CATEGORIAS } = require("./articulos.constantes");
 const articulosServicio = require("./articulos.servicio");
 
 async function postArticulo(req, res) {
-  const { codigo, descripcion, unidadMedida, categoria } = req.body ?? {};
+  const { descripcion, unidadMedida, categoria } = req.body ?? {};
+  const codigo = req.body?.codigo?.trim().toUpperCase();
 
   if (!codigo || !descripcion || !unidadMedida || !categoria) {
     return res.status(400).json({ error: "codigo, descripcion, unidadMedida y categoria son obligatorios" });
+  }
+  if (!FORMATO_CODIGO.test(codigo)) {
+    return res.status(400).json({ error: "codigo invalido. Formato esperado: LLL-NNN (3 letras y 3 numeros), ej: ART-001" });
   }
   if (!UNIDADES_MEDIDA.includes(unidadMedida)) {
     return res.status(400).json({ error: `unidadMedida invalida. Valores permitidos: ${UNIDADES_MEDIDA.join(", ")}` });
