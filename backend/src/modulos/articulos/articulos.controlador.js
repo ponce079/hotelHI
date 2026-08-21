@@ -1,13 +1,17 @@
 // src/modulos/articulos/articulos.controlador.js
 
-const { UNIDADES_MEDIDA, CATEGORIAS } = require("./articulos.constantes");
+const { FORMATO_CODIGO, UNIDADES_MEDIDA, CATEGORIAS } = require("./articulos.constantes");
 const articulosServicio = require("./articulos.servicio");
 
 async function postArticulo(req, res) {
-  const { codigo, descripcion, unidadMedida, categoria } = req.body ?? {};
+  const { descripcion, unidadMedida, categoria } = req.body ?? {};
+  const codigo = req.body?.codigo?.trim().toUpperCase();
 
   if (!codigo || !descripcion || !unidadMedida || !categoria) {
     return res.status(400).json({ error: "codigo, descripcion, unidadMedida y categoria son obligatorios" });
+  }
+  if (!FORMATO_CODIGO.test(codigo)) {
+    return res.status(400).json({ error: "codigo invalido. Formato esperado: LLL-NNN (3 letras y 3 numeros), ej: ART-001" });
   }
   if (!UNIDADES_MEDIDA.includes(unidadMedida)) {
     return res.status(400).json({ error: `unidadMedida invalida. Valores permitidos: ${UNIDADES_MEDIDA.join(", ")}` });
@@ -28,10 +32,14 @@ async function postArticulo(req, res) {
   }
 }
 
-async function getArticulos(_req, res) {
+async function getArticulos(req, res) {
+  const { q, categoria, unidadMedida } = req.query;
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 10));
+
   try {
-    const articulos = await articulosServicio.listarArticulos();
-    return res.json(articulos);
+    const resultado = await articulosServicio.listarArticulos({ q, categoria, unidadMedida, page, pageSize });
+    return res.json(resultado);
   } catch (err) {
     console.error("Error al listar articulos:", err);
     return res.status(500).json({ error: "No se pudieron listar los articulos." });
