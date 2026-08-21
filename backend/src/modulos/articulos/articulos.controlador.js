@@ -32,10 +32,14 @@ async function postArticulo(req, res) {
   }
 }
 
-async function getArticulos(_req, res) {
+async function getArticulos(req, res) {
+  const { q, categoria, unidadMedida } = req.query;
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 10));
+
   try {
-    const articulos = await articulosServicio.listarArticulos();
-    return res.json(articulos);
+    const resultado = await articulosServicio.listarArticulos({ q, categoria, unidadMedida, page, pageSize });
+    return res.json(resultado);
   } catch (err) {
     console.error("Error al listar articulos:", err);
     return res.status(500).json({ error: "No se pudieron listar los articulos." });

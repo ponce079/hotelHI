@@ -1,7 +1,7 @@
 import { api } from "../../lib/api";
 
-export async function listarArticulos() {
-  const { data } = await api.get("/articulos");
+export async function listarArticulos(params) {
+  const { data } = await api.get("/articulos", { params });
   return data;
 }
 
