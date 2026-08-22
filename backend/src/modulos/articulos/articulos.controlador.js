@@ -1,17 +1,13 @@
 // src/modulos/articulos/articulos.controlador.js
 
-const { FORMATO_CODIGO, UNIDADES_MEDIDA, CATEGORIAS } = require("./articulos.constantes");
+const { UNIDADES_MEDIDA, CATEGORIAS } = require("./articulos.constantes");
 const articulosServicio = require("./articulos.servicio");
 
 async function postArticulo(req, res) {
   const { descripcion, unidadMedida, categoria } = req.body ?? {};
-  const codigo = req.body?.codigo?.trim().toUpperCase();
 
-  if (!codigo || !descripcion || !unidadMedida || !categoria) {
-    return res.status(400).json({ error: "codigo, descripcion, unidadMedida y categoria son obligatorios" });
-  }
-  if (!FORMATO_CODIGO.test(codigo)) {
-    return res.status(400).json({ error: "codigo invalido. Formato esperado: LLL-NNN (3 letras y 3 numeros), ej: ART-001" });
+  if (!descripcion || !unidadMedida || !categoria) {
+    return res.status(400).json({ error: "descripcion, unidadMedida y categoria son obligatorios" });
   }
   if (!UNIDADES_MEDIDA.includes(unidadMedida)) {
     return res.status(400).json({ error: `unidadMedida invalida. Valores permitidos: ${UNIDADES_MEDIDA.join(", ")}` });
@@ -21,11 +17,11 @@ async function postArticulo(req, res) {
   }
 
   try {
-    const articulo = await articulosServicio.crearArticulo({ codigo, descripcion, unidadMedida, categoria });
+    const articulo = await articulosServicio.crearArticulo({ descripcion, unidadMedida, categoria });
     return res.status(201).json(articulo);
   } catch (err) {
     if (err.code === "P2002") {
-      return res.status(409).json({ error: `Ya existe un articulo con el codigo "${codigo}"` });
+      return res.status(409).json({ error: `Ya existe un articulo con el nombre "${descripcion}"` });
     }
     console.error("Error al crear articulo:", err);
     return res.status(500).json({ error: "No se pudo crear el articulo." });

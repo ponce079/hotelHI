@@ -7,10 +7,9 @@ const prisma = require("../src/lib/prisma");
 
 async function main() {
   const articulo = await prisma.articulo.upsert({
-    where: { codigo: "MOCK-001" },
+    where: { descripcion: "Artículo de prueba (mock Ricardo)" },
     update: {},
     create: {
-      codigo: "MOCK-001",
       descripcion: "Artículo de prueba (mock Ricardo)",
       unidadMedida: "Unidad",
       categoria: "Limpieza",
