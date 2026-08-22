@@ -1,5 +1,8 @@
 // src/modulos/stock/stock.servicio.js
 // Lógica de negocio pura (HU-6: Consulta de Stock).
+//
+// NOTA: el modelo Articulo cambió — ya no tiene "codigo" ni "descripcion"
+// por separado, ahora es un solo campo "nombre" (único).
 
 const prisma = require("../../lib/prisma");
 
@@ -12,15 +15,12 @@ async function consultarStock({ articuloId, categoria, depositoId }) {
       ...(categoria ? { articulo: { categoria: String(categoria) } } : {}),
     },
     include: { articulo: true, deposito: true, stock: true },
-    orderBy: [{ deposito: { nombre: "asc" } }, { articulo: { codigo: "asc" } }],
+    orderBy: [{ deposito: { nombre: "asc" } }, { articulo: { nombre: "asc" } }],
   });
 
-  // Si un artículo-depósito todavía no tuvo ningún movimiento de Entrada,
-  // no existe fila en ArticuloDepositoStock — se muestra igual, con stock 0.
   return habilitaciones.map((h) => ({
     articuloId: h.articulo.id,
-    codigo: h.articulo.codigo,
-    descripcion: h.articulo.descripcion,
+    nombre: h.articulo.nombre,
     categoria: h.articulo.categoria,
     unidadMedida: h.articulo.unidadMedida,
     depositoId: h.deposito.id,

@@ -23,7 +23,7 @@ async function listarArticulos({ q, categoria, unidadMedida, page = 1, pageSize 
   const [items, total] = await Promise.all([
     prisma.articulo.findMany({
       where,
-      orderBy: { codigo: "asc" },
+      orderBy: { nombre: "asc" },
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),

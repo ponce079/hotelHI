@@ -1,17 +1,19 @@
 // scripts/seed-mock-ricardo.js
 // Carga datos mínimos de prueba para probar Entrada y Consulta de Stock.
 // Correr con: node scripts/seed-mock-ricardo.js
+//
+// NOTA: el modelo Articulo cambió — ya no tiene "codigo" ni "descripcion"
+// por separado, ahora es un solo campo "nombre" (único).
 
 require("dotenv").config();
 const prisma = require("../src/lib/prisma");
 
 async function main() {
   const articulo = await prisma.articulo.upsert({
-    where: { codigo: "MOCK-001" },
+    where: { nombre: "MOCK-001 - Artículo de prueba (Ricardo)" },
     update: {},
     create: {
-      codigo: "MOCK-001",
-      descripcion: "Artículo de prueba (mock Ricardo)",
+      nombre: "MOCK-001 - Artículo de prueba (Ricardo)",
       unidadMedida: "Unidad",
       categoria: "Limpieza",
     },
