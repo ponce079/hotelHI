@@ -12,14 +12,14 @@ async function consultarStock({ articuloId, categoria, depositoId }) {
       ...(categoria ? { articulo: { categoria: String(categoria) } } : {}),
     },
     include: { articulo: true, deposito: true, stock: true },
-    orderBy: [{ deposito: { nombre: "asc" } }, { articulo: { descripcion: "asc" } }],
+    orderBy: [{ deposito: { nombre: "asc" } }, { articulo: { nombre: "asc" } }],
   });
 
   // Si un artículo-depósito todavía no tuvo ningún movimiento de Entrada,
   // no existe fila en ArticuloDepositoStock — se muestra igual, con stock 0.
   return habilitaciones.map((h) => ({
     articuloId: h.articulo.id,
-    descripcion: h.articulo.descripcion,
+    nombre: h.articulo.nombre,
     categoria: h.articulo.categoria,
     unidadMedida: h.articulo.unidadMedida,
     depositoId: h.deposito.id,

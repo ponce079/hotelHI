@@ -69,7 +69,7 @@ export function ArticuloDepositoForm() {
           <option value="">Seleccionar…</option>
           {articulos?.items?.map((a) => (
             <option key={a.id} value={a.id}>
-              {a.descripcion}
+              {a.nombre}
             </option>
           ))}
         </Select>
