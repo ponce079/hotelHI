@@ -13,7 +13,7 @@ datasource db {
 
 model Articulo {
   id           Int     @id @default(autoincrement())
-  descripcion  String  @unique
+  nombre       String  @unique
   unidadMedida String
   categoria    String
   activo       Boolean @default(true)

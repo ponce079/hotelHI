@@ -7,7 +7,7 @@ import { Button } from "../../componentes/Button";
 import { crearArticulo } from "./articulos.api";
 import { UNIDADES_MEDIDA, UNIDADES_MEDIDA_NOMBRES, CATEGORIAS } from "./articulos.constantes";
 
-const VACIO = { descripcion: "", unidadMedida: "", categoria: "" };
+const VACIO = { nombre: "", unidadMedida: "", categoria: "" };
 
 export function ArticuloForm() {
   const [form, setForm] = useState(VACIO);
@@ -24,9 +24,9 @@ export function ArticuloForm() {
     onError: (error) => {
       const mensaje = error?.response?.data?.error ?? "No se pudo crear el artículo.";
       // El backend devuelve 409 con el nombre duplicado en el mensaje: se lo mostramos
-      // pegado al campo descripcion para que el feedback sea inmediato.
+      // pegado al campo nombre para que el feedback sea inmediato.
       if (error?.response?.status === 409) {
-        setErrores({ descripcion: mensaje });
+        setErrores({ nombre: mensaje });
       } else {
         setErrores({ general: mensaje });
       }
@@ -35,7 +35,7 @@ export function ArticuloForm() {
 
   function validar() {
     const nuevosErrores = {};
-    if (!form.descripcion.trim()) nuevosErrores.descripcion = "La descripción es obligatoria.";
+    if (!form.nombre.trim()) nuevosErrores.nombre = "El nombre es obligatorio.";
     if (!form.unidadMedida) nuevosErrores.unidadMedida = "Elegí una unidad de medida.";
     if (!form.categoria) nuevosErrores.categoria = "Elegí una categoría.";
     return nuevosErrores;
@@ -59,10 +59,10 @@ export function ArticuloForm() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Input
-          label="Descripción"
-          value={form.descripcion}
-          onChange={(e) => setForm({ ...form, descripcion: e.target.value })}
-          error={errores.descripcion}
+          label="Nombre"
+          value={form.nombre}
+          onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+          error={errores.nombre}
           placeholder="Papel higiénico"
         />
         <Select

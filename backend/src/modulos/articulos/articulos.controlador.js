@@ -4,10 +4,10 @@ const { UNIDADES_MEDIDA, CATEGORIAS } = require("./articulos.constantes");
 const articulosServicio = require("./articulos.servicio");
 
 async function postArticulo(req, res) {
-  const { descripcion, unidadMedida, categoria } = req.body ?? {};
+  const { nombre, unidadMedida, categoria } = req.body ?? {};
 
-  if (!descripcion || !unidadMedida || !categoria) {
-    return res.status(400).json({ error: "descripcion, unidadMedida y categoria son obligatorios" });
+  if (!nombre || !unidadMedida || !categoria) {
+    return res.status(400).json({ error: "nombre, unidadMedida y categoria son obligatorios" });
   }
   if (!UNIDADES_MEDIDA.includes(unidadMedida)) {
     return res.status(400).json({ error: `unidadMedida invalida. Valores permitidos: ${UNIDADES_MEDIDA.join(", ")}` });
@@ -17,11 +17,11 @@ async function postArticulo(req, res) {
   }
 
   try {
-    const articulo = await articulosServicio.crearArticulo({ descripcion, unidadMedida, categoria });
+    const articulo = await articulosServicio.crearArticulo({ nombre, unidadMedida, categoria });
     return res.status(201).json(articulo);
   } catch (err) {
     if (err.code === "P2002") {
-      return res.status(409).json({ error: `Ya existe un articulo con el nombre "${descripcion}"` });
+      return res.status(409).json({ error: `Ya existe un articulo con el nombre "${nombre}"` });
     }
     console.error("Error al crear articulo:", err);
     return res.status(500).json({ error: "No se pudo crear el articulo." });

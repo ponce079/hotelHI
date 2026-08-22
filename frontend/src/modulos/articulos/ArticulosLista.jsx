@@ -97,7 +97,7 @@ export function ArticulosLista() {
             renderFila={(a) => (
               <tr key={a.id} className="border-b border-borde last:border-0">
                 <td className="px-3 py-2 font-mono text-xs">{a.id}</td>
-                <td className="px-3 py-2">{a.descripcion}</td>
+                <td className="px-3 py-2">{a.nombre}</td>
                 <td className="px-3 py-2">{UNIDADES_MEDIDA_NOMBRES[a.unidadMedida] ?? a.unidadMedida}</td>
                 <td className="px-3 py-2">{a.categoria}</td>
               </tr>
