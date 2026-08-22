@@ -24,9 +24,7 @@ export function ArticuloDepositoLista() {
         vacio="Todavía no hay artículos habilitados en ningún depósito."
         renderFila={(h) => (
           <tr key={h.id} className="border-b border-borde last:border-0">
-            <td className="px-3 py-2">
-              <span className="font-mono text-xs">{h.articulo.codigo}</span> — {h.articulo.descripcion}
-            </td>
+            <td className="px-3 py-2">{h.articulo.nombre}</td>
             <td className="px-3 py-2">{h.deposito.nombre}</td>
             <td className="px-3 py-2">
               <Badge variante={h.activo ? "ok" : "error"}>{h.activo ? "Activo" : "Inactivo"}</Badge>

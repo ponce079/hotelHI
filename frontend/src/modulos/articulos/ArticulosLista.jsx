@@ -54,7 +54,7 @@ export function ArticulosLista() {
             <input
               value={q}
               onChange={(e) => actualizarFiltro("q", e.target.value)}
-              placeholder="Buscar por código o descripción…"
+              placeholder="Buscar por nombre…"
               className="w-full rounded-md border border-borde py-1.5 pl-8 pr-3 text-sm focus:outline-none focus:ring-2 focus:ring-pino/40"
             />
           </div>
@@ -91,13 +91,13 @@ export function ArticulosLista() {
       {data && (
         <>
           <Table
-            columnas={["Código", "Descripción", "Unidad", "Categoría"]}
+            columnas={["Código", "Nombre", "Unidad", "Categoría"]}
             filas={data.items}
             vacio={hayFiltros ? "Ningún artículo coincide con los filtros." : "Todavía no hay artículos cargados."}
             renderFila={(a) => (
               <tr key={a.id} className="border-b border-borde last:border-0">
-                <td className="px-3 py-2 font-mono text-xs">{a.codigo}</td>
-                <td className="px-3 py-2">{a.descripcion}</td>
+                <td className="px-3 py-2 font-mono text-xs">{a.id}</td>
+                <td className="px-3 py-2">{a.nombre}</td>
                 <td className="px-3 py-2">{UNIDADES_MEDIDA_NOMBRES[a.unidadMedida] ?? a.unidadMedida}</td>
                 <td className="px-3 py-2">{a.categoria}</td>
               </tr>

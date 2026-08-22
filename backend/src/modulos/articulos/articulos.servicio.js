@@ -2,9 +2,9 @@
 
 const prisma = require("../../lib/prisma");
 
-async function crearArticulo({ codigo, descripcion, unidadMedida, categoria }) {
+async function crearArticulo({ nombre, unidadMedida, categoria }) {
   return prisma.articulo.create({
-    data: { codigo, descripcion, unidadMedida, categoria },
+    data: { nombre, unidadMedida, categoria },
   });
 }
 
@@ -13,11 +13,7 @@ async function listarArticulos({ q, categoria, unidadMedida, page = 1, pageSize 
     activo: true,
     ...(categoria ? { categoria } : {}),
     ...(unidadMedida ? { unidadMedida } : {}),
-    ...(q
-      ? {
-          OR: [{ codigo: { contains: q } }, { descripcion: { contains: q } }],
-        }
-      : {}),
+    ...(q ? { nombre: { contains: q } } : {}),
   };
 
   const [items, total] = await Promise.all([
