@@ -12,4 +12,9 @@ const CATEGORIAS = [
   "Equipamiento y Electrodomésticos",
 ];
 
-module.exports = { UNIDADES_MEDIDA, CATEGORIAS };
+const NOMBRE_MAX_LENGTH = 150;
+
+// Letras (con acentos/ñ), números y espacios. Sin símbolos ni signos de puntuación.
+const NOMBRE_REGEX = /^[\p{L}\p{N}\s]+$/u;
+
+module.exports = { UNIDADES_MEDIDA, CATEGORIAS, NOMBRE_MAX_LENGTH, NOMBRE_REGEX };

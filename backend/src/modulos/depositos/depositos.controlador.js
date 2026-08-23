@@ -5,13 +5,38 @@
 // el schema queden como String? (igual patron que unidadMedida/categoria
 // de Articulo: la obligatoriedad se valida en la app, no en la base).
 
+const {
+  UBICACIONES,
+  NOMBRE_MAX_LENGTH,
+  RESPONSABLE_MAX_LENGTH,
+  NOMBRE_REGEX,
+  RESPONSABLE_REGEX,
+} = require("./depositos.constantes");
 const depositosServicio = require("./depositos.servicio");
 
 async function postDeposito(req, res) {
-  const { nombre, ubicacion, responsable } = req.body ?? {};
+  const { ubicacion } = req.body ?? {};
+  const nombre = typeof req.body?.nombre === "string" ? req.body.nombre.trim().toUpperCase() : req.body?.nombre;
+  const responsable =
+    typeof req.body?.responsable === "string" ? req.body.responsable.trim() : req.body?.responsable;
 
   if (!nombre || !ubicacion || !responsable) {
     return res.status(400).json({ error: "nombre, ubicacion y responsable son obligatorios" });
+  }
+  if (nombre.length > NOMBRE_MAX_LENGTH) {
+    return res.status(400).json({ error: `nombre no puede superar los ${NOMBRE_MAX_LENGTH} caracteres` });
+  }
+  if (!NOMBRE_REGEX.test(nombre)) {
+    return res.status(400).json({ error: "nombre solo puede contener letras, números y espacios" });
+  }
+  if (!UBICACIONES.includes(ubicacion)) {
+    return res.status(400).json({ error: `ubicacion invalida. Valores permitidos: ${UBICACIONES.join(", ")}` });
+  }
+  if (responsable.length > RESPONSABLE_MAX_LENGTH) {
+    return res.status(400).json({ error: `responsable no puede superar los ${RESPONSABLE_MAX_LENGTH} caracteres` });
+  }
+  if (!RESPONSABLE_REGEX.test(responsable)) {
+    return res.status(400).json({ error: "responsable solo puede contener letras y espacios" });
   }
 
   try {

@@ -1,13 +1,20 @@
 // src/modulos/articulos/articulos.controlador.js
 
-const { UNIDADES_MEDIDA, CATEGORIAS } = require("./articulos.constantes");
+const { UNIDADES_MEDIDA, CATEGORIAS, NOMBRE_MAX_LENGTH, NOMBRE_REGEX } = require("./articulos.constantes");
 const articulosServicio = require("./articulos.servicio");
 
 async function postArticulo(req, res) {
-  const { nombre, unidadMedida, categoria } = req.body ?? {};
+  const { unidadMedida, categoria } = req.body ?? {};
+  const nombre = typeof req.body?.nombre === "string" ? req.body.nombre.trim().toUpperCase() : req.body?.nombre;
 
   if (!nombre || !unidadMedida || !categoria) {
     return res.status(400).json({ error: "nombre, unidadMedida y categoria son obligatorios" });
+  }
+  if (nombre.length > NOMBRE_MAX_LENGTH) {
+    return res.status(400).json({ error: `nombre no puede superar los ${NOMBRE_MAX_LENGTH} caracteres` });
+  }
+  if (!NOMBRE_REGEX.test(nombre)) {
+    return res.status(400).json({ error: "nombre solo puede contener letras, números y espacios" });
   }
   if (!UNIDADES_MEDIDA.includes(unidadMedida)) {
     return res.status(400).json({ error: `unidadMedida invalida. Valores permitidos: ${UNIDADES_MEDIDA.join(", ")}` });
