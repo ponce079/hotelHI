@@ -1,23 +1,37 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Input } from "../../componentes/Input";
+import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
+import { Toast } from "../../componentes/Toast";
 import { crearDeposito } from "./depositos.api";
+import { UBICACIONES, NOMBRE_MAX_LENGTH, RESPONSABLE_MAX_LENGTH } from "./depositos.constantes";
+
+const CARACTERES_INVALIDOS_NOMBRE = /[^\p{L}\p{N}\s]/gu;
+const CARACTERES_INVALIDOS_RESPONSABLE = /[^\p{L}\s]/gu;
 
 const VACIO = { nombre: "", ubicacion: "", responsable: "" };
 
 export function DepositoForm() {
   const [form, setForm] = useState(VACIO);
   const [errores, setErrores] = useState({});
+  const [toast, setToast] = useState("");
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   const mutacion = useMutation({
     mutationFn: crearDeposito,
-    onSuccess: () => {
+    onSuccess: (deposito) => {
       queryClient.invalidateQueries({ queryKey: ["depositos"] });
       setForm(VACIO);
       setErrores({});
+      setToast(`Depósito "${deposito.nombre}" guardado exitosamente.`);
     },
     onError: (error) => {
       const mensaje = error?.response?.data?.error ?? "No se pudo crear el depósito.";
@@ -32,7 +46,7 @@ export function DepositoForm() {
   function validar() {
     const nuevosErrores = {};
     if (!form.nombre.trim()) nuevosErrores.nombre = "El nombre es obligatorio.";
-    if (!form.ubicacion.trim()) nuevosErrores.ubicacion = "La ubicación es obligatoria.";
+    if (!form.ubicacion) nuevosErrores.ubicacion = "Elegí una ubicación.";
     if (!form.responsable.trim()) nuevosErrores.responsable = "El responsable es obligatorio.";
     return nuevosErrores;
   }
@@ -57,29 +71,43 @@ export function DepositoForm() {
         <Input
           label="Nombre"
           value={form.nombre}
-          onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+          onChange={(e) =>
+            setForm({ ...form, nombre: e.target.value.toUpperCase().replace(CARACTERES_INVALIDOS_NOMBRE, "") })
+          }
           error={errores.nombre}
-          placeholder="Depósito Central"
+          placeholder="DEPÓSITO CENTRAL"
+          maxLength={NOMBRE_MAX_LENGTH}
         />
-        <Input
+        <Select
           label="Ubicación"
           value={form.ubicacion}
           onChange={(e) => setForm({ ...form, ubicacion: e.target.value })}
           error={errores.ubicacion}
-          placeholder="Subsuelo"
-        />
+        >
+          <option value="">Seleccionar…</option>
+          {UBICACIONES.map((u) => (
+            <option key={u} value={u}>
+              {u}
+            </option>
+          ))}
+        </Select>
         <Input
           label="Responsable"
           value={form.responsable}
-          onChange={(e) => setForm({ ...form, responsable: e.target.value })}
+          onChange={(e) =>
+            setForm({ ...form, responsable: e.target.value.replace(CARACTERES_INVALIDOS_RESPONSABLE, "") })
+          }
           error={errores.responsable}
           placeholder="Encargado de Depósito"
+          maxLength={RESPONSABLE_MAX_LENGTH}
         />
       </div>
 
       <Button type="submit" disabled={mutacion.isPending} className="self-start">
         <Plus size={16} /> {mutacion.isPending ? "Guardando…" : "Dar de alta"}
       </Button>
+
+      <Toast mensaje={toast} />
     </form>
   );
 }

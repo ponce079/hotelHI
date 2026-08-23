@@ -14,7 +14,7 @@ async function main() {
     update: {},
     create: {
       nombre: "MOCK-001 - Artículo de prueba (Ricardo)",
-      unidadMedida: "Unidad",
+      unidadMedida: "UN",
       categoria: "Limpieza",
     },
   });

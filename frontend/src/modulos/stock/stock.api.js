@@ -1,6 +1,6 @@
 import { api } from "../../lib/api";
 
-export async function listarStock(filtros = {}) {
-  const { data } = await api.get("/stock", { params: filtros });
+export async function consultarStock(params) {
+  const { data } = await api.get("/stock", { params });
   return data;
 }
