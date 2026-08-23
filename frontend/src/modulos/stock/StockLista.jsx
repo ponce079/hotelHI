@@ -2,6 +2,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { Gauge } from "lucide-react";
 import { Table } from "../../componentes/Table";
+import { Input } from "../../componentes/Input";
+import { Select } from "../../componentes/Select";
 import { FilterBar } from "../../componentes/FilterBar";
 import { consultarStock } from "./stock.api";
 import { listarArticulos } from "../articulos/articulos.api";
@@ -11,6 +13,7 @@ import { CATEGORIAS, UNIDADES_MEDIDA_NOMBRES } from "../articulos/articulos.cons
 export function StockLista() {
   const [searchParams, setSearchParams] = useSearchParams();
 
+  const q = searchParams.get("q") ?? "";
   const articuloId = searchParams.get("articuloId") ?? "";
   const categoria = searchParams.get("categoria") ?? "";
   const depositoId = searchParams.get("depositoId") ?? "";
@@ -23,6 +26,7 @@ export function StockLista() {
     queryKey: ["depositos"],
     queryFn: listarDepositos,
   });
+
   const {
     data: stock,
     isLoading,
@@ -42,7 +46,11 @@ export function StockLista() {
     setSearchParams(params);
   }
 
-  const hayFiltros = Boolean(articuloId || categoria || depositoId);
+  const filasFiltradas = (stock ?? []).filter((f) =>
+    q.trim() ? f.nombre.toLowerCase().includes(q.trim().toLowerCase()) : true
+  );
+
+  const hayFiltros = Boolean(q || articuloId || categoria || depositoId);
 
   return (
     <div className="rounded-lg border border-borde bg-white p-5">
@@ -52,52 +60,46 @@ export function StockLista() {
 
       <div className="mb-4">
         <FilterBar onClear={hayFiltros ? () => setSearchParams({}) : undefined}>
-          <select
-            value={articuloId}
-            onChange={(e) => actualizarFiltro("articuloId", e.target.value)}
-            className="cursor-pointer rounded-md border border-borde px-2.5 py-1.5 text-sm"
-          >
-            <option value="">Artículo: todos</option>
-            {articulos?.items?.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.nombre}
-              </option>
-            ))}
-          </select>
-          <select
-            value={categoria}
-            onChange={(e) => actualizarFiltro("categoria", e.target.value)}
-            className="cursor-pointer rounded-md border border-borde px-2.5 py-1.5 text-sm"
-          >
+          <Input
+            placeholder="Buscar por nombre..."
+            value={q}
+            onChange={(e) => actualizarFiltro("q", e.target.value)}
+            className="min-w-[200px]"
+          />
+          <Select value={categoria} onChange={(e) => actualizarFiltro("categoria", e.target.value)}>
             <option value="">Categoría: todas</option>
             {CATEGORIAS.map((c) => (
               <option key={c} value={c}>
                 {c}
               </option>
             ))}
-          </select>
-          <select
-            value={depositoId}
-            onChange={(e) => actualizarFiltro("depositoId", e.target.value)}
-            className="cursor-pointer rounded-md border border-borde px-2.5 py-1.5 text-sm"
-          >
+          </Select>
+          <Select value={articuloId} onChange={(e) => actualizarFiltro("articuloId", e.target.value)}>
+            <option value="">Artículo: todos</option>
+            {(articulos?.items ?? []).map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.nombre}
+              </option>
+            ))}
+          </Select>
+          <Select value={depositoId} onChange={(e) => actualizarFiltro("depositoId", e.target.value)}>
             <option value="">Depósito: todos</option>
-            {depositos?.map((d) => (
+            {(depositos ?? []).map((d) => (
               <option key={d.id} value={d.id}>
                 {d.nombre}
               </option>
             ))}
-          </select>
+          </Select>
         </FilterBar>
       </div>
 
-      {isLoading && <p className="text-sm text-piedra">Cargando stock…</p>}
+      {isLoading && <p className="text-sm text-piedra">Cargando stock...</p>}
       {isError && <p className="text-sm text-error">No se pudo consultar el stock.</p>}
 
       {stock && (
         <Table
           columnas={["Artículo", "Categoría", "Unidad", "Depósito", "Stock actual", "Mínimo", "Máximo"]}
-          filas={stock}
+          filas={filasFiltradas}
           vacio={hayFiltros ? "Ningún resultado coincide con los filtros." : "Todavía no hay artículos habilitados con stock."}
           renderFila={(s) => {
             const bajoMinimo = Number(s.stockActual) < Number(s.stockMinimo);
@@ -107,11 +109,11 @@ export function StockLista() {
                 <td className="px-3 py-2">{s.categoria}</td>
                 <td className="px-3 py-2">{UNIDADES_MEDIDA_NOMBRES[s.unidadMedida] ?? s.unidadMedida}</td>
                 <td className="px-3 py-2">{s.deposito}</td>
-                <td className={`px-3 py-2 font-semibold ${bajoMinimo ? "text-error" : "text-tinta"}`}>
-                  {s.stockActual}
+                <td className={`px-3 py-2 font-mono tabular-nums font-semibold ${bajoMinimo ? "text-error" : "text-tinta"}`}>
+                  {Number(s.stockActual).toFixed(2)}
                 </td>
-                <td className="px-3 py-2">{s.stockMinimo}</td>
-                <td className="px-3 py-2">{s.stockMaximo ?? "—"}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{Number(s.stockMinimo).toFixed(2)}</td>
+                <td className="px-3 py-2 font-mono tabular-nums">{s.stockMaximo != null ? Number(s.stockMaximo).toFixed(2) : "—"}</td>
               </tr>
             );
           }}
