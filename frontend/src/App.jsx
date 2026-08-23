@@ -4,7 +4,6 @@ import { ArticulosPage } from "./modulos/articulos/ArticulosPage";
 import { DepositosPage } from "./modulos/depositos/DepositosPage";
 import { ArticuloDepositoPage } from "./modulos/articulo-deposito/ArticuloDepositoPage";
 import { StockPage } from "./modulos/stock/StockPage";
-import { MovimientoEntradaPage } from "./modulos/movimiento-entrada/MovimientoEntradaPage";
 import { TiposMovimientoPage } from "./modulos/tipos-movimiento/TiposMovimientoPage";
 import { MovimientosPage } from "./modulos/movimientos/MovimientosPage";
 
@@ -17,7 +16,6 @@ export default function App() {
         <Route path="/depositos" element={<DepositosPage />} />
         <Route path="/articulos-depositos" element={<ArticuloDepositoPage />} />
         <Route path="/tipos-movimiento" element={<TiposMovimientoPage />} />
-        <Route path="/movimiento-entrada" element={<MovimientoEntradaPage />} />
         <Route path="/movimientos" element={<MovimientosPage />} />
         <Route path="/stock" element={<StockPage />} />
       </Route>
