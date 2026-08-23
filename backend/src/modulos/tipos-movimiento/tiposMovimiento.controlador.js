@@ -3,14 +3,22 @@
 // Traduce HTTP <-> servicio. Valida que "tipo" solo admita 'E' o 'S'
 // (Definition of Done de HU-10).
 
-const { TIPOS_VALIDOS } = require("./tiposMovimiento.constantes");
+const { TIPOS_VALIDOS, DESCRIPCION_MAX_LENGTH, DESCRIPCION_REGEX } = require("./tiposMovimiento.constantes");
 const tiposMovimientoServicio = require("./tiposMovimiento.servicio");
 
 async function postTipoMovimiento(req, res) {
-  const { descripcion, tipo } = req.body ?? {};
+  const { tipo } = req.body ?? {};
+  const descripcion =
+    typeof req.body?.descripcion === "string" ? req.body.descripcion.trim().toUpperCase() : req.body?.descripcion;
 
   if (!descripcion || !tipo) {
     return res.status(400).json({ error: "descripcion y tipo son obligatorios" });
+  }
+  if (descripcion.length > DESCRIPCION_MAX_LENGTH) {
+    return res.status(400).json({ error: `descripcion no puede superar los ${DESCRIPCION_MAX_LENGTH} caracteres` });
+  }
+  if (!DESCRIPCION_REGEX.test(descripcion)) {
+    return res.status(400).json({ error: "descripcion solo puede contener letras, números y espacios" });
   }
   if (!TIPOS_VALIDOS.includes(tipo)) {
     return res.status(400).json({ error: `tipo invalido. Valores permitidos: ${TIPOS_VALIDOS.join(", ")}` });
