@@ -24,3 +24,8 @@ export const CATEGORIAS = [
   "Papelería y Oficina",
   "Equipamiento y Electrodomésticos",
 ];
+
+export const NOMBRE_MAX_LENGTH = 150;
+
+// Letras (con acentos/ñ), números y espacios. Sin símbolos ni signos de puntuación.
+export const NOMBRE_REGEX = /^[\p{L}\p{N}\s]+$/u;

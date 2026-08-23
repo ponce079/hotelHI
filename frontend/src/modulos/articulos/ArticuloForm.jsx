@@ -1,25 +1,36 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
+import { Toast } from "../../componentes/Toast";
 import { crearArticulo } from "./articulos.api";
-import { UNIDADES_MEDIDA, UNIDADES_MEDIDA_NOMBRES, CATEGORIAS } from "./articulos.constantes";
+import { UNIDADES_MEDIDA, UNIDADES_MEDIDA_NOMBRES, CATEGORIAS, NOMBRE_MAX_LENGTH } from "./articulos.constantes";
+
+const CARACTERES_INVALIDOS_NOMBRE = /[^\p{L}\p{N}\s]/gu;
 
 const VACIO = { nombre: "", unidadMedida: "", categoria: "" };
 
 export function ArticuloForm() {
   const [form, setForm] = useState(VACIO);
   const [errores, setErrores] = useState({});
+  const [toast, setToast] = useState("");
   const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!toast) return;
+    const timer = setTimeout(() => setToast(""), 3000);
+    return () => clearTimeout(timer);
+  }, [toast]);
 
   const mutacion = useMutation({
     mutationFn: crearArticulo,
-    onSuccess: () => {
+    onSuccess: (articulo) => {
       queryClient.invalidateQueries({ queryKey: ["articulos"] });
       setForm(VACIO);
       setErrores({});
+      setToast(`Artículo "${articulo.nombre}" guardado exitosamente.`);
     },
     onError: (error) => {
       const mensaje = error?.response?.data?.error ?? "No se pudo crear el artículo.";
@@ -61,9 +72,12 @@ export function ArticuloForm() {
         <Input
           label="Nombre"
           value={form.nombre}
-          onChange={(e) => setForm({ ...form, nombre: e.target.value })}
+          onChange={(e) =>
+            setForm({ ...form, nombre: e.target.value.toUpperCase().replace(CARACTERES_INVALIDOS_NOMBRE, "") })
+          }
           error={errores.nombre}
-          placeholder="Papel higiénico"
+          placeholder="PAPEL HIGIÉNICO"
+          maxLength={NOMBRE_MAX_LENGTH}
         />
         <Select
           label="Unidad de medida"
@@ -96,6 +110,8 @@ export function ArticuloForm() {
       <Button type="submit" disabled={mutacion.isPending} className="self-start">
         <Plus size={16} /> {mutacion.isPending ? "Guardando…" : "Dar de alta"}
       </Button>
+
+      <Toast mensaje={toast} />
     </form>
   );
 }
