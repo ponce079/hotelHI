@@ -9,3 +9,13 @@ export async function crearArticulo(payload) {
   const { data } = await api.post("/articulos", payload);
   return data;
 }
+
+export async function actualizarArticulo(id, payload) {
+  const { data } = await api.put(`/articulos/${id}`, payload);
+  return data;
+}
+
+export async function cambiarEstadoArticulo(id, activo) {
+  const { data } = await api.patch(`/articulos/${id}/estado`, { activo });
+  return data;
+}

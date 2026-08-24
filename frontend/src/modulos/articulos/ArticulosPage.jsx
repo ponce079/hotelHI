@@ -1,4 +1,3 @@
-import { ArticuloForm } from "./ArticuloForm";
 import { ArticulosLista } from "./ArticulosLista";
 
 export function ArticulosPage() {
@@ -8,7 +7,6 @@ export function ArticulosPage() {
         <h1 className="font-display text-2xl font-semibold">Artículos</h1>
         <p className="text-sm text-piedra">Catálogo maestro de insumos del hotel.</p>
       </div>
-      <ArticuloForm />
       <ArticulosLista />
     </div>
   );

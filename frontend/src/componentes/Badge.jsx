@@ -2,6 +2,7 @@ const VARIANTES = {
   ok: "bg-exito-suave text-exito",
   alerta: "bg-alerta-suave text-alerta",
   error: "bg-error-suave text-error",
+  neutro: "bg-hueso text-piedra",
 };
 
 export function Badge({ variante = "ok", children }) {

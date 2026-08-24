@@ -1,0 +1,21 @@
+import { Button } from "./Button";
+
+export function ConfirmDialog({ abierto, titulo, mensaje, textoConfirmar = "Confirmar", variante = "peligro", onConfirmar, onCancelar }) {
+  if (!abierto) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-40 flex items-center justify-center bg-tinta/45 p-5"
+      onClick={(e) => { if (e.target === e.currentTarget) onCancelar(); }}
+    >
+      <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
+        <h3 className="font-display text-lg font-bold text-pino-oscuro">{titulo}</h3>
+        <p className="mt-2 text-sm leading-relaxed text-tinta">{mensaje}</p>
+        <div className="mt-5 flex justify-end gap-2.5">
+          <Button variante="secundario" onClick={onCancelar}>Cancelar</Button>
+          <Button variante={variante} onClick={onConfirmar}>{textoConfirmar}</Button>
+        </div>
+      </div>
+    </div>
+  );
+}

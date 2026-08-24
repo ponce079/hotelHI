@@ -48,7 +48,7 @@ export function MovimientoForm() {
   const tipoActivo = TABS.find((t) => t.valor === tab);
   const tiposFiltrados = tiposMovimiento?.filter((t) => t.tipo === tab) ?? [];
   const articulosDelDeposito =
-    habilitaciones?.filter((h) => h.activo && String(h.depositoId) === String(form.depositoId)) ?? [];
+    habilitaciones?.filter((h) => h.activo && h.articulo.activo && String(h.depositoId) === String(form.depositoId)) ?? [];
 
   const mutacion = useMutation({
     mutationFn: tipoActivo.accion,
