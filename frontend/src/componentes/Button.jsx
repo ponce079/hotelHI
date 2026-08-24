@@ -2,6 +2,7 @@ const VARIANTES = {
   primario: "bg-pino text-white hover:bg-pino-oscuro",
   secundario: "bg-transparent text-tinta border border-borde hover:bg-hueso",
   peligro: "bg-error text-white hover:opacity-90",
+  exito: "bg-exito text-white hover:opacity-90",
 };
 
 export function Button({ variante = "primario", className = "", ...props }) {

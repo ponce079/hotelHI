@@ -51,6 +51,7 @@ async function registrarEntrada({ depositoId, tipoMovStockId, detalle, usuario, 
   // --- Validar habilitación Artículo-Depósito (HU-4) ---
   const habilitaciones = await prisma.articuloDeposito.findMany({
     where: { depositoId: Number(depositoId), articuloId: { in: articuloIds }, activo: true },
+    include: { articulo: true },
   });
   const habilitadosIds = new Set(habilitaciones.map((h) => h.articuloId));
   const noHabilitados = articuloIds.filter((id) => !habilitadosIds.has(id));
@@ -59,6 +60,14 @@ async function registrarEntrada({ depositoId, tipoMovStockId, detalle, usuario, 
       `Los artículos [${noHabilitados.join(", ")}] no están habilitados en este depósito (HU-4).`
     );
   }
+
+  // --- Validar que ningun articulo este dado de baja (HU-2) ---
+  const deshabilitados = habilitaciones.filter((h) => !h.articulo.activo);
+  if (deshabilitados.length > 0) {
+    const nombres = deshabilitados.map((h) => h.articulo.nombre).join(", ");
+    throw new ErrorDeNegocio(`Los siguientes artículos están dados de baja y no aceptan movimientos: ${nombres}.`);
+  }
+
   const habilitacionPorArticulo = Object.fromEntries(habilitaciones.map((h) => [h.articuloId, h]));
 
   // --- Transacción atómica: alta del movimiento + detalle + stock ---
