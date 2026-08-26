@@ -112,4 +112,286 @@ async function registrarEntrada({ depositoId, tipoMovStockId, detalle, usuario, 
   return movimientoCreado;
 }
 
-module.exports = { registrarEntrada, ErrorDeNegocio };
+// HU-9, 14 a 17: listado generico de movimientos, usado por la pantalla de
+// Movimientos registrados, Kardex, Recepciones, Dashboard y Reporte de
+// Consumo — todas leen de aca y agregan del lado del cliente, en vez de
+// duplicar consultas parecidas en el backend.
+async function listarMovimientos({ depositoId, destinoId, articuloId, estado, tipo, desde, hasta } = {}) {
+  const where = {};
+  if (depositoId) where.depositoId = Number(depositoId);
+  if (destinoId) where.depositoDestinoId = Number(destinoId);
+  if (estado) where.estado = String(estado);
+  if (tipo) where.tipoMovStock = { tipo: String(tipo) };
+  if (articuloId) where.detalleMovimientos = { some: { articuloId: Number(articuloId) } };
+  if (desde || hasta) {
+    where.fecha = {};
+    // new Date("YYYY-MM-DD") ya cae en medianoche UTC. Para "hasta" usamos
+    // "menor al dia siguiente" (limite exclusivo) en vez de setHours(23,59,59) —
+    // setHours opera en hora LOCAL del proceso, asi que sobre una fecha en UTC
+    // corria el corte varias horas para atras segun el timezone del server
+    // (en la practica, dejaba afuera movimientos del propio dia "hasta").
+    if (desde) where.fecha.gte = new Date(desde);
+    if (hasta) {
+      const siguienteDia = new Date(hasta);
+      siguienteDia.setUTCDate(siguienteDia.getUTCDate() + 1);
+      where.fecha.lt = siguienteDia;
+    }
+  }
+
+  return prisma.movimientoStock.findMany({
+    where,
+    include: {
+      deposito: true,
+      depositoDestino: true,
+      tipoMovStock: true,
+      detalleMovimientos: { include: { articulo: true } },
+    },
+    orderBy: { fecha: "desc" },
+  });
+}
+
+// HU-14: primera mitad de una transferencia. Mismas validaciones que
+// registrarSalida (habilitacion + stock en origen), mas habilitacion en
+// destino. No crea la entrada todavia — el movimiento queda "En tránsito"
+// hasta que el destino confirma con confirmarRecepcion.
+async function registrarTransferencia({ depositoId, depositoDestinoId, tipoMovStockId, detalle, usuario, items }) {
+  if (!depositoId || !depositoDestinoId || !tipoMovStockId) {
+    throw new ErrorDeNegocio("depositoId, depositoDestinoId y tipoMovStockId son obligatorios.");
+  }
+  if (Number(depositoId) === Number(depositoDestinoId)) {
+    throw new ErrorDeNegocio("El depósito destino no puede ser igual al de origen.");
+  }
+  if (!Array.isArray(items) || items.length === 0) {
+    throw new ErrorDeNegocio("Debe incluir al menos un artículo en 'items'.");
+  }
+  const articuloIds = items.map((i) => i.articuloId);
+  if (new Set(articuloIds).size !== articuloIds.length) {
+    throw new ErrorDeNegocio("No se puede repetir el mismo artículo dos veces en el detalle.");
+  }
+  if (items.some((i) => !i.articuloId || !(Number(i.cantidad) > 0))) {
+    throw new ErrorDeNegocio("Cada ítem necesita articuloId y una cantidad mayor a 0.");
+  }
+
+  const tipoMov = await prisma.tipoMovimientoStock.findUnique({ where: { id: Number(tipoMovStockId) } });
+  if (!tipoMov || !tipoMov.activo) {
+    throw new ErrorDeNegocio("El tipo de movimiento indicado no existe o está inactivo.");
+  }
+  if (tipoMov.tipo !== "S") {
+    throw new ErrorDeNegocio(
+      `El tipo de movimiento '${tipoMov.descripcion}' debe ser de Salida (tipo='S') para una transferencia.`
+    );
+  }
+
+  const [origen, destino] = await Promise.all([
+    prisma.deposito.findUnique({ where: { id: Number(depositoId) } }),
+    prisma.deposito.findUnique({ where: { id: Number(depositoDestinoId) } }),
+  ]);
+  if (!origen || !origen.activo) {
+    throw new ErrorDeNegocio("El depósito de origen no existe o está inactivo.");
+  }
+  if (!destino || !destino.activo) {
+    throw new ErrorDeNegocio("El depósito destino no existe o está inactivo.");
+  }
+
+  const [habilitacionesOrigen, habilitacionesDestino] = await Promise.all([
+    prisma.articuloDeposito.findMany({
+      where: { depositoId: Number(depositoId), articuloId: { in: articuloIds }, activo: true },
+      include: { articulo: true },
+    }),
+    prisma.articuloDeposito.findMany({
+      where: { depositoId: Number(depositoDestinoId), articuloId: { in: articuloIds }, activo: true },
+    }),
+  ]);
+  const habilitadosOrigenIds = new Set(habilitacionesOrigen.map((h) => h.articuloId));
+  const noHabilitadosOrigen = articuloIds.filter((id) => !habilitadosOrigenIds.has(id));
+  if (noHabilitadosOrigen.length > 0) {
+    throw new ErrorDeNegocio(
+      `Los artículos [${noHabilitadosOrigen.join(", ")}] no están habilitados en el depósito de origen.`
+    );
+  }
+  const habilitadosDestinoIds = new Set(habilitacionesDestino.map((h) => h.articuloId));
+  const noHabilitadosDestino = articuloIds.filter((id) => !habilitadosDestinoIds.has(id));
+  if (noHabilitadosDestino.length > 0) {
+    throw new ErrorDeNegocio(
+      `Los artículos [${noHabilitadosDestino.join(", ")}] no están habilitados en el depósito destino.`
+    );
+  }
+
+  const deshabilitados = habilitacionesOrigen.filter((h) => !h.articulo.activo);
+  if (deshabilitados.length > 0) {
+    const nombres = deshabilitados.map((h) => h.articulo.nombre).join(", ");
+    throw new ErrorDeNegocio(`Los siguientes artículos están dados de baja y no aceptan movimientos: ${nombres}.`);
+  }
+
+  const habilitacionPorArticulo = Object.fromEntries(habilitacionesOrigen.map((h) => [h.articuloId, h]));
+
+  const movimientoCreado = await prisma.$transaction(
+    async (tx) => {
+      const movimiento = await tx.movimientoStock.create({
+        data: {
+          depositoId: Number(depositoId),
+          depositoDestinoId: Number(depositoDestinoId),
+          tipoMovStockId: Number(tipoMovStockId),
+          detalle: detalle || null,
+          usuario: usuario || null,
+          estado: "En tránsito",
+        },
+      });
+
+      for (const item of items) {
+        const cantidad = Number(item.cantidad);
+        const articuloDepositoId = habilitacionPorArticulo[item.articuloId].id;
+
+        const stock = await tx.articuloDepositoStock.findUnique({ where: { articuloDepositoId } });
+        const stockActual = stock ? Number(stock.stockActual) : 0;
+        if (stockActual < cantidad) {
+          throw new ErrorDeNegocio(
+            `Stock insuficiente para el artículo ${item.articuloId}. Actual: ${stockActual}, Solicitado: ${cantidad}.`
+          );
+        }
+
+        await tx.movimientoStockDetalle.create({
+          data: { movStockId: movimiento.id, articuloId: item.articuloId, cantidad },
+        });
+
+        await tx.articuloDepositoStock.update({
+          where: { articuloDepositoId },
+          data: { stockActual: { decrement: cantidad } },
+        });
+      }
+
+      return tx.movimientoStock.findUnique({
+        where: { id: movimiento.id },
+        include: {
+          deposito: true,
+          depositoDestino: true,
+          tipoMovStock: true,
+          detalleMovimientos: { include: { articulo: true } },
+        },
+      });
+    },
+    { timeout: 15000, maxWait: 10000 }
+  );
+
+  return movimientoCreado;
+}
+
+// HU-17: el destino confirma cuanto llegó realmente. Crea el movimiento de
+// entrada vinculado, suma stock en destino solo por lo recibido, y deja
+// registrada la diferencia (si la hay) en el detalle del movimiento
+// original de salida.
+async function confirmarRecepcion(id, { lineas, usuario } = {}) {
+  const movimientoId = Number(id);
+  if (!Number.isInteger(movimientoId)) {
+    throw new ErrorDeNegocio("id de movimiento inválido.");
+  }
+  if (!Array.isArray(lineas) || lineas.length === 0) {
+    throw new ErrorDeNegocio("Debe informar la cantidad recibida de al menos un artículo en 'lineas'.");
+  }
+
+  const movimiento = await prisma.movimientoStock.findUnique({
+    where: { id: movimientoId },
+    include: { detalleMovimientos: true },
+  });
+  if (!movimiento) {
+    throw new ErrorDeNegocio("Movimiento no encontrado.", 404);
+  }
+  if (movimiento.estado !== "En tránsito" || !movimiento.depositoDestinoId) {
+    throw new ErrorDeNegocio("El movimiento no es una transferencia pendiente de recepción.");
+  }
+
+  const recibidoPorArticulo = new Map(lineas.map((l) => [Number(l.articuloId), Number(l.cantidadRecibida)]));
+  for (const det of movimiento.detalleMovimientos) {
+    const recibido = recibidoPorArticulo.get(det.articuloId);
+    if (!Number.isFinite(recibido) || recibido < 0) {
+      throw new ErrorDeNegocio(`Falta informar la cantidad recibida para el artículo ${det.articuloId}.`);
+    }
+    if (recibido > Number(det.cantidad)) {
+      throw new ErrorDeNegocio(
+        `La cantidad recibida del artículo ${det.articuloId} no puede superar lo enviado (${det.cantidad}).`
+      );
+    }
+  }
+
+  // Requiere un tipo de movimiento de Entrada dedicado a transferencias
+  // (sembrado por backend/scripts/seed-tipos-movimiento.js).
+  const tipoEntrada = await prisma.tipoMovimientoStock.findFirst({
+    where: { tipo: "E", activo: true, descripcion: { contains: "TRANSFERENCIA" } },
+  });
+  if (!tipoEntrada) {
+    throw new ErrorDeNegocio(
+      "No hay un tipo de movimiento de Entrada activo con 'Transferencia' en la descripción; creá uno antes de confirmar recepciones."
+    );
+  }
+
+  const hayDiferencia = movimiento.detalleMovimientos.some(
+    (det) => recibidoPorArticulo.get(det.articuloId) < Number(det.cantidad)
+  );
+  const estadoFinal = hayDiferencia ? "Con diferencia" : "Confirmado";
+
+  const habilitacionesDestino = await prisma.articuloDeposito.findMany({
+    where: {
+      depositoId: movimiento.depositoDestinoId,
+      articuloId: { in: movimiento.detalleMovimientos.map((d) => d.articuloId) },
+    },
+  });
+  const habilitacionPorArticulo = Object.fromEntries(habilitacionesDestino.map((h) => [h.articuloId, h]));
+
+  const resultado = await prisma.$transaction(
+    async (tx) => {
+      const entrada = await tx.movimientoStock.create({
+        data: {
+          depositoId: movimiento.depositoDestinoId,
+          tipoMovStockId: tipoEntrada.id,
+          movimientoRelacionadoId: movimiento.id,
+          estado: estadoFinal,
+          usuario: usuario || null,
+          detalle: `Recepción de transferencia #${movimiento.id}`,
+        },
+      });
+
+      for (const det of movimiento.detalleMovimientos) {
+        const recibido = recibidoPorArticulo.get(det.articuloId);
+        const habilitacion = habilitacionPorArticulo[det.articuloId];
+        if (!habilitacion) {
+          throw new ErrorDeNegocio(`El artículo ${det.articuloId} ya no está habilitado en el depósito destino.`);
+        }
+
+        await tx.movimientoStockDetalle.update({
+          where: { id: det.id },
+          data: { cantidadRecibida: recibido },
+        });
+
+        if (recibido > 0) {
+          await tx.movimientoStockDetalle.create({
+            data: { movStockId: entrada.id, articuloId: det.articuloId, cantidad: recibido },
+          });
+          await tx.articuloDepositoStock.upsert({
+            where: { articuloDepositoId: habilitacion.id },
+            create: { articuloDepositoId: habilitacion.id, stockActual: recibido },
+            update: { stockActual: { increment: recibido } },
+          });
+        }
+      }
+
+      await tx.movimientoStock.update({
+        where: { id: movimiento.id },
+        data: { estado: estadoFinal, movimientoRelacionadoId: entrada.id },
+      });
+
+      return tx.movimientoStock.findUnique({
+        where: { id: entrada.id },
+        include: {
+          deposito: true,
+          tipoMovStock: true,
+          detalleMovimientos: { include: { articulo: true } },
+        },
+      });
+    },
+    { timeout: 15000, maxWait: 10000 }
+  );
+
+  return resultado;
+}
+
+module.exports = { registrarEntrada, listarMovimientos, registrarTransferencia, confirmarRecepcion, ErrorDeNegocio };

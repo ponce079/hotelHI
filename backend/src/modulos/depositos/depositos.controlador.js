@@ -6,38 +6,53 @@
 // de Articulo: la obligatoriedad se valida en la app, no en la base).
 
 const {
-  UBICACIONES,
   NOMBRE_MAX_LENGTH,
   RESPONSABLE_MAX_LENGTH,
+  UBICACION_MAX_LENGTH,
   NOMBRE_REGEX,
   RESPONSABLE_REGEX,
+  UBICACION_REGEX,
 } = require("./depositos.constantes");
 const depositosServicio = require("./depositos.servicio");
 
-async function postDeposito(req, res) {
-  const { ubicacion } = req.body ?? {};
-  const nombre = typeof req.body?.nombre === "string" ? req.body.nombre.trim().toUpperCase() : req.body?.nombre;
-  const responsable =
-    typeof req.body?.responsable === "string" ? req.body.responsable.trim() : req.body?.responsable;
+// Compartida por alta y edicion: normaliza y valida {nombre, ubicacion,
+// responsable}. Devuelve { error } si algo no es valido, o { nombre,
+// ubicacion, responsable } normalizados si esta todo bien.
+function normalizarYValidar(body) {
+  const nombre = typeof body?.nombre === "string" ? body.nombre.trim().toUpperCase() : body?.nombre;
+  const ubicacion = typeof body?.ubicacion === "string" ? body.ubicacion.trim() : body?.ubicacion;
+  const responsable = typeof body?.responsable === "string" ? body.responsable.trim() : body?.responsable;
 
   if (!nombre || !ubicacion || !responsable) {
-    return res.status(400).json({ error: "nombre, ubicacion y responsable son obligatorios" });
+    return { error: "nombre, ubicacion y responsable son obligatorios" };
   }
   if (nombre.length > NOMBRE_MAX_LENGTH) {
-    return res.status(400).json({ error: `nombre no puede superar los ${NOMBRE_MAX_LENGTH} caracteres` });
+    return { error: `nombre no puede superar los ${NOMBRE_MAX_LENGTH} caracteres` };
   }
   if (!NOMBRE_REGEX.test(nombre)) {
-    return res.status(400).json({ error: "nombre solo puede contener letras, números y espacios" });
+    return { error: "nombre solo puede contener letras, números y espacios" };
   }
-  if (!UBICACIONES.includes(ubicacion)) {
-    return res.status(400).json({ error: `ubicacion invalida. Valores permitidos: ${UBICACIONES.join(", ")}` });
+  if (ubicacion.length > UBICACION_MAX_LENGTH) {
+    return { error: `ubicacion no puede superar los ${UBICACION_MAX_LENGTH} caracteres` };
+  }
+  if (!UBICACION_REGEX.test(ubicacion)) {
+    return { error: "ubicacion solo puede contener letras, números y espacios" };
   }
   if (responsable.length > RESPONSABLE_MAX_LENGTH) {
-    return res.status(400).json({ error: `responsable no puede superar los ${RESPONSABLE_MAX_LENGTH} caracteres` });
+    return { error: `responsable no puede superar los ${RESPONSABLE_MAX_LENGTH} caracteres` };
   }
   if (!RESPONSABLE_REGEX.test(responsable)) {
-    return res.status(400).json({ error: "responsable solo puede contener letras y espacios" });
+    return { error: "responsable solo puede contener letras y espacios" };
   }
+  return { nombre, ubicacion, responsable };
+}
+
+async function postDeposito(req, res) {
+  const validado = normalizarYValidar(req.body);
+  if (validado.error) {
+    return res.status(400).json({ error: validado.error });
+  }
+  const { nombre, ubicacion, responsable } = validado;
 
   try {
     const deposito = await depositosServicio.crearDeposito({ nombre, ubicacion, responsable });
@@ -48,6 +63,34 @@ async function postDeposito(req, res) {
     }
     console.error("Error al crear deposito:", err);
     return res.status(500).json({ error: "No se pudo crear el deposito." });
+  }
+}
+
+async function putDeposito(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "id invalido" });
+  }
+
+  const validado = normalizarYValidar(req.body);
+  if (validado.error) {
+    return res.status(400).json({ error: validado.error });
+  }
+  const { nombre, ubicacion, responsable } = validado;
+
+  try {
+    const existente = await depositosServicio.obtenerDepositoPorId(id);
+    if (!existente) {
+      return res.status(404).json({ error: "Deposito no encontrado" });
+    }
+    const deposito = await depositosServicio.actualizarDeposito(id, { nombre, ubicacion, responsable });
+    return res.json(deposito);
+  } catch (err) {
+    if (err.code === "P2002") {
+      return res.status(409).json({ error: `Ya existe un deposito con el nombre "${nombre}"` });
+    }
+    console.error("Error al actualizar deposito:", err);
+    return res.status(500).json({ error: "No se pudo actualizar el deposito." });
   }
 }
 
@@ -79,4 +122,4 @@ async function getDepositoPorId(req, res) {
   }
 }
 
-module.exports = { postDeposito, getDepositos, getDepositoPorId };
+module.exports = { postDeposito, getDepositos, getDepositoPorId, putDeposito };

@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Input } from "../../componentes/Input";
-import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
 import { Toast } from "../../componentes/Toast";
 import { crearTipoMovimiento } from "./tiposMovimiento.api";
-import { TIPOS_VALIDOS, TIPOS_NOMBRES, DESCRIPCION_MAX_LENGTH } from "./tiposMovimiento.constantes";
+import { DESCRIPCION_MAX_LENGTH } from "./tiposMovimiento.constantes";
+import { useToast } from "../../lib/useToast";
 
 const CARACTERES_INVALIDOS_DESCRIPCION = /[^\p{L}\p{N}\s]/gu;
 
@@ -15,14 +15,8 @@ const VACIO = { descripcion: "", tipo: "" };
 export function TipoMovimientoForm() {
   const [form, setForm] = useState(VACIO);
   const [errores, setErrores] = useState({});
-  const [toast, setToast] = useState("");
+  const { toast, mostrarToast } = useToast();
   const queryClient = useQueryClient();
-
-  useEffect(() => {
-    if (!toast) return;
-    const timer = setTimeout(() => setToast(""), 3000);
-    return () => clearTimeout(timer);
-  }, [toast]);
 
   const mutacion = useMutation({
     mutationFn: crearTipoMovimiento,
@@ -30,7 +24,7 @@ export function TipoMovimientoForm() {
       queryClient.invalidateQueries({ queryKey: ["tipos-movimiento"] });
       setForm(VACIO);
       setErrores({});
-      setToast(`Tipo de movimiento "${tipoMovimiento.descripcion}" guardado exitosamente.`);
+      mostrarToast(`Tipo de movimiento "${tipoMovimiento.descripcion}" guardado exitosamente.`);
     },
     onError: (error) => {
       const mensaje = error?.response?.data?.error ?? "No se pudo crear el tipo de movimiento.";
@@ -61,13 +55,13 @@ export function TipoMovimientoForm() {
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-lg border border-borde bg-white p-5">
-      <h2 className="font-display text-lg font-semibold">Nuevo tipo de movimiento</h2>
+      <h2 className="font-heading text-lg font-semibold">Nuevo tipo de movimiento</h2>
 
       {errores.general && <p className="text-sm text-error">{errores.general}</p>}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Input
-          label="Descripción"
+          label="Descripción *"
           value={form.descripcion}
           onChange={(e) =>
             setForm({
@@ -76,26 +70,39 @@ export function TipoMovimientoForm() {
             })
           }
           error={errores.descripcion}
-          placeholder="ENTRADA POR COMPRA"
+          placeholder="ej. Entrada por Donación"
           maxLength={DESCRIPCION_MAX_LENGTH}
         />
-        <Select
-          label="Tipo"
-          value={form.tipo}
-          onChange={(e) => setForm({ ...form, tipo: e.target.value })}
-          error={errores.tipo}
-        >
-          <option value="">Seleccionar…</option>
-          {TIPOS_VALIDOS.map((t) => (
-            <option key={t} value={t}>
-              {TIPOS_NOMBRES[t]}
-            </option>
-          ))}
-        </Select>
+        <div>
+          <label className="mb-1.5 flex flex-col gap-1.5 text-sm">
+            <span className="text-[12px] text-tinta/70">Tipo *</span>
+          </label>
+          <div className="inline-flex overflow-hidden rounded-full border border-borde">
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, tipo: "E" })}
+              className={`cursor-pointer whitespace-nowrap px-4 py-2 text-sm ${
+                form.tipo === "E" ? "bg-pino text-hueso" : "bg-transparent text-tinta hover:bg-hueso"
+              }`}
+            >
+              E — suma stock
+            </button>
+            <button
+              type="button"
+              onClick={() => setForm({ ...form, tipo: "S" })}
+              className={`cursor-pointer whitespace-nowrap border-l border-borde px-4 py-2 text-sm ${
+                form.tipo === "S" ? "bg-pino text-hueso" : "bg-transparent text-tinta hover:bg-hueso"
+              }`}
+            >
+              S — resta stock
+            </button>
+          </div>
+          {errores.tipo && <p className="mt-1 text-xs text-error">{errores.tipo}</p>}
+        </div>
       </div>
 
       <Button type="submit" disabled={mutacion.isPending} className="self-start">
-        <Plus size={16} /> {mutacion.isPending ? "Guardando…" : "Dar de alta"}
+        <Plus size={16} /> {mutacion.isPending ? "Guardando…" : "Guardar"}
       </Button>
 
       <Toast mensaje={toast} />

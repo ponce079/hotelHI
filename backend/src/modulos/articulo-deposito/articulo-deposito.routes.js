@@ -7,5 +7,6 @@ const router = express.Router();
 
 router.post("/", articuloDepositoControlador.postArticuloDeposito);
 router.get("/", articuloDepositoControlador.getArticuloDepositos);
+router.patch("/:id/estado", articuloDepositoControlador.patchEstadoArticuloDeposito);
 
 module.exports = router;

@@ -21,13 +21,14 @@ model Articulo {
 }
 
 model Deposito {
-  id          Int                @id @default(autoincrement())
-  nombre      String             @unique
-  ubicacion   String?
-  responsable String?
-  activo      Boolean            @default(true)
-  articulos   ArticuloDeposito[]
-  movimientos MovimientoStock[]
+  id                 Int                @id @default(autoincrement())
+  nombre             String             @unique
+  ubicacion          String?
+  responsable        String?
+  activo             Boolean            @default(true)
+  articulos          ArticuloDeposito[]
+  movimientos        MovimientoStock[]
+  movimientosDestino MovimientoStock[]  @relation("MovimientoDestino")
 
   @@map("depositos")
 }
@@ -73,26 +74,31 @@ model MovimientoStock {
   fecha                   DateTime                 @default(now())
   detalle                 String?
   depositoId              Int
+  depositoDestinoId       Int?
   tipoMovStockId          Int
   movimientoRelacionadoId Int?
+  estado                  String                   @default("Confirmado")
   activo                  Boolean                  @default(true)
   usuario                 String?
   deposito                Deposito                 @relation(fields: [depositoId], references: [id])
+  depositoDestino         Deposito?                @relation("MovimientoDestino", fields: [depositoDestinoId], references: [id])
   tipoMovStock            TipoMovimientoStock      @relation(fields: [tipoMovStockId], references: [id])
   detalleMovimientos      MovimientoStockDetalle[]
 
   @@index([depositoId], map: "movimientos_stock_depositoId_fkey")
+  @@index([depositoDestinoId], map: "movimientos_stock_depositoDestinoId_fkey")
   @@index([tipoMovStockId], map: "movimientos_stock_tipoMovStockId_fkey")
   @@map("movimientos_stock")
 }
 
 model MovimientoStockDetalle {
-  id              Int             @id @default(autoincrement())
-  movStockId      Int
-  articuloId      Int
-  cantidad        Decimal         @db.Decimal(12, 2)
-  articulo        Articulo        @relation(fields: [articuloId], references: [id])
-  movimientoStock MovimientoStock @relation(fields: [movStockId], references: [id])
+  id               Int             @id @default(autoincrement())
+  movStockId       Int
+  articuloId       Int
+  cantidad         Decimal         @db.Decimal(12, 2)
+  cantidadRecibida Decimal?        @db.Decimal(12, 2)
+  articulo         Articulo        @relation(fields: [articuloId], references: [id])
+  movimientoStock  MovimientoStock @relation(fields: [movStockId], references: [id])
 
   @@index([articuloId], map: "movimientos_stock_detalle_articuloId_fkey")
   @@index([movStockId], map: "movimientos_stock_detalle_movStockId_fkey")

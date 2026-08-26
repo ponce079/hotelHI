@@ -1,21 +1,47 @@
-import { Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { Layout } from "./componentes/Layout";
+import { LoginPage } from "./modulos/login/LoginPage";
+import { useSesion } from "./lib/sesion";
+import { DashboardPage } from "./modulos/dashboard/DashboardPage";
+import { AlertasPage } from "./modulos/alertas/AlertasPage";
 import { ArticulosPage } from "./modulos/articulos/ArticulosPage";
 import { DepositosPage } from "./modulos/depositos/DepositosPage";
+import { DepositoDetallePage } from "./modulos/depositos/DepositoDetallePage";
 import { StockPage } from "./modulos/stock/StockPage";
+import { MinMaxPage } from "./modulos/stock/MinMaxPage";
 import { TiposMovimientoPage } from "./modulos/tipos-movimiento/TiposMovimientoPage";
 import { MovimientosPage } from "./modulos/movimientos/MovimientosPage";
+import { RecepcionesPage } from "./modulos/recepciones/RecepcionesPage";
+import { KardexPage } from "./modulos/kardex/KardexPage";
+import { ReportePage } from "./modulos/reporte/ReportePage";
+
+// Gatekeeper de rutas: sin sesion (sin rol elegido en el login), redirige
+// a /login. No es autenticacion real contra el backend — ver lib/sesion.jsx.
+function RequireSesion() {
+  const { rol } = useSesion();
+  if (!rol) return <Navigate to="/login" replace />;
+  return <Outlet />;
+}
 
 export default function App() {
   return (
     <Routes>
-      <Route element={<Layout />}>
-        <Route index element={<Navigate to="/articulos" replace />} />
-        <Route path="/articulos" element={<ArticulosPage />} />
-        <Route path="/depositos" element={<DepositosPage />} />
-        <Route path="/tipos-movimiento" element={<TiposMovimientoPage />} />
-        <Route path="/movimientos" element={<MovimientosPage />} />
-        <Route path="/stock" element={<StockPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route element={<RequireSesion />}>
+        <Route element={<Layout />}>
+          <Route index element={<DashboardPage />} />
+          <Route path="/articulos" element={<ArticulosPage />} />
+          <Route path="/alertas" element={<AlertasPage />} />
+          <Route path="/depositos" element={<DepositosPage />} />
+          <Route path="/depositos/:id" element={<DepositoDetallePage />} />
+          <Route path="/tipos-movimiento" element={<TiposMovimientoPage />} />
+          <Route path="/movimientos" element={<MovimientosPage />} />
+          <Route path="/recepciones" element={<RecepcionesPage />} />
+          <Route path="/kardex" element={<KardexPage />} />
+          <Route path="/reporte" element={<ReportePage />} />
+          <Route path="/stock" element={<StockPage />} />
+          <Route path="/stock/minmax" element={<MinMaxPage />} />
+        </Route>
       </Route>
     </Routes>
   );

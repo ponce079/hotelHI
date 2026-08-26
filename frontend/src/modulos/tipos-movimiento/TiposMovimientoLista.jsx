@@ -18,7 +18,7 @@ export function TiposMovimientoLista() {
 
   return (
     <div className="rounded-lg border border-borde bg-white p-5">
-      <h2 className="mb-4 flex items-center gap-2 font-display text-lg font-semibold">
+      <h2 className="mb-4 flex items-center gap-2 font-heading text-lg font-semibold">
         <ArrowRightLeft size={20} className="text-pino" /> Tipos de movimiento de stock
       </h2>
       <Table
@@ -27,7 +27,7 @@ export function TiposMovimientoLista() {
         vacio="Todavía no hay tipos de movimiento cargados."
         renderFila={(t) => (
           <tr key={t.id} className="border-b border-borde last:border-0">
-            <td className="px-3 py-2 font-semibold">{t.descripcion}</td>
+            <td className="px-3 py-2 font-body text-[13.5px] font-semibold">{t.descripcion}</td>
             <td className="px-3 py-2">
               <Badge variante={VARIANTE_POR_TIPO[t.tipo]}>{TIPOS_NOMBRES[t.tipo] ?? t.tipo}</Badge>
             </td>

@@ -17,7 +17,7 @@ export function ArticuloDetalleModal({ articulo, onClose, onEditar }) {
         <div className="flex items-start justify-between gap-3 border-b border-borde px-6 py-5">
           <div>
             <span className="block font-mono text-xs text-piedra">{articulo.codigo}</span>
-            <h3 className="font-display text-lg font-bold text-pino-oscuro">{articulo.nombre}</h3>
+            <h3 className="font-heading text-lg font-bold text-pino-oscuro">{articulo.nombre}</h3>
             <div className="mt-2 flex flex-wrap gap-2">
               <span className="rounded-full bg-hueso px-2.5 py-0.5 text-xs text-piedra">{articulo.categoria}</span>
               <span className="rounded-full bg-hueso px-2.5 py-0.5 text-xs text-piedra">
@@ -36,7 +36,7 @@ export function ArticuloDetalleModal({ articulo, onClose, onEditar }) {
           {!isLoading && (
             <>
               <p className="mb-3 text-sm text-tinta">
-                Habilitado en <span className="font-display text-lg font-bold text-pino-oscuro">{filas?.length ?? 0}</span>{" "}
+                Habilitado en <span className="font-heading text-lg font-bold text-pino-oscuro">{filas?.length ?? 0}</span>{" "}
                 {filas?.length === 1 ? "depósito" : "depósitos"}
               </p>
               {(!filas || filas.length === 0) ? (

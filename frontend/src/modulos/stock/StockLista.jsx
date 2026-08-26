@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { Gauge } from "lucide-react";
 import { Table } from "../../componentes/Table";
+import { Cifra } from "../../componentes/Cifra";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { FilterBar } from "../../componentes/FilterBar";
@@ -54,7 +55,7 @@ export function StockLista() {
 
   return (
     <div className="rounded-lg border border-borde bg-white p-5">
-      <h2 className="mb-4 flex items-center gap-2 font-display text-lg font-semibold">
+      <h2 className="mb-4 flex items-center gap-2 font-heading text-lg font-semibold">
         <Gauge size={20} className="text-pino" /> Stock por artículo y depósito
       </h2>
 
@@ -105,15 +106,15 @@ export function StockLista() {
             const bajoMinimo = Number(s.stockActual) < Number(s.stockMinimo);
             return (
               <tr key={`${s.articuloId}-${s.depositoId}`} className="border-b border-borde last:border-0">
-                <td className="px-3 py-2">{s.nombre}</td>
-                <td className="px-3 py-2">{s.categoria}</td>
-                <td className="px-3 py-2">{UNIDADES_MEDIDA_NOMBRES[s.unidadMedida] ?? s.unidadMedida}</td>
-                <td className="px-3 py-2">{s.deposito}</td>
-                <td className={`px-3 py-2 font-mono tabular-nums font-semibold ${bajoMinimo ? "text-error" : "text-tinta"}`}>
-                  {Number(s.stockActual).toFixed(2)}
+                <td className="px-3 py-2 font-body text-[13.5px] font-semibold">{s.nombre}</td>
+                <td className="px-3 py-2 font-body text-[12.5px]">{s.categoria}</td>
+                <td className="px-3 py-2 font-body text-[12.5px]">{UNIDADES_MEDIDA_NOMBRES[s.unidadMedida] ?? s.unidadMedida}</td>
+                <td className="px-3 py-2 font-body text-[12.5px]">{s.deposito}</td>
+                <td className="px-3 py-2">
+                  <Cifra tamano={15} className={bajoMinimo ? "text-error-texto" : ""}>{Number(s.stockActual).toFixed(2)}</Cifra>
                 </td>
-                <td className="px-3 py-2 font-mono tabular-nums">{Number(s.stockMinimo).toFixed(2)}</td>
-                <td className="px-3 py-2 font-mono tabular-nums">{s.stockMaximo != null ? Number(s.stockMaximo).toFixed(2) : "—"}</td>
+                <td className="px-3 py-2 font-body text-[12.5px] text-tinta/55">{Number(s.stockMinimo).toFixed(2)}</td>
+                <td className="px-3 py-2 font-body text-[12.5px] text-tinta/55">{s.stockMaximo != null ? Number(s.stockMaximo).toFixed(2) : "—"}</td>
               </tr>
             );
           }}

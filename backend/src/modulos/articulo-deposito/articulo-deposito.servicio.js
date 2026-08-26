@@ -19,4 +19,25 @@ async function obtenerDepositoPorId(id) {
   return prisma.deposito.findUnique({ where: { id } });
 }
 
-module.exports = { habilitarArticuloEnDeposito, listarHabilitaciones, obtenerDepositoPorId };
+async function obtenerHabilitacionPorId(id) {
+  return prisma.articuloDeposito.findUnique({
+    where: { id },
+    include: { articulo: true, deposito: true, stock: true },
+  });
+}
+
+async function cambiarEstadoHabilitacion(id, activo) {
+  return prisma.articuloDeposito.update({
+    where: { id },
+    data: { activo },
+    include: { articulo: true, deposito: true, stock: true },
+  });
+}
+
+module.exports = {
+  habilitarArticuloEnDeposito,
+  listarHabilitaciones,
+  obtenerDepositoPorId,
+  obtenerHabilitacionPorId,
+  cambiarEstadoHabilitacion,
+};
