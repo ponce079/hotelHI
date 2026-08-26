@@ -67,4 +67,30 @@ async function getArticuloDepositos(_req, res) {
   }
 }
 
-module.exports = { postArticuloDeposito, getArticuloDepositos };
+// Deshabilita o rehabilita el par articulo-deposito (HU-5). No borra stock:
+// si hay unidades cargadas, la confirmacion explicita queda a cargo del
+// frontend (el toggle aca no rechaza la baja, solo la aplica).
+async function patchEstadoArticuloDeposito(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "id invalido" });
+  }
+  const { activo } = req.body ?? {};
+  if (typeof activo !== "boolean") {
+    return res.status(400).json({ error: "activo es obligatorio y debe ser booleano" });
+  }
+
+  try {
+    const existente = await articuloDepositoServicio.obtenerHabilitacionPorId(id);
+    if (!existente) {
+      return res.status(404).json({ error: "Habilitacion no encontrada" });
+    }
+    const habilitacion = await articuloDepositoServicio.cambiarEstadoHabilitacion(id, activo);
+    return res.json(habilitacion);
+  } catch (err) {
+    console.error("Error al cambiar estado de la habilitacion:", err);
+    return res.status(500).json({ error: "No se pudo cambiar el estado de la habilitacion." });
+  }
+}
+
+module.exports = { postArticuloDeposito, getArticuloDepositos, patchEstadoArticuloDeposito };

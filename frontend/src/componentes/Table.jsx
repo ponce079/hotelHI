@@ -1,4 +1,4 @@
-export function Table({ columnas, filas, renderFila, vacio = "No hay datos para mostrar." }) {
+export function Table({ columnas, filas, renderFila, vacio = "No hay datos para mostrar.", columnasDerecha = [] }) {
   if (!filas || filas.length === 0) {
     return <p className="py-8 text-center text-sm text-piedra">{vacio}</p>;
   }
@@ -9,7 +9,12 @@ export function Table({ columnas, filas, renderFila, vacio = "No hay datos para 
         <thead>
           <tr>
             {columnas.map((col) => (
-              <th key={col} className="border-b border-borde px-3 pb-2 text-left text-xs font-bold uppercase tracking-wide text-piedra">
+              <th
+                key={col}
+                className={`border-b border-borde px-3 pb-2 font-body text-xs font-semibold uppercase tracking-wide text-tinta/55 ${
+                  columnasDerecha.includes(col) ? "text-right" : "text-left"
+                }`}
+              >
                 {col}
               </th>
             ))}

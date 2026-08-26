@@ -4,8 +4,10 @@ export function StockPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <h1 className="font-display text-2xl font-semibold">Control de Stock</h1>
-        <p className="text-sm text-piedra">Stock actual de cada artículo por depósito.</p>
+        <h1 className="font-heading text-[34px] font-semibold">Control de Stock</h1>
+        <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
+          HU 6 — consulta de stock por artículo y depósito
+        </p>
       </div>
       <StockLista />
     </div>

@@ -8,6 +8,7 @@ const prisma = require("../src/lib/prisma");
 const TIPOS = [
   { descripcion: "Entrada por Compra", tipo: "E" },
   { descripcion: "Ajuste Positivo", tipo: "E" },
+  { descripcion: "Entrada por Transferencia", tipo: "E" },
   { descripcion: "Salida por Transferencia", tipo: "S" },
   { descripcion: "Ajuste Negativo", tipo: "S" },
 ];

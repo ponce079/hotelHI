@@ -36,7 +36,7 @@ async function listarArticulos({ q, categoria, unidadMedida, estado, page = 1, p
   const [items, total] = await Promise.all([
     prisma.articulo.findMany({
       where,
-      orderBy: { nombre: "asc" },
+      orderBy: [{ activo: "desc" }, { nombre: "asc" }],
       skip: (page - 1) * pageSize,
       take: pageSize,
     }),

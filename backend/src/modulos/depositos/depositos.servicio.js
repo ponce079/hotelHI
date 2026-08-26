@@ -19,4 +19,8 @@ async function obtenerDepositoPorId(id) {
   return prisma.deposito.findUnique({ where: { id } });
 }
 
-module.exports = { crearDeposito, listarDepositos, obtenerDepositoPorId };
+async function actualizarDeposito(id, { nombre, ubicacion, responsable }) {
+  return prisma.deposito.update({ where: { id }, data: { nombre, ubicacion, responsable } });
+}
+
+module.exports = { crearDeposito, listarDepositos, obtenerDepositoPorId, actualizarDeposito };
