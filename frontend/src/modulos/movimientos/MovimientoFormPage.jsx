@@ -8,7 +8,6 @@ import { registrarEntrada, registrarSalida, registrarTransferencia } from "./mov
 import { listarDepositos } from "../depositos/depositos.api";
 import { listarTiposMovimiento } from "../tipos-movimiento/tiposMovimiento.api";
 import { consultarStock } from "../stock/stock.api";
-import { hoyISO } from "../../lib/fechas";
 
 const ITEM_VACIO = { articuloId: "", cantidad: "" };
 const VACIO = { depositoId: "", depositoDestinoId: "", tipoMovStockId: "", contraparte: "", detalle: "", items: [{ ...ITEM_VACIO }] };
