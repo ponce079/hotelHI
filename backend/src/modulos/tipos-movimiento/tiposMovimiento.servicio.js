@@ -15,4 +15,17 @@ async function listarTiposMovimiento() {
   });
 }
 
-module.exports = { crearTipoMovimiento, listarTiposMovimiento };
+async function obtenerTipoMovimientoPorId(id) {
+  return prisma.tipoMovimientoStock.findUnique({ where: { id } });
+}
+
+async function cambiarEstadoTipoMovimiento(id, activo) {
+  return prisma.tipoMovimientoStock.update({ where: { id }, data: { activo } });
+}
+
+module.exports = {
+  crearTipoMovimiento,
+  listarTiposMovimiento,
+  obtenerTipoMovimientoPorId,
+  cambiarEstadoTipoMovimiento,
+};

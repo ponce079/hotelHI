@@ -38,15 +38,18 @@ async function postArticuloDeposito(req, res) {
         resultados.push({ depositoId, estado: "inactivo" });
         continue;
       }
-      try {
-        await articuloDepositoServicio.habilitarArticuloEnDeposito({ articuloId, depositoId });
+      // Se busca el estado previo ANTES del upsert para poder distinguir
+      // "creada" (par nuevo) de "reactivada" (existia pero estaba dado de
+      // baja) de "ya_existia" (ya estaba activa, no cambio nada) — el
+      // upsert por si solo no lo informa.
+      const existente = await articuloDepositoServicio.buscarHabilitacion(articuloId, depositoId);
+      await articuloDepositoServicio.habilitarArticuloEnDeposito({ articuloId, depositoId });
+      if (!existente) {
         resultados.push({ depositoId, estado: "creada" });
-      } catch (err) {
-        if (err.code === "P2002") {
-          resultados.push({ depositoId, estado: "ya_existia" });
-        } else {
-          throw err;
-        }
+      } else if (!existente.activo) {
+        resultados.push({ depositoId, estado: "reactivada" });
+      } else {
+        resultados.push({ depositoId, estado: "ya_existia" });
       }
     }
 

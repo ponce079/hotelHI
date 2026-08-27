@@ -2,10 +2,19 @@
 
 const prisma = require("../../lib/prisma");
 
+// Upsert en vez de create: si el par ya existia pero estaba deshabilitado
+// (baja logica via cambiarEstadoHabilitacion), "habilitar" lo reactiva en
+// vez de chocar con la unique constraint y no hacer nada.
 async function habilitarArticuloEnDeposito({ articuloId, depositoId }) {
-  return prisma.articuloDeposito.create({
-    data: { articuloId, depositoId },
+  return prisma.articuloDeposito.upsert({
+    where: { articuloId_depositoId: { articuloId, depositoId } },
+    update: { activo: true },
+    create: { articuloId, depositoId },
   });
+}
+
+async function buscarHabilitacion(articuloId, depositoId) {
+  return prisma.articuloDeposito.findUnique({ where: { articuloId_depositoId: { articuloId, depositoId } } });
 }
 
 async function listarHabilitaciones() {
@@ -36,6 +45,7 @@ async function cambiarEstadoHabilitacion(id, activo) {
 
 module.exports = {
   habilitarArticuloEnDeposito,
+  buscarHabilitacion,
   listarHabilitaciones,
   obtenerDepositoPorId,
   obtenerHabilitacionPorId,

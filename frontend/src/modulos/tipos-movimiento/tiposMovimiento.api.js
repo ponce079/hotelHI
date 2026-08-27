@@ -9,3 +9,8 @@ export async function crearTipoMovimiento(payload) {
   const { data } = await api.post("/tipos-movimiento", payload);
   return data;
 }
+
+export async function cambiarEstadoTipoMovimiento(id, activo) {
+  const { data } = await api.patch(`/tipos-movimiento/${id}/estado`, { activo });
+  return data;
+}

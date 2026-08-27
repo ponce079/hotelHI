@@ -63,6 +63,9 @@ model TipoMovimientoStock {
   id          Int               @id @default(autoincrement())
   descripcion String            @unique
   tipo        String
+  // "NORMAL": elegible a mano en Entrada/Salida. "TRANSFERENCIA": reservado
+  // para el flujo de Transferencia/Recepción, el sistema lo asigna solo.
+  contexto    String            @default("NORMAL")
   activo      Boolean           @default(true)
   movimientos MovimientoStock[]
 

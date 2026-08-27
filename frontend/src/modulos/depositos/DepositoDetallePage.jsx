@@ -89,14 +89,16 @@ export function DepositoDetallePage() {
 
   const filasConEstado = (filas ?? []).map((f) => ({ ...f, estado: calcularEstado(f.stockActual, f.stockMinimo, f.stockMaximo) }));
   const categorias = ["Todas", ...new Set(filasConEstado.map((f) => f.categoria))];
-  const filasFiltradas = filasConEstado
-    .filter(
-      (f) =>
-        (cat === "Todas" || f.categoria === cat) &&
-        f.nombre.toLowerCase().includes(q.toLowerCase()) &&
-        (!soloCriticos || f.estado.label === "Crítico")
-    )
-    .sort((a, b) => Number(b.activo) - Number(a.activo));
+  // Un articulo deshabilitado en este deposito desaparece de la lista — para
+  // eso existe el boton "+ Habilitar articulo", que lo reactiva. No se
+  // muestra grisado con un boton "Rehabilitar" al lado.
+  const filasFiltradas = filasConEstado.filter(
+    (f) =>
+      f.activo &&
+      (cat === "Todas" || f.categoria === cat) &&
+      f.nombre.toLowerCase().includes(q.toLowerCase()) &&
+      (!soloCriticos || f.estado.label === "Crítico")
+  );
 
   const totalArticulos = filasConEstado.filter((f) => f.activo).length;
   const totalUnidades = filasConEstado.reduce((acc, f) => acc + Number(f.stockActual), 0);
@@ -189,14 +191,14 @@ export function DepositoDetallePage() {
       <div className="rounded-lg border border-borde bg-white p-5">
         {cargandoStock && <p className="mb-3 text-sm text-piedra">Cargando stock…</p>}
         <Table
-          columnas={["Artículo", "Categoría", "Stock", "Nivel", "Mín.", "Máx.", "Estado", "Habilitación", "Acciones"]}
+          columnas={["Artículo", "Categoría", "Stock", "Nivel", "Mín.", "Máx.", "Estado", "Acciones"]}
           columnasDerecha={["Acciones"]}
           filas={filasFiltradas}
           vacio="Ningún artículo del depósito coincide con los filtros."
           renderFila={(f) => {
             const barW = f.stockMaximo ? Math.min(100, Math.round((Number(f.stockActual) / Number(f.stockMaximo)) * 100)) : 0;
             return (
-              <tr key={f.articuloDepositoId} className={`border-b border-borde last:border-0 ${f.activo ? "" : "bg-hueso text-piedra"}`}>
+              <tr key={f.articuloDepositoId} className="border-b border-borde last:border-0">
                 <td className="px-3 py-2">
                   <div className="font-body text-[13.5px] font-semibold">{f.nombre}</div>
                 </td>
@@ -214,9 +216,6 @@ export function DepositoDetallePage() {
                 <td className="px-3 py-2">
                   <Badge variante={f.estado.variante}>{f.estado.label}</Badge>
                 </td>
-                <td className="px-3 py-2">
-                  <Badge variante={f.activo ? "ok" : "neutro"}>{f.activo ? "Habilitado" : "Deshabilitado"}</Badge>
-                </td>
                 <td className="px-3 py-2 text-right">
                   <div className="flex justify-end gap-1.5">
                     <Button
@@ -227,12 +226,8 @@ export function DepositoDetallePage() {
                       Kardex
                     </Button>
                     {puede("operar") && (
-                      <Button
-                        variante={f.activo ? "baja" : "alta"}
-                        tamano="fila"
-                        onClick={() => setParaCambiarEstado(f)}
-                      >
-                        {f.activo ? "Deshabilitar" : "Rehabilitar"}
+                      <Button variante="baja" tamano="fila" onClick={() => setParaCambiarEstado(f)}>
+                        Deshabilitar
                       </Button>
                     )}
                   </div>
@@ -257,20 +252,16 @@ export function DepositoDetallePage() {
 
       <ConfirmDialog
         abierto={Boolean(paraCambiarEstado)}
-        titulo={paraCambiarEstado?.activo ? "¿Deshabilitar artículo?" : "¿Rehabilitar artículo?"}
+        titulo="¿Deshabilitar artículo?"
         mensaje={
-          paraCambiarEstado?.activo
-            ? paraCambiarEstado?.stockActual > 0
-              ? `Quedan ${paraCambiarEstado?.stockActual} ${paraCambiarEstado?.unidadMedida} de "${paraCambiarEstado?.nombre}" en este depósito. Deshabilitarlo igual no borra ese stock, pero el artículo deja de poder elegirse en nuevos movimientos acá.`
-              : `"${paraCambiarEstado?.nombre}" dejará de poder elegirse en nuevos movimientos de este depósito. Podés volver a habilitarlo cuando quieras.`
-            : `"${paraCambiarEstado?.nombre}" volverá a estar disponible para movimientos en este depósito.`
+          paraCambiarEstado?.stockActual > 0
+            ? `Quedan ${paraCambiarEstado?.stockActual} ${paraCambiarEstado?.unidadMedida} de "${paraCambiarEstado?.nombre}" en este depósito. Deshabilitarlo igual no borra ese stock, pero el artículo desaparece de esta lista y deja de poder elegirse en nuevos movimientos acá — podés volver a habilitarlo con "+ Habilitar artículo".`
+            : `"${paraCambiarEstado?.nombre}" desaparecerá de esta lista y dejará de poder elegirse en nuevos movimientos de este depósito. Podés volver a habilitarlo con "+ Habilitar artículo" cuando quieras.`
         }
-        textoConfirmar={paraCambiarEstado?.activo ? "Sí, deshabilitar" : "Sí, rehabilitar"}
-        variante={paraCambiarEstado?.activo ? "baja" : "alta"}
+        textoConfirmar="Sí, deshabilitar"
+        variante="baja"
         onCancelar={() => setParaCambiarEstado(null)}
-        onConfirmar={() =>
-          mutacionEstado.mutate({ articuloDepositoId: paraCambiarEstado.articuloDepositoId, activo: !paraCambiarEstado.activo })
-        }
+        onConfirmar={() => mutacionEstado.mutate({ articuloDepositoId: paraCambiarEstado.articuloDepositoId, activo: false })}
       />
 
       <Toast mensaje={toast} />

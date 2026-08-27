@@ -4,6 +4,7 @@ import { Trash2 } from "lucide-react";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
+import { MensajeModal } from "../../componentes/MensajeModal";
 import { registrarEntrada, registrarSalida, registrarTransferencia } from "./movimientos.api";
 import { listarDepositos } from "../depositos/depositos.api";
 import { listarTiposMovimiento } from "../tipos-movimiento/tiposMovimiento.api";
@@ -46,6 +47,7 @@ export function MovimientoFormPage({ modo, onVolver, onExito }) {
   const esTransfer = modo === "transfer";
   const [form, setForm] = useState(VACIO);
   const [errores, setErrores] = useState({});
+  const [mensajeExito, setMensajeExito] = useState("");
   const queryClient = useQueryClient();
 
   const { data: depositos } = useQuery({ queryKey: ["depositos"], queryFn: listarDepositos });
@@ -61,7 +63,7 @@ export function MovimientoFormPage({ modo, onVolver, onExito }) {
     enabled: esTransfer && Boolean(form.depositoDestinoId),
   });
 
-  const tiposFiltrados = tiposMovimiento?.filter((t) => t.activo && (esTransfer ? t.tipo === "S" : t.tipo === modo)) ?? [];
+  const tiposFiltrados = tiposMovimiento?.filter((t) => t.activo && t.contexto === "NORMAL" && t.tipo === modo) ?? [];
 
   const idsHabilitadosDestino = new Set((stockDestino ?? []).map((f) => f.articuloId));
   const articulosDisponibles = esTransfer
@@ -81,22 +83,21 @@ export function MovimientoFormPage({ modo, onVolver, onExito }) {
       const detalle = !esTransfer && form.contraparte ? form.contraparte + (obs ? ` — ${obs}` : "") : obs || undefined;
       const payload = {
         depositoId: Number(form.depositoId),
-        tipoMovStockId: Number(form.tipoMovStockId),
         detalle,
         items: form.items.map((item) => ({ articuloId: Number(item.articuloId), cantidad: Number(item.cantidad) })),
       };
       if (esTransfer) return registrarTransferencia({ ...payload, depositoDestinoId: Number(form.depositoDestinoId) });
-      return modo === "E" ? registrarEntrada(payload) : registrarSalida(payload);
+      const payloadConTipo = { ...payload, tipoMovStockId: Number(form.tipoMovStockId) };
+      return modo === "E" ? registrarEntrada(payloadConTipo) : registrarSalida(payloadConTipo);
     },
     onSuccess: (resultado) => {
       queryClient.invalidateQueries({ queryKey: ["stock"] });
       queryClient.invalidateQueries({ queryKey: ["movimientos"] });
-      const label = esTransfer ? "Transferencia" : modo === "E" ? "Entrada" : "Salida";
-      onExito(
-        esTransfer
-          ? `Transferencia MOV-${String(resultado.id).padStart(4, "0")} enviada — queda en tránsito hasta que el destino confirme la recepción.`
-          : `${label} MOV-${String(resultado.id).padStart(4, "0")} registrada.`
-      );
+      const idMov = String(resultado.id).padStart(4, "0");
+      const mensaje = esTransfer
+        ? `Transferencia MOV-${idMov} exitosa al depósito destino — queda pendiente hasta que el depósito destino confirme su llegada.`
+        : `${modo === "E" ? "Entrada" : "Salida"} MOV-${idMov} registrada.`;
+      setMensajeExito(mensaje);
     },
     onError: (error) => {
       setErrores({ general: error?.response?.data?.error ?? "No se pudo registrar el movimiento." });
@@ -125,7 +126,7 @@ export function MovimientoFormPage({ modo, onVolver, onExito }) {
     } else if (!form.contraparte) {
       nuevosErrores.contraparte = modo === "E" ? "Elegí de dónde viene." : "Elegí a dónde va.";
     }
-    if (!form.tipoMovStockId) nuevosErrores.tipoMovStockId = "Elegí un tipo de movimiento.";
+    if (!esTransfer && !form.tipoMovStockId) nuevosErrores.tipoMovStockId = "Elegí un tipo de movimiento.";
 
     const idsVistos = new Set();
     const erroresItems = form.items.map((item) => {
@@ -167,26 +168,28 @@ export function MovimientoFormPage({ modo, onVolver, onExito }) {
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-3.5 rounded-[18.4px] bg-white px-6 py-[22px]">
             <div className="flex flex-wrap gap-3.5">
-              <div className="min-w-[240px] flex-1">
-                <Select
-                  label="Tipo de movimiento"
-                  value={form.tipoMovStockId}
-                  onChange={(e) => setForm({ ...form, tipoMovStockId: e.target.value })}
-                  error={errores.tipoMovStockId}
-                >
-                  <option value="">Seleccionar…</option>
-                  {tiposFiltrados.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.descripcion}
-                    </option>
-                  ))}
-                </Select>
-                {tiposFiltrados.length === 0 && (
-                  <p className="mt-1.5 text-xs text-piedra">
-                    No hay tipos de {esTransfer || modo === "S" ? "Salida" : "Entrada"} cargados. Cargalos primero en Movimientos → Tipos de movimiento.
-                  </p>
-                )}
-              </div>
+              {!esTransfer && (
+                <div className="min-w-[240px] flex-1">
+                  <Select
+                    label="Tipo de movimiento"
+                    value={form.tipoMovStockId}
+                    onChange={(e) => setForm({ ...form, tipoMovStockId: e.target.value })}
+                    error={errores.tipoMovStockId}
+                  >
+                    <option value="">Seleccionar…</option>
+                    {tiposFiltrados.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.descripcion}
+                      </option>
+                    ))}
+                  </Select>
+                  {tiposFiltrados.length === 0 && (
+                    <p className="mt-1.5 text-xs text-piedra">
+                      No hay tipos de {modo === "S" ? "Salida" : "Entrada"} cargados. Cargalos primero en Movimientos → Tipos de movimiento.
+                    </p>
+                  )}
+                </div>
+              )}
               <div className="w-[150px]">
                 <Input label="Fecha" value={new Date().toLocaleDateString("es-AR")} disabled />
               </div>
@@ -481,6 +484,7 @@ export function MovimientoFormPage({ modo, onVolver, onExito }) {
           )}
         </aside>
       </div>
+      <MensajeModal mensaje={mensajeExito} onCerrar={() => { setMensajeExito(""); onExito(); }} />
     </div>
   );
 }

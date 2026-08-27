@@ -43,6 +43,11 @@ async function registrarSalida({ depositoId, tipoMovStockId, detalle, usuario, i
   if (tipoMov.tipo !== "S") {
     throw new ErrorDeNegocio(`El tipo de movimiento '${tipoMov.descripcion}' no es de Salida (tipo='S').`);
   }
+  if (tipoMov.contexto !== "NORMAL") {
+    throw new ErrorDeNegocio(
+      `El tipo de movimiento '${tipoMov.descripcion}' es exclusivo del flujo de Transferencia y no se puede elegir a mano.`
+    );
+  }
 
   // --- Validar depósito ---
   const deposito = await prisma.deposito.findUnique({ where: { id: Number(depositoId) } });

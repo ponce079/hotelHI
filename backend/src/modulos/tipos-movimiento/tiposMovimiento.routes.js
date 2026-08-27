@@ -8,5 +8,6 @@ const router = express.Router();
 
 router.post("/", tiposMovimientoControlador.postTipoMovimiento);
 router.get("/", tiposMovimientoControlador.getTiposMovimiento);
+router.patch("/:id/estado", tiposMovimientoControlador.patchEstadoTipoMovimiento);
 
 module.exports = router;

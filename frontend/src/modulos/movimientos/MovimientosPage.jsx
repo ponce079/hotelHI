@@ -6,8 +6,6 @@ import { MovimientoFormPage } from "./MovimientoFormPage";
 import { TipoMovimientoForm } from "../tipos-movimiento/TipoMovimientoForm";
 import { TiposMovimientoLista } from "../tipos-movimiento/TiposMovimientoLista";
 import { Button } from "../../componentes/Button";
-import { Toast } from "../../componentes/Toast";
-import { useToast } from "../../lib/useToast";
 import { useSesion } from "../../lib/sesion";
 
 const TABS = [
@@ -17,7 +15,6 @@ const TABS = [
 
 export function MovimientosPage() {
   const { puede } = useSesion();
-  const { toast, mostrarToast } = useToast();
   const location = useLocation();
   const navigate = useNavigate();
   const [tab, setTab] = useState("registro");
@@ -33,19 +30,7 @@ export function MovimientosPage() {
   }, []);
 
   if (modoForm) {
-    return (
-      <>
-        <MovimientoFormPage
-          modo={modoForm}
-          onVolver={() => setModoForm(null)}
-          onExito={(mensaje) => {
-            setModoForm(null);
-            mostrarToast(mensaje);
-          }}
-        />
-        <Toast mensaje={toast} />
-      </>
-    );
+    return <MovimientoFormPage modo={modoForm} onVolver={() => setModoForm(null)} onExito={() => setModoForm(null)} />;
   }
 
   return (
@@ -95,8 +80,6 @@ export function MovimientosPage() {
           <TiposMovimientoLista />
         </div>
       )}
-
-      <Toast mensaje={toast} />
     </div>
   );
 }

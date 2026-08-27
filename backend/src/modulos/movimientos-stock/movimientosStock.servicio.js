@@ -41,6 +41,11 @@ async function registrarEntrada({ depositoId, tipoMovStockId, detalle, usuario, 
   if (tipoMov.tipo !== "E") {
     throw new ErrorDeNegocio(`El tipo de movimiento '${tipoMov.descripcion}' no es de Entrada (tipo='E').`);
   }
+  if (tipoMov.contexto !== "NORMAL") {
+    throw new ErrorDeNegocio(
+      `El tipo de movimiento '${tipoMov.descripcion}' es exclusivo del flujo de Transferencia y no se puede elegir a mano.`
+    );
+  }
 
   // --- Validar depósito ---
   const deposito = await prisma.deposito.findUnique({ where: { id: Number(depositoId) } });
@@ -154,9 +159,9 @@ async function listarMovimientos({ depositoId, destinoId, articuloId, estado, ti
 // registrarSalida (habilitacion + stock en origen), mas habilitacion en
 // destino. No crea la entrada todavia — el movimiento queda "En tránsito"
 // hasta que el destino confirma con confirmarRecepcion.
-async function registrarTransferencia({ depositoId, depositoDestinoId, tipoMovStockId, detalle, usuario, items }) {
-  if (!depositoId || !depositoDestinoId || !tipoMovStockId) {
-    throw new ErrorDeNegocio("depositoId, depositoDestinoId y tipoMovStockId son obligatorios.");
+async function registrarTransferencia({ depositoId, depositoDestinoId, detalle, usuario, items }) {
+  if (!depositoId || !depositoDestinoId) {
+    throw new ErrorDeNegocio("depositoId y depositoDestinoId son obligatorios.");
   }
   if (Number(depositoId) === Number(depositoDestinoId)) {
     throw new ErrorDeNegocio("El depósito destino no puede ser igual al de origen.");
@@ -172,13 +177,15 @@ async function registrarTransferencia({ depositoId, depositoDestinoId, tipoMovSt
     throw new ErrorDeNegocio("Cada ítem necesita articuloId y una cantidad mayor a 0.");
   }
 
-  const tipoMov = await prisma.tipoMovimientoStock.findUnique({ where: { id: Number(tipoMovStockId) } });
-  if (!tipoMov || !tipoMov.activo) {
-    throw new ErrorDeNegocio("El tipo de movimiento indicado no existe o está inactivo.");
-  }
-  if (tipoMov.tipo !== "S") {
+  // El tipo de movimiento del lado salida de una transferencia no lo elige
+  // el usuario: siempre es el tipo S de contexto TRANSFERENCIA sembrado por
+  // seed-tipos-movimiento.js.
+  const tipoMov = await prisma.tipoMovimientoStock.findFirst({
+    where: { tipo: "S", contexto: "TRANSFERENCIA", activo: true },
+  });
+  if (!tipoMov) {
     throw new ErrorDeNegocio(
-      `El tipo de movimiento '${tipoMov.descripcion}' debe ser de Salida (tipo='S') para una transferencia.`
+      "No hay un tipo de movimiento de Salida activo con contexto TRANSFERENCIA; correr seed-tipos-movimiento.js."
     );
   }
 
@@ -231,7 +238,7 @@ async function registrarTransferencia({ depositoId, depositoDestinoId, tipoMovSt
         data: {
           depositoId: Number(depositoId),
           depositoDestinoId: Number(depositoDestinoId),
-          tipoMovStockId: Number(tipoMovStockId),
+          tipoMovStockId: tipoMov.id,
           detalle: detalle || null,
           usuario: usuario || null,
           estado: "En tránsito",
@@ -316,11 +323,11 @@ async function confirmarRecepcion(id, { lineas, usuario } = {}) {
   // Requiere un tipo de movimiento de Entrada dedicado a transferencias
   // (sembrado por backend/scripts/seed-tipos-movimiento.js).
   const tipoEntrada = await prisma.tipoMovimientoStock.findFirst({
-    where: { tipo: "E", activo: true, descripcion: { contains: "TRANSFERENCIA" } },
+    where: { tipo: "E", activo: true, contexto: "TRANSFERENCIA" },
   });
   if (!tipoEntrada) {
     throw new ErrorDeNegocio(
-      "No hay un tipo de movimiento de Entrada activo con 'Transferencia' en la descripción; creá uno antes de confirmar recepciones."
+      "No hay un tipo de movimiento de Entrada activo con contexto TRANSFERENCIA; correr seed-tipos-movimiento.js."
     );
   }
 
