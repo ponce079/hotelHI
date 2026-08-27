@@ -6,12 +6,15 @@ import { Table } from "../../componentes/Table";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
 import { Toast } from "../../componentes/Toast";
+import { SinPermiso } from "../../componentes/SinPermiso";
 import { consultarStock, actualizarParametrosStock } from "./stock.api";
 import { listarDepositos } from "../depositos/depositos.api";
 import { useToast } from "../../lib/useToast";
+import { useSesion } from "../../lib/sesion";
 
 export function MinMaxPage() {
   const navigate = useNavigate();
+  const { puede } = useSesion();
   const [searchParams, setSearchParams] = useSearchParams();
   const depositoId = searchParams.get("depositoId") ?? "";
   const { toast, mostrarToast } = useToast();
@@ -62,6 +65,8 @@ export function MinMaxPage() {
       payload: { stockMinimo: Number(edicion.stockMinimo), stockMaximo: Number(edicion.stockMaximo) },
     });
   }
+
+  if (!puede("param")) return <SinPermiso />;
 
   return (
     <div className="flex flex-col gap-6">

@@ -249,22 +249,25 @@ async function registrarTransferencia({ depositoId, depositoDestinoId, detalle, 
         const cantidad = Number(item.cantidad);
         const articuloDepositoId = habilitacionPorArticulo[item.articuloId].id;
 
-        const stock = await tx.articuloDepositoStock.findUnique({ where: { articuloDepositoId } });
-        const stockActual = stock ? Number(stock.stockActual) : 0;
-        if (stockActual < cantidad) {
-          throw new ErrorDeNegocio(
-            `Stock insuficiente para el artículo ${item.articuloId}. Actual: ${stockActual}, Solicitado: ${cantidad}.`
-          );
-        }
-
         await tx.movimientoStockDetalle.create({
           data: { movStockId: movimiento.id, articuloId: item.articuloId, cantidad },
         });
 
-        await tx.articuloDepositoStock.update({
-          where: { articuloDepositoId },
+        // updateMany con el chequeo de stock en el WHERE: verificar y
+        // descontar en una sola sentencia atómica, para que dos
+        // transferencias/salidas simultáneas sobre el mismo artículo no
+        // puedan pasar ambas la validación con el mismo stock leído.
+        const resultado = await tx.articuloDepositoStock.updateMany({
+          where: { articuloDepositoId, stockActual: { gte: cantidad } },
           data: { stockActual: { decrement: cantidad } },
         });
+        if (resultado.count === 0) {
+          const stock = await tx.articuloDepositoStock.findUnique({ where: { articuloDepositoId } });
+          const stockActual = stock ? Number(stock.stockActual) : 0;
+          throw new ErrorDeNegocio(
+            `Stock insuficiente para el artículo ${item.articuloId}. Actual: ${stockActual}, Solicitado: ${cantidad}.`
+          );
+        }
       }
 
       return tx.movimientoStock.findUnique({
@@ -294,6 +297,10 @@ async function confirmarRecepcion(id, { lineas, usuario } = {}) {
   }
   if (!Array.isArray(lineas) || lineas.length === 0) {
     throw new ErrorDeNegocio("Debe informar la cantidad recibida de al menos un artículo en 'lineas'.");
+  }
+  const articuloIdsRecibidos = lineas.map((l) => Number(l.articuloId));
+  if (new Set(articuloIdsRecibidos).size !== articuloIdsRecibidos.length) {
+    throw new ErrorDeNegocio("No se puede repetir el mismo artículo dos veces en 'lineas'.");
   }
 
   const movimiento = await prisma.movimientoStock.findUnique({
@@ -340,6 +347,7 @@ async function confirmarRecepcion(id, { lineas, usuario } = {}) {
     where: {
       depositoId: movimiento.depositoDestinoId,
       articuloId: { in: movimiento.detalleMovimientos.map((d) => d.articuloId) },
+      activo: true,
     },
   });
   const habilitacionPorArticulo = Object.fromEntries(habilitacionesDestino.map((h) => [h.articuloId, h]));

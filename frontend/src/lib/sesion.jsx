@@ -60,14 +60,18 @@ export function SesionProvider({ children }) {
       rolInfo: rol ? ROLES[rol] : null,
       iniciarSesion,
       cerrarSesion,
-      // abmDeposito: alta/edicion de depositos. operar: registrar movimientos/
+      // abmDeposito: alta/edicion de depositos. abmArticulo: alta/edicion/baja
+      // de articulos del catalogo. operar: registrar movimientos/
       // transferencias y confirmar recepciones. param: definir min/max.
+      // Default-deny: una accion no reconocida NO otorga permiso (antes
+      // caia en `return true`, que era un agujero de seguridad silencioso).
       puede(accion) {
         if (!rol) return false;
         if (accion === "abmDeposito") return rol === "admin";
+        if (accion === "abmArticulo") return rol === "admin" || rol === "deposito";
         if (accion === "operar") return rol === "admin" || rol === "deposito";
         if (accion === "param") return rol === "admin" || rol === "compras";
-        return true;
+        return false;
       },
     };
   }, [sesion, iniciarSesion, cerrarSesion]);

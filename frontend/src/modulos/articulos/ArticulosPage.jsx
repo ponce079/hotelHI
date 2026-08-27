@@ -1,6 +1,10 @@
 import { ArticulosLista } from "./ArticulosLista";
+import { SinPermiso } from "../../componentes/SinPermiso";
+import { useSesion } from "../../lib/sesion";
 
 export function ArticulosPage() {
+  const { puede } = useSesion();
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -9,7 +13,7 @@ export function ArticulosPage() {
           HU 1 y 2 — ABM del catálogo maestro, con habilitación opcional en depósitos
         </p>
       </div>
-      <ArticulosLista />
+      {puede("abmArticulo") ? <ArticulosLista /> : <SinPermiso />}
     </div>
   );
 }

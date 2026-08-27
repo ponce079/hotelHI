@@ -21,8 +21,19 @@ async function actualizarArticulo(id, { nombre, unidadMedida, categoria }) {
   });
 }
 
+// Dar de baja un articulo cascadea a sus habilitaciones por deposito — si no,
+// el articulo queda "dado de baja" pero sigue apareciendo como stock activo
+// y operable en cada deposito donde estaba habilitado. Reactivar el articulo
+// NO reactiva esas habilitaciones: quedan como estaban, para no reabrir de
+// golpe depositos que se hayan deshabilitado por otro motivo.
 async function cambiarEstadoArticulo(id, activo) {
-  return prisma.articulo.update({ where: { id }, data: { activo } });
+  return prisma.$transaction(async (tx) => {
+    const articulo = await tx.articulo.update({ where: { id }, data: { activo } });
+    if (!activo) {
+      await tx.articuloDeposito.updateMany({ where: { articuloId: id, activo: true }, data: { activo: false } });
+    }
+    return articulo;
+  });
 }
 
 async function listarArticulos({ q, categoria, unidadMedida, estado, page = 1, pageSize = 10 } = {}) {

@@ -93,28 +93,26 @@ async function registrarSalida({ depositoId, tipoMovStockId, detalle, usuario, i
         const cantidad = Number(item.cantidad);
         const articuloDepositoId = habilitacionPorArticulo[item.articuloId].id;
 
-        // Chequeo de stock pegado al decrement, dentro de la misma
-        // transacción. Reduce (no elimina del todo) la ventana de carrera
-        // entre dos salidas simultáneas sobre el mismo artículo — para
-        // cerrarla del todo haría falta un update condicional tipo
-        // updateMany({ where: { stockActual: { gte: cantidad } } }).
-        // Queda como mejora de hardening post-Sprint 1.
-        const stock = await tx.articuloDepositoStock.findUnique({ where: { articuloDepositoId } });
-        const stockActual = stock ? Number(stock.stockActual) : 0;
-        if (stockActual < cantidad) {
-          throw new ErrorDeNegocio(
-            `Stock insuficiente para el artículo ${item.articuloId}. Actual: ${stockActual}, Solicitado: ${cantidad}.`
-          );
-        }
-
         await tx.movimientoStockDetalle.create({
           data: { movStockId: movimiento.id, articuloId: item.articuloId, cantidad },
         });
 
-        await tx.articuloDepositoStock.update({
-          where: { articuloDepositoId },
+        // updateMany con el chequeo de stock en el WHERE hace el
+        // "verificar y descontar" atómico en una sola sentencia SQL — dos
+        // salidas simultáneas sobre el mismo artículo ya no pueden pasar
+        // ambas la validación con el mismo stock leído (evita quedar en
+        // negativo). Si count===0, no había stock suficiente.
+        const resultado = await tx.articuloDepositoStock.updateMany({
+          where: { articuloDepositoId, stockActual: { gte: cantidad } },
           data: { stockActual: { decrement: cantidad } },
         });
+        if (resultado.count === 0) {
+          const stock = await tx.articuloDepositoStock.findUnique({ where: { articuloDepositoId } });
+          const stockActual = stock ? Number(stock.stockActual) : 0;
+          throw new ErrorDeNegocio(
+            `Stock insuficiente para el artículo ${item.articuloId}. Actual: ${stockActual}, Solicitado: ${cantidad}.`
+          );
+        }
       }
 
       return tx.movimientoStock.findUnique({

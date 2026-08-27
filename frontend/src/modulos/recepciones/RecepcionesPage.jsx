@@ -6,10 +6,13 @@ import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
 import { Toast } from "../../componentes/Toast";
 import { ConfirmDialog } from "../../componentes/ConfirmDialog";
+import { SinPermiso } from "../../componentes/SinPermiso";
 import { listarMovimientos, confirmarRecepcion } from "../movimientos/movimientos.api";
 import { useToast } from "../../lib/useToast";
+import { useSesion } from "../../lib/sesion";
 
 export function RecepcionesPage() {
+  const { puede } = useSesion();
   const { toast, mostrarToast } = useToast();
   const queryClient = useQueryClient();
   const [recibidos, setRecibidos] = useState({}); // movId -> { articuloId: valorString }
@@ -76,6 +79,8 @@ export function RecepcionesPage() {
   }
 
   const hayDiferenciaEn = (mov) => difTotalDe(mov) > 0;
+
+  if (!puede("operar")) return <SinPermiso />;
 
   return (
     <div className="flex flex-col gap-[22px]">

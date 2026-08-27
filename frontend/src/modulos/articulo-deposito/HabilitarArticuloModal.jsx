@@ -35,23 +35,52 @@ export function HabilitarArticuloModal({ depositoId, depositoNombre, onClose, on
   }
 
   const mutacion = useMutation({
-    mutationFn: () =>
-      Promise.all(articuloIds.map((articuloId) => habilitarArticuloEnDeposito({ articuloId, depositoIds: [depositoId] }))),
-    onSuccess: (respuestas) => {
+    // Promise.allSettled (no Promise.all): si una de las N habilitaciones
+    // falla, las que ya se guardaron en el servidor no deben perderse ni
+    // esconderse detras de un error generico. `ids` se captura ahora, no se
+    // relee articuloIds mas tarde (evita atribuir el resultado al articulo
+    // equivocado si el usuario sigue tildando/destildando mientras pesa el
+    // pedido — por eso ademas los checkboxes se deshabilitan durante isPending).
+    mutationFn: async () => {
+      const ids = articuloIds;
+      const resultados = await Promise.allSettled(
+        ids.map((articuloId) => habilitarArticuloEnDeposito({ articuloId, depositoIds: [depositoId] }))
+      );
+      return { ids, resultados };
+    },
+    onSuccess: ({ ids, resultados }) => {
       queryClient.invalidateQueries({ queryKey: ["articulo-depositos"] });
       queryClient.invalidateQueries({ queryKey: ["stock"] });
       const nombrePorId = new Map((articulos?.items ?? []).map((a) => [a.id, a.nombre]));
-      const nuevas = respuestas.filter((r) => r.resultados?.[0]?.estado !== "ya_existia").length;
-      const yaExistian = respuestas.length - nuevas;
 
-      if (respuestas.length === 1) {
-        const nombre = nombrePorId.get(articuloIds[0]) ?? "El artículo";
+      const exitosas = [];
+      const fallidas = [];
+      resultados.forEach((r, i) => {
+        if (r.status === "fulfilled") exitosas.push(r.value);
+        else fallidas.push(ids[i]);
+      });
+
+      if (exitosas.length === 0) {
+        setError("No se pudo habilitar ningún artículo.");
+        return;
+      }
+
+      const nuevas = exitosas.filter((r) => r.resultados?.[0]?.estado !== "ya_existia").length;
+      const yaExistian = exitosas.length - nuevas;
+
+      if (ids.length === 1 && exitosas.length === 1) {
+        const nombre = nombrePorId.get(ids[0]) ?? "El artículo";
         onExito(yaExistian === 1 ? `${nombre} ya estaba habilitado en este depósito.` : `${nombre} habilitado en este depósito.`);
         return;
       }
+
       const partes = [];
       if (nuevas > 0) partes.push(`${nuevas} artículo${nuevas === 1 ? "" : "s"} habilitado${nuevas === 1 ? "" : "s"}`);
       if (yaExistian > 0) partes.push(`${yaExistian} ya lo estaba${yaExistian === 1 ? "" : "n"}`);
+      if (fallidas.length > 0) {
+        const nombres = fallidas.map((id) => nombrePorId.get(id) ?? "un artículo").join(", ");
+        partes.push(`${fallidas.length} fallaron (${nombres})`);
+      }
       onExito(`${partes.join(", ")} en este depósito.`);
     },
     onError: (err) => {
@@ -110,7 +139,8 @@ export function HabilitarArticuloModal({ depositoId, depositoNombre, onClose, on
                     type="checkbox"
                     checked={articuloIds.includes(a.id)}
                     onChange={() => toggleArticulo(a.id)}
-                    className="h-4 w-4 cursor-pointer accent-pino"
+                    disabled={mutacion.isPending}
+                    className="h-4 w-4 cursor-pointer accent-pino disabled:cursor-not-allowed"
                   />
                   <span className="font-mono text-xs text-tinta/55">{a.codigo}</span>
                   <span className="text-tinta">{a.nombre}</span>
