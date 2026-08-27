@@ -24,14 +24,11 @@ const LABEL_GUARDAR = { E: "Confirmar movimiento", S: "Confirmar movimiento", tr
 // agregar una columna implicaría coordinar un db push contra la base
 // compartida del equipo. Se guarda plegada dentro del campo "detalle" que
 // ya existe, en vez de inventar una columna nueva sin permiso del equipo.
-const ORIGENES_EXT = [
-  "Proveedor — Textiles del Norte",
-  "Proveedor — Distribuidora Andina",
-  "Proveedor — Química Central",
-  "Devolución — Pisos / Housekeeping",
-  "Devolución — Restaurante y Cocina",
-  "Ajuste de inventario",
-];
+//
+// El origen de Entrada es texto libre (antes era un combo con 3 proveedores
+// hardcodeados) porque todavía no existe el catálogo real de Proveedores —
+// eso es HU-18 a 21, Sprint 2. Cuando se construya, este campo se reemplaza
+// por un combo que traiga los proveedores reales desde el backend.
 const DESTINOS_EXT = [
   "Pisos / Housekeeping",
   "Restaurante y Cocina",
@@ -124,7 +121,7 @@ export function MovimientoFormPage({ modo, onVolver, onExito }) {
       else if (String(form.depositoDestinoId) === String(form.depositoId))
         nuevosErrores.depositoDestinoId = "El destino no puede ser igual al origen.";
     } else if (!form.contraparte) {
-      nuevosErrores.contraparte = modo === "E" ? "Elegí de dónde viene." : "Elegí a dónde va.";
+      nuevosErrores.contraparte = modo === "E" ? "Escribí de dónde viene." : "Elegí a dónde va.";
     }
     if (!esTransfer && !form.tipoMovStockId) nuevosErrores.tipoMovStockId = "Elegí un tipo de movimiento.";
 
@@ -236,19 +233,13 @@ export function MovimientoFormPage({ modo, onVolver, onExito }) {
             ) : modo === "E" ? (
               <div className="flex flex-wrap items-start gap-3.5">
                 <div className="min-w-[230px] flex-1">
-                  <Select
+                  <Input
                     label="Origen — de dónde viene"
                     value={form.contraparte}
                     onChange={(e) => setForm({ ...form, contraparte: e.target.value })}
                     error={errores.contraparte}
-                  >
-                    <option value="">Elegí de dónde viene…</option>
-                    {ORIGENES_EXT.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </Select>
+                    placeholder="Proveedor, devolución, ajuste…"
+                  />
                   <div className="mt-1.5 text-[11px] text-tinta/50">Proveedor, área que devuelve o ajuste</div>
                 </div>
                 <div className="pt-[30px] text-[17px] text-laton">→</div>
