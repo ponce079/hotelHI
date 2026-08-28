@@ -24,6 +24,14 @@ async function registrarSalida({ depositoId, tipoMovStockId, detalle, usuario, i
   if (!depositoId || !tipoMovStockId) {
     throw new ErrorDeNegocio("depositoId y tipoMovStockId son obligatorios.");
   }
+  // Mismo chequeo que en movimientosStock.servicio.js (Entrada, HU-12): el
+  // front exige "a donde va" antes de confirmar, pero no hay columna
+  // dedicada para esa contraparte externa — viaja plegada en "detalle". Sin
+  // este chequeo, la API aceptaba una Salida sin ningun dato de destino si
+  // se llamaba directo (sin pasar por el formulario).
+  if (!detalle || !String(detalle).trim()) {
+    throw new ErrorDeNegocio("detalle es obligatorio: debe indicar el destino del movimiento (área, motivo).");
+  }
   if (!Array.isArray(items) || items.length === 0) {
     throw new ErrorDeNegocio("Debe incluir al menos un artículo en 'items'.");
   }

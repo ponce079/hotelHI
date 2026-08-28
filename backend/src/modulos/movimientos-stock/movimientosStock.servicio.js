@@ -22,6 +22,15 @@ async function registrarEntrada({ depositoId, tipoMovStockId, detalle, usuario, 
   if (!depositoId || !tipoMovStockId) {
     throw new ErrorDeNegocio("depositoId y tipoMovStockId son obligatorios.");
   }
+  // El front exige "de donde viene" (proveedor, area, ajuste) antes de dejar
+  // confirmar, pero no hay columna dedicada para esa contraparte externa —
+  // viaja plegada en "detalle". Sin este chequeo, la API aceptaba una
+  // Entrada sin ningun dato de origen si se llamaba directo (sin pasar por
+  // el formulario), lo que contradice la propia HU-12 ("trazabilidad de
+  // cuando, cuanto y por que").
+  if (!detalle || !String(detalle).trim()) {
+    throw new ErrorDeNegocio("detalle es obligatorio: debe indicar el origen del movimiento (proveedor, área, motivo).");
+  }
   if (!Array.isArray(items) || items.length === 0) {
     throw new ErrorDeNegocio("Debe incluir al menos un artículo en 'items'.");
   }
@@ -111,7 +120,7 @@ async function registrarEntrada({ depositoId, tipoMovStockId, detalle, usuario, 
         },
       });
     },
-    { timeout: 15000, maxWait: 10000 }
+    { timeout: 30000, maxWait: 15000 }
   );
 
   return movimientoCreado;
@@ -280,7 +289,7 @@ async function registrarTransferencia({ depositoId, depositoDestinoId, detalle, 
         },
       });
     },
-    { timeout: 15000, maxWait: 10000 }
+    { timeout: 30000, maxWait: 15000 }
   );
 
   return movimientoCreado;
@@ -403,7 +412,7 @@ async function confirmarRecepcion(id, { lineas, usuario } = {}) {
         },
       });
     },
-    { timeout: 15000, maxWait: 10000 }
+    { timeout: 30000, maxWait: 15000 }
   );
 
   return resultado;
