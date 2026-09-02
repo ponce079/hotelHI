@@ -337,7 +337,13 @@ model OrdenPagoMedio {
   estadoCheque String?
   ordenPago    OrdenPago @relation(fields: [ordenPagoId], references: [id])
 
-  @@unique([banco, numeroCheque])
+  // Sin @@unique(banco, numeroCheque) a propósito: un cheque debe poder
+  // reusarse una vez que la orden que lo tenía se anula o se rechaza
+  // (HU-79, HU-86), y MySQL no tiene índices únicos parciales/condicionales
+  // como Postgres para expresar "único solo entre los vigentes". La
+  // unicidad la garantiza el código (pagos.servicio.js, revalidado dentro
+  // de la transacción) contra los medios con pagoVigente(ordenPago).
+  @@index([banco, numeroCheque], map: "ordenes_pago_medio_banco_numeroCheque_idx")
   @@index([ordenPagoId], map: "ordenes_pago_medio_ordenPagoId_fkey")
   @@map("ordenes_pago_medio")
 }

@@ -33,11 +33,12 @@ async function postOrdenPago(req, res) {
     const resultado = await pagosServicio.crearOrdenPago(req.body ?? {});
     return res.status(201).json(resultado);
   } catch (err) {
+    // Nota: la duplicación de cheque ya NO se detecta acá vía P2002 —
+    // OrdenPagoMedio no tiene @@unique(banco, numeroCheque) en la base
+    // (ver schema.prisma), la valida pagosServicio.crearOrdenPago con
+    // ErrorDeNegocio, arriba.
     if (err instanceof pagosServicio.ErrorDeNegocio) {
       return res.status(err.statusCode).json({ error: err.message });
-    }
-    if (err.code === "P2002") {
-      return res.status(409).json({ error: "Ya existe un cheque con ese número para ese banco." });
     }
     console.error("Error al crear la orden de pago:", err);
     return res.status(500).json({ error: "No se pudo crear la orden de pago." });

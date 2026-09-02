@@ -174,6 +174,26 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
         }
       }
 
+      // Re-chequeo de cheques por la misma razón: sin @@unique en la base
+      // (ver comentario en schema.prisma), la única garantía es esta
+      // consulta — repetirla con datos frescos justo antes del insert
+      // acorta al máximo la ventana en la que dos requests concurrentes
+      // podrían colarse con el mismo (banco, numeroCheque).
+      if (clavesCheque.length > 0) {
+        const existentesFrescos = await tx.ordenPagoMedio.findMany({
+          where: { OR: clavesCheque.map((c) => ({ banco: c.banco, numeroCheque: c.numeroCheque })) },
+          include: { ordenPago: true },
+        });
+        for (const { banco, numeroCheque } of clavesCheque) {
+          const conflicto = existentesFrescos.find(
+            (e) => e.banco === banco && e.numeroCheque === numeroCheque && pagoVigente(e.ordenPago)
+          );
+          if (conflicto) {
+            throw new ErrorDeNegocio(`Ya existe un cheque N° ${numeroCheque} de ${banco} registrado en el sistema.`);
+          }
+        }
+      }
+
       return crearConNumeroSecuencial(tx, "ordenPago", {
         prefijo: "OP",
         data: {
