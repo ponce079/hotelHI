@@ -1,0 +1,21 @@
+import { api } from "../../lib/api";
+
+export async function listarProveedoresConSaldo() {
+  const { data } = await api.get("/ordenes-pago/proveedores-con-saldo");
+  return data;
+}
+
+export async function listarComprobantesPendientes(proveedorId) {
+  const { data } = await api.get("/ordenes-pago/comprobantes-pendientes", { params: { proveedorId } });
+  return data;
+}
+
+export async function crearOrdenPago(payload) {
+  const { data } = await api.post("/ordenes-pago", payload);
+  return data;
+}
+
+export async function obtenerOrdenPago(id) {
+  const { data } = await api.get(`/ordenes-pago/${id}`);
+  return data;
+}
