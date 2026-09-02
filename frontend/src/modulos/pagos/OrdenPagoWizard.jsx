@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "../../componentes/Input";
+import { MoneyInput } from "../../componentes/MoneyInput";
 import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
@@ -215,12 +216,10 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
                   <div className="font-body text-[11.5px] text-piedra">Saldo pendiente $ {formatearMonto(c.saldo)}</div>
                 </div>
                 <div className="w-[220px]">
-                  <Input
+                  <MoneyInput
                     label={`Aplicar (máx. $ ${formatearMonto(c.saldo)})`}
                     value={monto}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, montos: { ...f.montos, [c.id]: e.target.value.replace(/[^\d.]/g, "") } }))
-                    }
+                    onChange={(valor) => setForm((f) => ({ ...f, montos: { ...f.montos, [c.id]: valor } }))}
                     error={excede ? "Supera el saldo pendiente." : vacio ? "Ingresá un importe mayor a cero." : undefined}
                   />
                 </div>
@@ -259,21 +258,18 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
                 }`}
               >
                 <div className="flex flex-wrap items-end gap-3">
-                  <div className="w-[160px]">
-                    <Select label="Medio" value={m.tipo} onChange={(e) => actualizarMedio(m.key, "tipo", e.target.value)}>
-                      {MEDIOS_PAGO.map((t) => (
-                        <option key={t} value={t}>
-                          {t}
-                        </option>
-                      ))}
-                    </Select>
+                  {/* El medio ya se eligió al agregar esta fila (botones +
+                      de arriba) — no es un combo editable a propósito: para
+                      cambiarlo se quita la fila y se agrega la correcta. */}
+                  <div className="flex w-[160px] flex-col gap-1.5">
+                    <span className="font-body text-sm text-[12px] text-tinta/70">Medio</span>
+                    <p className="rounded-md border border-borde bg-white px-3 py-2 text-[13.5px] font-medium text-tinta">{m.tipo}</p>
                   </div>
                   <div className="w-[170px]">
-                    <Input
+                    <MoneyInput
                       label="Importe"
                       value={m.importe}
-                      onChange={(e) => actualizarMedio(m.key, "importe", e.target.value.replace(/[^\d.]/g, ""))}
-                      placeholder="0"
+                      onChange={(valor) => actualizarMedio(m.key, "importe", valor)}
                     />
                   </div>
                   <Button variante="secundario" tamano="fila" onClick={() => quitarMedio(m.key)} className="ml-auto">
