@@ -7,7 +7,13 @@
 
 const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
-const { calcularSaldosComprobantes, listarFacturasConSaldo, pagoVigente } = require("../../lib/comprobantes");
+const {
+  calcularSaldosComprobantes,
+  listarFacturasConSaldo,
+  pagoVigente,
+  sumarImportesMedios,
+  resumenSaldosPorProveedor,
+} = require("../../lib/comprobantes");
 const { crearConNumeroSecuencial } = require("../../lib/numeracion");
 const { MEDIOS_PAGO, BANCOS, ESTADOS_CHEQUE } = require("./pagos.constantes");
 
@@ -26,14 +32,9 @@ function centavos(n) {
 
 // HU-76, paso 1: proveedores que tienen al menos una factura con saldo
 // pendiente — son los unicos que tiene sentido ofrecer en el selector.
-// En lote: 1 consulta de facturas + 2 de calcularSaldosComprobantes +
-// 1 de proveedores, sin importar cuantos proveedores/facturas haya.
 async function proveedoresConSaldo() {
-  const facturas = await prisma.comprobanteProveedor.findMany({
-    where: { tipo: "Factura", anulado: false },
-  });
-  const saldos = await calcularSaldosComprobantes(facturas);
-  const proveedorIds = [...new Set(facturas.filter((f) => (saldos.get(f.id) ?? 0) > 0).map((f) => f.proveedorId))];
+  const { porProveedor } = await resumenSaldosPorProveedor();
+  const proveedorIds = [...porProveedor.keys()];
   if (proveedorIds.length === 0) return [];
   return prisma.proveedor.findMany({ where: { id: { in: proveedorIds } }, orderBy: { razonSocial: "asc" } });
 }
@@ -345,11 +346,6 @@ async function actualizarEstadoCheque(ordenPagoId, medioId, estado) {
   }, { timeout: 15000, maxWait: 10000 });
 }
 
-// Suma el importe de un conjunto de medios de pago (Decimal -> Number).
-function sumarImportes(medios) {
-  return medios.reduce((acc, m) => acc + Number(m.importe), 0);
-}
-
 // HU-78: listado con filtros + total del período + desglose por medio.
 // Los totales solo cuentan ordenes vigentes (no anuladas ni rechazadas
 // por un cheque) — el listado en si muestra todas, para que se vea el
@@ -424,12 +420,12 @@ async function listarOrdenesPago({ proveedorId, medio, desde, hasta, page = 1, p
   // filtrar por Efectivo con el importe de la Transferencia tambien.
   const totalPeriodo = vigentes.reduce((acc, o) => {
     const mediosRelevantes = medio ? o.medios.filter((m) => m.medioPago === medio) : o.medios;
-    return acc + sumarImportes(mediosRelevantes);
+    return acc + sumarImportesMedios(mediosRelevantes);
   }, 0);
   const desglose = MEDIOS_PAGO.map((tipo) => {
     const mediosDeEsteTipo = vigentes.flatMap((o) => o.medios.filter((m) => m.medioPago === tipo));
     const cantidadOrdenes = vigentes.filter((o) => o.medios.some((m) => m.medioPago === tipo)).length;
-    return { medio: tipo, importe: sumarImportes(mediosDeEsteTipo), cantidadOrdenes };
+    return { medio: tipo, importe: sumarImportesMedios(mediosDeEsteTipo), cantidadOrdenes };
   });
 
   return {
@@ -440,7 +436,7 @@ async function listarOrdenesPago({ proveedorId, medio, desde, hasta, page = 1, p
       proveedorId: o.proveedorId,
       proveedor: o.proveedor.razonSocial,
       medios: o.medios.map((m) => m.medioPago),
-      importe: sumarImportes(o.medios),
+      importe: sumarImportesMedios(o.medios),
       comprobantes: o.detalle.map((d) => d.comprobante.numero),
       estado: o.anulado ? "Anulada" : o.estado,
       vigente: pagoVigente(o),
