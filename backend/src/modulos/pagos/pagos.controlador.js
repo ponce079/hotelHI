@@ -50,6 +50,9 @@ async function getOrdenesPago(req, res) {
     const resultado = await pagosServicio.listarOrdenesPago(req.query);
     return res.json(resultado);
   } catch (err) {
+    if (err instanceof pagosServicio.ErrorDeNegocio) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
     console.error("Error al listar órdenes de pago:", err);
     return res.status(500).json({ error: "No se pudieron listar las órdenes de pago." });
   }

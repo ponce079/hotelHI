@@ -238,64 +238,109 @@ async function obtenerOrdenPago(id) {
   });
 }
 
+// Suma el importe de un conjunto de medios de pago (Decimal -> Number).
+function sumarImportes(medios) {
+  return medios.reduce((acc, m) => acc + Number(m.importe), 0);
+}
+
 // HU-78: listado con filtros + total del período + desglose por medio.
 // Los totales solo cuentan ordenes vigentes (no anuladas ni rechazadas
 // por un cheque) — el listado en si muestra todas, para que se vea el
 // historial completo, pero lo que se suma es lo que de verdad afecta la
 // cuenta corriente del proveedor.
-async function listarOrdenesPago({ proveedorId, medio, desde, hasta } = {}) {
+async function listarOrdenesPago({ proveedorId, medio, desde, hasta, page = 1, pageSize = 20 } = {}) {
   const where = {};
-  if (proveedorId) where.proveedorId = Number(proveedorId);
-  if (medio && MEDIOS_PAGO.includes(medio)) {
+  if (proveedorId) {
+    const id = Number(proveedorId);
+    if (!Number.isInteger(id)) throw new ErrorDeNegocio("proveedorId debe ser un número entero.");
+    where.proveedorId = id;
+  }
+  if (medio) {
+    if (!MEDIOS_PAGO.includes(medio)) {
+      throw new ErrorDeNegocio(`medio inválido. Valores permitidos: ${MEDIOS_PAGO.join(", ")}`);
+    }
     where.medios = { some: { medioPago: medio } };
   }
   if (desde || hasta) {
     where.fecha = {};
-    if (desde) where.fecha.gte = new Date(desde);
+    if (desde) {
+      // OrdenPago.fecha es un timestamp real (no "solo día"), asi que el
+      // limite se arma en hora Argentina (UTC-3, sin horario de verano)
+      // y no en medianoche UTC — si no, un pago de la noche del propio
+      // "desde" quedaria afuera del rango.
+      const fechaDesde = new Date(`${desde}T00:00:00-03:00`);
+      if (Number.isNaN(fechaDesde.getTime())) throw new ErrorDeNegocio("desde no es una fecha válida.");
+      where.fecha.gte = fechaDesde;
+    }
     if (hasta) {
-      // "hasta" = menor al dia siguiente (limite exclusivo), no
-      // setHours(23,59,59) — mismo criterio que listarMovimientos en
-      // movimientosStock.servicio.js, para no perder pagos del propio
-      // dia "hasta" por una comparacion en hora local del server.
-      const siguienteDia = new Date(hasta);
+      const siguienteDia = new Date(`${hasta}T00:00:00-03:00`);
+      if (Number.isNaN(siguienteDia.getTime())) throw new ErrorDeNegocio("hasta no es una fecha válida.");
       siguienteDia.setUTCDate(siguienteDia.getUTCDate() + 1);
       where.fecha.lt = siguienteDia;
     }
   }
 
-  const ordenes = await prisma.ordenPago.findMany({
-    where,
-    include: { proveedor: true, medios: true, detalle: { include: { comprobante: true } } },
-    orderBy: { fecha: "desc" },
-  });
+  const pageNum = Number.isInteger(Number(page)) && Number(page) > 0 ? Number(page) : 1;
+  const pageSizeNum = Number.isInteger(Number(pageSize)) && Number(pageSize) > 0 ? Number(pageSize) : 20;
 
-  const vigentes = ordenes.filter(pagoVigente);
-  const totalPeriodo = vigentes.reduce((acc, o) => acc + o.medios.reduce((a, m) => a + Number(m.importe), 0), 0);
+  // El listado (items) va paginado, pero el total del período y el
+  // desglose por medio tienen que reflejar TODAS las ordenes que
+  // cumplen el filtro, no solo la pagina actual — por eso se piden por
+  // separado, liviano (solo los campos que hacen falta para sumar).
+  const [total, ordenesPagina, ordenesParaTotales] = await Promise.all([
+    prisma.ordenPago.count({ where }),
+    prisma.ordenPago.findMany({
+      where,
+      include: {
+        proveedor: { select: { razonSocial: true } },
+        medios: true,
+        detalle: { include: { comprobante: { select: { numero: true } } } },
+      },
+      orderBy: { fecha: "desc" },
+      skip: (pageNum - 1) * pageSizeNum,
+      take: pageSizeNum,
+    }),
+    prisma.ordenPago.findMany({
+      where,
+      select: { anulado: true, estado: true, medios: { select: { medioPago: true, importe: true } } },
+    }),
+  ]);
+
+  const vigentes = ordenesParaTotales.filter(pagoVigente);
+  // Si hay un medio filtrado, el total del período solo cuenta la parte
+  // de cada orden pagada con ESE medio (no la orden entera) — si no, una
+  // orden combinada (ej. Efectivo + Transferencia) infla el total al
+  // filtrar por Efectivo con el importe de la Transferencia tambien.
+  const totalPeriodo = vigentes.reduce((acc, o) => {
+    const mediosRelevantes = medio ? o.medios.filter((m) => m.medioPago === medio) : o.medios;
+    return acc + sumarImportes(mediosRelevantes);
+  }, 0);
   const desglose = MEDIOS_PAGO.map((tipo) => {
-    const conEsteMedio = vigentes.filter((o) => o.medios.some((m) => m.medioPago === tipo));
-    const importe = conEsteMedio.reduce(
-      (acc, o) => acc + o.medios.filter((m) => m.medioPago === tipo).reduce((a, m) => a + Number(m.importe), 0),
-      0
-    );
-    return { medio: tipo, importe, cantidadOrdenes: conEsteMedio.length };
+    const mediosDeEsteTipo = vigentes.flatMap((o) => o.medios.filter((m) => m.medioPago === tipo));
+    const cantidadOrdenes = vigentes.filter((o) => o.medios.some((m) => m.medioPago === tipo)).length;
+    return { medio: tipo, importe: sumarImportes(mediosDeEsteTipo), cantidadOrdenes };
   });
 
   return {
-    items: ordenes.map((o) => ({
+    items: ordenesPagina.map((o) => ({
       id: o.id,
       numero: o.numero,
       fecha: o.fecha,
       proveedorId: o.proveedorId,
       proveedor: o.proveedor.razonSocial,
       medios: o.medios.map((m) => m.medioPago),
-      importe: o.medios.reduce((a, m) => a + Number(m.importe), 0),
+      importe: sumarImportes(o.medios),
       comprobantes: o.detalle.map((d) => d.comprobante.numero),
       estado: o.anulado ? "Anulada" : o.estado,
       vigente: pagoVigente(o),
     })),
+    total,
+    page: pageNum,
+    pageSize: pageSizeNum,
+    totalPages: Math.max(1, Math.ceil(total / pageSizeNum)),
     totalPeriodo,
     cantidadVigentes: vigentes.length,
-    cantidadTotal: ordenes.length,
+    cantidadTotal: ordenesParaTotales.length,
     desglose,
   };
 }
