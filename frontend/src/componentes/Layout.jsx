@@ -45,8 +45,8 @@ export function Layout() {
   const iniciales = (usuario || "?").slice(0, 2).toUpperCase();
 
   return (
-    <div className="flex min-h-screen bg-hueso">
-      <aside className="sticky top-0 flex h-screen w-[236px] flex-none flex-col gap-5 border-r border-borde bg-white px-3.5 py-[22px]">
+    <div className="flex min-h-screen bg-hueso print:block print:min-h-0 print:bg-white">
+      <aside className="sticky top-0 flex h-screen w-[236px] flex-none flex-col gap-5 border-r border-borde bg-white px-3.5 py-[22px] print:hidden">
         <div className="flex flex-col gap-0.5 px-2.5">
           <span className="font-heading text-[19px] leading-tight tracking-[-0.01em] text-tinta">Holiday Inn</span>
           <span className="font-body text-[10.5px] text-tinta/50">SGH · Depósito y Stock</span>
@@ -92,7 +92,7 @@ export function Layout() {
         </div>
       </aside>
 
-      <main className="min-w-0 flex-1 px-8 py-8">
+      <main className="min-w-0 flex-1 px-8 py-8 print:w-full print:p-0">
         <Outlet />
       </main>
     </div>

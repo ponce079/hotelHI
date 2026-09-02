@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { Plus } from "lucide-react";
 import { Button } from "../../componentes/Button";
@@ -9,15 +10,12 @@ import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
 import { Cifra } from "../../componentes/Cifra";
 import { Pagination } from "../../componentes/Pagination";
-import { Toast } from "../../componentes/Toast";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { useSesion } from "../../lib/sesion";
-import { useToast } from "../../lib/useToast";
 import { formatearMonto } from "../../lib/moneda";
 import { listarOrdenesPago } from "./pagos.api";
 import { MEDIOS_PAGO, BADGE_ESTADO } from "./pagos.constantes";
 import { OrdenPagoWizard } from "./OrdenPagoWizard";
-import { OrdenPagoFicha } from "./OrdenPagoFicha";
 
 const FILTROS_VACIOS = { proveedorId: "", medio: "", desde: "", hasta: "" };
 const PAGE_SIZE = 10;
@@ -25,11 +23,10 @@ const PAGE_SIZE = 10;
 export function PagosPage() {
   const { puede } = useSesion();
   const tienePermiso = puede("registrarPago");
+  const navigate = useNavigate();
   const [mostrarWizard, setMostrarWizard] = useState(false);
-  const [ordenSeleccionadaId, setOrdenSeleccionadaId] = useState(null);
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
   const [pagina, setPagina] = useState(1);
-  const { toast, mostrarToast } = useToast();
 
   useEffect(() => setPagina(1), [filtros]);
 
@@ -154,7 +151,7 @@ export function PagosPage() {
               renderFila={(o) => (
                 <tr
                   key={o.id}
-                  onClick={() => setOrdenSeleccionadaId(o.id)}
+                  onClick={() => navigate(`/pagos/${o.id}`)}
                   className={`cursor-pointer border-b border-borde last:border-0 hover:bg-hueso ${o.vigente ? "" : "opacity-55"}`}
                 >
                   <td className="px-2 py-2.5 font-mono text-[12.5px]">{o.numero}</td>
@@ -181,15 +178,6 @@ export function PagosPage() {
           </>
         )}
       </div>
-
-      {ordenSeleccionadaId && (
-        <OrdenPagoFicha
-          ordenId={ordenSeleccionadaId}
-          onClose={() => setOrdenSeleccionadaId(null)}
-          onExito={(mensaje) => mostrarToast(mensaje)}
-        />
-      )}
-      <Toast mensaje={toast} />
     </div>
   );
 }
