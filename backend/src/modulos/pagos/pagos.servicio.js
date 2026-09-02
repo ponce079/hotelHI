@@ -9,7 +9,7 @@ const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
 const { calcularSaldosComprobantes, listarFacturasConSaldo, pagoVigente } = require("../../lib/comprobantes");
 const { crearConNumeroSecuencial } = require("../../lib/numeracion");
-const { MEDIOS_PAGO, BANCOS } = require("./pagos.constantes");
+const { MEDIOS_PAGO, BANCOS, ESTADOS_CHEQUE } = require("./pagos.constantes");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -238,6 +238,113 @@ async function obtenerOrdenPago(id) {
   });
 }
 
+// HU-79: anular una orden de pago. No hace falta tocar OrdenPagoMedio ni
+// recalcular nada mas — pagoVigente() deja de contarla apenas anulado
+// pasa a true, asi que el saldo del comprobante y la reutilizacion del
+// N° de cheque se recalculan solos en cuanto alguien vuelve a leerlos.
+async function anularOrdenPago(id, motivo) {
+  const idNum = Number(id);
+  if (!Number.isInteger(idNum)) throw new ErrorDeNegocio("id inválido.");
+  if (!motivo || !motivo.trim()) throw new ErrorDeNegocio("El motivo de anulación es obligatorio.");
+
+  // Chequeo rapido ("fail fast") antes de la transaccion, no toma locks.
+  const ordenPrevia = await prisma.ordenPago.findUnique({ where: { id: idNum } });
+  if (!ordenPrevia) throw new ErrorDeNegocio("La orden de pago no existe.", 404);
+  if (!pagoVigente(ordenPrevia)) {
+    throw new ErrorDeNegocio("La orden de pago ya no está vigente (anulada o rechazada).");
+  }
+
+  return prisma.$transaction(async (tx) => {
+    // Re-chequeo protegido contra carreras: FOR UPDATE bloquea la fila
+    // hasta que esta transaccion termine, asi una segunda anulacion (o
+    // un rechazo de cheque) que llegue casi al mismo tiempo espera a
+    // que esta commitee y ve el estado ya actualizado, en vez de pisar
+    // el motivo o dejar anulado=true + estado="Rechazada" a la vez.
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM ordenes_pago WHERE id = ${idNum} FOR UPDATE`);
+    const ordenFresca = await tx.ordenPago.findUnique({ where: { id: idNum } });
+    if (!pagoVigente(ordenFresca)) {
+      throw new ErrorDeNegocio("La orden de pago ya no está vigente (anulada o rechazada).");
+    }
+    return tx.ordenPago.update({
+      where: { id: idNum },
+      data: { anulado: true, motivoAnulacion: motivo.trim() },
+      include: { proveedor: true, detalle: { include: { comprobante: true } }, medios: true },
+    });
+  }, { timeout: 15000, maxWait: 10000 });
+}
+
+// HU-86: seguimiento de estado de cheque. Solo se puede pasar de
+// Emitido a Cobrado o Rechazado (no hay vuelta atras — si alguien se
+// equivoca, se anula la orden entera en vez de "revertir" el cheque).
+// Rechazado ademas marca la orden como estado "Rechazada": es la unica
+// forma que tiene pagoVigente() de dejar de contarla, asi el
+// comprobante recupera el saldo y el cheque queda libre para reusarse.
+//
+// Esto es a nivel de TODA la orden, no solo de este medio — el modelo
+// de datos no vincula cada aplicacion de comprobante (OrdenPagoDetalle)
+// con el medio que la cubrio, asi que no hay forma de saber que parte
+// del pago corresponde a este cheque puntual. Por eso, si la orden
+// combina mas de un medio (otro cheque, efectivo, transferencia),
+// rechazar aca sobre-acreditaria el saldo del comprobante por la parte
+// que si se cobro, y dejaria a cualquier otro cheque de la misma orden
+// sin ninguna accion posible (pagoVigente ya bloquearia la orden
+// entera). Esos casos se resuelven anulando la orden completa (HU-79).
+async function actualizarEstadoCheque(ordenPagoId, medioId, estado) {
+  const ordenId = Number(ordenPagoId);
+  const medioIdNum = Number(medioId);
+  if (!Number.isInteger(ordenId) || !Number.isInteger(medioIdNum)) {
+    throw new ErrorDeNegocio("id inválido.");
+  }
+  if (estado === "Emitido" || !ESTADOS_CHEQUE.includes(estado)) {
+    throw new ErrorDeNegocio('estado inválido. Valores permitidos: "Cobrado", "Rechazado".');
+  }
+
+  // Chequeo rapido ("fail fast") antes de la transaccion, no toma locks.
+  const ordenPrevia = await prisma.ordenPago.findUnique({ where: { id: ordenId }, include: { medios: true } });
+  if (!ordenPrevia) throw new ErrorDeNegocio("La orden de pago no existe.", 404);
+  if (!pagoVigente(ordenPrevia)) {
+    throw new ErrorDeNegocio("La orden de pago no está vigente (anulada o rechazada).");
+  }
+  const medioPrevio = ordenPrevia.medios.find((m) => m.id === medioIdNum);
+  if (!medioPrevio) throw new ErrorDeNegocio("El medio de pago indicado no pertenece a esta orden.");
+  if (medioPrevio.medioPago !== "Cheque") {
+    throw new ErrorDeNegocio("Solo se puede actualizar el estado de un medio de pago Cheque.");
+  }
+  if (estado === "Rechazado" && ordenPrevia.medios.length > 1) {
+    throw new ErrorDeNegocio(
+      "Esta orden combina más de un medio de pago — no se puede rechazar un cheque individual sin afectar el resto. Anulá la orden completa e indicá el motivo."
+    );
+  }
+  if (medioPrevio.estadoCheque !== "Emitido") {
+    throw new ErrorDeNegocio(`El cheque ya está en estado "${medioPrevio.estadoCheque}" y no se puede modificar.`);
+  }
+
+  return prisma.$transaction(async (tx) => {
+    // Re-chequeo protegido contra carreras, mismo criterio que
+    // anularOrdenPago — bloquea la fila de la orden hasta commitear.
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM ordenes_pago WHERE id = ${ordenId} FOR UPDATE`);
+    const ordenFresca = await tx.ordenPago.findUnique({ where: { id: ordenId }, include: { medios: true } });
+    if (!pagoVigente(ordenFresca)) {
+      throw new ErrorDeNegocio("La orden de pago no está vigente (anulada o rechazada).");
+    }
+    const medioFresco = ordenFresca.medios.find((m) => m.id === medioIdNum);
+    if (!medioFresco || medioFresco.estadoCheque !== "Emitido") {
+      throw new ErrorDeNegocio(
+        `El cheque ya está en estado "${medioFresco?.estadoCheque ?? "desconocido"}" y no se puede modificar.`
+      );
+    }
+
+    await tx.ordenPagoMedio.update({ where: { id: medioIdNum }, data: { estadoCheque: estado } });
+    if (estado === "Rechazado") {
+      await tx.ordenPago.update({ where: { id: ordenId }, data: { estado: "Rechazada" } });
+    }
+    return tx.ordenPago.findUnique({
+      where: { id: ordenId },
+      include: { proveedor: true, detalle: { include: { comprobante: true } }, medios: true },
+    });
+  }, { timeout: 15000, maxWait: 10000 });
+}
+
 // Suma el importe de un conjunto de medios de pago (Decimal -> Number).
 function sumarImportes(medios) {
   return medios.reduce((acc, m) => acc + Number(m.importe), 0);
@@ -287,24 +394,28 @@ async function listarOrdenesPago({ proveedorId, medio, desde, hasta, page = 1, p
   // desglose por medio tienen que reflejar TODAS las ordenes que
   // cumplen el filtro, no solo la pagina actual — por eso se piden por
   // separado, liviano (solo los campos que hacen falta para sumar).
-  const [total, ordenesPagina, ordenesParaTotales] = await Promise.all([
-    prisma.ordenPago.count({ where }),
-    prisma.ordenPago.findMany({
-      where,
-      include: {
-        proveedor: { select: { razonSocial: true } },
-        medios: true,
-        detalle: { include: { comprobante: { select: { numero: true } } } },
-      },
-      orderBy: { fecha: "desc" },
-      skip: (pageNum - 1) * pageSizeNum,
-      take: pageSizeNum,
-    }),
-    prisma.ordenPago.findMany({
-      where,
-      select: { anulado: true, estado: true, medios: { select: { medioPago: true, importe: true } } },
-    }),
-  ]);
+  // Secuencial (no Promise.all): el pool de conexiones a la base
+  // remota es chico (limit=3) y esta misma consulta ya se pide dos
+  // veces por carga de pantalla (listado + combo de proveedor) — tres
+  // queries en paralelo por llamada lo saturaba y tiraba timeouts.
+  // "total" sale de ordenesParaTotales.length, no hace falta un count()
+  // aparte porque ya se trae el set completo que matchea el filtro.
+  const ordenesParaTotales = await prisma.ordenPago.findMany({
+    where,
+    select: { anulado: true, estado: true, medios: { select: { medioPago: true, importe: true } } },
+  });
+  const ordenesPagina = await prisma.ordenPago.findMany({
+    where,
+    include: {
+      proveedor: { select: { razonSocial: true } },
+      medios: true,
+      detalle: { include: { comprobante: { select: { numero: true } } } },
+    },
+    orderBy: { fecha: "desc" },
+    skip: (pageNum - 1) * pageSizeNum,
+    take: pageSizeNum,
+  });
+  const total = ordenesParaTotales.length;
 
   const vigentes = ordenesParaTotales.filter(pagoVigente);
   // Si hay un medio filtrado, el total del período solo cuenta la parte
@@ -352,4 +463,6 @@ module.exports = {
   crearOrdenPago,
   obtenerOrdenPago,
   listarOrdenesPago,
+  anularOrdenPago,
+  actualizarEstadoCheque,
 };

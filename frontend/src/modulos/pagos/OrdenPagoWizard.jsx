@@ -7,6 +7,7 @@ import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
 import { MensajeModal } from "../../componentes/MensajeModal";
 import { formatearFechaSolo } from "../../lib/fechas";
+import { formatearMonto } from "../../lib/moneda";
 import { listarProveedoresConSaldo, listarComprobantesPendientes, crearOrdenPago } from "./pagos.api";
 import { MEDIOS_PAGO, BANCOS } from "./pagos.constantes";
 
@@ -22,9 +23,6 @@ const VACIO = { paso: 1, proveedorId: "", montos: {}, medios: [] };
 // distinto al que despues valida el servidor.
 function centavos(n) {
   return Math.round(Number(n || 0) * 100);
-}
-function formatearMonto(n) {
-  return Number(n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function nuevaClave() {
   return crypto.randomUUID();

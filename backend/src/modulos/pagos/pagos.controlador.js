@@ -75,4 +75,38 @@ async function getOrdenPagoPorId(req, res) {
   }
 }
 
-module.exports = { getProveedoresConSaldo, getComprobantesPendientes, postOrdenPago, getOrdenPagoPorId, getOrdenesPago };
+async function patchAnularOrdenPago(req, res) {
+  try {
+    const resultado = await pagosServicio.anularOrdenPago(req.params.id, req.body?.motivo);
+    return res.json(resultado);
+  } catch (err) {
+    if (err instanceof pagosServicio.ErrorDeNegocio) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
+    console.error("Error al anular la orden de pago:", err);
+    return res.status(500).json({ error: "No se pudo anular la orden de pago." });
+  }
+}
+
+async function patchEstadoCheque(req, res) {
+  try {
+    const resultado = await pagosServicio.actualizarEstadoCheque(req.params.id, req.params.medioId, req.body?.estado);
+    return res.json(resultado);
+  } catch (err) {
+    if (err instanceof pagosServicio.ErrorDeNegocio) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
+    console.error("Error al actualizar el estado del cheque:", err);
+    return res.status(500).json({ error: "No se pudo actualizar el estado del cheque." });
+  }
+}
+
+module.exports = {
+  getProveedoresConSaldo,
+  getComprobantesPendientes,
+  postOrdenPago,
+  getOrdenPagoPorId,
+  getOrdenesPago,
+  patchAnularOrdenPago,
+  patchEstadoCheque,
+};
