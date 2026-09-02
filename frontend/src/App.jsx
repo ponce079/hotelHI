@@ -14,6 +14,7 @@ import { MovimientosPage } from "./modulos/movimientos/MovimientosPage";
 import { RecepcionesPage } from "./modulos/recepciones/RecepcionesPage";
 import { KardexPage } from "./modulos/kardex/KardexPage";
 import { ReportePage } from "./modulos/reporte/ReportePage";
+import { PagosPage } from "./modulos/pagos/PagosPage";
 
 // Gatekeeper de rutas: sin sesion (sin rol elegido en el login), redirige
 // a /login. No es autenticacion real contra el backend — ver lib/sesion.jsx.
@@ -41,6 +42,7 @@ export default function App() {
           <Route path="/reporte" element={<ReportePage />} />
           <Route path="/stock" element={<StockPage />} />
           <Route path="/stock/minmax" element={<MinMaxPage />} />
+          <Route path="/pagos" element={<PagosPage />} />
         </Route>
       </Route>
     </Routes>

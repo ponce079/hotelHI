@@ -19,6 +19,9 @@ app.use("/api/movimientos-salida", require("./src/modulos/movimientos-salida/mov
 app.use("/api/tipos-movimiento", require("./src/modulos/tipos-movimiento/tiposMovimiento.routes"));
 app.use("/api/depositos", require("./src/modulos/depositos/depositos.routes"));
 
+// --- Sprint 2 — Compras y Gastos ---
+app.use("/api/ordenes-pago", require("./src/modulos/pagos/pagos.routes"));
+
 app.get("/", (req, res) => {
   res.json({ status: "ok", proyecto: "Sistema de Gestión Hotelera - Holiday Inn" });
 });

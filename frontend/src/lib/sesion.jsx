@@ -71,6 +71,10 @@ export function SesionProvider({ children }) {
         if (accion === "abmArticulo") return rol === "admin" || rol === "deposito";
         if (accion === "operar") return rol === "admin" || rol === "deposito";
         if (accion === "param") return rol === "admin" || rol === "compras";
+        // Sprint 2 — Pagos a Proveedores (HU-76 a 79, 86): backend no
+        // valida rol todavia (ver sesion.jsx arriba), asi que esta
+        // pantalla depende de este chequeo + <SinPermiso />.
+        if (accion === "registrarPago") return rol === "compras";
         return false;
       },
     };

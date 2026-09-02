@@ -9,6 +9,7 @@ import {
   PackageCheck,
   BarChart3,
   LogOut,
+  Wallet,
 } from "lucide-react";
 import { useSesion } from "../lib/sesion";
 
@@ -30,6 +31,10 @@ const ITEMS = [
   { to: "/stock/minmax", label: "Stock mín. / máx.", icon: SlidersHorizontal, roles: ["compras"] },
   { to: "/alertas", label: "Alertas de Stock", icon: TriangleAlert, roles: ["compras", "gerente"] },
   { to: "/reporte", label: "Reporte de Consumo", icon: BarChart3, roles: ["gerente"] },
+  // Sprint 2 — Pagos a Proveedores (HU-76 a 79, 86). Entradas planas,
+  // mismo shape que las de arriba — ver la Guía Técnica Sprint 2 sobre
+  // por qué no se armó el menú con grupos colapsables del prototipo.
+  { to: "/pagos", label: "Pagos a Proveedores", icon: Wallet, roles: ["compras"] },
 ];
 
 export function Layout() {
