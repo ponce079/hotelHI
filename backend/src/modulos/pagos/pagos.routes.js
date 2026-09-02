@@ -11,5 +11,7 @@ router.get("/comprobantes-pendientes", pagosControlador.getComprobantesPendiente
 router.post("/", pagosControlador.postOrdenPago);
 router.get("/", pagosControlador.getOrdenesPago);
 router.get("/:id", pagosControlador.getOrdenPagoPorId);
+router.patch("/:id/anular", pagosControlador.patchAnularOrdenPago);
+router.patch("/:id/medios/:medioId/estado-cheque", pagosControlador.patchEstadoCheque);
 
 module.exports = router;
