@@ -5,9 +5,10 @@
 // Pagos (HU-78 listado, HU-79 anular, HU-86 estado de cheque) se agrega
 // en una rama aparte.
 
-const crypto = require("crypto");
+const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
-const { calcularSaldoComprobante, listarFacturasConSaldo, pagoVigente } = require("../../lib/comprobantes");
+const { calcularSaldosComprobantes, listarFacturasConSaldo, pagoVigente } = require("../../lib/comprobantes");
+const { crearConNumeroSecuencial } = require("../../lib/numeracion");
 const { MEDIOS_PAGO, BANCOS } = require("./pagos.constantes");
 
 class ErrorDeNegocio extends Error {
@@ -25,28 +26,25 @@ function centavos(n) {
 
 // HU-76, paso 1: proveedores que tienen al menos una factura con saldo
 // pendiente — son los unicos que tiene sentido ofrecer en el selector.
+// En lote: 1 consulta de facturas + 2 de calcularSaldosComprobantes +
+// 1 de proveedores, sin importar cuantos proveedores/facturas haya.
 async function proveedoresConSaldo() {
-  const filas = await prisma.comprobanteProveedor.findMany({
+  const facturas = await prisma.comprobanteProveedor.findMany({
     where: { tipo: "Factura", anulado: false },
-    distinct: ["proveedorId"],
-    select: { proveedorId: true },
   });
-
-  const resultado = [];
-  for (const { proveedorId } of filas) {
-    const pendientes = await listarFacturasConSaldo(proveedorId);
-    if (pendientes.length > 0) {
-      const proveedor = await prisma.proveedor.findUnique({ where: { id: proveedorId } });
-      if (proveedor) resultado.push(proveedor);
-    }
-  }
-  return resultado;
+  const saldos = await calcularSaldosComprobantes(facturas);
+  const proveedorIds = [...new Set(facturas.filter((f) => (saldos.get(f.id) ?? 0) > 0).map((f) => f.proveedorId))];
+  if (proveedorIds.length === 0) return [];
+  return prisma.proveedor.findMany({ where: { id: { in: proveedorIds } }, orderBy: { razonSocial: "asc" } });
 }
 
 // HU-76, paso 1: facturas con saldo pendiente de un proveedor puntual.
 async function comprobantesPendientes(proveedorId) {
-  if (!proveedorId) throw new ErrorDeNegocio("proveedorId es obligatorio.");
-  return listarFacturasConSaldo(Number(proveedorId));
+  const id = Number(proveedorId);
+  if (!proveedorId || !Number.isInteger(id)) {
+    throw new ErrorDeNegocio("proveedorId es obligatorio y debe ser un número entero.");
+  }
+  return listarFacturasConSaldo(id);
 }
 
 // HU-76 + HU-77: crear la orden de pago con la distribución de importes
@@ -61,14 +59,16 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
     throw new ErrorDeNegocio("Debe incluir al menos un medio de pago en 'medios'.");
   }
 
-  const comprobanteIds = aplicaciones.map((a) => Number(a.comprobanteId));
-  if (new Set(comprobanteIds).size !== comprobanteIds.length) {
+  const idsCrudos = aplicaciones.map((a) => Number(a.comprobanteId));
+  if (new Set(idsCrudos).size !== idsCrudos.length) {
     throw new ErrorDeNegocio("No se puede aplicar el mismo comprobante dos veces en la misma orden.");
   }
+  // Orden fijo (ascendente) antes de lockear filas: si dos pedidos
+  // concurrentes tocan un conjunto de comprobantes que se superpone,
+  // lockear siempre en el mismo orden evita que se hagan deadlock entre si.
+  const comprobanteIds = idsCrudos.slice().sort((a, b) => a - b);
 
-  const comprobantes = await prisma.comprobanteProveedor.findMany({
-    where: { id: { in: comprobanteIds } },
-  });
+  const comprobantes = await prisma.comprobanteProveedor.findMany({ where: { id: { in: comprobanteIds } } });
   if (comprobantes.length !== comprobanteIds.length) {
     throw new ErrorDeNegocio("Alguno de los comprobantes indicados no existe.");
   }
@@ -79,12 +79,15 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
     }
   }
 
-  // Validar cada importe aplicado contra el saldo *ahora mismo*, nunca
-  // contra un valor que haya traido el cliente.
+  // Chequeo rápido ("fail fast") antes de abrir la transacción — buena
+  // UX, no toma locks si el pedido ya está mal armado. No es lo que
+  // protege contra una carrera: eso pasa de nuevo, con las filas
+  // bloqueadas, dentro de la transacción de más abajo.
+  const saldosPrevios = await calcularSaldosComprobantes(comprobantes);
   let totalAplicado = 0;
   for (const a of aplicaciones) {
     const comprobante = comprobantes.find((c) => c.id === Number(a.comprobanteId));
-    const saldo = await calcularSaldoComprobante(comprobante);
+    const saldo = saldosPrevios.get(comprobante.id) ?? 0;
     const importe = Number(a.importeAplicado);
     if (!(importe > 0)) {
       throw new ErrorDeNegocio(`El importe aplicado al comprobante ${comprobante.numero} debe ser mayor a cero.`);
@@ -97,11 +100,13 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
     totalAplicado += importe;
   }
 
-  // Validar medios: tipo valido, cheque completo, cheque no repetido
+  // Validar medios: tipo válido, cheque completo, cheque no repetido
   // (ni dentro del mismo request ni contra pagos vigentes existentes en
-  // todo el sistema — HU-77).
+  // todo el sistema — HU-77). Un solo query en lote para todos los
+  // cheques del pedido, no uno por cheque.
   let totalMedios = 0;
   const chequesEnRequest = new Set();
+  const clavesCheque = [];
   for (const m of medios) {
     if (!MEDIOS_PAGO.includes(m.tipo)) {
       throw new ErrorDeNegocio(`medioPago inválido. Valores permitidos: ${MEDIOS_PAGO.join(", ")}`);
@@ -124,13 +129,19 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
         throw new ErrorDeNegocio(`El cheque N° ${m.numeroCheque} de ${m.banco} está repetido en la misma orden.`);
       }
       chequesEnRequest.add(clave);
+      clavesCheque.push({ banco: m.banco, numeroCheque: String(m.numeroCheque).trim() });
+    }
+  }
 
-      const existente = await prisma.ordenPagoMedio.findFirst({
-        where: { banco: m.banco, numeroCheque: String(m.numeroCheque).trim() },
-        include: { ordenPago: true },
-      });
-      if (existente && pagoVigente(existente.ordenPago)) {
-        throw new ErrorDeNegocio(`Ya existe un cheque N° ${m.numeroCheque} de ${m.banco} registrado en el sistema.`);
+  if (clavesCheque.length > 0) {
+    const existentes = await prisma.ordenPagoMedio.findMany({
+      where: { OR: clavesCheque.map((c) => ({ banco: c.banco, numeroCheque: c.numeroCheque })) },
+      include: { ordenPago: true },
+    });
+    for (const { banco, numeroCheque } of clavesCheque) {
+      const conflicto = existentes.find((e) => e.banco === banco && e.numeroCheque === numeroCheque && pagoVigente(e.ordenPago));
+      if (conflicto) {
+        throw new ErrorDeNegocio(`Ya existe un cheque N° ${numeroCheque} de ${banco} registrado en el sistema.`);
       }
     }
   }
@@ -143,13 +154,29 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
 
   return prisma.$transaction(
     async (tx) => {
-      // numero definitivo (OP-00007) se arma despues del insert, con el
-      // id — igual criterio que el codigo de Articulo. El placeholder es
-      // un uuid random, no un texto fijo, para que dos altas
-      // concurrentes nunca puedan chocar contra el mismo valor temporal.
-      const creada = await tx.ordenPago.create({
+      // Re-chequeo protegido contra carreras (dos pagos concurrentes al
+      // mismo comprobante): FOR UPDATE bloquea estas filas hasta que
+      // esta transacción termine, así una segunda solicitud que pague
+      // el mismo comprobante espera a que ésta commitee y recalcula el
+      // saldo ya actualizado — el chequeo de arriba, al ser una lectura
+      // sin lock, no alcanza para garantizar esto solo.
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM comprobantes_proveedor WHERE id IN (${Prisma.join(comprobanteIds)}) FOR UPDATE`);
+      const comprobantesFrescos = await tx.comprobanteProveedor.findMany({ where: { id: { in: comprobanteIds } } });
+      const saldosFrescos = await calcularSaldosComprobantes(comprobantesFrescos, tx);
+      for (const a of aplicaciones) {
+        const comprobante = comprobantesFrescos.find((c) => c.id === Number(a.comprobanteId));
+        const saldo = saldosFrescos.get(comprobante.id) ?? 0;
+        if (centavos(Number(a.importeAplicado)) > centavos(saldo)) {
+          throw new ErrorDeNegocio(
+            `El importe aplicado al comprobante ${comprobante.numero} (${a.importeAplicado}) supera su saldo pendiente actual (${saldo}). ` +
+              "Puede haber cambiado por otro pago registrado al mismo tiempo — revisá e intentá de nuevo."
+          );
+        }
+      }
+
+      return crearConNumeroSecuencial(tx, "ordenPago", {
+        prefijo: "OP",
         data: {
-          numero: `OP-PENDIENTE-${crypto.randomUUID()}`,
           proveedorId: Number(proveedorId),
           estado: "Pagado",
           detalle: {
@@ -169,11 +196,6 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
             })),
           },
         },
-      });
-
-      return tx.ordenPago.update({
-        where: { id: creada.id },
-        data: { numero: `OP-${String(creada.id).padStart(5, "0")}` },
         include: {
           proveedor: true,
           detalle: { include: { comprobante: true } },

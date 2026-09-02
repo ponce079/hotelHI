@@ -3,12 +3,19 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
+import { Table } from "../../componentes/Table";
+import { Cifra } from "../../componentes/Cifra";
 import { MensajeModal } from "../../componentes/MensajeModal";
+import { formatearFechaSolo } from "../../lib/fechas";
 import { listarProveedoresConSaldo, listarComprobantesPendientes, crearOrdenPago } from "./pagos.api";
 import { MEDIOS_PAGO, BANCOS } from "./pagos.constantes";
 
 const PASOS = ["Comprobantes a cancelar", "Importes a aplicar", "Medios de pago"];
-const VACIO = { paso: 1, proveedorId: "", seleccionados: [], montos: {}, medios: [] };
+// "seleccionados" no es un campo propio: se deriva de las claves de
+// "montos" (ver más abajo) — un comprobante está elegido exactamente
+// cuando tiene una entrada en montos, nunca hace falta guardar las dos
+// cosas por separado ni mantenerlas sincronizadas a mano.
+const VACIO = { paso: 1, proveedorId: "", montos: {}, medios: [] };
 
 // Comparar en centavos (enteros), no floats — mismo criterio que el
 // backend, para que el boton de confirmar no quede en un estado
@@ -36,7 +43,8 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
     enabled: Boolean(form.proveedorId),
   });
 
-  const seleccionadosDatos = (comprobantes ?? []).filter((c) => form.seleccionados.includes(c.id));
+  const seleccionados = Object.keys(form.montos).map(Number);
+  const seleccionadosDatos = (comprobantes ?? []).filter((c) => seleccionados.includes(c.id));
   const totalAplicado = seleccionadosDatos.reduce((acc, c) => acc + (Number(form.montos[c.id]) || 0), 0);
   const totalMedios = form.medios.reduce((acc, m) => acc + (Number(m.importe) || 0), 0);
   const cuadra = form.medios.length > 0 && totalAplicado > 0 && centavos(totalMedios) === centavos(totalAplicado);
@@ -69,12 +77,10 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
 
   function toggleComprobante(c) {
     setForm((f) => {
-      const yaElegido = f.seleccionados.includes(c.id);
-      const seleccionados = yaElegido ? f.seleccionados.filter((id) => id !== c.id) : [...f.seleccionados, c.id];
       const montos = { ...f.montos };
-      if (yaElegido) delete montos[c.id];
+      if (c.id in montos) delete montos[c.id];
       else montos[c.id] = String(c.saldo);
-      return { ...f, seleccionados, montos };
+      return { ...f, montos };
     });
   }
 
@@ -110,7 +116,7 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
     mutacion.mutate();
   }
 
-  const puedeAvanzarPaso1 = form.seleccionados.length > 0;
+  const puedeAvanzarPaso1 = seleccionados.length > 0;
   const puedeAvanzarPaso2 =
     seleccionadosDatos.length > 0 &&
     seleccionadosDatos.every((c) => {
@@ -165,56 +171,35 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
           </div>
 
           {form.proveedorId && (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr>
-                    <th className="w-10 border-b border-borde px-2 pb-2" />
-                    <th className="border-b border-borde px-2 pb-2 text-left font-body text-xs font-semibold tracking-wide text-tinta/55 uppercase">
-                      N° comprobante
-                    </th>
-                    <th className="border-b border-borde px-2 pb-2 text-left font-body text-xs font-semibold tracking-wide text-tinta/55 uppercase">
-                      Fecha
-                    </th>
-                    <th className="border-b border-borde px-2 pb-2 text-right font-body text-xs font-semibold tracking-wide text-tinta/55 uppercase">
-                      Saldo pendiente
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(comprobantes ?? []).map((c) => {
-                    const marcado = form.seleccionados.includes(c.id);
-                    return (
-                      <tr
-                        key={c.id}
-                        onClick={() => toggleComprobante(c)}
-                        className={`cursor-pointer border-b border-borde last:border-0 ${marcado ? "bg-pino-100" : "hover:bg-hueso"}`}
+            <Table
+              columnas={["", "N° comprobante", "Fecha", "Saldo pendiente"]}
+              columnasDerecha={["Saldo pendiente"]}
+              filas={comprobantes ?? []}
+              vacio="Este proveedor no tiene comprobantes con saldo pendiente."
+              renderFila={(c) => {
+                const marcado = seleccionados.includes(c.id);
+                return (
+                  <tr
+                    key={c.id}
+                    onClick={() => toggleComprobante(c)}
+                    className={`cursor-pointer border-b border-borde last:border-0 ${marcado ? "bg-pino-100" : "hover:bg-hueso"}`}
+                  >
+                    <td className="px-2 py-2.5">
+                      <span
+                        className={`flex h-[18px] w-[18px] items-center justify-center rounded-[6px] border text-[11px] ${
+                          marcado ? "border-pino bg-pino text-hueso" : "border-borde bg-transparent"
+                        }`}
                       >
-                        <td className="px-2 py-2.5">
-                          <span
-                            className={`flex h-[18px] w-[18px] items-center justify-center rounded-[6px] border text-[11px] ${
-                              marcado ? "border-pino bg-pino text-hueso" : "border-borde bg-transparent"
-                            }`}
-                          >
-                            {marcado ? "✓" : ""}
-                          </span>
-                        </td>
-                        <td className="px-2 py-2.5 font-mono text-[12.5px]">{c.numero}</td>
-                        <td className="px-2 py-2.5 text-[12.5px]">{new Date(c.fecha).toLocaleDateString("es-AR")}</td>
-                        <td className="px-2 py-2.5 text-right font-semibold text-error-texto">$ {formatearMonto(c.saldo)}</td>
-                      </tr>
-                    );
-                  })}
-                  {comprobantes && comprobantes.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="px-2 py-6 text-center text-sm text-piedra">
-                        Este proveedor no tiene comprobantes con saldo pendiente.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
+                        {marcado ? "✓" : ""}
+                      </span>
+                    </td>
+                    <td className="px-2 py-2.5 font-mono text-[12.5px]">{c.numero}</td>
+                    <td className="px-2 py-2.5 text-[12.5px]">{formatearFechaSolo(c.fecha)}</td>
+                    <td className="px-2 py-2.5 text-right font-semibold text-error-texto">$ {formatearMonto(c.saldo)}</td>
+                  </tr>
+                );
+              }}
+            />
           )}
         </div>
       )}
@@ -343,14 +328,14 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
       <div className="sticky bottom-4 flex flex-wrap items-center gap-5 rounded-[18.4px] border border-borde bg-white px-6 py-4 shadow-[0_1px_2px_rgba(46,43,37,0.14)]">
         <div>
           <div className="text-[11px] tracking-wide text-tinta/45 uppercase">Total a pagar</div>
-          <div className="font-heading text-[22px]">$ {formatearMonto(totalAplicado)}</div>
+          <Cifra tamano={21}>$ {formatearMonto(totalAplicado)}</Cifra>
         </div>
         <span className="text-lg text-tinta/25">—</span>
         <div>
           <div className="text-[11px] tracking-wide text-tinta/45 uppercase">Total distribuido</div>
-          <div className={`font-heading text-[22px] ${form.paso < 3 ? "text-tinta/45" : cuadra ? "text-pino" : "text-laton-oscuro"}`}>
+          <Cifra tamano={21} className={form.paso < 3 ? "text-tinta/45" : cuadra ? "text-pino" : "text-laton-oscuro"}>
             $ {formatearMonto(totalMedios)}
-          </div>
+          </Cifra>
         </div>
         <p className="m-0 flex-1 text-[12.5px] text-tinta/60">
           {form.paso < 3
