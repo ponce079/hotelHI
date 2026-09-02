@@ -19,3 +19,8 @@ export async function obtenerOrdenPago(id) {
   const { data } = await api.get(`/ordenes-pago/${id}`);
   return data;
 }
+
+export async function listarOrdenesPago(params) {
+  const { data } = await api.get("/ordenes-pago", { params });
+  return data;
+}

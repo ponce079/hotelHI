@@ -9,6 +9,7 @@ const router = express.Router();
 router.get("/proveedores-con-saldo", pagosControlador.getProveedoresConSaldo);
 router.get("/comprobantes-pendientes", pagosControlador.getComprobantesPendientes);
 router.post("/", pagosControlador.postOrdenPago);
+router.get("/", pagosControlador.getOrdenesPago);
 router.get("/:id", pagosControlador.getOrdenPagoPorId);
 
 module.exports = router;
