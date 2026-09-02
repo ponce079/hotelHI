@@ -45,6 +45,16 @@ async function postOrdenPago(req, res) {
   }
 }
 
+async function getOrdenesPago(req, res) {
+  try {
+    const resultado = await pagosServicio.listarOrdenesPago(req.query);
+    return res.json(resultado);
+  } catch (err) {
+    console.error("Error al listar órdenes de pago:", err);
+    return res.status(500).json({ error: "No se pudieron listar las órdenes de pago." });
+  }
+}
+
 async function getOrdenPagoPorId(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) {
@@ -62,4 +72,4 @@ async function getOrdenPagoPorId(req, res) {
   }
 }
 
-module.exports = { getProveedoresConSaldo, getComprobantesPendientes, postOrdenPago, getOrdenPagoPorId };
+module.exports = { getProveedoresConSaldo, getComprobantesPendientes, postOrdenPago, getOrdenPagoPorId, getOrdenesPago };

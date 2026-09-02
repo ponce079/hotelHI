@@ -238,10 +238,73 @@ async function obtenerOrdenPago(id) {
   });
 }
 
+// HU-78: listado con filtros + total del período + desglose por medio.
+// Los totales solo cuentan ordenes vigentes (no anuladas ni rechazadas
+// por un cheque) — el listado en si muestra todas, para que se vea el
+// historial completo, pero lo que se suma es lo que de verdad afecta la
+// cuenta corriente del proveedor.
+async function listarOrdenesPago({ proveedorId, medio, desde, hasta } = {}) {
+  const where = {};
+  if (proveedorId) where.proveedorId = Number(proveedorId);
+  if (medio && MEDIOS_PAGO.includes(medio)) {
+    where.medios = { some: { medioPago: medio } };
+  }
+  if (desde || hasta) {
+    where.fecha = {};
+    if (desde) where.fecha.gte = new Date(desde);
+    if (hasta) {
+      // "hasta" = menor al dia siguiente (limite exclusivo), no
+      // setHours(23,59,59) — mismo criterio que listarMovimientos en
+      // movimientosStock.servicio.js, para no perder pagos del propio
+      // dia "hasta" por una comparacion en hora local del server.
+      const siguienteDia = new Date(hasta);
+      siguienteDia.setUTCDate(siguienteDia.getUTCDate() + 1);
+      where.fecha.lt = siguienteDia;
+    }
+  }
+
+  const ordenes = await prisma.ordenPago.findMany({
+    where,
+    include: { proveedor: true, medios: true, detalle: { include: { comprobante: true } } },
+    orderBy: { fecha: "desc" },
+  });
+
+  const vigentes = ordenes.filter(pagoVigente);
+  const totalPeriodo = vigentes.reduce((acc, o) => acc + o.medios.reduce((a, m) => a + Number(m.importe), 0), 0);
+  const desglose = MEDIOS_PAGO.map((tipo) => {
+    const conEsteMedio = vigentes.filter((o) => o.medios.some((m) => m.medioPago === tipo));
+    const importe = conEsteMedio.reduce(
+      (acc, o) => acc + o.medios.filter((m) => m.medioPago === tipo).reduce((a, m) => a + Number(m.importe), 0),
+      0
+    );
+    return { medio: tipo, importe, cantidadOrdenes: conEsteMedio.length };
+  });
+
+  return {
+    items: ordenes.map((o) => ({
+      id: o.id,
+      numero: o.numero,
+      fecha: o.fecha,
+      proveedorId: o.proveedorId,
+      proveedor: o.proveedor.razonSocial,
+      medios: o.medios.map((m) => m.medioPago),
+      importe: o.medios.reduce((a, m) => a + Number(m.importe), 0),
+      comprobantes: o.detalle.map((d) => d.comprobante.numero),
+      estado: o.anulado ? "Anulada" : o.estado,
+      vigente: pagoVigente(o),
+    })),
+    totalPeriodo,
+    cantidadVigentes: vigentes.length,
+    cantidadTotal: ordenes.length,
+    desglose,
+  };
+}
+
 module.exports = {
   ErrorDeNegocio,
   proveedoresConSaldo,
   comprobantesPendientes,
   crearOrdenPago,
   obtenerOrdenPago,
+  listarOrdenesPago,
 };
