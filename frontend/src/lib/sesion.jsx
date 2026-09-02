@@ -75,6 +75,9 @@ export function SesionProvider({ children }) {
         // valida rol todavia (ver sesion.jsx arriba), asi que esta
         // pantalla depende de este chequeo + <SinPermiso />.
         if (accion === "registrarPago") return rol === "compras";
+        // Sprint 2 — Cuenta Corriente de Proveedores (HU-80): de solo
+        // lectura, mismo rol que Pagos.
+        if (accion === "verCuentaCorriente") return rol === "compras";
         return false;
       },
     };

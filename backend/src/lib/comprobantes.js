@@ -15,6 +15,10 @@
 
 const prisma = require("./prisma");
 
+function redondear(n) {
+  return Math.round(n * 100) / 100;
+}
+
 function esFactura(comprobante) {
   return comprobante.tipo === "Factura";
 }
@@ -60,7 +64,7 @@ async function calcularSaldosComprobantes(comprobantes, db = prisma) {
 
     const saldo = Number(f.importeTotal) + sumaND - sumaNC - sumaPagos;
     // Mismo criterio que una Nota de Credito que supera el saldo: nunca negativo.
-    saldos.set(f.id, Math.max(0, Math.round(saldo * 100) / 100));
+    saldos.set(f.id, Math.max(0, redondear(saldo)));
   }
   return saldos;
 }
@@ -87,4 +91,43 @@ async function listarFacturasConSaldo(proveedorId, db = prisma) {
   return facturas.map((f) => ({ ...f, saldo: saldos.get(f.id) ?? 0 })).filter((f) => f.saldo > 0);
 }
 
-module.exports = { calcularSaldosComprobantes, calcularSaldoComprobante, listarFacturasConSaldo, pagoVigente, esFactura };
+// Suma el importe de un conjunto de medios de pago de una OrdenPago
+// (Decimal -> Number). Compartido entre Pagos y Cuenta Corriente — las
+// dos pantallas necesitan "cuanto sumo esta orden en total".
+function sumarImportesMedios(medios) {
+  return medios.reduce((acc, m) => acc + Number(m.importe), 0);
+}
+
+// Saldo agregado por proveedor, en lote (2 consultas, sin importar
+// cuantos proveedores/facturas haya) — compartido entre Pagos
+// (proveedoresConSaldo, solo necesita los IDs) y Cuenta Corriente
+// (resumenCuentaCorriente, necesita ademas el conteo de comprobantes
+// impagos). select liviano: solo los campos que hacen falta para sumar.
+async function resumenSaldosPorProveedor(db = prisma) {
+  const facturas = await db.comprobanteProveedor.findMany({
+    where: { tipo: "Factura", anulado: false },
+    select: { id: true, tipo: true, proveedorId: true, importeTotal: true },
+  });
+  const saldos = await calcularSaldosComprobantes(facturas, db);
+
+  const porProveedor = new Map();
+  let comprobantesImpagos = 0;
+  for (const f of facturas) {
+    const saldo = saldos.get(f.id) ?? 0;
+    if (saldo <= 0) continue;
+    comprobantesImpagos += 1;
+    porProveedor.set(f.proveedorId, redondear((porProveedor.get(f.proveedorId) ?? 0) + saldo));
+  }
+  return { porProveedor, comprobantesImpagos };
+}
+
+module.exports = {
+  calcularSaldosComprobantes,
+  calcularSaldoComprobante,
+  listarFacturasConSaldo,
+  pagoVigente,
+  esFactura,
+  sumarImportesMedios,
+  resumenSaldosPorProveedor,
+  redondear,
+};

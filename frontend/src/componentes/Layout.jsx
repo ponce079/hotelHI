@@ -10,6 +10,7 @@ import {
   BarChart3,
   LogOut,
   Wallet,
+  Landmark,
 } from "lucide-react";
 import { useSesion } from "../lib/sesion";
 
@@ -35,6 +36,7 @@ const ITEMS = [
   // mismo shape que las de arriba — ver la Guía Técnica Sprint 2 sobre
   // por qué no se armó el menú con grupos colapsables del prototipo.
   { to: "/pagos", label: "Pagos a Proveedores", icon: Wallet, roles: ["compras"] },
+  { to: "/cuenta-corriente", label: "Cuenta Corriente", icon: Landmark, roles: ["compras"] },
 ];
 
 export function Layout() {

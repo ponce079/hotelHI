@@ -21,6 +21,9 @@ app.use("/api/depositos", require("./src/modulos/depositos/depositos.routes"));
 
 // --- Sprint 2 — Compras y Gastos ---
 app.use("/api/ordenes-pago", require("./src/modulos/pagos/pagos.routes"));
+const cuentaCorrienteRoutes = require("./src/modulos/cuenta-corriente/cuentaCorriente.routes");
+app.use("/api/proveedores", cuentaCorrienteRoutes.routerProveedores);
+app.use("/api/cuenta-corriente", cuentaCorrienteRoutes.routerCuentaCorriente);
 
 app.get("/", (req, res) => {
   res.json({ status: "ok", proyecto: "Sistema de Gestión Hotelera - Holiday Inn" });
