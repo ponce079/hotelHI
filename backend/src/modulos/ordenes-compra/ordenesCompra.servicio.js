@@ -161,6 +161,7 @@ async function obtenerOCPorId(id) {
     where: { id: ocId },
     include: {
       proveedor: true,
+      deposito: true,
       detalle: { include: { articulo: true } },
       log: { orderBy: { fecha: "asc" } }, // el campo en el schema es "log", no "logs"
     },
