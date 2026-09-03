@@ -17,6 +17,9 @@ import { ReportePage } from "./modulos/reporte/ReportePage";
 import { PagosPage } from "./modulos/pagos/PagosPage";
 import { OrdenPagoDetallePage } from "./modulos/pagos/OrdenPagoDetallePage";
 import { CuentaCorrientePage } from "./modulos/cuenta-corriente/CuentaCorrientePage";
+import { OrdenesCompraPage } from "./modulos/ordenes-compra/OrdenesCompraPage";
+import { OrdenCompraDetallePage } from "./modulos/ordenes-compra/OrdenCompraDetallePage";
+import { RecepcionOCPage } from "./modulos/ordenes-compra/RecepcionOCPage";
 
 // Gatekeeper de rutas: sin sesion (sin rol elegido en el login), redirige
 // a /login. No es autenticacion real contra el backend — ver lib/sesion.jsx.
@@ -47,6 +50,9 @@ export default function App() {
           <Route path="/pagos" element={<PagosPage />} />
           <Route path="/pagos/:id" element={<OrdenPagoDetallePage />} />
           <Route path="/cuenta-corriente" element={<CuentaCorrientePage />} />
+          <Route path="/ordenes-compra" element={<OrdenesCompraPage />} />
+          <Route path="/ordenes-compra/:id" element={<OrdenCompraDetallePage />} />
+          <Route path="/ordenes-compra/:id/recepcion" element={<RecepcionOCPage />} />
         </Route>
       </Route>
     </Routes>

@@ -78,6 +78,13 @@ export function SesionProvider({ children }) {
         // Sprint 2 — Cuenta Corriente de Proveedores (HU-80): de solo
         // lectura, mismo rol que Pagos.
         if (accion === "verCuentaCorriente") return rol === "compras";
+        // Sprint 2 — Órdenes de Compra (HU-22 a 25, 85): tres permisos
+        // separados porque tres roles distintos actúan sobre la misma
+        // pantalla en distintos momentos de su ciclo de vida.
+        if (accion === "verOrdenesCompra") return rol === "compras" || rol === "gerente" || rol === "deposito";
+        if (accion === "aprobarOC") return rol === "gerente";
+        if (accion === "gestionarOC") return rol === "compras"; // enviar / anular
+        if (accion === "recibirOC") return rol === "deposito";
         return false;
       },
     };
