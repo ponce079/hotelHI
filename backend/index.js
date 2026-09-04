@@ -27,6 +27,7 @@ app.use("/api/cuenta-corriente", cuentaCorrienteRoutes.routerCuentaCorriente);
 app.use("/api/proveedores", require("./src/modulos/proveedores/proveedores.routes"));
 app.use("/api/requerimientos", require("./src/modulos/requerimientos/requerimientos.routes"));
 app.use("/api/presupuestos", require("./src/modulos/presupuestos/presupuestos.routes"));
+app.use("/api/comprobantes", require("./src/modulos/comprobantes/comprobantes.routes"));
 
 app.get("/", (req, res) => {
   res.json({ status: "ok", proyecto: "Sistema de Gestión Hotelera - Holiday Inn" });

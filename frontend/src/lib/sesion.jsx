@@ -78,6 +78,7 @@ export function SesionProvider({ children }) {
         // Sprint 2 — Cuenta Corriente de Proveedores (HU-80): de solo
         // lectura, mismo rol que Pagos.
         if (accion === "verCuentaCorriente") return rol === "compras";
+        if (accion === "registrarComprobante") return rol === "compras";
         // Sprint 2 — Proveedores (HU-18 a 21): el padrón lo administra
         // compras; admin entra porque es catálogo maestro, igual que
         // artículos y depósitos.
