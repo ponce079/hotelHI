@@ -11,6 +11,7 @@ import {
   LogOut,
   Wallet,
   Landmark,
+  ShoppingCart,
   Building2,
   ClipboardList,
   FileText,
@@ -40,12 +41,17 @@ const ITEMS = [
   // por qué no se armó el menú con grupos colapsables del prototipo.
   { to: "/pagos", label: "Pagos a Proveedores", icon: Wallet, roles: ["compras"] },
   { to: "/cuenta-corriente", label: "Cuenta Corriente", icon: Landmark, roles: ["compras"] },
-  { to: "/comprobantes", label: "Comprobantes", icon: FileText, roles: ["compras"] },
   // Sprint 2 — Proveedores, Requerimientos y Presupuestos (HU-18 a 21,
   // 81 a 84). Mismos roles que declara puede() en lib/sesion.jsx.
   { to: "/proveedores", label: "Proveedores", icon: Building2, roles: ["compras", "admin"] },
   { to: "/requerimientos", label: "Requerimientos", icon: ClipboardList, roles: ["compras", "deposito"] },
   { to: "/presupuestos", label: "Presupuestos", icon: FileText, roles: ["compras", "gerente"] },
+  // Sprint 2 — Órdenes de Compra (HU-22 a 25, 85): visible para los 3
+  // roles que actúan sobre ella (compras aprueba/envía/anula, gerente
+  // aprueba, depósito recibe) — cada botón puntual igual depende de
+  // puede() adentro de la pantalla, ver sesion.jsx.
+  { to: "/ordenes-compra", label: "Órdenes de Compra", icon: ShoppingCart, roles: ["compras", "gerente", "deposito"] },
+  { to: "/comprobantes", label: "Comprobantes", icon: FileText, roles: ["compras"] },
 ];
 
 export function Layout() {
@@ -107,3 +113,4 @@ export function Layout() {
     </div>
   );
 }
+

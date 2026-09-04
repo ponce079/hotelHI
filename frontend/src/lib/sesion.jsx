@@ -93,6 +93,13 @@ export function SesionProvider({ children }) {
         // Sprint 2 — Adjudicación de presupuesto (HU-84): solo gerente.
         // Es el único que puede dejar un requerimiento en "Aprobado".
         if (accion === "aprobarPresupuesto") return rol === "gerente";
+        // Sprint 2 — Órdenes de Compra (HU-22 a 25, 85): tres permisos
+        // separados porque tres roles distintos actúan sobre la misma
+        // pantalla en distintos momentos de su ciclo de vida.
+        if (accion === "verOrdenesCompra") return rol === "compras" || rol === "gerente" || rol === "deposito";
+        if (accion === "aprobarOC") return rol === "gerente";
+        if (accion === "gestionarOC") return rol === "compras"; // enviar / anular
+        if (accion === "recibirOC") return rol === "deposito";
         return false;
       },
     };

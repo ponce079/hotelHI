@@ -28,6 +28,7 @@ app.use("/api/proveedores", require("./src/modulos/proveedores/proveedores.route
 app.use("/api/requerimientos", require("./src/modulos/requerimientos/requerimientos.routes"));
 app.use("/api/presupuestos", require("./src/modulos/presupuestos/presupuestos.routes"));
 app.use("/api/comprobantes", require("./src/modulos/comprobantes/comprobantes.routes"));
+app.use("/api/ordenes-compra", require("./src/modulos/ordenes-compra/ordenesCompra.routes"));
 
 app.get("/", (req, res) => {
   res.json({ status: "ok", proyecto: "Sistema de Gestión Hotelera - Holiday Inn" });

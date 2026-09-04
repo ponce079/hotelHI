@@ -17,6 +17,9 @@ import { ReportePage } from "./modulos/reporte/ReportePage";
 import { PagosPage } from "./modulos/pagos/PagosPage";
 import { OrdenPagoDetallePage } from "./modulos/pagos/OrdenPagoDetallePage";
 import { CuentaCorrientePage } from "./modulos/cuenta-corriente/CuentaCorrientePage";
+import { OrdenesCompraPage } from "./modulos/ordenes-compra/OrdenesCompraPage";
+import { OrdenCompraDetallePage } from "./modulos/ordenes-compra/OrdenCompraDetallePage";
+import { RecepcionOCPage } from "./modulos/ordenes-compra/RecepcionOCPage";
 import { ProveedoresPage } from "./modulos/proveedores/ProveedoresPage";
 import { ProveedorDetallePage } from "./modulos/proveedores/ProveedorDetallePage";
 import { RequerimientosPage } from "./modulos/requerimientos/RequerimientosPage";
@@ -56,6 +59,9 @@ export default function App() {
           <Route path="/pagos" element={<PagosPage />} />
           <Route path="/pagos/:id" element={<OrdenPagoDetallePage />} />
           <Route path="/cuenta-corriente" element={<CuentaCorrientePage />} />
+          <Route path="/ordenes-compra" element={<OrdenesCompraPage />} />
+          <Route path="/ordenes-compra/:id" element={<OrdenCompraDetallePage />} />
+          <Route path="/ordenes-compra/:id/recepcion" element={<RecepcionOCPage />} />
           {/* Sprint 2 — Proveedores, Requerimientos y Presupuestos (HU-18 a 21, 81 a 84).
               /requerimientos/nuevo va antes que /requerimientos/:id para que "nuevo"
               no se lea como un id. */}
