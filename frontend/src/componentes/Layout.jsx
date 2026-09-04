@@ -11,6 +11,8 @@ import {
   LogOut,
   Wallet,
   Landmark,
+  Building2,
+  ClipboardList,
   FileText,
 } from "lucide-react";
 import { useSesion } from "../lib/sesion";
@@ -39,6 +41,11 @@ const ITEMS = [
   { to: "/pagos", label: "Pagos a Proveedores", icon: Wallet, roles: ["compras"] },
   { to: "/cuenta-corriente", label: "Cuenta Corriente", icon: Landmark, roles: ["compras"] },
   { to: "/comprobantes", label: "Comprobantes", icon: FileText, roles: ["compras"] },
+  // Sprint 2 — Proveedores, Requerimientos y Presupuestos (HU-18 a 21,
+  // 81 a 84). Mismos roles que declara puede() en lib/sesion.jsx.
+  { to: "/proveedores", label: "Proveedores", icon: Building2, roles: ["compras", "admin"] },
+  { to: "/requerimientos", label: "Requerimientos", icon: ClipboardList, roles: ["compras", "deposito"] },
+  { to: "/presupuestos", label: "Presupuestos", icon: FileText, roles: ["compras", "gerente"] },
 ];
 
 export function Layout() {

@@ -79,6 +79,20 @@ export function SesionProvider({ children }) {
         // lectura, mismo rol que Pagos.
         if (accion === "verCuentaCorriente") return rol === "compras";
         if (accion === "registrarComprobante") return rol === "compras";
+        // Sprint 2 — Proveedores (HU-18 a 21): el padrón lo administra
+        // compras; admin entra porque es catálogo maestro, igual que
+        // artículos y depósitos.
+        if (accion === "abmProveedor") return rol === "compras" || rol === "admin";
+        // Sprint 2 — Requerimientos de Reposición (HU-81): es la única
+        // pantalla del sprint con dos roles habilitados a la vez —
+        // depósito pide lo que le falta, compras también puede cargarlo.
+        if (accion === "crearRequerimiento") return rol === "compras" || rol === "deposito";
+        // Sprint 2 — Presupuestos (HU-82, 83): pedirlos y cargar lo que
+        // cotiza cada proveedor es tarea de compras.
+        if (accion === "gestionarPresupuestos") return rol === "compras";
+        // Sprint 2 — Adjudicación de presupuesto (HU-84): solo gerente.
+        // Es el único que puede dejar un requerimiento en "Aprobado".
+        if (accion === "aprobarPresupuesto") return rol === "gerente";
         return false;
       },
     };

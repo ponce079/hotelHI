@@ -1,10 +1,10 @@
 // src/modulos/cuenta-corriente/cuentaCorriente.routes.js
 //
-// Dos routers, uno por prefijo (/api/proveedores y /api/cuenta-corriente)
-// — no hay un modulo de Proveedores propio todavia (HU-18 a 21), asi que
-// routerProveedores es la unica ruta bajo /api/proveedores por ahora.
-// Un "/:id" de un futuro modulo de Proveedores no choca con esta: Express
-// no matchea rutas de un solo segmento contra un path con mas segmentos.
+// Dos routers, uno por prefijo (/api/proveedores y /api/cuenta-corriente).
+// routerProveedores comparte el prefijo /api/proveedores con el modulo de
+// Proveedores (HU-18 a 21, montado despues en index.js): no choca porque
+// Express no matchea un "/:id/cuenta-corriente" de dos segmentos contra
+// las rutas de un solo segmento ("/", "/:id") de ese modulo.
 
 const express = require("express");
 const cuentaCorrienteControlador = require("./cuentaCorriente.controlador");
