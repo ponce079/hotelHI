@@ -78,6 +78,7 @@ export function SesionProvider({ children }) {
         // Sprint 2 — Cuenta Corriente de Proveedores (HU-80): de solo
         // lectura, mismo rol que Pagos.
         if (accion === "verCuentaCorriente") return rol === "compras";
+        if (accion === "registrarComprobante") return rol === "compras";
         return false;
       },
     };
