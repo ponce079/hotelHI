@@ -1,5 +1,12 @@
 import { api } from "../../lib/api";
 
+// HU-22 — cuelga de /presupuestos/:id/generar-oc porque la acción parte
+// del presupuesto adjudicado (ver ordenesCompra.routes.js / presupuestos.routes.js).
+export async function generarOrdenCompra(presupuestoId, usuario) {
+  const { data } = await api.post(`/presupuestos/${presupuestoId}/generar-oc`, { usuario });
+  return data;
+}
+
 export async function listarOrdenesCompra(params) {
   const { data } = await api.get("/ordenes-compra", { params });
   return data;

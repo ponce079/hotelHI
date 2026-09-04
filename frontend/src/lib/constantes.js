@@ -52,3 +52,20 @@ export const VARIANTE_ESTADO_PRESUPUESTO = {
   Rechazado: "error",
   Adjudicado: "ok",
 };
+
+// Rubro del proveedor <-> categoría del artículo (HU-82). El backend
+// valida lo mismo con esta tabla (es el que manda); acá se usa para el
+// filtro "rubro afín" de SolicitarPresupuestosPage.
+export const MAPA_RUBRO_CATEGORIA = {
+  Limpieza: ["Limpieza"],
+  Amenities: ["Amenities"],
+  Alimentos: ["Alimentos y Bebidas"],
+  Bebidas: ["Alimentos y Bebidas"],
+  "Blancos y textiles": ["Blanquería"],
+  Mantenimiento: ["Mantenimiento", "Equipamiento y Electrodomésticos"],
+  "Bazar y menaje": ["Equipamiento y Electrodomésticos", "Papelería y Oficina"],
+};
+
+export function rubroCubreCategoria(rubro, categoria) {
+  return (MAPA_RUBRO_CATEGORIA[rubro] ?? []).includes(categoria);
+}

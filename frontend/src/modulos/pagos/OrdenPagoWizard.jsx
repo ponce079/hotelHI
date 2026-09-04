@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Input } from "../../componentes/Input";
 import { MoneyInput } from "../../componentes/MoneyInput";
@@ -6,6 +6,7 @@ import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
+import { Badge } from "../../componentes/Badge";
 import { MensajeModal } from "../../componentes/MensajeModal";
 import { formatearFechaSolo } from "../../lib/fechas";
 import { formatearMonto } from "../../lib/moneda";
@@ -17,7 +18,10 @@ const PASOS = ["Comprobantes a cancelar", "Importes a aplicar", "Medios de pago"
 // "montos" (ver más abajo) — un comprobante está elegido exactamente
 // cuando tiene una entrada en montos, nunca hace falta guardar las dos
 // cosas por separado ni mantenerlas sincronizadas a mano.
-const VACIO = { paso: 1, proveedorId: "", montos: {}, medios: [] };
+// "confirmaciones" (HU-76): comprobanteId -> true, solo para los que
+// tienen diferencia de matching y el usuario confirmó explícitamente
+// que quiere incluirlos igual.
+const VACIO = { paso: 1, proveedorId: "", montos: {}, confirmaciones: {}, medios: [] };
 
 // Comparar en centavos (enteros), no floats — mismo criterio que el
 // backend, para que el boton de confirmar no quede en un estado
@@ -52,7 +56,11 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
     mutationFn: () =>
       crearOrdenPago({
         proveedorId: Number(form.proveedorId),
-        aplicaciones: seleccionadosDatos.map((c) => ({ comprobanteId: c.id, importeAplicado: Number(form.montos[c.id]) })),
+        aplicaciones: seleccionadosDatos.map((c) => ({
+          comprobanteId: c.id,
+          importeAplicado: Number(form.montos[c.id]),
+          confirmarDiferencia: Boolean(form.confirmaciones[c.id]),
+        })),
         medios: form.medios.map((m) => ({
           tipo: m.tipo,
           importe: Number(m.importe),
@@ -115,7 +123,13 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
     mutacion.mutate();
   }
 
-  const puedeAvanzarPaso1 = seleccionados.length > 0;
+  // HU-76: un comprobante con diferencia de matching no alcanza para
+  // avanzar solo con seleccionarlo — hace falta que su confirmación
+  // explícita también esté tildada.
+  const confirmacionesPendientes = seleccionadosDatos.some(
+    (c) => c.matching?.tieneDiferencia && !form.confirmaciones[c.id]
+  );
+  const puedeAvanzarPaso1 = seleccionados.length > 0 && !confirmacionesPendientes;
   const puedeAvanzarPaso2 =
     seleccionadosDatos.length > 0 &&
     seleccionadosDatos.every((c) => {
@@ -171,31 +185,66 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
 
           {form.proveedorId && (
             <Table
-              columnas={["", "N° comprobante", "Fecha", "Saldo pendiente"]}
+              columnas={["", "N° comprobante", "Fecha", "Matching", "Saldo pendiente"]}
               columnasDerecha={["Saldo pendiente"]}
               filas={comprobantes ?? []}
               vacio="Este proveedor no tiene comprobantes con saldo pendiente."
               renderFila={(c) => {
                 const marcado = seleccionados.includes(c.id);
+                const conDiferencia = Boolean(c.matching?.tieneDiferencia);
+                const confirmado = Boolean(form.confirmaciones[c.id]);
                 return (
-                  <tr
-                    key={c.id}
-                    onClick={() => toggleComprobante(c)}
-                    className={`cursor-pointer border-b border-borde last:border-0 ${marcado ? "bg-pino-100" : "hover:bg-hueso"}`}
-                  >
-                    <td className="px-2 py-2.5">
-                      <span
-                        className={`flex h-[18px] w-[18px] items-center justify-center rounded-[6px] border text-[11px] ${
-                          marcado ? "border-pino bg-pino text-hueso" : "border-borde bg-transparent"
-                        }`}
-                      >
-                        {marcado ? "✓" : ""}
-                      </span>
-                    </td>
-                    <td className="px-2 py-2.5 font-mono text-[12.5px]">{c.numero}</td>
-                    <td className="px-2 py-2.5 text-[12.5px]">{formatearFechaSolo(c.fecha)}</td>
-                    <td className="px-2 py-2.5 text-right font-semibold text-error-texto">$ {formatearMonto(c.saldo)}</td>
-                  </tr>
+                  <Fragment key={c.id}>
+                    <tr
+                      onClick={() => toggleComprobante(c)}
+                      className={`cursor-pointer border-b border-borde last:border-0 ${marcado ? "bg-pino-100" : "hover:bg-hueso"}`}
+                    >
+                      <td className="px-2 py-2.5">
+                        <span
+                          className={`flex h-[18px] w-[18px] items-center justify-center rounded-[6px] border text-[11px] ${
+                            marcado ? "border-pino bg-pino text-hueso" : "border-borde bg-transparent"
+                          }`}
+                        >
+                          {marcado ? "✓" : ""}
+                        </span>
+                      </td>
+                      <td className="px-2 py-2.5 font-mono text-[12.5px]">{c.numero}</td>
+                      <td className="px-2 py-2.5 text-[12.5px]">{formatearFechaSolo(c.fecha)}</td>
+                      <td className="px-2 py-2.5">
+                        {conDiferencia ? (
+                          <Badge variante="error">◆ Con diferencia</Badge>
+                        ) : c.matching ? (
+                          <Badge variante="ok">OK</Badge>
+                        ) : (
+                          <span className="text-xs text-piedra">—</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-2.5 text-right font-semibold text-error-texto">$ {formatearMonto(c.saldo)}</td>
+                    </tr>
+                    {marcado && conDiferencia && (
+                      <tr className="border-b border-borde last:border-0" onClick={(e) => e.stopPropagation()}>
+                        <td colSpan={5} className="bg-error-suave px-4 py-3">
+                          <label className="flex cursor-pointer items-start gap-2.5 text-[12.5px] text-error-texto">
+                            <input
+                              type="checkbox"
+                              checked={confirmado}
+                              onChange={(e) =>
+                                setForm((f) => ({
+                                  ...f,
+                                  confirmaciones: { ...f.confirmaciones, [c.id]: e.target.checked },
+                                }))
+                              }
+                              className="mt-0.5 cursor-pointer accent-error"
+                            />
+                            <span>
+                              El comprobante {c.numero} tiene una diferencia entre la OC, lo recibido en depósito y lo
+                              facturado. Confirmo que quiero incluirlo igual en esta orden de pago.
+                            </span>
+                          </label>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               }}
             />

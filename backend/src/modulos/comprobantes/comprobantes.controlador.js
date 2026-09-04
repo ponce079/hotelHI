@@ -18,13 +18,14 @@ async function postComprobante(req, res) {
 // GET /api/comprobantes
 async function getComprobantes(req, res) {
   try {
-    const { proveedorId, estado, desde, hasta, soloSaldo } = req.query;
+    const { proveedorId, estado, desde, hasta, soloSaldo, ordenarPor } = req.query;
     const comprobantes = await comprobantesServicio.listarComprobantes({
       proveedorId,
       estado,
       desde,
       hasta,
-      soloSaldo: soloSaldo !== 'false' // default true
+      soloSaldo: soloSaldo !== 'false', // default true
+      ordenarPor
     });
     return res.json(comprobantes);
   } catch (err) {

@@ -13,7 +13,12 @@
 const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
 const { redondear } = require("../../lib/comprobantes");
-const { ESTADOS_REQUERIMIENTO, ESTADOS_PRESUPUESTO, OPCIONES_TRANSACCION } = require("../../lib/constantes");
+const {
+  ESTADOS_REQUERIMIENTO,
+  ESTADOS_PRESUPUESTO,
+  OPCIONES_TRANSACCION,
+  rubroCubreCategoria,
+} = require("../../lib/constantes");
 
 class ErrorDeNegocio extends Error {
   constructor(message, statusCode = 400) {
@@ -38,6 +43,9 @@ const INCLUDE_FICHA = {
     include: { articulo: { select: { id: true, codigo: true, nombre: true, unidadMedida: true } } },
     orderBy: { id: "asc" },
   },
+  // HU-22: para que la pantalla de comparación sepa si ya se generó la OC
+  // de este presupuesto (y no ofrezca generarla dos veces).
+  ordenCompra: { select: { id: true, numero: true } },
 };
 
 // Total de un presupuesto = Σ (precioUnitario × cantidad solicitada) + flete.
@@ -73,7 +81,10 @@ function conTotales(presupuesto) {
 async function solicitarPresupuestos(requerimientoId, { proveedorIds, requiereFlete }) {
   const requerimiento = await prisma.requerimientoReposicion.findUnique({
     where: { id: requerimientoId },
-    include: { presupuestos: true },
+    include: {
+      presupuestos: true,
+      detalle: { include: { articulo: { select: { categoria: true } } } },
+    },
   });
   if (!requerimiento) throw new ErrorDeNegocio("Requerimiento no encontrado", 404);
   if (requerimiento.estado !== ESTADOS_REQUERIMIENTO.PENDIENTE) {
@@ -84,13 +95,32 @@ async function solicitarPresupuestos(requerimientoId, { proveedorIds, requiereFl
   }
 
   const unicos = [...new Set(proveedorIds)];
-  const proveedores = await prisma.proveedor.findMany({ where: { id: { in: unicos } } });
+  const proveedores = await prisma.proveedor.findMany({
+    where: { id: { in: unicos } },
+    include: { rubros: true },
+  });
   if (proveedores.length !== unicos.length) {
     throw new ErrorDeNegocio("Alguno de los proveedores indicados no existe", 404);
   }
   const inactivo = proveedores.find((p) => !p.activo);
   if (inactivo) {
     throw new ErrorDeNegocio(`El proveedor "${inactivo.razonSocial}" está dado de baja y no puede ser invitado`, 400);
+  }
+
+  // HU-82: solo se puede invitar a proveedores habilitados para el rubro
+  // de los artículos pedidos — antes esto era solo un filtro visual en
+  // SolicitarPresupuestosPage (desactivable con "Todo el padrón"), sin
+  // ningún bloqueo real acá.
+  const categorias = [...new Set(requerimiento.detalle.map((d) => d.articulo.categoria))];
+  const sinRubroHabilitado = proveedores.filter(
+    (p) => !p.rubros.some((r) => categorias.some((c) => rubroCubreCategoria(r.rubro, c)))
+  );
+  if (sinRubroHabilitado.length > 0) {
+    const nombres = sinRubroHabilitado.map((p) => p.razonSocial).join(", ");
+    throw new ErrorDeNegocio(
+      `${nombres} no ${sinRubroHabilitado.length === 1 ? "tiene un rubro habilitado" : "tienen un rubro habilitado"} para los artículos de este requerimiento.`,
+      400
+    );
   }
 
   // Solo las dos escrituras van adentro de la transacción; la relectura

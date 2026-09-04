@@ -9,6 +9,7 @@ import { useToast } from '../../lib/useToast';
 import { crearComprobante } from './comprobantes.api';
 import { listarProveedoresConSaldo } from '../pagos/pagos.api';
 import { listarOrdenesCompra } from '../ordenes-compra/ordenesCompra.api'; // si existe
+import { formatearMonto } from '../../lib/moneda';
 
 export function ComprobanteForm() {
   const navigate = useNavigate();
@@ -45,9 +46,16 @@ export function ComprobanteForm() {
       };
       return crearComprobante(payload);
     },
-    onSuccess: () => {
-      mostrarToast('Comprobante creado correctamente.');
-      navigate('/comprobantes');
+    onSuccess: (creado) => {
+      // HU-72: si hay diferencia de matching se avisa ya en el toast, y se
+      // navega directo al detalle (no al listado) para que quede a la
+      // vista el panel de matching con los 3 totales comparados.
+      mostrarToast(
+        creado.matching?.tieneDiferencia
+          ? `Comprobante ${creado.numero} creado — hay una diferencia de matching con la OC, revisá el detalle.`
+          : 'Comprobante creado correctamente.'
+      );
+      navigate(`/comprobantes/${creado.id}`);
     },
     onError: (error) => {
       const msg = error?.response?.data?.error ?? 'Error al crear el comprobante.';

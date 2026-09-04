@@ -282,6 +282,8 @@ model ComprobanteProveedor {
   comprobanteRelacionadoId Int?
   anulado                  Boolean                @default(false)
   motivoAnulacion          String?
+  // Motivo de la nota de débito/crédito (HU-73). Null para Factura.
+  motivo                   String?
   proveedor                Proveedor              @relation(fields: [proveedorId], references: [id])
   ordenCompra              OrdenCompra?           @relation(fields: [ordenCompraId], references: [id])
   comprobanteRelacionado   ComprobanteProveedor?  @relation("AjustesComprobante", fields: [comprobanteRelacionadoId], references: [id])
@@ -335,6 +337,8 @@ model OrdenPagoMedio {
   fechaCheque  DateTime?
   // Emitido | Cobrado | Rechazado — solo aplica si medioPago = Cheque
   estadoCheque String?
+  // Fecha en que se marcó el cheque como "Cobrado" (HU-86). Null hasta ese momento.
+  fechaCobro   DateTime?
   ordenPago    OrdenPago @relation(fields: [ordenPagoId], references: [id])
 
   // Sin @@unique(banco, numeroCheque) a propósito: un cheque debe poder

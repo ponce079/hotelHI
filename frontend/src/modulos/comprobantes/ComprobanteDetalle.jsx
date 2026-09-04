@@ -1,19 +1,48 @@
+import { useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '../../componentes/Badge';
 import { Button } from '../../componentes/Button';
 import { Cifra } from '../../componentes/Cifra';
 import { Table } from '../../componentes/Table';
+import { Toast } from '../../componentes/Toast';
+import { useToast } from '../../lib/useToast';
 import { formatearMonto } from '../../lib/moneda';
-import { obtenerComprobante } from './comprobantes.api';
+import { obtenerComprobante, anularComprobante } from './comprobantes.api';
+import { VARIANTE_ESTADO_COMPROBANTE } from './comprobantes.constantes';
 
 export function ComprobanteDetalle() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { toast, mostrarToast } = useToast();
   const { data: comprobante, isLoading, isError } = useQuery({
     queryKey: ['comprobante', id],
     queryFn: () => obtenerComprobante(id)
   });
+
+  const [anulando, setAnulando] = useState(false);
+  const [motivo, setMotivo] = useState('');
+  const [errorMotivo, setErrorMotivo] = useState('');
+
+  const mutacionAnular = useMutation({
+    mutationFn: () => anularComprobante(comprobante.id, motivo),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['comprobante', id] });
+      queryClient.invalidateQueries({ queryKey: ['comprobantes'] });
+      setAnulando(false);
+      mostrarToast('Comprobante anulado correctamente.');
+    },
+    onError: (error) => setErrorMotivo(error?.response?.data?.error ?? 'No se pudo anular el comprobante.'),
+  });
+
+  function confirmarAnular() {
+    if (!motivo.trim()) {
+      setErrorMotivo('El motivo de anulación es obligatorio.');
+      return;
+    }
+    mutacionAnular.mutate();
+  }
 
   if (isLoading) return <p className="text-sm text-piedra">Cargando...</p>;
   if (isError || !comprobante) return <p className="text-sm text-error">No se pudo cargar el comprobante.</p>;
@@ -32,13 +61,47 @@ export function ComprobanteDetalle() {
           <p className="text-sm text-piedra">{comprobante.proveedor?.razonSocial}</p>
         </div>
         <div className="flex gap-2">
-          {!comprobante.anulado && (
-            <Button variante="baja" onClick={() => {/* lógica de anular */}}>
+          {!comprobante.anulado && !anulando && (
+            <Button variante="baja" onClick={() => setAnulando(true)}>
               Anular
             </Button>
           )}
         </div>
       </div>
+
+      {anulando && (
+        <div className="flex flex-col gap-2 rounded-[18.4px] bg-white px-5 py-4">
+          <span className="text-[12px] font-semibold text-tinta">Motivo de anulación *</span>
+          <textarea
+            className={`rounded-md border bg-white px-3 py-2 text-[13px] text-tinta placeholder:text-tinta/45 focus:outline-none focus:ring-2 focus:ring-pino/40 ${
+              errorMotivo ? 'border-error' : 'border-borde'
+            }`}
+            rows={2}
+            value={motivo}
+            onChange={(e) => {
+              setMotivo(e.target.value);
+              setErrorMotivo('');
+            }}
+            placeholder="ej. Comprobante cargado por error"
+          />
+          {errorMotivo && <span className="text-[11.5px] text-error-texto">{errorMotivo}</span>}
+          <div className="mt-1 flex justify-end gap-2.5">
+            <Button
+              variante="secundario"
+              onClick={() => {
+                setAnulando(false);
+                setMotivo('');
+                setErrorMotivo('');
+              }}
+            >
+              Cancelar
+            </Button>
+            <Button variante="baja" disabled={mutacionAnular.isPending} onClick={confirmarAnular}>
+              {mutacionAnular.isPending ? 'Anulando…' : 'Confirmar anulación'}
+            </Button>
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
         <div className="rounded-[18.4px] bg-white px-5 py-4">
@@ -52,10 +115,12 @@ export function ComprobanteDetalle() {
         <div className="rounded-[18.4px] bg-white px-5 py-4">
           <span className="text-xs uppercase text-piedra">Estado</span>
           <div className="mt-1">
-            {comprobante.anulado ? (
-              <Badge variante="neutro">Anulado</Badge>
+            {comprobante.estado ? (
+              <Badge variante={VARIANTE_ESTADO_COMPROBANTE[comprobante.estado] ?? 'neutro'}>
+                {comprobante.estado}
+              </Badge>
             ) : (
-              <Badge variante="ok">Activo</Badge>
+              <span className="text-[12.5px] text-piedra">—</span>
             )}
           </div>
         </div>
@@ -94,13 +159,14 @@ export function ComprobanteDetalle() {
         <div className="rounded-[18.4px] bg-white px-5 py-4">
           <h3 className="font-heading text-lg font-semibold">Ajustes aplicados</h3>
           <Table
-            columnas={['Tipo', 'Número', 'Importe', 'Fecha']}
+            columnas={['Tipo', 'Número', 'Importe', 'Motivo', 'Fecha']}
             filas={comprobante.ajustes}
             renderFila={(a) => (
               <tr key={a.id}>
                 <td>{a.tipo}</td>
                 <td>{a.numero}</td>
                 <td className="font-mono">$ {formatearMonto(a.importeTotal)}</td>
+                <td className="text-tinta/70">{a.motivo ?? '—'}</td>
                 <td>{new Date(a.fecha).toLocaleDateString('es-AR')}</td>
               </tr>
             )}
@@ -125,6 +191,8 @@ export function ComprobanteDetalle() {
           />
         </div>
       )}
+
+      <Toast mensaje={toast} />
     </div>
   );
 }

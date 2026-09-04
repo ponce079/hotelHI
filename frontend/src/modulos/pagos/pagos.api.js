@@ -25,12 +25,15 @@ export async function listarOrdenesPago(params) {
   return data;
 }
 
-export async function anularOrdenPago(id, motivo) {
-  const { data } = await api.patch(`/ordenes-pago/${id}/anular`, { motivo });
+export async function anularOrdenPago(id, motivo, confirmarCheque) {
+  const { data } = await api.patch(`/ordenes-pago/${id}/anular`, { motivo, confirmarCheque });
   return data;
 }
 
-export async function actualizarEstadoCheque(ordenPagoId, medioId, estado) {
-  const { data } = await api.patch(`/ordenes-pago/${ordenPagoId}/medios/${medioId}/estado-cheque`, { estado });
+export async function actualizarEstadoCheque(ordenPagoId, medioId, estado, fechaCobro) {
+  const { data } = await api.patch(`/ordenes-pago/${ordenPagoId}/medios/${medioId}/estado-cheque`, {
+    estado,
+    fechaCobro,
+  });
   return data;
 }

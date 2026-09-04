@@ -32,7 +32,13 @@ export function OrdenPagoDetallePage() {
   const [anulando, setAnulando] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [errorMotivo, setErrorMotivo] = useState("");
+  // HU-79: confirmación extra obligatoria cuando la orden incluye un cheque.
+  const [confirmarCheque, setConfirmarCheque] = useState(false);
   const [errorCheque, setErrorCheque] = useState("");
+  // HU-86: id del medio Cheque para el que se está pidiendo la fecha de
+  // cobro (null = ningún formulario de cobro abierto).
+  const [cobrandoMedioId, setCobrandoMedioId] = useState(null);
+  const [fechaCobro, setFechaCobro] = useState(() => new Date().toISOString().slice(0, 10));
 
   const { data: orden, isLoading, isError } = useQuery({
     queryKey: ["pagos", "orden", ordenId],
@@ -52,20 +58,22 @@ export function OrdenPagoDetallePage() {
   }
 
   const mutacionAnular = useMutation({
-    mutationFn: () => anularOrdenPago(ordenId, motivo),
+    mutationFn: () => anularOrdenPago(ordenId, motivo, confirmarCheque),
     onSuccess: () => {
       invalidarListados();
       setAnulando(false);
+      setConfirmarCheque(false);
       mostrarToast(`Orden ${orden.numero} anulada.`);
     },
     onError: (error) => setErrorMotivo(error?.response?.data?.error ?? "No se pudo anular la orden."),
   });
 
   const mutacionCheque = useMutation({
-    mutationFn: ({ medioId, estado }) => actualizarEstadoCheque(ordenId, medioId, estado),
+    mutationFn: ({ medioId, estado, fechaCobro: fecha }) => actualizarEstadoCheque(ordenId, medioId, estado, fecha),
     onSuccess: (_data, { estado }) => {
       invalidarListados();
       setErrorCheque("");
+      setCobrandoMedioId(null);
       mostrarToast(`Cheque marcado como ${estado.toLowerCase()}.`);
     },
     // Un error acá NO es un toast de éxito: se muestra junto a los
@@ -78,12 +86,17 @@ export function OrdenPagoDetallePage() {
       setErrorMotivo("El motivo de anulación es obligatorio.");
       return;
     }
+    if (tieneCheque && !confirmarCheque) {
+      setErrorMotivo("Esta orden incluye un cheque — tildá la confirmación antes de anular.");
+      return;
+    }
     mutacionAnular.mutate();
   }
 
   if (!tienePermiso) return <SinPermiso />;
 
   const vigente = Boolean(orden) && !orden.anulado && orden.estado !== "Rechazada";
+  const tieneCheque = Boolean(orden?.medios?.some((m) => m.medioPago === "Cheque"));
   const chequesEmitidos = orden ? orden.medios.filter((m) => m.medioPago === "Cheque" && m.estadoCheque === "Emitido") : [];
   const totalPagado = orden ? orden.medios.reduce((acc, m) => acc + Number(m.importe), 0) : 0;
 
@@ -186,7 +199,10 @@ export function OrdenPagoDetallePage() {
                       <td className="px-2 py-2 text-[12.5px]">{m.medioPago}</td>
                       <td className="px-2 py-2 text-[12.5px] text-tinta/70">
                         {m.medioPago === "Cheque"
-                          ? `${m.banco} · N° ${m.numeroCheque} · vto. ${new Date(m.fechaCheque).toLocaleDateString("es-AR")}`
+                          ? `${m.banco} · N° ${m.numeroCheque} · vto. ${new Date(m.fechaCheque).toLocaleDateString("es-AR")}` +
+                            (m.estadoCheque === "Cobrado" && m.fechaCobro
+                              ? ` · cobrado el ${new Date(m.fechaCobro).toLocaleDateString("es-AR")}`
+                              : "")
                           : "—"}
                       </td>
                       <td className="px-2 py-2 text-[12.5px]">
@@ -223,28 +239,62 @@ export function OrdenPagoDetallePage() {
                 {chequesEmitidos.length > 0 && (
                   <div className="flex flex-col gap-2 rounded-[14px] bg-hueso px-4 py-3.5">
                     {chequesEmitidos.map((m) => (
-                      <div key={m.id} className="flex flex-wrap items-center justify-between gap-2 text-[13px] text-tinta/80">
-                        <span>
-                          Cheque {m.banco} N° {m.numeroCheque}
-                        </span>
-                        <div className="flex gap-2">
-                          <Button
-                            tamano="fila"
-                            variante="ok"
-                            disabled={mutacionCheque.isPending}
-                            onClick={() => mutacionCheque.mutate({ medioId: m.id, estado: "Cobrado" })}
-                          >
-                            Marcar cobrado
-                          </Button>
-                          <Button
-                            tamano="fila"
-                            variante="baja"
-                            disabled={mutacionCheque.isPending || orden.medios.length > 1}
-                            onClick={() => mutacionCheque.mutate({ medioId: m.id, estado: "Rechazado" })}
-                          >
-                            Marcar rechazado
-                          </Button>
+                      <div key={m.id} className="flex flex-col gap-2 text-[13px] text-tinta/80">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span>
+                            Cheque {m.banco} N° {m.numeroCheque}
+                          </span>
+                          {cobrandoMedioId !== m.id && (
+                            <div className="flex gap-2">
+                              <Button
+                                tamano="fila"
+                                variante="ok"
+                                disabled={mutacionCheque.isPending}
+                                onClick={() => {
+                                  setErrorCheque("");
+                                  setCobrandoMedioId(m.id);
+                                }}
+                              >
+                                Marcar cobrado
+                              </Button>
+                              <Button
+                                tamano="fila"
+                                variante="baja"
+                                disabled={mutacionCheque.isPending || orden.medios.length > 1}
+                                onClick={() => mutacionCheque.mutate({ medioId: m.id, estado: "Rechazado" })}
+                              >
+                                Marcar rechazado
+                              </Button>
+                            </div>
+                          )}
                         </div>
+
+                        {cobrandoMedioId === m.id && (
+                          <div className="flex flex-wrap items-center gap-2.5 rounded-md bg-white px-3 py-2.5">
+                            <label className="flex items-center gap-2 text-[12.5px] text-tinta/70">
+                              Fecha de cobro *
+                              <input
+                                type="date"
+                                value={fechaCobro}
+                                onChange={(e) => setFechaCobro(e.target.value)}
+                                className="rounded-md border border-borde px-2 py-1 text-[13px] text-tinta focus:outline-none focus:ring-2 focus:ring-pino/40"
+                              />
+                            </label>
+                            <div className="ml-auto flex gap-2">
+                              <Button tamano="fila" variante="secundario" onClick={() => setCobrandoMedioId(null)}>
+                                Cancelar
+                              </Button>
+                              <Button
+                                tamano="fila"
+                                variante="ok"
+                                disabled={mutacionCheque.isPending || !fechaCobro}
+                                onClick={() => mutacionCheque.mutate({ medioId: m.id, estado: "Cobrado", fechaCobro })}
+                              >
+                                {mutacionCheque.isPending ? "Guardando…" : "Confirmar cobro"}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     ))}
                     {orden.medios.length > 1 && (
@@ -271,6 +321,23 @@ export function OrdenPagoDetallePage() {
                       }}
                       placeholder="ej. Orden duplicada por error"
                     />
+                    {tieneCheque && (
+                      <label className="flex cursor-pointer items-start gap-2.5 rounded-md bg-error-suave px-3 py-2.5 text-[12.5px] text-error-texto">
+                        <input
+                          type="checkbox"
+                          checked={confirmarCheque}
+                          onChange={(e) => {
+                            setConfirmarCheque(e.target.checked);
+                            setErrorMotivo("");
+                          }}
+                          className="mt-0.5 cursor-pointer accent-error"
+                        />
+                        <span>
+                          Esta orden incluye un pago con cheque. Confirmo que quiero anularla igual (el cheque queda
+                          libre para reusarse).
+                        </span>
+                      </label>
+                    )}
                     {errorMotivo && <span className="text-[11.5px] text-error-texto">{errorMotivo}</span>}
                     <div className="mt-1 flex justify-end gap-2.5">
                       <Button
@@ -279,11 +346,16 @@ export function OrdenPagoDetallePage() {
                           setAnulando(false);
                           setMotivo("");
                           setErrorMotivo("");
+                          setConfirmarCheque(false);
                         }}
                       >
                         Cancelar
                       </Button>
-                      <Button variante="baja" disabled={mutacionAnular.isPending} onClick={confirmarAnular}>
+                      <Button
+                        variante="baja"
+                        disabled={mutacionAnular.isPending || (tieneCheque && !confirmarCheque)}
+                        onClick={confirmarAnular}
+                      >
                         {mutacionAnular.isPending ? "Anulando…" : "Confirmar anulación"}
                       </Button>
                     </div>

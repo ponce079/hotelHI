@@ -78,6 +78,11 @@ async function cuentaCorrienteDeProveedor(proveedorId, { tipo, desde, hasta } = 
     estado: o.anulado ? "Anulada" : o.estado,
     debe: 0,
     haber: pagoVigente(o) ? sumarImportesMedios(o.medios) : 0,
+    // HU-86: el estado de cada cheque de la orden tiene que ser visible
+    // acá también, no solo en el detalle de la orden de pago.
+    cheques: o.medios
+      .filter((m) => m.medioPago === "Cheque")
+      .map((m) => ({ banco: m.banco, numeroCheque: m.numeroCheque, estadoCheque: m.estadoCheque })),
   }));
 
   // El saldo acumulado se calcula sobre TODO el historial en orden

@@ -15,6 +15,7 @@ import { useSesion } from '../../lib/sesion';
 import { SinPermiso } from '../../componentes/SinPermiso';
 import { formatearMonto } from '../../lib/moneda';
 import { listarComprobantes, anularComprobante } from './comprobantes.api';
+import { ESTADOS_COMPROBANTE, VARIANTE_ESTADO_COMPROBANTE } from './comprobantes.constantes';
 import { listarProveedoresConSaldo } from '../pagos/pagos.api'; // si existe, o crear función propia
 
 export function ComprobantesPage() {
@@ -23,13 +24,16 @@ export function ComprobantesPage() {
   const { toast, mostrarToast } = useToast();
   const queryClient = useQueryClient();
 
-  // Filtros
+  // Filtros — "estado" son los 4 valores reales del comprobante (HU-74);
+  // vacío por defecto porque "solo con saldo pendiente" ya cubre el caso
+  // de uso más común (pendientes + parciales, sin pagados ni anulados).
   const [filtros, setFiltros] = useState({
     proveedorId: '',
-    estado: 'activo',
+    estado: '',
     desde: '',
     hasta: '',
-    soloSaldo: true
+    soloSaldo: true,
+    ordenarPor: 'fecha'
   });
 
   // Consulta
@@ -74,7 +78,11 @@ export function ComprobantesPage() {
       </div>
 
       {/* Filtros */}
-      <FilterBar onClear={() => setFiltros({ proveedorId: '', estado: 'activo', desde: '', hasta: '', soloSaldo: true })}>
+      <FilterBar
+        onClear={() =>
+          setFiltros({ proveedorId: '', estado: '', desde: '', hasta: '', soloSaldo: true, ordenarPor: 'fecha' })
+        }
+      >
         <div className="min-w-[180px]">
           <Select
             label="Proveedor"
@@ -93,9 +101,11 @@ export function ComprobantesPage() {
             value={filtros.estado}
             onChange={(e) => actualizarFiltro('estado', e.target.value)}
           >
-            <option value="activo">Activos</option>
-            <option value="anulado">Anulados</option>
             <option value="">Todos</option>
+            <option value={ESTADOS_COMPROBANTE.PENDIENTE}>Pendiente</option>
+            <option value={ESTADOS_COMPROBANTE.PAGADO_PARCIAL}>Pagado Parcial</option>
+            <option value={ESTADOS_COMPROBANTE.PAGADO}>Pagado</option>
+            <option value={ESTADOS_COMPROBANTE.ANULADO}>Anulado</option>
           </Select>
         </div>
         <div className="w-[150px]">
@@ -113,6 +123,16 @@ export function ComprobantesPage() {
             value={filtros.hasta}
             onChange={(e) => actualizarFiltro('hasta', e.target.value)}
           />
+        </div>
+        <div className="min-w-[160px]">
+          <Select
+            label="Ordenar por"
+            value={filtros.ordenarPor}
+            onChange={(e) => actualizarFiltro('ordenarPor', e.target.value)}
+          >
+            <option value="fecha">Fecha (más reciente)</option>
+            <option value="antiguedad">Antigüedad del saldo</option>
+          </Select>
         </div>
         <div className="flex items-end gap-2">
           <label className="flex items-center gap-2 text-sm">
@@ -167,10 +187,10 @@ export function ComprobantesPage() {
                   )}
                 </td>
                 <td className="px-3 py-2">
-                  {c.anulado ? (
-                    <Badge variante="neutro">Anulado</Badge>
+                  {c.estado ? (
+                    <Badge variante={VARIANTE_ESTADO_COMPROBANTE[c.estado] ?? 'neutro'}>{c.estado}</Badge>
                   ) : (
-                    <Badge variante="ok">Activo</Badge>
+                    <span className="text-xs text-piedra">—</span>
                   )}
                 </td>
                 <td className="px-3 py-2 text-right">

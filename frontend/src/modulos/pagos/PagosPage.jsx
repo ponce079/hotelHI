@@ -14,7 +14,7 @@ import { SinPermiso } from "../../componentes/SinPermiso";
 import { useSesion } from "../../lib/sesion";
 import { formatearMonto } from "../../lib/moneda";
 import { listarOrdenesPago } from "./pagos.api";
-import { MEDIOS_PAGO, BADGE_ESTADO } from "./pagos.constantes";
+import { MEDIOS_PAGO, BADGE_ESTADO, BADGE_ESTADO_CHEQUE } from "./pagos.constantes";
 import { OrdenPagoWizard } from "./OrdenPagoWizard";
 
 const FILTROS_VACIOS = { proveedorId: "", medio: "", desde: "", hasta: "" };
@@ -166,7 +166,18 @@ export function PagosPage() {
                       ))}
                     </div>
                   </td>
-                  <td className="px-2 py-2.5 text-[12.5px] text-tinta/70">{o.medios.join(" + ")}</td>
+                  <td className="px-2 py-2.5">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {o.medios.map((m, i) => (
+                        <span key={i} className="inline-flex items-center gap-1 text-[12.5px] text-tinta/70">
+                          {m.tipo}
+                          {m.tipo === "Cheque" && m.estadoCheque && (
+                            <Badge variante={BADGE_ESTADO_CHEQUE[m.estadoCheque] ?? "neutro"}>{m.estadoCheque}</Badge>
+                          )}
+                        </span>
+                      ))}
+                    </div>
+                  </td>
                   <td className="px-2 py-2.5 text-right text-[13.5px] font-semibold">$ {formatearMonto(o.importe)}</td>
                   <td className="px-2 py-2.5">
                     <Badge variante={BADGE_ESTADO[o.estado] ?? "neutro"}>{o.estado}</Badge>

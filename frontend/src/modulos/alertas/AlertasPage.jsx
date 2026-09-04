@@ -22,6 +22,16 @@ export function AlertasPage() {
   // HU-81: el alta desde una alerta usa el mismo formulario y el mismo
   // endpoint que la carga manual — solo llega precargado y con
   // origen="ALERTA", que es lo que después muestra el ⚡ en el listado.
+  //
+  // Decisión de alcance (Sprint 2): "puede generarse automáticamente" se
+  // interpretó como "se completa solo", no como "se crea sin que nadie lo
+  // vea" — el usuario siempre confirma en RequerimientoFormPage antes de
+  // que se cree el RequerimientoReposicion. Ningún criterio de aceptación
+  // de HU-81 pide crearlo sin pasar por una pantalla, y saltarse la
+  // revisión de depósito/artículo/cantidad antes de generar un pedido de
+  // compra es un riesgo de negocio mayor que el ahorro de un clic. Si se
+  // decide lo contrario, hay que agregar un endpoint que cree el
+  // requerimiento directo desde acá.
   function generarRequerimiento(alerta) {
     const params = new URLSearchParams({
       origen: ORIGENES_REQUERIMIENTO.ALERTA,

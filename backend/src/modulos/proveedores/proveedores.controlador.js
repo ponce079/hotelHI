@@ -32,6 +32,7 @@ function validarPayload(body) {
   if (!CUIT_REGEX.test(cuit)) {
     return { error: "cuit inválido. Formato esperado: 00-00000000-0" };
   }
+  if (!textoOpcional(body?.contacto)) return { error: "contacto es obligatorio" };
   if (!condicionComercial) return { error: "condicionComercial es obligatoria" };
   if (!CONDICIONES_COMERCIALES.includes(condicionComercial)) {
     return { error: `condicionComercial inválida. Valores permitidos: ${CONDICIONES_COMERCIALES.join(", ")}` };
@@ -49,9 +50,10 @@ function validarPayload(body) {
       razonSocial,
       cuit,
       condicionComercial,
-      // Los de contacto son opcionales: "" (o cualquier valor que no sea
-      // texto) se guarda como null para no ensuciar la base con cadenas
-      // vacías ni romper con un tipo inesperado.
+      // contacto es obligatorio (validado arriba); email/telefono/direccion
+      // son opcionales: "" (o cualquier valor que no sea texto) se guarda
+      // como null para no ensuciar la base con cadenas vacías ni romper
+      // con un tipo inesperado.
       contacto: textoOpcional(body?.contacto),
       email: textoOpcional(body?.email),
       telefono: textoOpcional(body?.telefono),

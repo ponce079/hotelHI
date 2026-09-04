@@ -77,7 +77,7 @@ async function getOrdenPagoPorId(req, res) {
 
 async function patchAnularOrdenPago(req, res) {
   try {
-    const resultado = await pagosServicio.anularOrdenPago(req.params.id, req.body?.motivo);
+    const resultado = await pagosServicio.anularOrdenPago(req.params.id, req.body?.motivo, req.body?.confirmarCheque);
     return res.json(resultado);
   } catch (err) {
     if (err instanceof pagosServicio.ErrorDeNegocio) {
@@ -90,7 +90,12 @@ async function patchAnularOrdenPago(req, res) {
 
 async function patchEstadoCheque(req, res) {
   try {
-    const resultado = await pagosServicio.actualizarEstadoCheque(req.params.id, req.params.medioId, req.body?.estado);
+    const resultado = await pagosServicio.actualizarEstadoCheque(
+      req.params.id,
+      req.params.medioId,
+      req.body?.estado,
+      req.body?.fechaCobro
+    );
     return res.json(resultado);
   } catch (err) {
     if (err instanceof pagosServicio.ErrorDeNegocio) {

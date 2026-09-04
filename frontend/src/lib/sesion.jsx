@@ -98,7 +98,7 @@ export function SesionProvider({ children }) {
         // pantalla en distintos momentos de su ciclo de vida.
         if (accion === "verOrdenesCompra") return rol === "compras" || rol === "gerente" || rol === "deposito";
         if (accion === "aprobarOC") return rol === "gerente";
-        if (accion === "gestionarOC") return rol === "compras"; // enviar / anular
+        if (accion === "gestionarOC") return rol === "compras"; // generar (HU-22) / enviar / anular
         if (accion === "recibirOC") return rol === "deposito";
         return false;
       },

@@ -18,7 +18,7 @@ import { TIPOS_MOVIMIENTO } from "./cuentaCorriente.constantes";
 // Un movimiento "Pago" viene del mismo OrdenPago.estado que muestra
 // Pagos — se reusa su mapeo de colores para no duplicarlo (ni
 // arriesgarse a que un badge muestre un color distinto en cada pantalla).
-import { BADGE_ESTADO } from "../pagos/pagos.constantes";
+import { BADGE_ESTADO, BADGE_ESTADO_CHEQUE } from "../pagos/pagos.constantes";
 
 const FILTROS_VACIOS = { tipo: "", desde: "", hasta: "" };
 
@@ -159,7 +159,14 @@ export function CuentaCorrientePage() {
                     <td className="px-2 py-2.5 text-[12.5px] text-tinta/70">{m.tipo}</td>
                     <td className="px-2 py-2.5 font-mono text-[12.5px]">{m.numero}</td>
                     <td className="px-2 py-2.5">
-                      {m.estado && <Badge variante={BADGE_ESTADO[m.estado] ?? "neutro"}>{m.estado}</Badge>}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {m.estado && <Badge variante={BADGE_ESTADO[m.estado] ?? "neutro"}>{m.estado}</Badge>}
+                        {m.cheques?.map((c) => (
+                          <Badge key={c.numeroCheque} variante={BADGE_ESTADO_CHEQUE[c.estadoCheque] ?? "neutro"}>
+                            Cheque {c.numeroCheque} · {c.estadoCheque}
+                          </Badge>
+                        ))}
+                      </div>
                     </td>
                     <td className="px-2 py-2.5 text-right text-[12.5px]">{m.debe ? `$ ${formatearMonto(m.debe)}` : ""}</td>
                     <td className="px-2 py-2.5 text-right text-[12.5px]">{m.haber ? `$ ${formatearMonto(m.haber)}` : ""}</td>

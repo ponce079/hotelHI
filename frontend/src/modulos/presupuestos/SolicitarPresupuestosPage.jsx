@@ -8,7 +8,7 @@ import { Badge } from "../../componentes/Badge";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { obtenerRequerimiento, solicitarPresupuestos } from "../requerimientos/requerimientos.api";
 import { listarProveedoresActivos } from "../proveedores/proveedores.api";
-import { ESTADOS_REQUERIMIENTO } from "../../lib/constantes";
+import { ESTADOS_REQUERIMIENTO, rubroCubreCategoria } from "../../lib/constantes";
 import { useSesion } from "../../lib/sesion";
 
 export function SolicitarPresupuestosPage() {
@@ -45,7 +45,7 @@ export function SolicitarPresupuestosPage() {
     let lista = proveedores ?? [];
     if (soloRubroAfin && rubrosDelPedido.size > 0) {
       const afines = lista.filter((p) =>
-        p.rubros.some((r) => [...rubrosDelPedido].some((c) => sonAfines(r.rubro, c)))
+        p.rubros.some((r) => [...rubrosDelPedido].some((c) => rubroCubreCategoria(r.rubro, c)))
       );
       // Si el filtro deja la grilla vacía no sirve de nada: mejor mostrar
       // el padrón completo que una pantalla en blanco.
@@ -237,20 +237,4 @@ export function SolicitarPresupuestosPage() {
       </p>
     </div>
   );
-}
-
-// Heurística simple entre la categoría del artículo (catálogo de Sprint 1)
-// y el rubro del proveedor (Sprint 2). No son la misma lista, así que se
-// emparejan las que claramente se solapan y el resto cae en "todo el padrón".
-function sonAfines(rubro, categoria) {
-  const mapa = {
-    Limpieza: ["Limpieza"],
-    Amenities: ["Amenities"],
-    Alimentos: ["Alimentos y Bebidas"],
-    Bebidas: ["Alimentos y Bebidas"],
-    "Blancos y textiles": ["Blanquería"],
-    Mantenimiento: ["Mantenimiento", "Equipamiento y Electrodomésticos"],
-    "Bazar y menaje": ["Equipamiento y Electrodomésticos", "Papelería y Oficina"],
-  };
-  return (mapa[rubro] ?? []).includes(categoria);
 }

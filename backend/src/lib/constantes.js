@@ -58,6 +58,26 @@ const ESTADOS_PRESUPUESTO = {
   ADJUDICADO: "Adjudicado",
 };
 
+// Rubro del proveedor (Sprint 2) <-> categoría del artículo (catálogo de
+// Sprint 1): no son la misma lista, así que se emparejan las que
+// claramente se solapan. La usan tanto el filtro "rubro afín" del
+// frontend (SolicitarPresupuestosPage) como la validación real de HU-82
+// en presupuestos.servicio.js — antes vivía duplicada (y sin usarse en el
+// backend) como `sonAfines()` local del frontend.
+const MAPA_RUBRO_CATEGORIA = {
+  Limpieza: ["Limpieza"],
+  Amenities: ["Amenities"],
+  Alimentos: ["Alimentos y Bebidas"],
+  Bebidas: ["Alimentos y Bebidas"],
+  "Blancos y textiles": ["Blanquería"],
+  Mantenimiento: ["Mantenimiento", "Equipamiento y Electrodomésticos"],
+  "Bazar y menaje": ["Equipamiento y Electrodomésticos", "Papelería y Oficina"],
+};
+
+function rubroCubreCategoria(rubro, categoria) {
+  return (MAPA_RUBRO_CATEGORIA[rubro] ?? []).includes(categoria);
+}
+
 // Opciones para prisma.$transaction. El default de Prisma es timeout 5s /
 // maxWait 2s, que alcanza contra una base local pero NO contra la base
 // compartida de Clever Cloud: está en Francia, exige SSL y el plan
@@ -75,5 +95,7 @@ module.exports = {
   ESTADOS_REQUERIMIENTO,
   ORIGENES_REQUERIMIENTO,
   ESTADOS_PRESUPUESTO,
+  MAPA_RUBRO_CATEGORIA,
+  rubroCubreCategoria,
   OPCIONES_TRANSACCION,
 };

@@ -16,6 +16,10 @@ const {
 } = require("../../lib/comprobantes");
 const { crearConNumeroSecuencial } = require("../../lib/numeracion");
 const { MEDIOS_PAGO, BANCOS, ESTADOS_CHEQUE } = require("./pagos.constantes");
+// HU-76: para exigir confirmación de diferencia de matching antes de
+// pagar (ver más abajo), se reutiliza el cálculo de HU-72 tal cual —no
+// se reimplementa una segunda vez.
+const { calcularMatching } = require("../comprobantes/comprobantes.servicio");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -40,12 +44,20 @@ async function proveedoresConSaldo() {
 }
 
 // HU-76, paso 1: facturas con saldo pendiente de un proveedor puntual.
+// Cada una viaja con su matching de 3 vías (HU-72) para que el wizard
+// pueda avisar y exigir confirmación antes de incluirla en el pago.
 async function comprobantesPendientes(proveedorId) {
   const id = Number(proveedorId);
   if (!proveedorId || !Number.isInteger(id)) {
     throw new ErrorDeNegocio("proveedorId es obligatorio y debe ser un número entero.");
   }
-  return listarFacturasConSaldo(id);
+  const facturas = await listarFacturasConSaldo(id);
+  return Promise.all(
+    facturas.map(async (f) => ({
+      ...f,
+      matching: f.ordenCompraId ? await calcularMatching(f) : null,
+    }))
+  );
 }
 
 // HU-76 + HU-77: crear la orden de pago con la distribución de importes
@@ -77,6 +89,23 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
     if (c.anulado) throw new ErrorDeNegocio(`El comprobante ${c.numero} está anulado.`);
     if (c.proveedorId !== Number(proveedorId)) {
       throw new ErrorDeNegocio(`El comprobante ${c.numero} no pertenece a este proveedor.`);
+    }
+  }
+
+  // HU-76: un comprobante marcado "Con diferencia de matching" (HU-72)
+  // exige confirmación explícita del usuario antes de poder incluirse en
+  // la orden de pago — cada aplicación necesita su propio
+  // `confirmarDiferencia: true`, no alcanza con confirmar una sola vez
+  // para toda la orden.
+  for (const c of comprobantes) {
+    if (c.tipo !== "Factura" || !c.ordenCompraId) continue;
+    const matching = await calcularMatching(c);
+    if (!matching?.tieneDiferencia) continue;
+    const aplicacion = aplicaciones.find((a) => Number(a.comprobanteId) === c.id);
+    if (!aplicacion?.confirmarDiferencia) {
+      throw new ErrorDeNegocio(
+        `El comprobante ${c.numero} tiene una diferencia de matching (OC vs. recepción vs. factura) — hay que confirmarla explícitamente antes de incluirlo en el pago.`
+      );
     }
   }
 
@@ -180,7 +209,22 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
       // consulta — repetirla con datos frescos justo antes del insert
       // acorta al máximo la ventana en la que dos requests concurrentes
       // podrían colarse con el mismo (banco, numeroCheque).
+      //
+      // Como el cheque nuevo todavía no tiene fila propia, un SELECT normal
+      // no bloquea nada: dos requests concurrentes pueden leer "no existe"
+      // los dos y colarse igual. El FOR UPDATE de acá abajo sí alcanza —
+      // bajo REPEATABLE READ (default de InnoDB) toma un gap lock sobre el
+      // índice (banco, numeroCheque) para cada par exacto, así que una
+      // segunda transacción que intente insertar el mismo (banco,
+      // numeroCheque) espera a que ésta termine, en vez de colarse en el
+      // hueco entre el SELECT y el INSERT.
       if (clavesCheque.length > 0) {
+        const condicionesCheque = clavesCheque.map(
+          (c) => Prisma.sql`(banco = ${c.banco} AND numeroCheque = ${c.numeroCheque})`
+        );
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM ordenes_pago_medio WHERE ${Prisma.join(condicionesCheque, " OR ")} FOR UPDATE`
+        );
         const existentesFrescos = await tx.ordenPagoMedio.findMany({
           where: { OR: clavesCheque.map((c) => ({ banco: c.banco, numeroCheque: c.numeroCheque })) },
           include: { ordenPago: true },
@@ -243,16 +287,23 @@ async function obtenerOrdenPago(id) {
 // recalcular nada mas — pagoVigente() deja de contarla apenas anulado
 // pasa a true, asi que el saldo del comprobante y la reutilizacion del
 // N° de cheque se recalculan solos en cuanto alguien vuelve a leerlos.
-async function anularOrdenPago(id, motivo) {
+async function anularOrdenPago(id, motivo, confirmarCheque) {
   const idNum = Number(id);
   if (!Number.isInteger(idNum)) throw new ErrorDeNegocio("id inválido.");
   if (!motivo || !motivo.trim()) throw new ErrorDeNegocio("El motivo de anulación es obligatorio.");
 
   // Chequeo rapido ("fail fast") antes de la transaccion, no toma locks.
-  const ordenPrevia = await prisma.ordenPago.findUnique({ where: { id: idNum } });
+  const ordenPrevia = await prisma.ordenPago.findUnique({ where: { id: idNum }, include: { medios: true } });
   if (!ordenPrevia) throw new ErrorDeNegocio("La orden de pago no existe.", 404);
   if (!pagoVigente(ordenPrevia)) {
     throw new ErrorDeNegocio("La orden de pago ya no está vigente (anulada o rechazada).");
+  }
+  // HU-79: una orden que incluye un pago con cheque no puede anularse sin
+  // confirmación explícita adicional del usuario — el motivo solo no alcanza.
+  if (ordenPrevia.medios.some((m) => m.medioPago === "Cheque") && !confirmarCheque) {
+    throw new ErrorDeNegocio(
+      "Esta orden incluye un pago con cheque — confirmá explícitamente la anulación antes de continuar."
+    );
   }
 
   return prisma.$transaction(async (tx) => {
@@ -290,7 +341,7 @@ async function anularOrdenPago(id, motivo) {
 // que si se cobro, y dejaria a cualquier otro cheque de la misma orden
 // sin ninguna accion posible (pagoVigente ya bloquearia la orden
 // entera). Esos casos se resuelven anulando la orden completa (HU-79).
-async function actualizarEstadoCheque(ordenPagoId, medioId, estado) {
+async function actualizarEstadoCheque(ordenPagoId, medioId, estado, fechaCobro) {
   const ordenId = Number(ordenPagoId);
   const medioIdNum = Number(medioId);
   if (!Number.isInteger(ordenId) || !Number.isInteger(medioIdNum)) {
@@ -298,6 +349,13 @@ async function actualizarEstadoCheque(ordenPagoId, medioId, estado) {
   }
   if (estado === "Emitido" || !ESTADOS_CHEQUE.includes(estado)) {
     throw new ErrorDeNegocio('estado inválido. Valores permitidos: "Cobrado", "Rechazado".');
+  }
+  // HU-86: el criterio pide guardar la fecha de cobro al marcar "Cobrado".
+  let fechaCobroValida = null;
+  if (estado === "Cobrado") {
+    if (!fechaCobro) throw new ErrorDeNegocio("La fecha de cobro es obligatoria para marcar el cheque como Cobrado.");
+    fechaCobroValida = new Date(fechaCobro);
+    if (Number.isNaN(fechaCobroValida.getTime())) throw new ErrorDeNegocio("fechaCobro no es una fecha válida.");
   }
 
   // Chequeo rapido ("fail fast") antes de la transaccion, no toma locks.
@@ -335,7 +393,10 @@ async function actualizarEstadoCheque(ordenPagoId, medioId, estado) {
       );
     }
 
-    await tx.ordenPagoMedio.update({ where: { id: medioIdNum }, data: { estadoCheque: estado } });
+    await tx.ordenPagoMedio.update({
+      where: { id: medioIdNum },
+      data: { estadoCheque: estado, fechaCobro: estado === "Cobrado" ? fechaCobroValida : null },
+    });
     if (estado === "Rechazado") {
       await tx.ordenPago.update({ where: { id: ordenId }, data: { estado: "Rechazada" } });
     }
@@ -435,7 +496,10 @@ async function listarOrdenesPago({ proveedorId, medio, desde, hasta, page = 1, p
       fecha: o.fecha,
       proveedorId: o.proveedorId,
       proveedor: o.proveedor.razonSocial,
-      medios: o.medios.map((m) => m.medioPago),
+      // HU-86: además del tipo de medio, el estado del cheque tiene que
+      // ser visible en este listado (antes solo se veía en el detalle
+      // de la orden).
+      medios: o.medios.map((m) => ({ tipo: m.medioPago, estadoCheque: m.estadoCheque })),
       importe: sumarImportesMedios(o.medios),
       comprobantes: o.detalle.map((d) => d.comprobante.numero),
       estado: o.anulado ? "Anulada" : o.estado,

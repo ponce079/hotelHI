@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, TrendingDown } from "lucide-react";
+import { ArrowLeft, ArrowRight, TrendingDown } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -9,6 +9,7 @@ import { ConfirmDialog } from "../../componentes/ConfirmDialog";
 import { Toast } from "../../componentes/Toast";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { listarPresupuestos, aprobarPresupuesto } from "./presupuestos.api";
+import { generarOrdenCompra } from "../ordenes-compra/ordenesCompra.api";
 import { ESTADOS_PRESUPUESTO, VARIANTE_ESTADO_PRESUPUESTO } from "../../lib/constantes";
 import { formatearMonto } from "../../lib/moneda";
 import { useToast } from "../../lib/useToast";
@@ -18,7 +19,7 @@ export function ComparacionPresupuestosPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const { puede } = useSesion();
+  const { puede, usuario } = useSesion();
   const { toast, mostrarToast } = useToast();
 
   const requerimientoId = searchParams.get("requerimientoId");
@@ -43,6 +44,20 @@ export function ComparacionPresupuestosPage() {
     onError: (err) => {
       mostrarToast(err?.response?.data?.error ?? "No se pudo aprobar el presupuesto.");
       setParaAprobar(null);
+    },
+  });
+
+  // HU-22: el backend ya sabe generar la OC desde un presupuesto adjudicado
+  // (ordenesCompra.servicio.js); esto conecta el botón que faltaba.
+  const mutacionGenerarOC = useMutation({
+    mutationFn: (presupuestoId) => generarOrdenCompra(presupuestoId, usuario),
+    onSuccess: (oc) => {
+      queryClient.invalidateQueries({ queryKey: ["presupuestos"] });
+      mostrarToast(`Orden de compra ${oc.numero} generada.`);
+      navigate(`/ordenes-compra/${oc.id}`);
+    },
+    onError: (err) => {
+      mostrarToast(err?.response?.data?.error ?? "No se pudo generar la orden de compra.");
     },
   });
 
@@ -71,7 +86,8 @@ export function ComparacionPresupuestosPage() {
   const presupuestos = data?.items ?? [];
   const req = presupuestos[0]?.requerimiento;
   const lineasReq = req?.detalle ?? [];
-  const yaAdjudicado = presupuestos.some((p) => p.estado === ESTADOS_PRESUPUESTO.ADJUDICADO);
+  const adjudicado = presupuestos.find((p) => p.estado === ESTADOS_PRESUPUESTO.ADJUDICADO);
+  const yaAdjudicado = Boolean(adjudicado);
 
   return (
     <div className="flex flex-col gap-6">
@@ -185,6 +201,35 @@ export function ComparacionPresupuestosPage() {
               );
             })}
           </div>
+        </div>
+      )}
+
+      {yaAdjudicado && adjudicado?.ordenCompra && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-pino bg-pino-100 px-5 py-4">
+          <p className="text-[13px] text-pino-700">
+            Ya se generó la orden de compra <strong>{adjudicado.ordenCompra.numero}</strong> para el presupuesto adjudicado de{" "}
+            {adjudicado.proveedor?.razonSocial}.
+          </p>
+          <Button variante="secundario" onClick={() => navigate(`/ordenes-compra/${adjudicado.ordenCompra.id}`)}>
+            Ver orden de compra <ArrowRight size={15} />
+          </Button>
+        </div>
+      )}
+
+      {yaAdjudicado && !adjudicado?.ordenCompra && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-borde bg-white px-5 py-4">
+          <p className="text-[13px] text-tinta/70">
+            El presupuesto de <strong className="text-tinta">{adjudicado?.proveedor?.razonSocial}</strong> está adjudicado por{" "}
+            <strong className="text-tinta">$ {formatearMonto(adjudicado?.total)}</strong>. Falta generar la orden de compra para
+            formalizar el pedido.
+          </p>
+          {puede("gestionarOC") ? (
+            <Button disabled={mutacionGenerarOC.isPending} onClick={() => mutacionGenerarOC.mutate(adjudicado.id)}>
+              {mutacionGenerarOC.isPending ? "Generando…" : "Generar Orden de Compra"}
+            </Button>
+          ) : (
+            <span className="text-[12px] text-piedra">La genera el área de compras.</span>
+          )}
         </div>
       )}
 

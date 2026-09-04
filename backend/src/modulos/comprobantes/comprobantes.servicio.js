@@ -1,7 +1,7 @@
 const { Prisma } = require('@prisma/client');
 const prisma = require('../../lib/prisma');
 const { calcularSaldoComprobante, calcularSaldosComprobantes } = require('../../lib/comprobantes');
-const { TIPOS_COMPROBANTE, ESTADOS_MATCHING } = require('./comprobantes.constantes');
+const { TIPOS_COMPROBANTE, ESTADOS_MATCHING, ESTADOS_COMPROBANTE } = require('./comprobantes.constantes');
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -61,39 +61,91 @@ async function crearComprobante(data) {
   const importeIva = Math.round(importeNeto * (alicuotaIva / 100) * 100) / 100;
   const importeTotal = importeNeto + importeIva;
 
-  // Crear comprobante
-  const comprobante = await prisma.comprobanteProveedor.create({
-    data: {
-      proveedorId,
-      tipo,
-      numero: numero.trim(),
-      fecha: new Date(fecha),
-      importeNeto,
-      alicuotaIva,
-      importeIva,
-      importeTotal,
-      ordenCompraId: ordenCompraId || null
-    },
-    include: {
-      proveedor: true,
-      ordenCompra: true
-    }
-  });
+  if (importeTotal <= 0) {
+    throw new ErrorDeNegocio('El importe total (neto + IVA) debe ser mayor a 0.');
+  }
 
-  return comprobante;
+  // Crear comprobante
+  let comprobante;
+  try {
+    comprobante = await prisma.comprobanteProveedor.create({
+      data: {
+        proveedorId,
+        tipo,
+        numero: numero.trim(),
+        fecha: new Date(fecha),
+        importeNeto,
+        alicuotaIva,
+        importeIva,
+        importeTotal,
+        ordenCompraId: ordenCompraId || null
+      },
+      include: {
+        proveedor: true,
+        ordenCompra: { include: { detalle: true } }
+      }
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      throw new ErrorDeNegocio(
+        `Ya existe un comprobante de tipo "${tipo}" con número "${numero}" para este proveedor.`,
+        409
+      );
+    }
+    throw err;
+  }
+
+  // HU-72: devolver el matching (y el saldo/estado) ya calculados en la
+  // misma respuesta del alta — antes solo se veían al releer el
+  // comprobante, así que el usuario no se enteraba de una diferencia
+  // hasta entrar de nuevo a la ficha.
+  const saldo = await calcularSaldoComprobante(comprobante);
+  let matching = null;
+  if (comprobante.tipo === 'Factura' && comprobante.ordenCompraId) {
+    matching = await calcularMatching(comprobante);
+  }
+
+  return {
+    ...comprobante,
+    saldo,
+    matching,
+    estado: calcularEstadoComprobante(comprobante, saldo),
+  };
+}
+
+// --------------------------------------------------------------
+// Estado del comprobante (HU-74): Pendiente / Pagado Parcial / Pagado /
+// Anulado. No es una columna — se deriva del saldo, igual que el saldo
+// mismo se deriva de importeTotal + ajustes - pagos (lib/comprobantes.js).
+// Solo aplica a Facturas: una ND/NC no tiene saldo ni estado de cobro
+// propio (se ve reflejada en el saldo de la factura que ajusta).
+function calcularEstadoComprobante(comprobante, saldo) {
+  if (comprobante.anulado) return ESTADOS_COMPROBANTE.ANULADO;
+  if (comprobante.tipo !== 'Factura') return null;
+  if (saldo <= 0) return ESTADOS_COMPROBANTE.PAGADO;
+  // saldo >= importeTotal cubre tanto "no se pagó nada todavía" como el
+  // caso de una Nota de Débito que subió el saldo por encima del total
+  // original sin que se haya aplicado ningún pago.
+  if (saldo >= Number(comprobante.importeTotal)) return ESTADOS_COMPROBANTE.PENDIENTE;
+  return ESTADOS_COMPROBANTE.PAGADO_PARCIAL;
 }
 
 // --------------------------------------------------------------
 // Listado de comprobantes (con filtros y saldo)
 // --------------------------------------------------------------
-async function listarComprobantes({ proveedorId, estado, desde, hasta, soloSaldo = true } = {}) {
+async function listarComprobantes({ proveedorId, estado, desde, hasta, soloSaldo = true, ordenarPor = 'fecha' } = {}) {
+  if (!['fecha', 'antiguedad'].includes(ordenarPor)) {
+    throw new ErrorDeNegocio("ordenarPor inválido. Valores permitidos: 'fecha', 'antiguedad'.");
+  }
   const where = {};
 
   if (proveedorId) where.proveedorId = Number(proveedorId);
-  if (estado) {
-    if (estado === 'anulado') where.anulado = true;
-    else if (estado === 'activo') where.anulado = false;
-  }
+  // El filtro por estado usa los 4 estados reales del comprobante
+  // (HU-74). "Anulado" se resuelve directo en la consulta; los otros tres
+  // dependen del saldo, que recién se conoce después de calcularlo más
+  // abajo, así que esos se filtran una vez armado el resultado.
+  if (estado === ESTADOS_COMPROBANTE.ANULADO) where.anulado = true;
+  else if (estado) where.anulado = false;
   if (desde || hasta) {
     where.fecha = {};
     if (desde) {
@@ -121,7 +173,10 @@ async function listarComprobantes({ proveedorId, estado, desde, hasta, soloSaldo
         }
       }
     },
-    orderBy: { fecha: 'desc' }
+    // "antigüedad del saldo" (HU-74): el más viejo primero, para ver
+    // arriba lo que lleva más tiempo pendiente de cobro. Por fecha (el
+    // default) es al revés, lo más reciente primero.
+    orderBy: { fecha: ordenarPor === 'antiguedad' ? 'asc' : 'desc' }
   });
 
   // Calcular saldos para todos (usando la función en lote)
@@ -139,14 +194,27 @@ async function listarComprobantes({ proveedorId, estado, desde, hasta, soloSaldo
       ...c,
       saldo,
       matching,
-      // Para filtro "solo con saldo" lo haremos en el controlador
+      estado: calcularEstadoComprobante(c, saldo),
     };
   }));
 
-  // Aplicar filtro soloSaldo (si es true, devolver solo los que tengan saldo > 0)
+  // Filtro por estado (Pendiente/Pagado Parcial/Pagado): "Anulado" ya se
+  // resolvió en la consulta de arriba, así que acá solo falta cubrir los
+  // tres que dependen del saldo.
   let filtrados = resultado;
-  if (soloSaldo) {
-    filtrados = filtrados.filter(c => c.saldo > 0);
+  if (estado && estado !== ESTADOS_COMPROBANTE.ANULADO) {
+    filtrados = filtrados.filter((c) => c.estado === estado);
+  }
+
+  // "Solo con saldo pendiente" (default true) solo se aplica si no se pidió
+  // un estado puntual: elegir "Pagado" o "Anulado" ya implica saldo 0, así
+  // que forzar soloSaldo en ese caso dejaría el listado vacío por error.
+  // Un comprobante anulado tampoco cuenta como pendiente aunque conserve
+  // su importeTotal — anular exige que no tenga pagos ni notas aplicadas
+  // (HU-75), así que su saldo "crudo" sigue siendo el total completo si
+  // no se lo excluye acá.
+  if (soloSaldo && !estado) {
+    filtrados = filtrados.filter((c) => c.saldo > 0 && !c.anulado);
   }
 
   return filtrados;
@@ -197,7 +265,8 @@ async function obtenerComprobante(id) {
   return {
     ...comprobante,
     saldo,
-    matching
+    matching,
+    estado: calcularEstadoComprobante(comprobante, saldo),
   };
 }
 
@@ -253,9 +322,7 @@ async function crearNota(comprobanteId, data) {
       importeIva: 0,
       importeTotal,
       comprobanteRelacionadoId: original.id,
-      // Se podría guardar el motivo en algún campo; no hay campo específico, usaremos un campo extra o en la lógica no se guarda.
-      // Añadimos un campo 'motivo' en el modelo? No existe. Podemos usar 'detalle' o crear una tabla de ajustes.
-      // Como no se pidió persistir el motivo, lo dejamos como comentario o lo agregamos en la descripción.
+      motivo: motivo.trim(),
     },
     include: {
       proveedor: true,
@@ -263,8 +330,6 @@ async function crearNota(comprobanteId, data) {
     }
   });
 
-  // Nota: el motivo no se persiste, pero se puede almacenar en un campo 'detalle' si se añade.
-  // Por ahora, lo ignoramos.
   return nota;
 }
 
@@ -322,12 +387,18 @@ async function calcularMatching(comprobante) {
   // Solo para facturas con ordenCompraId
   if (!comprobante.ordenCompraId) return null;
 
-  const orden = await prisma.ordenCompra.findUnique({
-    where: { id: comprobante.ordenCompraId },
-    include: {
-      detalle: true
-    }
-  });
+  // Si el caller ya trajo comprobante.ordenCompra con su detalle (como
+  // hacen listarComprobantes y obtenerComprobante), se reusa tal cual y
+  // no se pega una consulta más — evita el N+1 de pedir la OC de nuevo,
+  // artículo por comprobante, al listar. Si no vino incluida (ej. desde
+  // pagos.servicio.js, que solo necesita el matching de unos pocos
+  // comprobantes puntuales), se busca acá como antes.
+  const orden =
+    comprobante.ordenCompra ??
+    (await prisma.ordenCompra.findUnique({
+      where: { id: comprobante.ordenCompraId },
+      include: { detalle: true },
+    }));
   if (!orden) return null;
 
   // 1. Total de la OC (montoTotal + flete)
@@ -376,5 +447,6 @@ module.exports = {
   crearNota,
   anularComprobante,
   calcularMatching,
+  calcularEstadoComprobante,
   ErrorDeNegocio
 };

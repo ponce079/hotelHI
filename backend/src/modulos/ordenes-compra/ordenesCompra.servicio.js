@@ -5,6 +5,7 @@
 // clase ErrorDeNegocio con statusCode, prisma singleton, transacciones con
 // timeout explícito.
 
+const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
 const { crearConNumeroSecuencial } = require("../../lib/numeracion");
 
@@ -76,42 +77,53 @@ async function generarOC({ presupuestoId, usuario }) {
   );
   const flete = presupuesto.costoFlete ?? null;
 
-  const oc = await prisma.$transaction(
-    async (tx) => {
-      const creada = await crearConNumeroSecuencial(tx, "ordenCompra", {
-        prefijo: "OC",
-        pad: 5,
-        data: {
-          proveedorId: presupuesto.proveedorId,
-          presupuestoId: presupuesto.id,
-          depositoId: presupuesto.requerimiento.depositoId,
-          estado: "Pendiente",
-          montoTotal,
-          flete,
-        },
-      });
+  let oc;
+  try {
+    oc = await prisma.$transaction(
+      async (tx) => {
+        const creada = await crearConNumeroSecuencial(tx, "ordenCompra", {
+          prefijo: "OC",
+          pad: 5,
+          data: {
+            proveedorId: presupuesto.proveedorId,
+            presupuestoId: presupuesto.id,
+            depositoId: presupuesto.requerimiento.depositoId,
+            estado: "Pendiente",
+            montoTotal,
+            flete,
+          },
+        });
 
-      await tx.ordenCompraDetalle.createMany({
-        data: lineasOC.map((l) => ({
-          ordenCompraId: creada.id,
-          articuloId: l.articuloId,
-          cantidad: l.cantidad,
-          precioUnitario: l.precioUnitario,
-        })),
-      });
+        await tx.ordenCompraDetalle.createMany({
+          data: lineasOC.map((l) => ({
+            ordenCompraId: creada.id,
+            articuloId: l.articuloId,
+            cantidad: l.cantidad,
+            precioUnitario: l.precioUnitario,
+          })),
+        });
 
-      await tx.ordenCompraLog.create({
-        data: {
-          ordenCompraId: creada.id,
-          usuario: usuario || "sistema",
-          accion: "Orden generada desde presupuesto adjudicado",
-        },
-      });
+        await tx.ordenCompraLog.create({
+          data: {
+            ordenCompraId: creada.id,
+            usuario: usuario || "sistema",
+            accion: "Orden generada desde presupuesto adjudicado",
+          },
+        });
 
-      return creada;
-    },
-    { timeout: 30000, maxWait: 15000 }
-  );
+        return creada;
+      },
+      { timeout: 30000, maxWait: 15000 }
+    );
+  } catch (err) {
+    // El chequeo de ocExistente de arriba no bloquea una carrera real entre
+    // dos requests concurrentes; el @unique de presupuestoId es la garantía
+    // final, así que el P2002 se traduce al mismo 409 en vez de un 500.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
+      throw new ErrorDeNegocio("Este presupuesto ya tiene una orden de compra generada.", 409);
+    }
+    throw err;
+  }
 
   return obtenerOCPorId(oc.id);
 }
@@ -255,6 +267,22 @@ async function anularOC(id, motivo, usuario) {
 
   return prisma.$transaction(
     async (tx) => {
+      // Re-chequeo protegido contra carreras: FOR UPDATE bloquea la fila de
+      // la OC hasta que esta transacción termine, así una recepción (HU-85)
+      // que llegue casi al mismo tiempo espera a que esta commitee y ve el
+      // estado "Anulada" ya puesto, en vez de generar un movimiento de stock
+      // sobre una orden que se está anulando a la vez. Mismo patrón que
+      // aprobarPresupuesto en presupuestos.servicio.js.
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM ordenes_compra WHERE id = ${oc.id} FOR UPDATE`);
+      const ocFresca = await tx.ordenCompra.findUnique({ where: { id: oc.id } });
+      if (["Recibida", "Recibida con diferencia", "Anulada", "Cerrada"].includes(ocFresca.estado)) {
+        throw new ErrorDeNegocio("No se puede anular una orden ya recibida, anulada o cerrada.", 409);
+      }
+      const movimientoFresco = await tx.movimientoStock.findFirst({ where: { ordenCompraId: oc.id } });
+      if (movimientoFresco) {
+        throw new ErrorDeNegocio("La orden ya generó un movimiento de stock de entrada y no puede anularse.", 409);
+      }
+
       const actualizada = await tx.ordenCompra.update({
         where: { id: oc.id },
         data: { estado: "Anulada", motivoAnulacion: motivo },
@@ -340,6 +368,17 @@ async function registrarRecepcion(id, detalleRecibido, usuario) {
 
   return prisma.$transaction(
     async (tx) => {
+      // Re-chequeo protegido contra carreras: FOR UPDATE bloquea la fila de
+      // la OC hasta que esta transacción termine — un doble envío del mismo
+      // formulario (doble clic, reintento de red) o una anulación (HU-25)
+      // concurrente ven el estado ya actualizado en vez de duplicar el
+      // movimiento de stock de entrada. Mismo patrón que anularOC.
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM ordenes_compra WHERE id = ${oc.id} FOR UPDATE`);
+      const ocFresca = await tx.ordenCompra.findUnique({ where: { id: oc.id } });
+      if (ocFresca.estado !== "Enviada") {
+        throw new ErrorDeNegocio("Solo se puede registrar recepción de una orden en estado Enviada.", 409);
+      }
+
       // Actualizar cantidadRecibida en cada línea de la OC
       for (const linea of detalleRecibido) {
         await tx.ordenCompraDetalle.update({

@@ -88,6 +88,7 @@ export function ProveedorModal({ proveedor, onClose, onExito }) {
     if (!form.razonSocial.trim()) e.razonSocial = "La razón social es obligatoria.";
     if (!form.cuit.trim()) e.cuit = "El CUIT es obligatorio.";
     else if (!CUIT_REGEX.test(form.cuit)) e.cuit = "Formato esperado: 00-00000000-0 (11 dígitos).";
+    if (!form.contacto.trim()) e.contacto = "El contacto es obligatorio.";
     if (!form.condicionComercial) e.condicionComercial = "Elegí una condición comercial.";
     if (rubros.length === 0) e.rubros = "Elegí al menos un rubro.";
     return e;
@@ -162,9 +163,10 @@ export function ProveedorModal({ proveedor, onClose, onExito }) {
               </Select>
 
               <Input
-                label="Contacto"
+                label="Contacto *"
                 value={form.contacto}
                 onChange={(e) => setForm({ ...form, contacto: e.target.value })}
+                error={errores.contacto}
                 placeholder="ej. Marcela Ávila"
               />
               <Input
