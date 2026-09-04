@@ -32,3 +32,4 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
+app.use("/api/comprobantes", require("./src/modulos/comprobantes/comprobantes.routes"));
