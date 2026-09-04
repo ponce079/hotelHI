@@ -99,7 +99,11 @@ export function ComparacionPresupuestosPage() {
         <div className="overflow-x-auto">
           <div className="flex min-w-fit gap-4">
             {presupuestos.map((p) => {
-              const cotizo = p.estado !== ESTADOS_PRESUPUESTO.SOLICITADO;
+              // "Cotizó de verdad" sale de si mandó precios, no del estado:
+              // aprobarPresupuesto pone en "Rechazado" a todos los no
+              // ganadores, incluidos los que se quedaron en "Solicitado"
+              // sin responder nunca. Mismo criterio que el backend.
+              const cotizo = (p.detalle?.length ?? 0) > 0;
               const preciosPorArticulo = new Map(p.detalle.map((d) => [d.articuloId, Number(d.precioUnitario)]));
               return (
                 <div

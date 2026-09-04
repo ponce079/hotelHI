@@ -10,7 +10,9 @@
 // se completa cuando llega la cotización. No hay tabla ni flujo aparte
 // para "la solicitud".
 
+const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
+const { redondear } = require("../../lib/comprobantes");
 const { ESTADOS_REQUERIMIENTO, ESTADOS_PRESUPUESTO, OPCIONES_TRANSACCION } = require("../../lib/constantes");
 
 class ErrorDeNegocio extends Error {
@@ -53,9 +55,9 @@ function calcularTotales(presupuesto) {
   );
   const flete = Number(presupuesto.costoFlete ?? 0);
   return {
-    subtotal: Math.round(subtotal * 100) / 100,
-    flete: Math.round(flete * 100) / 100,
-    total: Math.round((subtotal + flete) * 100) / 100,
+    subtotal: redondear(subtotal),
+    flete: redondear(flete),
+    total: redondear(subtotal + flete),
   };
 }
 
@@ -184,35 +186,44 @@ async function cargarPresupuesto(id, { precios, plazoEntrega, costoFlete }) {
 // si se cae a la mitad, un requerimiento podría quedar "Aprobado" con dos
 // presupuestos adjudicados, o con ninguno.
 async function aprobarPresupuesto(id) {
-  const presupuesto = await prisma.presupuesto.findUnique({
-    where: { id },
-    include: { requerimiento: { include: { presupuestos: true, detalle: true } } },
-  });
-  if (!presupuesto) throw new ErrorDeNegocio("Presupuesto no encontrado", 404);
-  if (presupuesto.estado !== ESTADOS_PRESUPUESTO.PENDIENTE_APROBACION) {
-    throw new ErrorDeNegocio(
-      `Solo se puede aprobar un presupuesto en estado "${ESTADOS_PRESUPUESTO.PENDIENTE_APROBACION}" (este está en "${presupuesto.estado}")`,
-      409
-    );
-  }
+  // Chequeo rápido ("fail fast") antes de la transacción, no toma locks.
+  const existe = await prisma.presupuesto.findUnique({ where: { id }, select: { id: true, requerimientoId: true } });
+  if (!existe) throw new ErrorDeNegocio("Presupuesto no encontrado", 404);
 
-  // No se puede adjudicar dos veces el mismo requerimiento: el primero
-  // que se aprueba deja al resto en "Rechazado" y cierra el pedido.
-  const yaAdjudicado = presupuesto.requerimiento.presupuestos.find(
-    (p) => p.estado === ESTADOS_PRESUPUESTO.ADJUDICADO
-  );
-  if (yaAdjudicado) {
-    throw new ErrorDeNegocio(
-      `El requerimiento #${presupuesto.requerimientoId} ya tiene un presupuesto adjudicado (#${yaAdjudicado.id})`,
-      409
-    );
-  }
-
-  // Las tres escrituras son el núcleo atómico de HU-84: o pasan las tres
-  // o ninguna. La relectura de la ficha queda afuera — es solo para
-  // devolverle el resultado a la pantalla, y adentro sumaba las consultas
-  // que hacían pasar la transacción de los 5s por defecto (P2028).
   await prisma.$transaction(async (tx) => {
+    // Re-chequeo protegido contra carreras: FOR UPDATE bloquea todos los
+    // presupuestos del requerimiento hasta que esta transacción termine,
+    // así una segunda adjudicación (de otro presupuesto del mismo
+    // requerimiento) que llegue casi al mismo tiempo espera a que esta
+    // commitee y ve el ADJUDICADO ya puesto, en vez de pisarlo. Mismo
+    // patrón que anularOrdenPago en pagos.servicio.js.
+    await tx.$queryRaw(
+      Prisma.sql`SELECT id FROM presupuestos WHERE requerimientoId = ${existe.requerimientoId} FOR UPDATE`
+    );
+
+    const presupuesto = await tx.presupuesto.findUnique({
+      where: { id },
+      include: { requerimiento: { include: { presupuestos: true } } },
+    });
+    if (presupuesto.estado !== ESTADOS_PRESUPUESTO.PENDIENTE_APROBACION) {
+      throw new ErrorDeNegocio(
+        `Solo se puede aprobar un presupuesto en estado "${ESTADOS_PRESUPUESTO.PENDIENTE_APROBACION}" (este está en "${presupuesto.estado}")`,
+        409
+      );
+    }
+
+    // No se puede adjudicar dos veces el mismo requerimiento: el primero
+    // que se aprueba deja al resto en "Rechazado" y cierra el pedido.
+    const yaAdjudicado = presupuesto.requerimiento.presupuestos.find(
+      (p) => p.estado === ESTADOS_PRESUPUESTO.ADJUDICADO
+    );
+    if (yaAdjudicado) {
+      throw new ErrorDeNegocio(
+        `El requerimiento #${presupuesto.requerimientoId} ya tiene un presupuesto adjudicado (#${yaAdjudicado.id})`,
+        409
+      );
+    }
+
     await tx.presupuesto.update({ where: { id }, data: { estado: ESTADOS_PRESUPUESTO.ADJUDICADO } });
     await tx.presupuesto.updateMany({
       where: { requerimientoId: presupuesto.requerimientoId, id: { not: id } },
@@ -227,6 +238,8 @@ async function aprobarPresupuesto(id) {
     });
   }, OPCIONES_TRANSACCION);
 
+  // La ficha con includes queda fuera del commit — ver comentario de
+  // cargarPresupuesto sobre por qué (P2028 con la base remota).
   return conTotales(await prisma.presupuesto.findUnique({ where: { id }, include: INCLUDE_FICHA }));
 }
 

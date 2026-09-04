@@ -27,7 +27,9 @@ export function PresupuestoDetallePage() {
   if (isError || !p) return <p className="text-sm text-error">No se pudo cargar el presupuesto.</p>;
 
   const cantidades = new Map((p.requerimiento?.detalle ?? []).map((d) => [d.articuloId, Number(d.cantidadSolicitada)]));
-  const cotizo = p.estado !== ESTADOS_PRESUPUESTO.SOLICITADO;
+  // "Cotizó de verdad" sale de si mandó precios, no del estado: ver
+  // ComparacionPresupuestosPage.jsx y el criterio del backend.
+  const cotizo = (p.detalle?.length ?? 0) > 0;
 
   return (
     <div className="flex flex-col gap-6">

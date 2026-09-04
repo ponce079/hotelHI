@@ -5,6 +5,7 @@
 // Comprobantes y Pagos dependen de que exista un proveedor.
 
 const prisma = require("../../lib/prisma");
+const { redondear } = require("../../lib/comprobantes");
 const { OPCIONES_TRANSACCION, ESTADOS_PRESUPUESTO } = require("../../lib/constantes");
 
 // Mismo patrón que cuentaCorriente.servicio.js: el servicio tira un error
@@ -18,7 +19,10 @@ class ErrorDeNegocio extends Error {
   }
 }
 
-const INCLUDE_RUBROS = { rubros: { orderBy: { rubro: "asc" } } };
+// _count.ordenesCompra viaja en todas las respuestas de proveedor para que
+// el frontend pueda deshabilitar la edición del CUIT (HU-19) sin depender
+// de un fetch aparte al historial de OC que no siempre se hizo todavía.
+const INCLUDE_RUBROS = { rubros: { orderBy: { rubro: "asc" } }, _count: { select: { ordenesCompra: true } } };
 
 // Los rubros viven en su propia tabla (ProveedorRubro), así que un alta o
 // una edición tocan 2 tablas -> transacción, siempre. En la edición se
@@ -87,16 +91,21 @@ async function cambiarEstadoProveedor(id, activo) {
   // desaparece de los selects de "invitar a cotizar" mientras compras
   // todavía espera su respuesta o tiene que decidir si lo adjudica, el
   // circuito de Presupuestos (HU-82/83/84) queda con un extremo roto.
+  // Adjudicado también cuenta: es el ganador que todavía no generó su
+  // orden de compra (ese flujo es de una historia futura), así que
+  // desactivarlo dejaría la adjudicación colgada de un proveedor inactivo.
   if (existente.activo && !activo) {
     const enCurso = await prisma.presupuesto.count({
       where: {
         proveedorId: id,
-        estado: { in: [ESTADOS_PRESUPUESTO.SOLICITADO, ESTADOS_PRESUPUESTO.PENDIENTE_APROBACION] },
+        estado: {
+          in: [ESTADOS_PRESUPUESTO.SOLICITADO, ESTADOS_PRESUPUESTO.PENDIENTE_APROBACION, ESTADOS_PRESUPUESTO.ADJUDICADO],
+        },
       },
     });
     if (enCurso > 0) {
       throw new ErrorDeNegocio(
-        `No se puede dar de baja: el proveedor tiene ${enCurso} presupuesto${enCurso > 1 ? "s" : ""} en curso.`,
+        `No se puede dar de baja: el proveedor tiene ${enCurso} presupuesto${enCurso > 1 ? "s" : ""} en curso o adjudicado.`,
         409
       );
     }
@@ -115,16 +124,16 @@ async function listarProveedores({ q, rubro, condicionComercial, estado, page = 
     ...(q ? { OR: [{ razonSocial: { contains: q } }, { cuit: { contains: q } }] } : {}),
   };
 
-  const [items, total] = await Promise.all([
-    prisma.proveedor.findMany({
-      where,
-      include: INCLUDE_RUBROS,
-      orderBy: [{ activo: "desc" }, { razonSocial: "asc" }],
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.proveedor.count({ where }),
-  ]);
+  // Secuencial, no Promise.all: la base remota tiene un pool de solo 3
+  // conexiones (ver el incidente documentado en pagos.servicio.js).
+  const items = await prisma.proveedor.findMany({
+    where,
+    include: INCLUDE_RUBROS,
+    orderBy: [{ activo: "desc" }, { razonSocial: "asc" }],
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  });
+  const total = await prisma.proveedor.count({ where });
 
   return { items, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
 }
@@ -162,7 +171,7 @@ async function listarOrdenesCompraDeProveedor(id, { sort = "fecha" } = {}) {
     .filter((oc) => oc.estado !== "Anulada")
     .reduce((acc, oc) => acc + Number(oc.montoTotal) + Number(oc.flete ?? 0), 0);
 
-  return { items: ordenes, total: ordenes.length, totalComprado: Math.round(totalComprado * 100) / 100 };
+  return { items: ordenes, total: ordenes.length, totalComprado: redondear(totalComprado) };
 }
 
 module.exports = {

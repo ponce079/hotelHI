@@ -30,11 +30,10 @@ async function crearRequerimiento({ depositoId, origen, solicitante, detalle }) 
   if (!deposito.activo) throw new ErrorDeNegocio("El depósito está dado de baja", 400);
 
   // Dos líneas del mismo artículo romperían el @@unique(requerimientoId,
-  // articuloId) recién en el insert, con un P2002 que no dice cuál se
-  // repitió. Se valida antes para poder nombrar el artículo en el error.
+  // articuloId) recién en el insert, con un P2002 que no dice la causa
+  // real. Mismo criterio que cargarPresupuesto en presupuestos.servicio.js.
   const ids = detalle.map((d) => d.articuloId);
-  const repetidos = ids.filter((id, i) => ids.indexOf(id) !== i);
-  if (repetidos.length > 0) {
+  if (new Set(ids).size !== ids.length) {
     throw new ErrorDeNegocio("Hay artículos repetidos en el detalle: cargá una sola línea por artículo", 400);
   }
 
@@ -79,28 +78,35 @@ async function listarRequerimientos({ estado, depositoId, page = 1, pageSize = 1
     ...(depositoId ? { depositoId: Number(depositoId) } : {}),
   };
 
-  const [items, total] = await Promise.all([
-    prisma.requerimientoReposicion.findMany({
-      where,
-      include: {
-        deposito: { select: { id: true, nombre: true } },
-        detalle: { select: { id: true } },
-        presupuestos: { select: { id: true, estado: true } },
-      },
-      orderBy: { fecha: "desc" },
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-    prisma.requerimientoReposicion.count({ where }),
-  ]);
+  // Secuencial, no Promise.all: la base remota tiene un pool de solo 3
+  // conexiones y esta lista ya se pide junto con listarDepositos en la
+  // misma carga de pantalla — ver el incidente documentado en
+  // pagos.servicio.js que llevó a este mismo cambio ahí.
+  const items = await prisma.requerimientoReposicion.findMany({
+    where,
+    include: {
+      deposito: { select: { id: true, nombre: true } },
+      detalle: { select: { id: true } },
+      presupuestos: { select: { id: true, estado: true, _count: { select: { detalle: true } } } },
+    },
+    orderBy: { fecha: "desc" },
+    skip: (page - 1) * pageSize,
+    take: pageSize,
+  });
+  const total = await prisma.requerimientoReposicion.count({ where });
 
   // La pantalla necesita "cuántos artículos" y "cuántos presupuestos ya
-  // cotizaron" sin traerse el detalle entero de cada uno.
+  // cotizaron" sin traerse el detalle entero de cada uno. "Cotizó de
+  // verdad" sale de si mandó precios (_count.detalle > 0), no del estado
+  // — aprobarPresupuesto pone en "Rechazado" a TODOS los no ganadores al
+  // adjudicar, incluidos los que se quedaron en "Solicitado" sin
+  // responder nunca. Mismo criterio que listarPresupuestos en
+  // presupuestos.servicio.js.
   const conResumen = items.map(({ detalle, presupuestos, ...r }) => ({
     ...r,
     cantidadArticulos: detalle.length,
     cantidadPresupuestos: presupuestos.length,
-    presupuestosCotizados: presupuestos.filter((p) => p.estado !== "Solicitado").length,
+    presupuestosCotizados: presupuestos.filter((p) => p._count.detalle > 0).length,
   }));
 
   return { items: conResumen, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) };

@@ -211,11 +211,7 @@ export function ProveedorDetallePage() {
       )}
 
       {editando && (
-        <ProveedorModal
-          proveedor={{ ...proveedor, tieneOrdenesCompra: (ordenes?.total ?? 0) > 0 }}
-          onClose={() => setEditando(false)}
-          onExito={() => setEditando(false)}
-        />
+        <ProveedorModal proveedor={proveedor} onClose={() => setEditando(false)} onExito={() => setEditando(false)} />
       )}
     </div>
   );

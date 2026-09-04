@@ -29,8 +29,11 @@ export function AlertasPage() {
       articuloId: String(alerta.articuloId),
       // ¡Ojo con !: un sugerido de 0 es un valor legítimo (stockMinimo
       // === stockMaximo), no "no hay sugerencia" — con solo `sugerido ?`
-      // ese 0 se perdía y el formulario quedaba con su default en vez
-      // de precargarse en 0.
+      // ese 0 se perdía y el parámetro quedaba ausente. Nota: pedir 0
+      // unidades no tiene sentido, así que RequerimientoFormPage igual
+      // descarta un cantidad<=0 al leer la querystring y el campo queda
+      // vacío en la pantalla — este fix no cambia esa UX, solo hace que
+      // la URL generada refleje el valor real de la alerta.
       ...(alerta.sugerido != null ? { cantidad: String(alerta.sugerido) } : {}),
     });
     navigate(`/requerimientos/nuevo?${params}`);

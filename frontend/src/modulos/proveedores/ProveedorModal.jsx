@@ -52,7 +52,10 @@ export function ProveedorModal({ proveedor, onClose, onExito }) {
   // HU-19: si ya tiene órdenes de compra el CUIT queda congelado. El
   // backend lo rechaza igual (es el que manda), pero deshabilitar el campo
   // acá evita que alguien lo edite y recién se entere al guardar.
-  const cuitBloqueado = editando && (proveedor.ordenesCompra?.length > 0 || proveedor.tieneOrdenesCompra);
+  // _count.ordenesCompra viaja en toda respuesta de proveedor (ver
+  // INCLUDE_RUBROS en proveedores.servicio.js), así que no depende de que
+  // el usuario haya visitado antes la pestaña de historial.
+  const cuitBloqueado = editando && (proveedor._count?.ordenesCompra ?? 0) > 0;
 
   const mutacion = useMutation({
     mutationFn: () => {
