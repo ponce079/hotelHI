@@ -27,7 +27,11 @@ export function AlertasPage() {
       origen: ORIGENES_REQUERIMIENTO.ALERTA,
       depositoId: String(alerta.depositoId),
       articuloId: String(alerta.articuloId),
-      ...(alerta.sugerido ? { cantidad: String(alerta.sugerido) } : {}),
+      // ¡Ojo con !: un sugerido de 0 es un valor legítimo (stockMinimo
+      // === stockMaximo), no "no hay sugerencia" — con solo `sugerido ?`
+      // ese 0 se perdía y el formulario quedaba con su default en vez
+      // de precargarse en 0.
+      ...(alerta.sugerido != null ? { cantidad: String(alerta.sugerido) } : {}),
     });
     navigate(`/requerimientos/nuevo?${params}`);
   }

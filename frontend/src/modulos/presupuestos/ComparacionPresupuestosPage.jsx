@@ -9,7 +9,6 @@ import { ConfirmDialog } from "../../componentes/ConfirmDialog";
 import { Toast } from "../../componentes/Toast";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { listarPresupuestos, aprobarPresupuesto } from "./presupuestos.api";
-import { obtenerRequerimiento } from "../requerimientos/requerimientos.api";
 import { ESTADOS_PRESUPUESTO, VARIANTE_ESTADO_PRESUPUESTO } from "../../lib/constantes";
 import { formatearMonto } from "../../lib/moneda";
 import { useToast } from "../../lib/useToast";
@@ -31,17 +30,10 @@ export function ComparacionPresupuestosPage() {
     enabled: Boolean(requerimientoId),
   });
 
-  const { data: req } = useQuery({
-    queryKey: ["requerimiento", requerimientoId],
-    queryFn: () => obtenerRequerimiento(requerimientoId),
-    enabled: Boolean(requerimientoId),
-  });
-
   const mutacion = useMutation({
     mutationFn: (id) => aprobarPresupuesto(id),
     onSuccess: (presupuesto) => {
       queryClient.invalidateQueries({ queryKey: ["presupuestos"] });
-      queryClient.invalidateQueries({ queryKey: ["requerimiento", requerimientoId] });
       queryClient.invalidateQueries({ queryKey: ["requerimientos"] });
       mostrarToast(
         `Presupuesto de ${presupuesto.proveedor?.razonSocial} adjudicado. El requerimiento quedó aprobado y el resto de los presupuestos, rechazados.`
@@ -73,8 +65,12 @@ export function ComparacionPresupuestosPage() {
   if (isLoading) return <p className="text-sm text-piedra">Cargando presupuestos…</p>;
   if (isError) return <p className="text-sm text-error">No se pudieron cargar los presupuestos.</p>;
 
-  const lineasReq = req?.detalle ?? [];
+  // El requerimiento (con su detalle y depósito) ya viene incluido en cada
+  // presupuesto vía INCLUDE_FICHA — no hace falta un fetch aparte, y todos
+  // los presupuestos de un mismo requerimientoId comparten el mismo.
   const presupuestos = data?.items ?? [];
+  const req = presupuestos[0]?.requerimiento;
+  const lineasReq = req?.detalle ?? [];
   const yaAdjudicado = presupuestos.some((p) => p.estado === ESTADOS_PRESUPUESTO.ADJUDICADO);
 
   return (

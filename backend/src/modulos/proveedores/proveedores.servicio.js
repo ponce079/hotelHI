@@ -5,7 +5,7 @@
 // Comprobantes y Pagos dependen de que exista un proveedor.
 
 const prisma = require("../../lib/prisma");
-const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
+const { OPCIONES_TRANSACCION, ESTADOS_PRESUPUESTO } = require("../../lib/constantes");
 
 // Mismo patrón que cuentaCorriente.servicio.js: el servicio tira un error
 // con statusCode y el controlador lo traduce a una respuesta HTTP. No hay
@@ -82,6 +82,26 @@ async function actualizarProveedor(id, { rubros, ...datos }) {
 async function cambiarEstadoProveedor(id, activo) {
   const existente = await prisma.proveedor.findUnique({ where: { id } });
   if (!existente) throw new ErrorDeNegocio("Proveedor no encontrado", 404);
+
+  // No se puede dar de baja a un proveedor con presupuestos en curso: si
+  // desaparece de los selects de "invitar a cotizar" mientras compras
+  // todavía espera su respuesta o tiene que decidir si lo adjudica, el
+  // circuito de Presupuestos (HU-82/83/84) queda con un extremo roto.
+  if (existente.activo && !activo) {
+    const enCurso = await prisma.presupuesto.count({
+      where: {
+        proveedorId: id,
+        estado: { in: [ESTADOS_PRESUPUESTO.SOLICITADO, ESTADOS_PRESUPUESTO.PENDIENTE_APROBACION] },
+      },
+    });
+    if (enCurso > 0) {
+      throw new ErrorDeNegocio(
+        `No se puede dar de baja: el proveedor tiene ${enCurso} presupuesto${enCurso > 1 ? "s" : ""} en curso.`,
+        409
+      );
+    }
+  }
+
   return prisma.proveedor.update({ where: { id }, data: { activo }, include: INCLUDE_RUBROS });
 }
 

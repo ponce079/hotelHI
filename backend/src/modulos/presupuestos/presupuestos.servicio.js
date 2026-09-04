@@ -132,11 +132,22 @@ async function cargarPresupuesto(id, { precios, plazoEntrega, costoFlete }) {
     );
   }
 
+  // Ningún artículo puede venir dos veces: si no se rechaza acá, el
+  // Set de la validación de abajo lo deduplica y el chequeo de longitud
+  // puede dar falso positivo (ej. [1,1,3] con "2" faltante cuadra en
+  // cantidad contra un pedido [1,2,3]) — el duplicado recién explota
+  // más abajo como un P2002 al insertar, con un mensaje que no dice la
+  // causa real. Mismo criterio que crearOrdenPago en pagos.servicio.js.
+  const idsCrudos = precios.map((p) => p.articuloId);
+  if (new Set(idsCrudos).size !== idsCrudos.length) {
+    throw new ErrorDeNegocio("No se puede cotizar el mismo artículo dos veces", 400);
+  }
+
   // Los artículos cotizados tienen que ser exactamente los del
   // requerimiento — ni de más (algo que nadie pidió) ni de menos (una
   // línea sin precio haría que el total mienta).
   const pedidos = presupuesto.requerimiento.detalle.map((d) => d.articuloId).sort();
-  const cotizados = [...new Set(precios.map((p) => p.articuloId))].sort();
+  const cotizados = idsCrudos.slice().sort();
   if (pedidos.length !== cotizados.length || pedidos.some((id, i) => id !== cotizados[i])) {
     throw new ErrorDeNegocio("Hay que cotizar exactamente los artículos del requerimiento, uno por línea", 400);
   }
@@ -234,19 +245,26 @@ async function listarPresupuestos({ requerimientoId, proveedorId, estado } = {})
   });
 
   const conTotal = items.map(conTotales);
-  const cotizados = conTotal.filter((p) => p.estado !== ESTADOS_PRESUPUESTO.SOLICITADO);
+  // "Cotizó de verdad" tiene que salir de si mandó precios (detalle no
+  // vacío), no del estado — aprobarPresupuesto pone en "Rechazado" a
+  // TODOS los no ganadores al adjudicar, incluidos los que se quedaron
+  // en "Solicitado" sin responder nunca. Guiarse solo por el estado
+  // (!== SOLICITADO) los hacía pasar como cotizados con total $0 (sin
+  // detalle) y ganaban la comparación de "más barato" sin haber cotizado.
+  const fueCotizado = (p) => (p.detalle?.length ?? 0) > 0;
+  const cotizados = conTotal.filter(fueCotizado);
   const mejorTotal = cotizados.length > 0 ? Math.min(...cotizados.map((p) => p.total)) : null;
 
   return {
     items: conTotal
       .slice()
       .sort((a, b) => {
-        const aCotizo = a.estado !== ESTADOS_PRESUPUESTO.SOLICITADO;
-        const bCotizo = b.estado !== ESTADOS_PRESUPUESTO.SOLICITADO;
+        const aCotizo = fueCotizado(a);
+        const bCotizo = fueCotizado(b);
         if (aCotizo !== bCotizo) return aCotizo ? -1 : 1;
         return a.total - b.total;
       })
-      .map((p) => ({ ...p, esMasBajo: p.total === mejorTotal && p.estado !== ESTADOS_PRESUPUESTO.SOLICITADO })),
+      .map((p) => ({ ...p, esMasBajo: fueCotizado(p) && p.total === mejorTotal })),
     total: conTotal.length,
     mejorTotal,
   };

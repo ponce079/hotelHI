@@ -4,6 +4,16 @@ const { RUBROS, CONDICIONES_COMERCIALES } = require("../../lib/constantes");
 const { CUIT_REGEX, RAZON_SOCIAL_REGEX, RAZON_SOCIAL_MAX_LENGTH, normalizarCuit } = require("./proveedores.constantes");
 const proveedoresServicio = require("./proveedores.servicio");
 
+// Campo de contacto opcional: si no vino como texto (nunca deberia
+// pasar desde la pantalla, pero no hay validacion de tipos en el
+// backend todavia — ver Sprint 3), se trata como ausente en vez de
+// llamar .trim() a ciegas y tirar un TypeError no capturado que deja
+// el request colgado sin respuesta.
+function textoOpcional(valor) {
+  if (typeof valor !== "string") return null;
+  return valor.trim() || null;
+}
+
 // Validación compartida entre alta y edición: los dos aceptan exactamente
 // los mismos campos (HU-18/19). Devuelve { error } o { datos } ya limpios.
 function validarPayload(body) {
@@ -39,12 +49,13 @@ function validarPayload(body) {
       razonSocial,
       cuit,
       condicionComercial,
-      // Los de contacto son opcionales: "" se guarda como null para no
-      // ensuciar la base con cadenas vacías.
-      contacto: body?.contacto?.trim() || null,
-      email: body?.email?.trim() || null,
-      telefono: body?.telefono?.trim() || null,
-      direccion: body?.direccion?.trim() || null,
+      // Los de contacto son opcionales: "" (o cualquier valor que no sea
+      // texto) se guarda como null para no ensuciar la base con cadenas
+      // vacías ni romper con un tipo inesperado.
+      contacto: textoOpcional(body?.contacto),
+      email: textoOpcional(body?.email),
+      telefono: textoOpcional(body?.telefono),
+      direccion: textoOpcional(body?.direccion),
       rubros: [...new Set(rubros)],
     },
   };
