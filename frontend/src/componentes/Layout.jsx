@@ -11,6 +11,7 @@ import {
   LogOut,
   Wallet,
   Landmark,
+  FileText,
 } from "lucide-react";
 import { useSesion } from "../lib/sesion";
 
@@ -37,6 +38,7 @@ const ITEMS = [
   // por qué no se armó el menú con grupos colapsables del prototipo.
   { to: "/pagos", label: "Pagos a Proveedores", icon: Wallet, roles: ["compras"] },
   { to: "/cuenta-corriente", label: "Cuenta Corriente", icon: Landmark, roles: ["compras"] },
+  { to: "/comprobantes", label: "Comprobantes", icon: FileText, roles: ["compras"] },
 ];
 
 export function Layout() {
