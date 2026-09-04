@@ -24,6 +24,11 @@ app.use("/api/ordenes-pago", require("./src/modulos/pagos/pagos.routes"));
 const cuentaCorrienteRoutes = require("./src/modulos/cuenta-corriente/cuentaCorriente.routes");
 app.use("/api/proveedores", cuentaCorrienteRoutes.routerProveedores);
 app.use("/api/cuenta-corriente", cuentaCorrienteRoutes.routerCuentaCorriente);
+app.use("/api/proveedores", require("./src/modulos/proveedores/proveedores.routes"));
+app.use("/api/requerimientos", require("./src/modulos/requerimientos/requerimientos.routes"));
+app.use("/api/presupuestos", require("./src/modulos/presupuestos/presupuestos.routes"));
+app.use("/api/comprobantes", require("./src/modulos/comprobantes/comprobantes.routes"));
+app.use("/api/ordenes-compra", require("./src/modulos/ordenes-compra/ordenesCompra.routes"));
 
 app.get("/", (req, res) => {
   res.json({ status: "ok", proyecto: "Sistema de Gestión Hotelera - Holiday Inn" });
@@ -32,4 +37,3 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
-app.use("/api/ordenes-compra", require("./src/modulos/ordenes-compra/ordenesCompra.routes"));

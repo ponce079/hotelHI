@@ -5,15 +5,38 @@ import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { consultarStock } from "../stock/stock.api";
 import { calcularAlertas } from "../../lib/alertas";
+import { ORIGENES_REQUERIMIENTO } from "../../lib/constantes";
+import { useSesion } from "../../lib/sesion";
 
 export function AlertasPage() {
   const navigate = useNavigate();
+  const { puede } = useSesion();
   const { data: filas, isLoading, isError } = useQuery({ queryKey: ["stock", {}], queryFn: () => consultarStock({}) });
 
   const alertas = calcularAlertas(filas);
 
   function irADeposito(depositoId) {
     navigate(`/depositos/${depositoId}?criticos=1`);
+  }
+
+  // HU-81: el alta desde una alerta usa el mismo formulario y el mismo
+  // endpoint que la carga manual — solo llega precargado y con
+  // origen="ALERTA", que es lo que después muestra el ⚡ en el listado.
+  function generarRequerimiento(alerta) {
+    const params = new URLSearchParams({
+      origen: ORIGENES_REQUERIMIENTO.ALERTA,
+      depositoId: String(alerta.depositoId),
+      articuloId: String(alerta.articuloId),
+      // ¡Ojo con !: un sugerido de 0 es un valor legítimo (stockMinimo
+      // === stockMaximo), no "no hay sugerencia" — con solo `sugerido ?`
+      // ese 0 se perdía y el parámetro quedaba ausente. Nota: pedir 0
+      // unidades no tiene sentido, así que RequerimientoFormPage igual
+      // descarta un cantidad<=0 al leer la querystring y el campo queda
+      // vacío en la pantalla — este fix no cambia esa UX, solo hace que
+      // la URL generada refleje el valor real de la alerta.
+      ...(alerta.sugerido != null ? { cantidad: String(alerta.sugerido) } : {}),
+    });
+    navigate(`/requerimientos/nuevo?${params}`);
   }
 
   return (
@@ -68,9 +91,16 @@ export function AlertasPage() {
                   {a.sugerido ?? "—"} <span className="font-body text-xs">{a.unidadMedida}</span>
                 </div>
               </div>
-              <Button variante="secundario" tamano="fila" className="ml-auto self-center" onClick={() => irADeposito(a.depositoId)}>
-                Ver depósito
-              </Button>
+              <div className="ml-auto flex items-center gap-1.5 self-center">
+                {puede("crearRequerimiento") && (
+                  <Button tamano="fila" onClick={() => generarRequerimiento(a)}>
+                    Generar requerimiento
+                  </Button>
+                )}
+                <Button variante="secundario" tamano="fila" onClick={() => irADeposito(a.depositoId)}>
+                  Ver depósito
+                </Button>
+              </div>
             </div>
           </div>
         ))}
