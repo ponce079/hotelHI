@@ -85,9 +85,17 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
   function toggleComprobante(c) {
     setForm((f) => {
       const montos = { ...f.montos };
-      if (c.id in montos) delete montos[c.id];
-      else montos[c.id] = String(c.saldo);
-      return { ...f, montos };
+      const confirmaciones = { ...f.confirmaciones };
+      if (c.id in montos) {
+        delete montos[c.id];
+        // Al deseleccionar, se borra también la confirmación de diferencia
+        // de matching: si se vuelve a elegir el mismo comprobante hay que
+        // volver a mostrarle la advertencia, no darla por tildada de antes.
+        delete confirmaciones[c.id];
+      } else {
+        montos[c.id] = String(c.saldo);
+      }
+      return { ...f, montos, confirmaciones };
     });
   }
 

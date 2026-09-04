@@ -78,6 +78,21 @@ function rubroCubreCategoria(rubro, categoria) {
   return (MAPA_RUBRO_CATEGORIA[rubro] ?? []).includes(categoria);
 }
 
+// Guarda contra el desfase silencioso: si alguien agrega un rubro a
+// RUBROS y se olvida de sumarlo acá, rubroCubreCategoria devuelve false
+// para TODO sin ningún aviso — el proveedor queda inhabilitado para
+// cualquier requerimiento y nadie se entera de que la causa es este mapa.
+// Falla fuerte al cargar el módulo en vez de fallar en silencio en
+// producción. (El mapa puede tener claves de más — categorías de
+// artículos futuras — pero no de menos que RUBROS.)
+const rubrosSinMapear = RUBROS.filter((r) => !(r in MAPA_RUBRO_CATEGORIA));
+if (rubrosSinMapear.length > 0) {
+  throw new Error(
+    `MAPA_RUBRO_CATEGORIA no tiene entrada para: ${rubrosSinMapear.join(", ")}. ` +
+      "Agregalo en backend/src/lib/constantes.js Y en su espejo frontend/src/lib/constantes.js."
+  );
+}
+
 // Opciones para prisma.$transaction. El default de Prisma es timeout 5s /
 // maxWait 2s, que alcanza contra una base local pero NO contra la base
 // compartida de Clever Cloud: está en Francia, exige SSL y el plan

@@ -69,6 +69,33 @@ async function calcularSaldosComprobantes(comprobantes, db = prisma) {
   return saldos;
 }
 
+// Cuánto se pagó REALMENTE (solo pagos vigentes, sin contar ajustes ND/NC)
+// de cada factura, en lote. Se agregó aparte de calcularSaldosComprobantes
+// —sin tocar esa función ni su contrato, que usan Pagos y Cuenta
+// Corriente— porque el saldo solo (comparado contra importeTotal) no
+// alcanza para saber si "Pendiente" o "Pagado Parcial" es el estado
+// correcto: una Nota de Débito/Crédito mueve el saldo independientemente
+// de si hubo un pago real (revisar HU-74 en comprobantes.servicio.js).
+async function calcularPagosAplicados(comprobantes, db = prisma) {
+  const facturas = comprobantes.filter(esFactura);
+  const pagos = new Map();
+  if (facturas.length === 0) return pagos;
+
+  const ids = facturas.map((f) => f.id);
+  const aplicaciones = await db.ordenPagoDetalle.findMany({
+    where: { comprobanteId: { in: ids } },
+    include: { ordenPago: true },
+  });
+
+  for (const f of facturas) {
+    const suma = aplicaciones
+      .filter((a) => a.comprobanteId === f.id && pagoVigente(a.ordenPago))
+      .reduce((acc, a) => acc + Number(a.importeAplicado), 0);
+    pagos.set(f.id, redondear(suma));
+  }
+  return pagos;
+}
+
 // Conveniencia para un solo comprobante (pantallas de ficha/detalle que
 // solo necesitan uno). Internamente usa la version en lote de arriba —
 // no reimplementa el calculo.
@@ -124,6 +151,7 @@ async function resumenSaldosPorProveedor(db = prisma) {
 module.exports = {
   calcularSaldosComprobantes,
   calcularSaldoComprobante,
+  calcularPagosAplicados,
   listarFacturasConSaldo,
   pagoVigente,
   esFactura,

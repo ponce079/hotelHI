@@ -81,7 +81,13 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
   // lockear siempre en el mismo orden evita que se hagan deadlock entre si.
   const comprobanteIds = idsCrudos.slice().sort((a, b) => a - b);
 
-  const comprobantes = await prisma.comprobanteProveedor.findMany({ where: { id: { in: comprobanteIds } } });
+  // ordenCompra con su detalle va incluido acá para que calcularMatching
+  // (más abajo, gate de HU-76) lo reuse en vez de volver a pedirlo a la
+  // base por cada comprobante con OC — mismo criterio que listarComprobantes.
+  const comprobantes = await prisma.comprobanteProveedor.findMany({
+    where: { id: { in: comprobanteIds } },
+    include: { ordenCompra: { include: { detalle: true } } },
+  });
   if (comprobantes.length !== comprobanteIds.length) {
     throw new ErrorDeNegocio("Alguno de los comprobantes indicados no existe.");
   }

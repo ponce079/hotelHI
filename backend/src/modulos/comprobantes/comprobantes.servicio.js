@@ -1,6 +1,6 @@
 const { Prisma } = require('@prisma/client');
 const prisma = require('../../lib/prisma');
-const { calcularSaldoComprobante, calcularSaldosComprobantes } = require('../../lib/comprobantes');
+const { calcularSaldoComprobante, calcularSaldosComprobantes, calcularPagosAplicados, pagoVigente } = require('../../lib/comprobantes');
 const { TIPOS_COMPROBANTE, ESTADOS_MATCHING, ESTADOS_COMPROBANTE } = require('./comprobantes.constantes');
 
 class ErrorDeNegocio extends Error {
@@ -99,35 +99,54 @@ async function crearComprobante(data) {
   // misma respuesta del alta — antes solo se veían al releer el
   // comprobante, así que el usuario no se enteraba de una diferencia
   // hasta entrar de nuevo a la ficha.
-  const saldo = await calcularSaldoComprobante(comprobante);
+  //
+  // El comprobante recién se creó: nadie pudo haberle aplicado un pago
+  // ni una ND/NC todavía (su id ni existía), así que el saldo es
+  // trivialmente el importeTotal — no hace falta pagarle 2 consultas más
+  // a calcularSaldoComprobante para algo que ya se sabe.
+  const saldo = comprobante.tipo === 'Factura' ? Number(comprobante.importeTotal) : null;
   let matching = null;
-  if (comprobante.tipo === 'Factura' && comprobante.ordenCompraId) {
-    matching = await calcularMatching(comprobante);
+  try {
+    if (comprobante.tipo === 'Factura' && comprobante.ordenCompraId) {
+      matching = await calcularMatching(comprobante);
+    }
+  } catch (err) {
+    // El comprobante ya está commiteado en la base — un fallo acá (ej. un
+    // timeout transitorio contra la base remota) no puede convertirse en
+    // un 500 "no se pudo crear", porque sí se creó. Se devuelve sin el
+    // matching en vez de hacer que un reintento del cliente choque contra
+    // el 409 de duplicado por lo que para él es el primer intento.
+    console.error('Comprobante creado pero falló el cálculo de matching para la respuesta:', err);
   }
 
   return {
     ...comprobante,
     saldo,
     matching,
-    estado: calcularEstadoComprobante(comprobante, saldo),
+    estado: calcularEstadoComprobante(comprobante, saldo, false),
   };
 }
 
 // --------------------------------------------------------------
 // Estado del comprobante (HU-74): Pendiente / Pagado Parcial / Pagado /
-// Anulado. No es una columna — se deriva del saldo, igual que el saldo
-// mismo se deriva de importeTotal + ajustes - pagos (lib/comprobantes.js).
-// Solo aplica a Facturas: una ND/NC no tiene saldo ni estado de cobro
-// propio (se ve reflejada en el saldo de la factura que ajusta).
-function calcularEstadoComprobante(comprobante, saldo) {
+// Anulado. No es una columna — se deriva del saldo y de si hubo algún
+// pago real aplicado. Solo aplica a Facturas: una ND/NC no tiene saldo
+// ni estado de cobro propio (se ve reflejada en el saldo de la factura
+// que ajusta).
+//
+// No alcanza con comparar saldo contra importeTotal: una Nota de Débito
+// o de Crédito mueve el saldo independientemente de si se pagó algo
+// (crearNota no exige ni bloquea según haya pagos previos). Por eso
+// recibe `tienePago` aparte (calculado con calcularPagosAplicados, que
+// solo mira OrdenPagoDetalle — nunca ND/NC) en vez de inferirlo del
+// saldo: sin este dato, una factura con un pago real y una ND grande
+// después volvía a mostrarse "Pendiente", y una factura nunca pagada
+// pero con una NC podía mostrarse "Pagado Parcial".
+function calcularEstadoComprobante(comprobante, saldo, tienePago) {
   if (comprobante.anulado) return ESTADOS_COMPROBANTE.ANULADO;
   if (comprobante.tipo !== 'Factura') return null;
   if (saldo <= 0) return ESTADOS_COMPROBANTE.PAGADO;
-  // saldo >= importeTotal cubre tanto "no se pagó nada todavía" como el
-  // caso de una Nota de Débito que subió el saldo por encima del total
-  // original sin que se haya aplicado ningún pago.
-  if (saldo >= Number(comprobante.importeTotal)) return ESTADOS_COMPROBANTE.PENDIENTE;
-  return ESTADOS_COMPROBANTE.PAGADO_PARCIAL;
+  return tienePago ? ESTADOS_COMPROBANTE.PAGADO_PARCIAL : ESTADOS_COMPROBANTE.PENDIENTE;
 }
 
 // --------------------------------------------------------------
@@ -136,6 +155,9 @@ function calcularEstadoComprobante(comprobante, saldo) {
 async function listarComprobantes({ proveedorId, estado, desde, hasta, soloSaldo = true, ordenarPor = 'fecha' } = {}) {
   if (!['fecha', 'antiguedad'].includes(ordenarPor)) {
     throw new ErrorDeNegocio("ordenarPor inválido. Valores permitidos: 'fecha', 'antiguedad'.");
+  }
+  if (estado && !Object.values(ESTADOS_COMPROBANTE).includes(estado)) {
+    throw new ErrorDeNegocio(`estado inválido. Valores permitidos: ${Object.values(ESTADOS_COMPROBANTE).join(', ')}.`);
   }
   const where = {};
 
@@ -179,10 +201,19 @@ async function listarComprobantes({ proveedorId, estado, desde, hasta, soloSaldo
     orderBy: { fecha: ordenarPor === 'antiguedad' ? 'asc' : 'desc' }
   });
 
-  // Calcular saldos para todos (usando la función en lote)
-  const saldosMap = await calcularSaldosComprobantes(comprobantes);
+  // Calcular saldos y pagos aplicados para todos (funciones en lote, sin
+  // consultas por-comprobante). "estado" necesita las dos cosas: el saldo
+  // solo no distingue "nunca se pagó, pero tiene una ND/NC" de "se pagó
+  // algo de verdad" (ver calcularEstadoComprobante).
+  const [saldosMap, pagosMap] = await Promise.all([
+    calcularSaldosComprobantes(comprobantes),
+    calcularPagosAplicados(comprobantes),
+  ]);
 
-  // Enriquecer cada comprobante con su saldo y flag de matching
+  // Enriquecer cada comprobante con su saldo y flag de matching. c.ordenCompra
+  // ya viene con .detalle desde el include de arriba, así que calcularMatching
+  // lo reusa en vez de volver a pedirlo por comprobante (sin esto sería un
+  // N+1: una consulta a ordenes_compra por cada factura con OC).
   const resultado = await Promise.all(comprobantes.map(async (c) => {
     const saldo = saldosMap.get(c.id) ?? 0;
     // Calcular matching solo si es factura y tiene OC
@@ -194,7 +225,7 @@ async function listarComprobantes({ proveedorId, estado, desde, hasta, soloSaldo
       ...c,
       saldo,
       matching,
-      estado: calcularEstadoComprobante(c, saldo),
+      estado: calcularEstadoComprobante(c, saldo, (pagosMap.get(c.id) ?? 0) > 0),
     };
   }));
 
@@ -262,11 +293,15 @@ async function obtenerComprobante(id) {
     matching = await calcularMatching(comprobante);
   }
 
+  // pagosAplicados ya viene incluido arriba (con su ordenPago): alcanza
+  // para saber si hubo algún pago vigente, sin otra consulta.
+  const tienePago = comprobante.pagosAplicados.some((p) => pagoVigente(p.ordenPago));
+
   return {
     ...comprobante,
     saldo,
     matching,
-    estado: calcularEstadoComprobante(comprobante, saldo),
+    estado: calcularEstadoComprobante(comprobante, saldo, tienePago),
   };
 }
 
