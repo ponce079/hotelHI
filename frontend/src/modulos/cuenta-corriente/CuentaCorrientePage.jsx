@@ -16,11 +16,12 @@ import { useToast } from "../../lib/useToast";
 import { formatearMonto } from "../../lib/moneda";
 import { obtenerResumenCuentaCorriente, obtenerCuentaCorrienteDeProveedor } from "./cuentaCorriente.api";
 import { obtenerProveedor } from "../proveedores/proveedores.api";
-import { TIPOS_MOVIMIENTO, diasDesde, variantePorAntiguedad, rutaDeMovimiento } from "./cuentaCorriente.constantes";
+import { TIPOS_MOVIMIENTO, diasDesde, variantePorAntiguedad, rutaDeMovimiento, esMovimientoDePago } from "./cuentaCorriente.constantes";
 // Un movimiento "Pago" viene del mismo OrdenPago.estado que muestra
 // Pagos — se reusa su mapeo de colores para no duplicarlo (ni
 // arriesgarse a que un badge muestre un color distinto en cada pantalla).
 import { BADGE_ESTADO, BADGE_ESTADO_CHEQUE } from "../pagos/pagos.constantes";
+import { OrdenPagoDetalleModal } from "../pagos/OrdenPagoDetalleModal";
 
 const FILTROS_VACIOS = { tipo: "", desde: "", hasta: "" };
 
@@ -30,6 +31,7 @@ export function CuentaCorrientePage() {
   const navigate = useNavigate();
   const { toast, mostrarToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [verOrdenPagoId, setVerOrdenPagoId] = useState(null);
 
   // El proveedor elegido vive en la URL, no en un useState: así, cuando se
   // entra desde la ficha de un proveedor (?proveedorId=X, ver
@@ -217,7 +219,7 @@ export function CuentaCorrientePage() {
                 renderFila={(m, i) => (
                   <tr
                     key={`${m.tipo}-${m.numero}-${m.fecha}`}
-                    onClick={() => navigate(rutaDeMovimiento(m))}
+                    onClick={() => (esMovimientoDePago(m) ? setVerOrdenPagoId(m.id) : navigate(rutaDeMovimiento(m)))}
                     className={`cursor-pointer border-b border-borde last:border-0 hover:bg-hueso ${
                       i % 2 === 1 ? "bg-hueso/50" : ""
                     } ${m.estado && m.estado !== "Pagado" ? "opacity-55" : ""}`}
@@ -253,6 +255,14 @@ export function CuentaCorrientePage() {
             )}
           </div>
         </>
+      )}
+
+      {verOrdenPagoId && (
+        <OrdenPagoDetalleModal
+          ordenId={verOrdenPagoId}
+          onClose={() => setVerOrdenPagoId(null)}
+          onExito={mostrarToast}
+        />
       )}
 
       <Toast mensaje={toast} />

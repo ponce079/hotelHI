@@ -13,7 +13,12 @@ import { formatearMonto } from "../../lib/moneda";
 import { listarProveedoresConSaldo, listarComprobantesPendientes, crearOrdenPago } from "./pagos.api";
 import { MEDIOS_PAGO, BANCOS } from "./pagos.constantes";
 
-const PASOS = ["Comprobantes a cancelar", "Importes a aplicar", "Medios de pago"];
+// Sin paso de "importe a aplicar": cada comprobante seleccionado se
+// cancela siempre por su saldo total, no hay pago parcial de un
+// comprobante individual (a pedido de cátedra). "montos" sigue
+// guardando ese importe (== saldo) por comprobante seleccionado, solo
+// que ahora se fija solo, nunca se edita en pantalla.
+const PASOS = ["Comprobantes a cancelar", "Medios de pago"];
 // "seleccionados" no es un campo propio: se deriva de las claves de
 // "montos" (ver más abajo) — un comprobante está elegido exactamente
 // cuando tiene una entrada en montos, nunca hace falta guardar las dos
@@ -137,12 +142,6 @@ export function OrdenPagoWizard({ onClose, onExito }) {
     (c) => c.matching?.tieneDiferencia && !form.confirmaciones[c.id]
   );
   const puedeAvanzarPaso1 = seleccionados.length > 0 && !confirmacionesPendientes;
-  const puedeAvanzarPaso2 =
-    seleccionadosDatos.length > 0 &&
-    seleccionadosDatos.every((c) => {
-      const monto = Number(form.montos[c.id]);
-      return monto > 0 && centavos(monto) <= centavos(c.saldo);
-    });
 
   return (
     <Modal titulo="Generar orden de pago" onClose={onClose} ancho="max-w-3xl">
@@ -151,23 +150,22 @@ export function OrdenPagoWizard({ onClose, onExito }) {
         HU 76 y 77 — el total aplicado y el distribuido en medios deben coincidir
       </p>
 
-      <div className="flex flex-wrap items-center gap-2.5 rounded-[18.4px] bg-hueso px-6 py-4">
+      <div className="flex flex-wrap items-center gap-2 rounded-[18.4px] bg-hueso px-6 py-4">
         {PASOS.map((label, i) => {
           const paso = i + 1;
           const activo = form.paso === paso;
           const hecho = form.paso > paso;
           return (
-            <div key={label} className="flex items-center gap-2.5">
+            <span key={label} className="flex items-center gap-2">
               <span
-                className={`flex h-6 w-6 items-center justify-center rounded-full font-body text-xs font-semibold ${
+                className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1 font-body text-[12px] font-semibold ${
                   activo ? "bg-pino text-hueso" : hecho ? "bg-pino-100 text-pino-700" : "bg-neutro-100 text-piedra"
                 }`}
               >
-                {hecho ? "✓" : paso}
+                {hecho ? "✓" : paso} {label}
               </span>
-              <span className={`font-body text-[13px] ${activo ? "font-semibold text-tinta" : "text-piedra"}`}>{label}</span>
-              {paso < PASOS.length && <span className="h-px w-8 bg-borde" />}
-            </div>
+              {paso < PASOS.length && <span className="text-piedra/50">→</span>}
+            </span>
           );
         })}
       </div>
@@ -187,7 +185,7 @@ export function OrdenPagoWizard({ onClose, onExito }) {
 
           {form.proveedorId && (
             <Table
-              columnas={["", "N° comprobante", "Fecha", "Matching", "Saldo pendiente"]}
+              columnas={["", "N° comprobante", "Fecha", "Estado", "Saldo pendiente"]}
               columnasDerecha={["Saldo pendiente"]}
               filas={comprobantes ?? []}
               vacio="Este proveedor no tiene comprobantes con saldo pendiente."
@@ -214,11 +212,11 @@ export function OrdenPagoWizard({ onClose, onExito }) {
                       <td className="px-2 py-2.5 text-[12.5px]">{formatearFechaSolo(c.fecha)}</td>
                       <td className="px-2 py-2.5">
                         {conDiferencia ? (
-                          <Badge variante="error">◆ Con diferencia</Badge>
+                          <Badge variante="alerta">Revisar</Badge>
                         ) : c.matching ? (
-                          <Badge variante="ok">OK</Badge>
+                          <Badge variante="ok">Sin diferencia</Badge>
                         ) : (
-                          <span className="text-xs text-piedra">—</span>
+                          <Badge variante="neutro">Pendiente</Badge>
                         )}
                       </td>
                       <td className="px-2 py-2.5 text-right font-semibold text-error-texto">$ {formatearMonto(c.saldo)}</td>
@@ -255,32 +253,6 @@ export function OrdenPagoWizard({ onClose, onExito }) {
       )}
 
       {form.paso === 2 && (
-        <div className="flex flex-col gap-1 rounded-[18.4px] bg-white px-6 py-[22px]">
-          {seleccionadosDatos.map((c) => {
-            const monto = form.montos[c.id] ?? "";
-            const excede = Number(monto) > 0 && centavos(Number(monto)) > centavos(c.saldo);
-            const vacio = !(Number(monto) > 0);
-            return (
-              <div key={c.id} className="flex items-start gap-4 border-t border-borde py-3.5 first:border-0">
-                <div className="flex-1 pt-5">
-                  <div className="font-body text-[13.5px] font-medium">{c.numero}</div>
-                  <div className="font-body text-[11.5px] text-piedra">Saldo pendiente $ {formatearMonto(c.saldo)}</div>
-                </div>
-                <div className="w-[220px]">
-                  <MoneyInput
-                    label={`Aplicar (máx. $ ${formatearMonto(c.saldo)})`}
-                    value={monto}
-                    onChange={(valor) => setForm((f) => ({ ...f, montos: { ...f.montos, [c.id]: valor } }))}
-                    error={excede ? "Supera el saldo pendiente." : vacio ? "Ingresá un importe mayor a cero." : undefined}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {form.paso === 3 && (
         <div className="flex flex-col gap-3.5 rounded-[18.4px] bg-white px-6 py-[22px]">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h4 className="m-0 font-heading text-base font-semibold">Medios de pago</h4>
@@ -378,13 +350,13 @@ export function OrdenPagoWizard({ onClose, onExito }) {
         <span className="text-lg text-tinta/25">—</span>
         <div>
           <div className="text-[11px] tracking-wide text-tinta/45 uppercase">Total distribuido</div>
-          <Cifra tamano={21} className={form.paso < 3 ? "text-tinta/45" : cuadra ? "text-pino" : "text-laton-oscuro"}>
+          <Cifra tamano={21} className={form.paso < 2 ? "text-tinta/45" : cuadra ? "text-pino" : "text-laton-oscuro"}>
             $ {formatearMonto(totalMedios)}
           </Cifra>
         </div>
         <p className="m-0 flex-1 text-[12.5px] text-tinta/60">
-          {form.paso < 3
-            ? "Los medios de pago se cargan en el paso 3; el total distribuido tendrá que igualar al total a pagar."
+          {form.paso < 2
+            ? "Los medios de pago se cargan en el paso 2; el total distribuido tendrá que igualar al total a pagar."
             : cuadra
               ? "✓ Los medios cubren exactamente el total a pagar."
               : "Todavía no coincide con el total a pagar."}
@@ -398,16 +370,12 @@ export function OrdenPagoWizard({ onClose, onExito }) {
               ← Atrás
             </Button>
           )}
-          {form.paso < 3 && (
-            <Button
-              variante="ok"
-              disabled={form.paso === 1 ? !puedeAvanzarPaso1 : !puedeAvanzarPaso2}
-              onClick={() => irA(form.paso + 1)}
-            >
+          {form.paso < 2 && (
+            <Button variante="ok" disabled={!puedeAvanzarPaso1} onClick={() => irA(form.paso + 1)}>
               Siguiente →
             </Button>
           )}
-          {form.paso === 3 && (
+          {form.paso === 2 && (
             <Button variante="ok" disabled={!cuadra || mutacion.isPending} onClick={confirmar}>
               {mutacion.isPending ? "Confirmando…" : "Confirmar orden de pago"}
             </Button>

@@ -20,11 +20,16 @@ export function variantePorAntiguedad(dias) {
 }
 
 // Cada fila de la cuenta corriente es un documento real de otro módulo:
-// un "Pago" es una OrdenPago (Pagos a Proveedores), cualquier otro tipo
-// (Factura/Nota de Débito/Nota de Crédito) es un ComprobanteProveedor
-// (Comprobantes). Se usa en CuentaCorrientePage y en la pestaña de
-// cuenta corriente de ProveedorDetallePage para que ambas tablas
-// naveguen al mismo lugar con el mismo criterio.
+// un "Pago" es una OrdenPago (Pagos a Proveedores, sin ruta propia — se
+// abre en el modal de detalle, ver esMovimientoDePago más abajo),
+// cualquier otro tipo (Factura/Nota de Débito/Nota de Crédito) es un
+// ComprobanteProveedor (Comprobantes) con su propia página. Se usa en
+// CuentaCorrientePage y en la pestaña de cuenta corriente de
+// ProveedorDetallePage para que ambas tablas se comporten igual.
+export function esMovimientoDePago(m) {
+  return m.tipo === "Pago";
+}
+
 export function rutaDeMovimiento(m) {
-  return m.tipo === "Pago" ? `/pagos/${m.id}` : `/comprobantes/${m.id}`;
+  return `/comprobantes/${m.id}`;
 }

@@ -6,7 +6,7 @@ export const BANCOS = ["Banco Nación", "Banco Galicia", "Banco Santander", "Ban
 
 export const ESTADOS_CHEQUE = ["Emitido", "Cobrado", "Rechazado"];
 
-// Mapeos compartidos entre PagosPage y OrdenPagoDetallePage — un solo
+// Mapeos compartidos entre PagosPage y OrdenPagoDetalleModal — un solo
 // lugar para que la lista y el detalle siempre muestren el mismo color
 // de badge.
 export const BADGE_ESTADO = { Pagado: "ok", Rechazada: "error", Anulada: "neutro" };

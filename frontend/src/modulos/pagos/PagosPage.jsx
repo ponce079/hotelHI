@@ -18,6 +18,7 @@ import { formatearMonto } from "../../lib/moneda";
 import { listarOrdenesPago } from "./pagos.api";
 import { MEDIOS_PAGO, BADGE_ESTADO, BADGE_ESTADO_CHEQUE } from "./pagos.constantes";
 import { OrdenPagoWizard } from "./OrdenPagoWizard";
+import { OrdenPagoDetalleModal } from "./OrdenPagoDetalleModal";
 
 const FILTROS_VACIOS = { proveedorId: "", medio: "", desde: "", hasta: "" };
 const PAGE_SIZE = 10;
@@ -28,6 +29,7 @@ export function PagosPage() {
   const navigate = useNavigate();
   const { toast, mostrarToast } = useToast();
   const [mostrarWizard, setMostrarWizard] = useState(false);
+  const [verOrdenId, setVerOrdenId] = useState(null);
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
   const [pagina, setPagina] = useState(1);
 
@@ -171,7 +173,7 @@ export function PagosPage() {
               renderFila={(o) => (
                 <tr
                   key={o.id}
-                  onClick={() => navigate(`/pagos/${o.id}`)}
+                  onClick={() => setVerOrdenId(o.id)}
                   className={`cursor-pointer border-b border-borde last:border-0 hover:bg-hueso ${o.vigente ? "" : "opacity-55"}`}
                 >
                   <td className="px-2 py-2.5 font-mono text-[12.5px]">{o.numero}</td>
@@ -217,6 +219,14 @@ export function PagosPage() {
             setMostrarWizard(false);
             mostrarToast(mensaje);
           }}
+        />
+      )}
+
+      {verOrdenId && (
+        <OrdenPagoDetalleModal
+          ordenId={verOrdenId}
+          onClose={() => setVerOrdenId(null)}
+          onExito={mostrarToast}
         />
       )}
 

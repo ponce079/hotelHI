@@ -15,7 +15,6 @@ import { RecepcionesPage } from "./modulos/recepciones/RecepcionesPage";
 import { KardexPage } from "./modulos/kardex/KardexPage";
 import { ReportePage } from "./modulos/reporte/ReportePage";
 import { PagosPage } from "./modulos/pagos/PagosPage";
-import { OrdenPagoDetallePage } from "./modulos/pagos/OrdenPagoDetallePage";
 import { CuentaCorrientePage } from "./modulos/cuenta-corriente/CuentaCorrientePage";
 import { OrdenesCompraPage } from "./modulos/ordenes-compra/OrdenesCompraPage";
 import { OrdenCompraDetallePage } from "./modulos/ordenes-compra/OrdenCompraDetallePage";
@@ -55,8 +54,10 @@ export default function App() {
           <Route path="/reporte" element={<ReportePage />} />
           <Route path="/stock" element={<StockPage />} />
           <Route path="/stock/minmax" element={<MinMaxPage />} />
+          {/* El detalle de una orden de pago es un modal sobre PagosPage
+              (y, para "Pago", sobre Cuenta Corriente/ficha de proveedor),
+              no una ruta propia — mismo criterio que Comprobantes. */}
           <Route path="/pagos" element={<PagosPage />} />
-          <Route path="/pagos/:id" element={<OrdenPagoDetallePage />} />
           <Route path="/cuenta-corriente" element={<CuentaCorrientePage />} />
           <Route path="/ordenes-compra" element={<OrdenesCompraPage />} />
           <Route path="/ordenes-compra/:id" element={<OrdenCompraDetallePage />} />

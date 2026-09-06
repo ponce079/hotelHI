@@ -6,17 +6,20 @@ import { Badge } from "../../componentes/Badge";
 import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
 import { SinPermiso } from "../../componentes/SinPermiso";
+import { Toast } from "../../componentes/Toast";
 import { ProveedorModal } from "./ProveedorModal";
 import { obtenerProveedor, listarOrdenesCompraDeProveedor } from "./proveedores.api";
 import { obtenerCuentaCorrienteDeProveedor } from "../cuenta-corriente/cuentaCorriente.api";
-import { diasDesde, variantePorAntiguedad, rutaDeMovimiento } from "../cuenta-corriente/cuentaCorriente.constantes";
+import { diasDesde, variantePorAntiguedad, rutaDeMovimiento, esMovimientoDePago } from "../cuenta-corriente/cuentaCorriente.constantes";
 // Mismo mapeo que Pagos/Cuenta Corriente para el estado de una orden de
 // pago (ver comentario en CuentaCorrientePage.jsx) — un "Pago" en esta
 // mini-tabla tiene que verse igual que en las otras dos pantallas.
 import { BADGE_ESTADO } from "../pagos/pagos.constantes";
+import { OrdenPagoDetalleModal } from "../pagos/OrdenPagoDetalleModal";
 import { formatearMonto } from "../../lib/moneda";
 import { formatearFechaSolo } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
+import { useToast } from "../../lib/useToast";
 
 // Estados de OrdenCompra — los define el módulo de Órdenes de Compra
 // (Gimena/Ricardo). Acá solo se pintan, no se transicionan.
@@ -47,6 +50,7 @@ export function ProveedorDetallePage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { puede } = useSesion();
+  const { toast, mostrarToast } = useToast();
   // La pestaña vive en la URL (no en un useState) para que "volver" desde
   // la ficha de una OC (Historial de OC -> click en una fila) restaure la
   // misma pestaña en vez de reiniciar en "Datos generales".
@@ -54,6 +58,7 @@ export function ProveedorDetallePage() {
   const tab = TABS.some((t) => t.clave === tabParam) ? tabParam : "datos";
   const [sort, setSort] = useState("fecha");
   const [editando, setEditando] = useState(false);
+  const [verOrdenPagoId, setVerOrdenPagoId] = useState(null);
 
   function cambiarTab(clave) {
     const params = new URLSearchParams(searchParams);
@@ -271,7 +276,7 @@ export function ProveedorDetallePage() {
                   renderFila={(m) => (
                     <tr
                       key={`${m.tipo}-${m.numero}-${m.fecha}`}
-                      onClick={() => navigate(rutaDeMovimiento(m))}
+                      onClick={() => (esMovimientoDePago(m) ? setVerOrdenPagoId(m.id) : navigate(rutaDeMovimiento(m)))}
                       className="cursor-pointer border-b border-borde last:border-0 hover:bg-hueso"
                     >
                       <td className="px-3 py-2 font-body text-[12.5px]">{formatearFechaSolo(m.fecha)}</td>
@@ -303,6 +308,16 @@ export function ProveedorDetallePage() {
       {editando && (
         <ProveedorModal proveedor={proveedor} onClose={() => setEditando(false)} onExito={() => setEditando(false)} />
       )}
+
+      {verOrdenPagoId && (
+        <OrdenPagoDetalleModal
+          ordenId={verOrdenPagoId}
+          onClose={() => setVerOrdenPagoId(null)}
+          onExito={mostrarToast}
+        />
+      )}
+
+      <Toast mensaje={toast} />
     </div>
   );
 }
