@@ -10,3 +10,18 @@ export function calcularAlertas(filasStock) {
       sugerido: f.stockMaximo != null ? Math.max(0, Number(f.stockMaximo) - Number(f.stockActual)) : null,
     }));
 }
+
+// Mismas 3 variantes que ya usa <Badge> en toda la app (ok/alerta/error) —
+// no una escala nueva. "Crítico" (HU-8) sigue siendo <= mínimo, pero acá
+// se matiza en dos escalones para pantallas que muestran el stock línea
+// por línea (ej. RequerimientoDetallePage): por debajo de la mitad del
+// mínimo es "error" (rojo), entre la mitad y el mínimo es "alerta" (ámbar),
+// por encima del mínimo es "ok" (color normal, sin resaltar).
+export function variantePorStock(stockActual, stockMinimo) {
+  const actual = Number(stockActual);
+  const minimo = Number(stockMinimo);
+  if (!Number.isFinite(minimo) || minimo <= 0) return "ok";
+  if (actual <= minimo * 0.5) return "error";
+  if (actual <= minimo) return "alerta";
+  return "ok";
+}

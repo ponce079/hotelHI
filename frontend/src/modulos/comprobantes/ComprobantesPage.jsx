@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Search, FileText, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { Table } from '../../componentes/Table';
 import { Badge } from '../../componentes/Badge';
 import { Button } from '../../componentes/Button';
@@ -17,6 +17,8 @@ import { formatearMonto } from '../../lib/moneda';
 import { listarComprobantes, anularComprobante } from './comprobantes.api';
 import { ESTADOS_COMPROBANTE, VARIANTE_ESTADO_COMPROBANTE } from './comprobantes.constantes';
 import { listarProveedoresConSaldo } from '../pagos/pagos.api'; // si existe, o crear función propia
+import { ComprobanteModal } from './ComprobanteModal';
+import { NotaModal } from './NotaModal';
 
 export function ComprobantesPage() {
   const navigate = useNavigate();
@@ -61,6 +63,7 @@ export function ComprobantesPage() {
   });
 
   const [anulando, setAnulando] = useState(null); // comprobante a anular
+  const [modalAbierto, setModalAbierto] = useState(null); // "comprobante" | "nota" | null
 
   const actualizarFiltro = (clave, valor) => {
     setFiltros(prev => ({ ...prev, [clave]: valor }));
@@ -145,10 +148,10 @@ export function ComprobantesPage() {
           </label>
         </div>
         <div className="ml-auto flex gap-2">
-          <Button onClick={() => navigate('/comprobantes/nuevo')}>
+          <Button onClick={() => setModalAbierto('comprobante')}>
             <Plus size={16} /> Nuevo comprobante
           </Button>
-          <Button variante="secundario" onClick={() => navigate('/comprobantes/nueva-nota')}>
+          <Button variante="secundario" onClick={() => setModalAbierto('nota')}>
             Nueva nota
           </Button>
         </div>
@@ -228,6 +231,25 @@ export function ComprobantesPage() {
           setAnulando(null);
         }}
       />
+
+      {modalAbierto === 'comprobante' && (
+        <ComprobanteModal
+          onClose={() => setModalAbierto(null)}
+          onExito={(mensaje) => {
+            setModalAbierto(null);
+            mostrarToast(mensaje);
+          }}
+        />
+      )}
+      {modalAbierto === 'nota' && (
+        <NotaModal
+          onClose={() => setModalAbierto(null)}
+          onExito={(mensaje) => {
+            setModalAbierto(null);
+            mostrarToast(mensaje);
+          }}
+        />
+      )}
 
       <Toast mensaje={toast} />
     </div>

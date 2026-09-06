@@ -60,6 +60,7 @@ async function cuentaCorrienteDeProveedor(proveedorId, { tipo, desde, hasta } = 
   // Debe = suma lo que el proveedor cobra (Factura, Nota de Débito).
   // Haber = suma lo que reduce la deuda (Nota de Crédito, Pago vigente).
   const movimientosComprobantes = comprobantes.map((c) => ({
+    id: c.id,
     fecha: c.fecha,
     tipo: c.tipo,
     numero: c.numero,
@@ -72,6 +73,7 @@ async function cuentaCorrienteDeProveedor(proveedorId, { tipo, desde, hasta } = 
   // que se intento y no se concreto, aunque Pagos si lo muestra (con
   // badge). "estado" viaja en la fila para que el frontend la marque.
   const movimientosPagos = ordenes.map((o) => ({
+    id: o.id,
     fecha: o.fecha,
     tipo: "Pago",
     numero: o.numero,

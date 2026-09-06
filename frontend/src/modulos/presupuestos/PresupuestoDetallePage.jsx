@@ -1,20 +1,34 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, FileText } from "lucide-react";
+import { FileText } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
+import { PasoAPaso } from "../../componentes/PasoAPaso";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { obtenerPresupuesto } from "./presupuestos.api";
 import { ESTADOS_PRESUPUESTO, VARIANTE_ESTADO_PRESUPUESTO } from "../../lib/constantes";
 import { formatearMonto } from "../../lib/moneda";
 import { formatearFechaSolo } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
+import { useVolver } from "../../lib/useVolver";
+
+// Un presupuesto solicitado tiene un solo camino "ganador" — Solicitado ->
+// cotiza (Pendiente de aprobación) -> lo adjudican (Adjudicado). Rechazado
+// es la rama alternativa que le pasa a los que NO ganan cuando el gerente
+// adjudica a otro proveedor del mismo requerimiento: no es "un paso más"
+// de este camino, así que no entra en la barra de progreso (ver más abajo).
+const PASOS = [
+  { clave: ESTADOS_PRESUPUESTO.SOLICITADO, label: "Solicitado" },
+  { clave: ESTADOS_PRESUPUESTO.PENDIENTE_APROBACION, label: "Cotizado" },
+  { clave: ESTADOS_PRESUPUESTO.ADJUDICADO, label: "Adjudicado" },
+];
 
 export function PresupuestoDetallePage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const volver = useVolver("/presupuestos");
   const { puede } = useSesion();
 
   const { data: p, isLoading, isError } = useQuery({
@@ -30,49 +44,50 @@ export function PresupuestoDetallePage() {
   // "Cotizó de verdad" sale de si mandó precios, no del estado: ver
   // ComparacionPresupuestosPage.jsx y el criterio del backend.
   const cotizo = (p.detalle?.length ?? 0) > 0;
+  const rechazado = p.estado === ESTADOS_PRESUPUESTO.RECHAZADO;
+  const pasoActual = PASOS.findIndex((paso) => paso.clave === p.estado);
 
   return (
     <div className="flex flex-col gap-6">
+      <Button variante="secundario" onClick={volver} className="w-fit text-xs">
+        ← Volver
+      </Button>
+
       <div>
-        <button
-          onClick={() => navigate(`/requerimientos/${p.requerimientoId}`)}
-          className="mb-2 inline-flex cursor-pointer items-center gap-1 text-sm font-semibold text-piedra hover:text-tinta"
-        >
-          <ArrowLeft size={15} /> Volver al requerimiento
-        </button>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h1 className="flex items-center gap-2 font-heading text-[34px] font-semibold">
-              <FileText size={24} className="text-pino" /> Presupuesto #{p.id}
-            </h1>
-            <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-              {p.proveedor?.razonSocial} · REQ-{String(p.requerimientoId).padStart(4, "0")} ·{" "}
-              {formatearFechaSolo(p.fecha)}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <Badge variante={VARIANTE_ESTADO_PRESUPUESTO[p.estado] ?? "neutro"}>{p.estado}</Badge>
-            <Button variante="secundario" onClick={() => navigate(`/presupuestos?requerimientoId=${p.requerimientoId}`)}>
-              Ver comparación
-            </Button>
-            {p.estado === ESTADOS_PRESUPUESTO.SOLICITADO && puede("gestionarPresupuestos") && (
-              <Button onClick={() => navigate(`/presupuestos/${p.id}/cargar`)}>Cargar cotización</Button>
-            )}
-          </div>
+        <h1 className="flex flex-wrap items-center gap-2.5 font-heading text-[34px] font-semibold">
+          <FileText size={24} className="text-pino" /> {p.proveedor?.razonSocial}
+          <Badge variante={VARIANTE_ESTADO_PRESUPUESTO[p.estado] ?? "neutro"}>{p.estado}</Badge>
+        </h1>
+        <p className="mt-1.5 text-[12.5px] text-tinta/60">
+          REQ-{String(p.requerimientoId).padStart(4, "0")} · {formatearFechaSolo(p.fecha)}
+        </p>
+      </div>
+
+      {rechazado ? (
+        <div className="rounded-lg border border-error bg-error-suave px-5 py-4 text-[13px] text-error-texto">
+          Este presupuesto quedó rechazado: el gerente adjudicó a otro proveedor para este requerimiento.
         </div>
+      ) : (
+        <PasoAPaso pasos={PASOS} pasoActual={pasoActual} />
+      )}
+
+      <div className="flex justify-end">
+        <Button variante="secundario" onClick={() => navigate(`/presupuestos?requerimientoId=${p.requerimientoId}`)}>
+          Ver comparación
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
-        <Dato etiqueta="Proveedor" valor={p.proveedor?.razonSocial} />
         <Dato etiqueta="CUIT" valor={p.proveedor?.cuit} />
         <Dato etiqueta="Condición comercial" valor={p.proveedor?.condicionComercial} />
         <Dato etiqueta="Plazo de entrega" valor={p.plazoEntrega} />
+        <Dato etiqueta="Requerimiento" valor={`REQ-${String(p.requerimientoId).padStart(4, "0")}`} />
       </div>
 
       {!cotizo ? (
         <div className="rounded-lg border border-borde bg-white p-6">
           <p className="text-sm">
-            Este proveedor todavía no cotizó. Cuando conteste, cargá sus precios desde "Cargar cotización".
+            Este proveedor todavía no cotizó. La carga de precios se hace desde la comparación de presupuestos.
           </p>
         </div>
       ) : (

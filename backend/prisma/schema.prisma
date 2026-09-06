@@ -162,6 +162,11 @@ model RequerimientoReposicion {
   origen        String                 @default("MANUAL")
   requiereFlete Boolean                @default(false)
   solicitante   String?
+  // Baja lógica — mismo criterio que OrdenCompra.motivoAnulacion: solo se
+  // puede anular en "Pendiente" (antes de comprometer a un proveedor con
+  // una solicitud de presupuesto), nunca se borra el registro.
+  anulado         Boolean                @default(false)
+  motivoAnulacion String?
   deposito      Deposito               @relation(fields: [depositoId], references: [id])
   detalle       RequerimientoDetalle[]
   presupuestos  Presupuesto[]
@@ -221,7 +226,7 @@ model OrdenCompra {
   proveedorId     Int
   presupuestoId   Int                    @unique
   depositoId      Int
-  // Pendiente | Aprobada | Enviada | Recibida | Recibida con diferencia | Cerrada | Anulada
+  // Pendiente | Enviada | Recibida | Recibida con diferencia | Cerrada | Anulada
   estado          String                 @default("Pendiente")
   montoTotal      Decimal                @default(0.00) @db.Decimal(12, 2)
   flete           Decimal?               @db.Decimal(12, 2)
@@ -274,9 +279,6 @@ model ComprobanteProveedor {
   tipo                     String
   numero                   String
   fecha                    DateTime               @default(now())
-  importeNeto              Decimal                @db.Decimal(12, 2)
-  alicuotaIva              Decimal                @db.Decimal(5, 2)
-  importeIva               Decimal                @db.Decimal(12, 2)
   importeTotal             Decimal                @db.Decimal(12, 2)
   ordenCompraId            Int?
   comprobanteRelacionadoId Int?

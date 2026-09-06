@@ -45,19 +45,6 @@ async function getOrdenCompraPorId(req, res) {
   }
 }
 
-async function postAprobarOC(req, res) {
-  try {
-    const oc = await ordenesCompraServicio.aprobarOC(req.params.id, req.body?.usuario);
-    return res.json(oc);
-  } catch (err) {
-    if (err instanceof ordenesCompraServicio.ErrorDeNegocio) {
-      return res.status(err.statusCode).json({ error: err.message });
-    }
-    console.error("Error al aprobar la orden de compra:", err);
-    return res.status(500).json({ error: "No se pudo aprobar la orden de compra." });
-  }
-}
-
 async function postEnviarOC(req, res) {
   try {
     const oc = await ordenesCompraServicio.enviarOC(req.params.id, req.body?.usuario);
@@ -114,7 +101,6 @@ module.exports = {
   postGenerarOC,
   getOrdenesCompra,
   getOrdenCompraPorId,
-  postAprobarOC,
   postEnviarOC,
   postAnularOC,
   postRecepcionOC,

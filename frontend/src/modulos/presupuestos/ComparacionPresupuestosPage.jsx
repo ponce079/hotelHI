@@ -1,29 +1,32 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, TrendingDown } from "lucide-react";
+import { ArrowRight, TrendingDown } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
 import { ConfirmDialog } from "../../componentes/ConfirmDialog";
 import { Toast } from "../../componentes/Toast";
 import { SinPermiso } from "../../componentes/SinPermiso";
+import { PresupuestoCargaModal } from "./PresupuestoCargaModal";
 import { listarPresupuestos, aprobarPresupuesto } from "./presupuestos.api";
-import { generarOrdenCompra } from "../ordenes-compra/ordenesCompra.api";
 import { ESTADOS_PRESUPUESTO, VARIANTE_ESTADO_PRESUPUESTO } from "../../lib/constantes";
 import { formatearMonto } from "../../lib/moneda";
 import { useToast } from "../../lib/useToast";
 import { useSesion } from "../../lib/sesion";
+import { useVolver } from "../../lib/useVolver";
 
 export function ComparacionPresupuestosPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const volver = useVolver("/presupuestos");
   const queryClient = useQueryClient();
-  const { puede, usuario } = useSesion();
+  const { puede } = useSesion();
   const { toast, mostrarToast } = useToast();
 
   const requerimientoId = searchParams.get("requerimientoId");
   const [paraAprobar, setParaAprobar] = useState(null);
+  const [paraCargar, setParaCargar] = useState(null);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["presupuestos", { requerimientoId }],
@@ -44,20 +47,6 @@ export function ComparacionPresupuestosPage() {
     onError: (err) => {
       mostrarToast(err?.response?.data?.error ?? "No se pudo aprobar el presupuesto.");
       setParaAprobar(null);
-    },
-  });
-
-  // HU-22: el backend ya sabe generar la OC desde un presupuesto adjudicado
-  // (ordenesCompra.servicio.js); esto conecta el botón que faltaba.
-  const mutacionGenerarOC = useMutation({
-    mutationFn: (presupuestoId) => generarOrdenCompra(presupuestoId, usuario),
-    onSuccess: (oc) => {
-      queryClient.invalidateQueries({ queryKey: ["presupuestos"] });
-      mostrarToast(`Orden de compra ${oc.numero} generada.`);
-      navigate(`/ordenes-compra/${oc.id}`);
-    },
-    onError: (err) => {
-      mostrarToast(err?.response?.data?.error ?? "No se pudo generar la orden de compra.");
     },
   });
 
@@ -92,12 +81,9 @@ export function ComparacionPresupuestosPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <button
-          onClick={() => navigate(`/requerimientos/${requerimientoId}`)}
-          className="mb-2 inline-flex cursor-pointer items-center gap-1 text-sm font-semibold text-piedra hover:text-tinta"
-        >
-          <ArrowLeft size={15} /> Volver al requerimiento
-        </button>
+        <Button variante="secundario" onClick={volver} className="mb-2 w-fit text-xs">
+          ← Volver
+        </Button>
         <h1 className="font-heading text-[34px] font-semibold">Comparación de presupuestos</h1>
         <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
           HU-84 · REQ-{String(requerimientoId).padStart(4, "0")}
@@ -147,7 +133,14 @@ export function ComparacionPresupuestosPage() {
 
                   <div className="flex-1 px-5 py-4">
                     {!cotizo ? (
-                      <p className="text-[12.5px] text-piedra">Todavía no cotizó.</p>
+                      <div className="flex flex-col gap-3">
+                        <p className="text-[12.5px] text-piedra">Todavía no cotizó.</p>
+                        {p.estado === ESTADOS_PRESUPUESTO.SOLICITADO && puede("gestionarPresupuestos") && (
+                          <Button variante="secundario" className="w-full justify-center" onClick={() => setParaCargar(p.id)}>
+                            Cargar cotización
+                          </Button>
+                        )}
+                      </div>
                     ) : (
                       <div className="flex flex-col gap-2">
                         {lineasReq.map((d) => {
@@ -220,12 +213,15 @@ export function ComparacionPresupuestosPage() {
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-borde bg-white px-5 py-4">
           <p className="text-[13px] text-tinta/70">
             El presupuesto de <strong className="text-tinta">{adjudicado?.proveedor?.razonSocial}</strong> está adjudicado por{" "}
-            <strong className="text-tinta">$ {formatearMonto(adjudicado?.total)}</strong>. Falta generar la orden de compra para
-            formalizar el pedido.
+            <strong className="text-tinta">$ {formatearMonto(adjudicado?.total)}</strong>. La orden de compra se genera desde
+            Órdenes de Compra, no acá.
           </p>
           {puede("gestionarOC") ? (
-            <Button disabled={mutacionGenerarOC.isPending} onClick={() => mutacionGenerarOC.mutate(adjudicado.id)}>
-              {mutacionGenerarOC.isPending ? "Generando…" : "Generar Orden de Compra"}
+            <Button
+              variante="secundario"
+              onClick={() => navigate(`/ordenes-compra?generarPresupuestoId=${adjudicado.id}`)}
+            >
+              Ir a Órdenes de Compra <ArrowRight size={15} />
             </Button>
           ) : (
             <span className="text-[12px] text-piedra">La genera el área de compras.</span>
@@ -252,6 +248,17 @@ export function ComparacionPresupuestosPage() {
         onCancelar={() => setParaAprobar(null)}
         onConfirmar={() => mutacion.mutate(paraAprobar.id)}
       />
+
+      {paraCargar && (
+        <PresupuestoCargaModal
+          presupuestoId={paraCargar}
+          onClose={() => setParaCargar(null)}
+          onExito={(mensaje) => {
+            setParaCargar(null);
+            mostrarToast(mensaje);
+          }}
+        />
+      )}
 
       <Toast mensaje={toast} />
     </div>

@@ -14,7 +14,7 @@ class ErrorDeNegocio extends Error {
 // Creación de comprobante (Factura / ND / NC)
 // --------------------------------------------------------------
 async function crearComprobante(data) {
-  const { proveedorId, tipo, numero, fecha, importeNeto, alicuotaIva, ordenCompraId } = data;
+  const { proveedorId, tipo, numero, fecha, importeTotal, ordenCompraId } = data;
 
   // Validaciones básicas
   if (!proveedorId) throw new ErrorDeNegocio('proveedorId es obligatorio.');
@@ -23,11 +23,8 @@ async function crearComprobante(data) {
   }
   if (!numero || !numero.trim()) throw new ErrorDeNegocio('El número de comprobante es obligatorio.');
   if (!fecha) throw new ErrorDeNegocio('La fecha es obligatoria.');
-  if (typeof importeNeto !== 'number' || importeNeto < 0) {
-    throw new ErrorDeNegocio('importeNeto debe ser un número mayor o igual a 0.');
-  }
-  if (typeof alicuotaIva !== 'number' || alicuotaIva < 0 || alicuotaIva > 100) {
-    throw new ErrorDeNegocio('alicuotaIva debe ser un número entre 0 y 100.');
+  if (typeof importeTotal !== 'number' || importeTotal <= 0) {
+    throw new ErrorDeNegocio('importeTotal debe ser un número mayor a 0.');
   }
 
   // Verificar proveedor
@@ -57,14 +54,6 @@ async function crearComprobante(data) {
     }
   }
 
-  // Calcular IVA y total
-  const importeIva = Math.round(importeNeto * (alicuotaIva / 100) * 100) / 100;
-  const importeTotal = importeNeto + importeIva;
-
-  if (importeTotal <= 0) {
-    throw new ErrorDeNegocio('El importe total (neto + IVA) debe ser mayor a 0.');
-  }
-
   // Crear comprobante
   let comprobante;
   try {
@@ -74,9 +63,6 @@ async function crearComprobante(data) {
         tipo,
         numero: numero.trim(),
         fecha: new Date(fecha),
-        importeNeto,
-        alicuotaIva,
-        importeIva,
         importeTotal,
         ordenCompraId: ordenCompraId || null
       },
@@ -352,9 +338,6 @@ async function crearNota(comprobanteId, data) {
       tipo,
       numero: numero.trim(),
       fecha: new Date(),
-      importeNeto: 0, // No aplica para notas, solo importeTotal
-      alicuotaIva: 0,
-      importeIva: 0,
       importeTotal,
       comprobanteRelacionadoId: original.id,
       motivo: motivo.trim(),

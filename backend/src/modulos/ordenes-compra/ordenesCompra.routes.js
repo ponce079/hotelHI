@@ -7,7 +7,6 @@ const router = express.Router();
 
 router.get("/", ordenesCompraControlador.getOrdenesCompra);
 router.get("/:id", ordenesCompraControlador.getOrdenCompraPorId);
-router.post("/:id/aprobar", ordenesCompraControlador.postAprobarOC);
 router.post("/:id/enviar", ordenesCompraControlador.postEnviarOC);
 router.post("/:id/anular", ordenesCompraControlador.postAnularOC);
 router.post("/:id/recepcion", ordenesCompraControlador.postRecepcionOC);

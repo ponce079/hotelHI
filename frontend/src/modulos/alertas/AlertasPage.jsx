@@ -19,19 +19,19 @@ export function AlertasPage() {
     navigate(`/depositos/${depositoId}?criticos=1`);
   }
 
-  // HU-81: el alta desde una alerta usa el mismo formulario y el mismo
+  // HU-81: el alta desde una alerta usa el mismo modal y el mismo
   // endpoint que la carga manual — solo llega precargado y con
   // origen="ALERTA", que es lo que después muestra el ⚡ en el listado.
   //
   // Decisión de alcance (Sprint 2): "puede generarse automáticamente" se
   // interpretó como "se completa solo", no como "se crea sin que nadie lo
-  // vea" — el usuario siempre confirma en RequerimientoFormPage antes de
-  // que se cree el RequerimientoReposicion. Ningún criterio de aceptación
-  // de HU-81 pide crearlo sin pasar por una pantalla, y saltarse la
-  // revisión de depósito/artículo/cantidad antes de generar un pedido de
-  // compra es un riesgo de negocio mayor que el ahorro de un clic. Si se
-  // decide lo contrario, hay que agregar un endpoint que cree el
-  // requerimiento directo desde acá.
+  // vea" — el usuario siempre confirma en el modal antes de que se cree
+  // el RequerimientoReposicion. Ningún criterio de aceptación de HU-81
+  // pide crearlo sin pasar por una pantalla, y saltarse la revisión de
+  // depósito/artículo/cantidad antes de generar un pedido de compra es un
+  // riesgo de negocio mayor que el ahorro de un clic. Si se decide lo
+  // contrario, hay que agregar un endpoint que cree el requerimiento
+  // directo desde acá.
   function generarRequerimiento(alerta) {
     const params = new URLSearchParams({
       origen: ORIGENES_REQUERIMIENTO.ALERTA,
@@ -40,13 +40,13 @@ export function AlertasPage() {
       // ¡Ojo con !: un sugerido de 0 es un valor legítimo (stockMinimo
       // === stockMaximo), no "no hay sugerencia" — con solo `sugerido ?`
       // ese 0 se perdía y el parámetro quedaba ausente. Nota: pedir 0
-      // unidades no tiene sentido, así que RequerimientoFormPage igual
+      // unidades no tiene sentido, así que RequerimientosPage igual
       // descarta un cantidad<=0 al leer la querystring y el campo queda
-      // vacío en la pantalla — este fix no cambia esa UX, solo hace que
-      // la URL generada refleje el valor real de la alerta.
+      // vacío en el modal — este fix no cambia esa UX, solo hace que la
+      // URL generada refleje el valor real de la alerta.
       ...(alerta.sugerido != null ? { cantidad: String(alerta.sugerido) } : {}),
     });
-    navigate(`/requerimientos/nuevo?${params}`);
+    navigate(`/requerimientos?${params}`);
   }
 
   return (

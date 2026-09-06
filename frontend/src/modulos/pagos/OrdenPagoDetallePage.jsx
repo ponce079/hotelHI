@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Printer } from "lucide-react";
 import { Button } from "../../componentes/Button";
@@ -10,6 +10,7 @@ import { Toast } from "../../componentes/Toast";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
+import { useVolver } from "../../lib/useVolver";
 import { formatearMonto } from "../../lib/moneda";
 import { obtenerOrdenPago, anularOrdenPago, actualizarEstadoCheque } from "./pagos.api";
 import { BADGE_ESTADO, BADGE_ESTADO_CHEQUE } from "./pagos.constantes";
@@ -23,7 +24,7 @@ import { BADGE_ESTADO, BADGE_ESTADO_CHEQUE } from "./pagos.constantes";
 export function OrdenPagoDetallePage() {
   const { id } = useParams();
   const ordenId = Number(id);
-  const navigate = useNavigate();
+  const volver = useVolver("/pagos");
   const { puede, usuario } = useSesion();
   const tienePermiso = puede("registrarPago");
   const { toast, mostrarToast } = useToast();
@@ -103,8 +104,8 @@ export function OrdenPagoDetallePage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
-        <Button variante="secundario" onClick={() => navigate("/pagos")} className="text-xs">
-          ← Pagos a Proveedores
+        <Button variante="secundario" onClick={volver} className="text-xs">
+          ← Volver
         </Button>
         {orden && (
           <Button variante="secundario" onClick={() => window.print()}>

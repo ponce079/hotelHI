@@ -5,22 +5,27 @@ import { createContext, useCallback, useContext, useMemo, useState } from "react
 // Sprint 3" — este login no valida usuario/contrasena contra el backend,
 // solo elige un rol y guarda quien esta "operando" para filtrar menu y
 // permisos. No crea tablas Usuario/Rol nuevas.
+// Descripciones actualizadas para Sprint 2 (Compras y Gastos) — antes
+// solo describían el alcance de Sprint 1 (Depósito y Stock), aunque los
+// permisos de cada rol ya se habían ampliado más abajo en este mismo
+// archivo. Reflejan exactamente lo que puede() habilita para cada rol,
+// no una descripción aparte.
 export const ROLES = {
   admin: {
     label: "Administrador",
-    descripcion: "Catálogos maestros, depósitos y parámetros del sistema",
+    descripcion: "Catálogos maestros, depósitos, proveedores y parámetros del sistema",
   },
   deposito: {
     label: "Encargado de Depósito",
-    descripcion: "Operación diaria: movimientos, transferencias y recepciones",
+    descripcion: "Operación diaria: movimientos, transferencias, recepciones y requerimientos de reposición",
   },
   compras: {
     label: "Encargado de Compras",
-    descripcion: "Stock por depósito, mínimos/máximos y alertas de reposición",
+    descripcion: "Proveedores, requerimientos, presupuestos, órdenes de compra, comprobantes y pagos",
   },
   gerente: {
     label: "Gerente",
-    descripcion: "Consulta de stock y reportes de consumo por área",
+    descripcion: "Aprobación de presupuestos, cuenta corriente y reportes de consumo",
   },
 };
 
@@ -97,8 +102,7 @@ export function SesionProvider({ children }) {
         // separados porque tres roles distintos actúan sobre la misma
         // pantalla en distintos momentos de su ciclo de vida.
         if (accion === "verOrdenesCompra") return rol === "compras" || rol === "gerente" || rol === "deposito";
-        if (accion === "aprobarOC") return rol === "gerente";
-        if (accion === "gestionarOC") return rol === "compras"; // generar (HU-22) / enviar / anular
+        if (accion === "gestionarOC") return rol === "compras"; // generar (HU-22) / enviar / anular — sin aprobación de gerente, esa ya se dio al adjudicar el presupuesto
         if (accion === "recibirOC") return rol === "deposito";
         return false;
       },

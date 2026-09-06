@@ -16,13 +16,6 @@ class ErrorDeNegocio extends Error {
   }
 }
 
-const LIMITE_APROBACION_OC = Number(process.env.LIMITE_APROBACION_OC || 0);
-
-function requiereAprobacion(montoTotal, flete) {
-  const total = Number(montoTotal) + Number(flete || 0);
-  return total > LIMITE_APROBACION_OC;
-}
-
 // ---------------------------------------------------------------------------
 // HU-22 · Generar OC desde un presupuesto adjudicado
 // Este endpoint cuelga de /api/presupuestos/:id/generar-oc en el prototipo,
@@ -132,7 +125,7 @@ async function generarOC({ presupuestoId, usuario }) {
 // Listado y ficha
 // ---------------------------------------------------------------------------
 
-async function listarOCs({ estado, proveedorId, desde, hasta, page = 1, pageSize = 20 } = {}) {
+async function listarOCs({ estado, proveedorId, desde, hasta, q, page = 1, pageSize = 20 } = {}) {
   const where = {};
   if (estado) where.estado = estado;
   if (proveedorId) where.proveedorId = Number(proveedorId);
@@ -140,6 +133,12 @@ async function listarOCs({ estado, proveedorId, desde, hasta, page = 1, pageSize
     where.fecha = {};
     if (desde) where.fecha.gte = new Date(desde);
     if (hasta) where.fecha.lte = new Date(hasta);
+  }
+  // Buscador manual (mismo criterio que Proveedores/Requerimientos): por
+  // número de OC o razón social del proveedor.
+  const texto = (q ?? "").trim();
+  if (texto) {
+    where.OR = [{ numero: { contains: texto } }, { proveedor: { razonSocial: { contains: texto } } }];
   }
 
   const skip = (Number(page) - 1) * Number(pageSize);
@@ -181,54 +180,21 @@ async function obtenerOCPorId(id) {
   if (!oc) {
     throw new ErrorDeNegocio("Orden de compra no encontrada.", 404);
   }
-  return { ...oc, requiereAprobacion: requiereAprobacion(oc.montoTotal, oc.flete) };
+  return oc;
 }
 
 // ---------------------------------------------------------------------------
-// HU-23/24 · Aprobar / Enviar
+// HU-24 · Enviar. La OC no pasa por ninguna aprobación de gerente — esa
+// aprobación ya se dio al adjudicar el presupuesto (aprobarPresupuesto en
+// presupuestos.servicio.js); acá compras genera y envía directo.
 // ---------------------------------------------------------------------------
-
-async function aprobarOC(id, usuario) {
-  const ocId = Number(id);
-  const oc = await prisma.ordenCompra.findUnique({ where: { id: ocId } });
-  if (!oc) throw new ErrorDeNegocio("Orden de compra no encontrada.", 404);
-  if (oc.estado !== "Pendiente") {
-    throw new ErrorDeNegocio("Solo se puede aprobar una orden en estado Pendiente.", 409);
-  }
-  if (!requiereAprobacion(oc.montoTotal, oc.flete)) {
-    throw new ErrorDeNegocio("Esta orden no supera el límite de aprobación automática.", 409);
-  }
-
-  return prisma.$transaction(
-    async (tx) => {
-      const actualizada = await tx.ordenCompra.update({
-        where: { id: oc.id },
-        data: { estado: "Aprobada" },
-      });
-      await tx.ordenCompraLog.create({
-        data: { ordenCompraId: oc.id, usuario: usuario || "gerente", accion: "Orden aprobada" },
-      });
-      return actualizada;
-    },
-    { timeout: 30000, maxWait: 15000 }
-  );
-}
 
 async function enviarOC(id, usuario) {
   const ocId = Number(id);
   const oc = await prisma.ordenCompra.findUnique({ where: { id: ocId } });
   if (!oc) throw new ErrorDeNegocio("Orden de compra no encontrada.", 404);
-
-  const necesitaAprobacion = requiereAprobacion(oc.montoTotal, oc.flete);
-  const puedeEnviarse = oc.estado === "Aprobada" || (oc.estado === "Pendiente" && !necesitaAprobacion);
-
-  if (!puedeEnviarse) {
-    throw new ErrorDeNegocio(
-      necesitaAprobacion
-        ? "Esta orden supera el límite de aprobación y todavía no fue aprobada por un gerente."
-        : "La orden no está en un estado válido para ser enviada.",
-      409
-    );
+  if (oc.estado !== "Pendiente") {
+    throw new ErrorDeNegocio("La orden no está en un estado válido para ser enviada.", 409);
   }
 
   return prisma.$transaction(
@@ -443,10 +409,8 @@ module.exports = {
   generarOC,
   listarOCs,
   obtenerOCPorId,
-  aprobarOC,
   enviarOC,
   anularOC,
   registrarRecepcion,
-  requiereAprobacion,
   ErrorDeNegocio,
 };

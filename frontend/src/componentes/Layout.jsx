@@ -10,7 +10,6 @@ import {
   BarChart3,
   LogOut,
   Wallet,
-  Landmark,
   ShoppingCart,
   Building2,
   ClipboardList,
@@ -36,22 +35,24 @@ const ITEMS = [
   { to: "/stock/minmax", label: "Stock mín. / máx.", icon: SlidersHorizontal, roles: ["compras"] },
   { to: "/alertas", label: "Alertas de Stock", icon: TriangleAlert, roles: ["compras", "gerente"] },
   { to: "/reporte", label: "Reporte de Consumo", icon: BarChart3, roles: ["gerente"] },
-  // Sprint 2 — Pagos a Proveedores (HU-76 a 79, 86). Entradas planas,
-  // mismo shape que las de arriba — ver la Guía Técnica Sprint 2 sobre
-  // por qué no se armó el menú con grupos colapsables del prototipo.
-  { to: "/pagos", label: "Pagos a Proveedores", icon: Wallet, roles: ["compras"] },
-  { to: "/cuenta-corriente", label: "Cuenta Corriente", icon: Landmark, roles: ["compras"] },
   // Sprint 2 — Proveedores, Requerimientos y Presupuestos (HU-18 a 21,
-  // 81 a 84). Mismos roles que declara puede() en lib/sesion.jsx.
+  // 81 a 84). Mismos roles que declara puede() en lib/sesion.jsx. Quedan
+  // sueltos (no agrupados) porque cada uno lo usa un set de roles distinto
+  // — depósito entra a Requerimientos pero no a Presupuestos, gerente al
+  // revés; agruparlos bajo una sola entrada dejaría a alguno de los dos
+  // sin poder llegar a su pantalla desde el menú.
   { to: "/proveedores", label: "Proveedores", icon: Building2, roles: ["compras", "admin"] },
   { to: "/requerimientos", label: "Requerimientos", icon: ClipboardList, roles: ["compras", "deposito"] },
   { to: "/presupuestos", label: "Presupuestos", icon: FileText, roles: ["compras", "gerente"] },
-  // Sprint 2 — Órdenes de Compra (HU-22 a 25, 85): visible para los 3
-  // roles que actúan sobre ella (compras aprueba/envía/anula, gerente
-  // aprueba, depósito recibe) — cada botón puntual igual depende de
-  // puede() adentro de la pantalla, ver sesion.jsx.
-  { to: "/ordenes-compra", label: "Órdenes de Compra", icon: ShoppingCart, roles: ["compras", "gerente", "deposito"] },
-  { to: "/comprobantes", label: "Comprobantes", icon: FileText, roles: ["compras"] },
+  // "Compras y Pagos" (HU-22 a 25, 76 a 80, 85, 86): OC → Comprobantes →
+  // Pagos es un solo flujo secuencial y las 3 pantallas comparten el rol
+  // "compras" (más gerente/depósito puntualmente en OC) — van agrupadas
+  // bajo un mismo encabezado en vez de 3 entradas sueltas al mismo nivel
+  // que el resto del menú. Cuenta Corriente ya no es una entrada propia:
+  // es una pestaña dentro de Pagos a Proveedores (mismo rol exacto).
+  { to: "/ordenes-compra", label: "Órdenes de Compra", icon: ShoppingCart, roles: ["compras", "gerente", "deposito"], grupo: "Compras y Pagos" },
+  { to: "/comprobantes", label: "Comprobantes", icon: FileText, roles: ["compras"], grupo: "Compras y Pagos" },
+  { to: "/pagos", label: "Pagos a Proveedores", icon: Wallet, roles: ["compras"], grupo: "Compras y Pagos" },
 ];
 
 export function Layout() {
@@ -64,26 +65,33 @@ export function Layout() {
       <aside className="sticky top-0 flex h-screen w-[236px] flex-none flex-col gap-5 border-r border-borde bg-white px-3.5 py-[22px] print:hidden">
         <div className="flex flex-col gap-0.5 px-2.5">
           <span className="font-heading text-[19px] leading-tight tracking-[-0.01em] text-tinta">Holiday Inn</span>
-          <span className="font-body text-[10.5px] text-tinta/50">SGH · Depósito y Stock</span>
+          {/* Sprint 2 sumó Compras y Gastos — ya no es solo Depósito y Stock (Sprint 1) */}
+          <span className="font-body text-[10.5px] text-tinta/50">SGH · Gestión Hotelera</span>
         </div>
 
         <nav className="flex flex-col gap-0.5">
           <div className="px-2.5 pb-1.5 font-body text-[9.5px] font-semibold tracking-widest text-tinta/55 uppercase">
             Menú del perfil
           </div>
-          {items.map(({ to, label, icon: Icon, end }) => (
-            <NavLink
-              key={to}
-              to={to}
-              end={end}
-              className={({ isActive }) =>
-                `flex items-center gap-2 rounded-lg px-3 py-2.5 font-body text-[13px] font-semibold transition-colors ${
-                  isActive ? "bg-pino text-hueso" : "text-tinta/80 hover:bg-hueso"
-                }`
-              }
-            >
-              <Icon size={16} /> {label}
-            </NavLink>
+          {items.map(({ to, label, icon: Icon, end, grupo }, i) => (
+            <div key={to}>
+              {grupo && grupo !== items[i - 1]?.grupo && (
+                <div className="mt-2.5 border-t border-borde px-2.5 pt-2.5 pb-1 font-body text-[9.5px] font-semibold tracking-widest text-tinta/45 uppercase">
+                  {grupo}
+                </div>
+              )}
+              <NavLink
+                to={to}
+                end={end}
+                className={({ isActive }) =>
+                  `flex items-center gap-2 rounded-lg px-3 py-2.5 font-body text-[13px] font-semibold transition-colors ${
+                    isActive ? "bg-pino text-hueso" : "text-tinta/80 hover:bg-hueso"
+                  }`
+                }
+              >
+                <Icon size={16} /> {label}
+              </NavLink>
+            </div>
           ))}
         </nav>
 

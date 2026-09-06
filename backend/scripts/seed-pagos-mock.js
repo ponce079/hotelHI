@@ -17,17 +17,15 @@ async function main() {
   }
 
   const FACTURAS = [
-    { proveedorId: norte.id, tipo: "Factura", numero: "FC-A 0001-00012345", importeNeto: 100000, alicuotaIva: 21 },
-    { proveedorId: andes.id, tipo: "Factura", numero: "FC-A 0002-00009988", importeNeto: 45000, alicuotaIva: 21 },
+    { proveedorId: norte.id, tipo: "Factura", numero: "FC-A 0001-00012345", importeTotal: 121000 },
+    { proveedorId: andes.id, tipo: "Factura", numero: "FC-A 0002-00009988", importeTotal: 54450 },
   ];
 
   for (const f of FACTURAS) {
-    const importeIva = Math.round(f.importeNeto * f.alicuotaIva) / 100;
-    const importeTotal = f.importeNeto + importeIva;
     const factura = await prisma.comprobanteProveedor.upsert({
       where: { proveedorId_tipo_numero: { proveedorId: f.proveedorId, tipo: f.tipo, numero: f.numero } },
       update: {},
-      create: { ...f, importeIva, importeTotal },
+      create: f,
     });
     console.log("OK:", factura.numero, "total:", factura.importeTotal.toString());
   }

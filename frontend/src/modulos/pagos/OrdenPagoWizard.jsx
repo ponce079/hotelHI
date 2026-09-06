@@ -1,5 +1,6 @@
 import { useState, Fragment } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Modal } from "../../componentes/Modal";
 import { Input } from "../../componentes/Input";
 import { MoneyInput } from "../../componentes/MoneyInput";
 import { Select } from "../../componentes/Select";
@@ -7,7 +8,6 @@ import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
 import { Badge } from "../../componentes/Badge";
-import { MensajeModal } from "../../componentes/MensajeModal";
 import { formatearFechaSolo } from "../../lib/fechas";
 import { formatearMonto } from "../../lib/moneda";
 import { listarProveedoresConSaldo, listarComprobantesPendientes, crearOrdenPago } from "./pagos.api";
@@ -33,10 +33,9 @@ function nuevaClave() {
   return crypto.randomUUID();
 }
 
-export function OrdenPagoWizard({ onVolver, onExito }) {
+export function OrdenPagoWizard({ onClose, onExito }) {
   const [form, setForm] = useState(VACIO);
   const [errorGeneral, setErrorGeneral] = useState("");
-  const [mensajeExito, setMensajeExito] = useState("");
   const queryClient = useQueryClient();
 
   const { data: proveedores } = useQuery({ queryKey: ["pagos", "proveedores-con-saldo"], queryFn: listarProveedoresConSaldo });
@@ -71,7 +70,7 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
       }),
     onSuccess: (orden) => {
       queryClient.invalidateQueries({ queryKey: ["pagos"] });
-      setMensajeExito(`Orden de pago ${orden.numero} confirmada por $ ${formatearMonto(totalAplicado)}.`);
+      onExito(`Orden de pago ${orden.numero} confirmada por $ ${formatearMonto(totalAplicado)}.`);
     },
     onError: (error) => {
       setErrorGeneral(error?.response?.data?.error ?? "No se pudo confirmar la orden de pago.");
@@ -146,18 +145,13 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
     });
 
   return (
-    <div className="flex flex-col gap-6">
-      <div>
-        <Button variante="secundario" onClick={onVolver} className="mb-2 text-xs">
-          ← Volver
-        </Button>
-        <h1 className="font-heading text-[34px] font-semibold">Generar orden de pago</h1>
-        <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-          HU 76 y 77 — el total aplicado y el distribuido en medios deben coincidir
-        </p>
-      </div>
+    <Modal titulo="Generar orden de pago" onClose={onClose} ancho="max-w-3xl">
+    <div className="flex flex-col gap-6 px-6 py-5">
+      <p className="-mt-1 font-mono text-[11px] text-tinta/55">
+        HU 76 y 77 — el total aplicado y el distribuido en medios deben coincidir
+      </p>
 
-      <div className="flex flex-wrap items-center gap-2.5 rounded-[18.4px] bg-white px-6 py-4">
+      <div className="flex flex-wrap items-center gap-2.5 rounded-[18.4px] bg-hueso px-6 py-4">
         {PASOS.map((label, i) => {
           const paso = i + 1;
           const activo = form.paso === paso;
@@ -376,7 +370,7 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
         </div>
       )}
 
-      <div className="sticky bottom-4 flex flex-wrap items-center gap-5 rounded-[18.4px] border border-borde bg-white px-6 py-4 shadow-[0_1px_2px_rgba(46,43,37,0.14)]">
+      <div className="flex flex-wrap items-center gap-5 rounded-[18.4px] border border-borde bg-white px-6 py-4">
         <div>
           <div className="text-[11px] tracking-wide text-tinta/45 uppercase">Total a pagar</div>
           <Cifra tamano={21}>$ {formatearMonto(totalAplicado)}</Cifra>
@@ -396,7 +390,7 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
               : "Todavía no coincide con el total a pagar."}
         </p>
         <div className="flex gap-2.5">
-          <Button variante="secundario" onClick={onVolver}>
+          <Button variante="secundario" onClick={onClose}>
             Cancelar
           </Button>
           {form.paso > 1 && (
@@ -420,14 +414,7 @@ export function OrdenPagoWizard({ onVolver, onExito }) {
           )}
         </div>
       </div>
-
-      <MensajeModal
-        mensaje={mensajeExito}
-        onCerrar={() => {
-          setMensajeExito("");
-          onExito();
-        }}
-      />
     </div>
+    </Modal>
   );
 }

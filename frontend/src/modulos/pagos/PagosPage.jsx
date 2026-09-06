@@ -11,6 +11,8 @@ import { Badge } from "../../componentes/Badge";
 import { Cifra } from "../../componentes/Cifra";
 import { Pagination } from "../../componentes/Pagination";
 import { SinPermiso } from "../../componentes/SinPermiso";
+import { Toast } from "../../componentes/Toast";
+import { useToast } from "../../lib/useToast";
 import { useSesion } from "../../lib/sesion";
 import { formatearMonto } from "../../lib/moneda";
 import { listarOrdenesPago } from "./pagos.api";
@@ -24,6 +26,7 @@ export function PagosPage() {
   const { puede } = useSesion();
   const tienePermiso = puede("registrarPago");
   const navigate = useNavigate();
+  const { toast, mostrarToast } = useToast();
   const [mostrarWizard, setMostrarWizard] = useState(false);
   const [filtros, setFiltros] = useState(FILTROS_VACIOS);
   const [pagina, setPagina] = useState(1);
@@ -61,14 +64,31 @@ export function PagosPage() {
   // por URL directa sin ser "compras".
   if (!tienePermiso) return <SinPermiso />;
 
-  if (mostrarWizard) {
-    return <OrdenPagoWizard onVolver={() => setMostrarWizard(false)} onExito={() => setMostrarWizard(false)} />;
-  }
-
   const hayFiltros = filtros.proveedorId || filtros.medio || filtros.desde || filtros.hasta;
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Pagos y Cuenta Corriente comparten un mismo rol ("compras") y el
+          mismo dato de base (saldos de comprobantes) — se presentan como
+          una sola sección con 2 pestañas en vez de 2 entradas sueltas en
+          el menú. Cada pestaña sigue siendo su propia ruta/página, solo
+          cambia cómo se llega. */}
+      <div className="flex gap-1 border-b border-borde">
+        <button
+          type="button"
+          className="-mb-px border-b-2 border-pino px-4 py-2.5 font-body text-sm font-semibold text-pino"
+        >
+          Pagos a Proveedores
+        </button>
+        <button
+          type="button"
+          onClick={() => navigate("/cuenta-corriente")}
+          className="-mb-px cursor-pointer border-b-2 border-transparent px-4 py-2.5 font-body text-sm font-semibold text-tinta/55 hover:text-tinta"
+        >
+          Cuenta Corriente
+        </button>
+      </div>
+
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-heading text-[34px] font-semibold">Pagos a Proveedores</h1>
@@ -189,6 +209,18 @@ export function PagosPage() {
           </>
         )}
       </div>
+
+      {mostrarWizard && (
+        <OrdenPagoWizard
+          onClose={() => setMostrarWizard(false)}
+          onExito={(mensaje) => {
+            setMostrarWizard(false);
+            mostrarToast(mensaje);
+          }}
+        />
+      )}
+
+      <Toast mensaje={toast} />
     </div>
   );
 }

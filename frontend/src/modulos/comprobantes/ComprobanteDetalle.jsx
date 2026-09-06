@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '../../componentes/Badge';
 import { Button } from '../../componentes/Button';
@@ -7,13 +7,14 @@ import { Cifra } from '../../componentes/Cifra';
 import { Table } from '../../componentes/Table';
 import { Toast } from '../../componentes/Toast';
 import { useToast } from '../../lib/useToast';
+import { useVolver } from '../../lib/useVolver';
 import { formatearMonto } from '../../lib/moneda';
 import { obtenerComprobante, anularComprobante } from './comprobantes.api';
 import { VARIANTE_ESTADO_COMPROBANTE } from './comprobantes.constantes';
 
 export function ComprobanteDetalle() {
   const { id } = useParams();
-  const navigate = useNavigate();
+  const volver = useVolver('/comprobantes');
   const queryClient = useQueryClient();
   const { toast, mostrarToast } = useToast();
   const { data: comprobante, isLoading, isError } = useQuery({
@@ -49,7 +50,7 @@ export function ComprobanteDetalle() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Button variante="secundario" onClick={() => navigate('/comprobantes')} className="mb-2 text-xs">
+      <Button variante="secundario" onClick={volver} className="mb-2 text-xs">
         ← Volver
       </Button>
 

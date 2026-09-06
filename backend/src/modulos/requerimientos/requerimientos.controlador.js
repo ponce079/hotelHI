@@ -12,6 +12,28 @@ function manejarError(res, err, mensajeGenerico) {
   return res.status(500).json({ error: mensajeGenerico });
 }
 
+// Compartido por alta y edición: misma forma de detalle en los dos casos.
+// Devuelve { error } o { lineas }, nunca los dos — el caller decide qué
+// hacer con cada uno (evita repetir el resto de la validación).
+function validarDetalle(detalle) {
+  if (!Array.isArray(detalle) || detalle.length === 0) {
+    return { error: "Cargá al menos un artículo en el detalle" };
+  }
+  const lineas = [];
+  for (const linea of detalle) {
+    const articuloId = Number(linea?.articuloId);
+    const cantidadSolicitada = Number(linea?.cantidadSolicitada);
+    if (!Number.isInteger(articuloId)) {
+      return { error: "Cada línea del detalle necesita un articuloId válido" };
+    }
+    if (!Number.isFinite(cantidadSolicitada) || cantidadSolicitada <= 0) {
+      return { error: "La cantidad solicitada tiene que ser mayor a 0" };
+    }
+    lineas.push({ articuloId, cantidadSolicitada });
+  }
+  return { lineas };
+}
+
 async function postRequerimiento(req, res) {
   const depositoId = Number(req.body?.depositoId);
   const origen = req.body?.origen ?? ORIGENES_REQUERIMIENTO.MANUAL;
@@ -25,22 +47,8 @@ async function postRequerimiento(req, res) {
       error: `origen inválido. Valores permitidos: ${Object.values(ORIGENES_REQUERIMIENTO).join(", ")}`,
     });
   }
-  if (!Array.isArray(detalle) || detalle.length === 0) {
-    return res.status(400).json({ error: "Cargá al menos un artículo en el detalle" });
-  }
-
-  const lineas = [];
-  for (const linea of detalle) {
-    const articuloId = Number(linea?.articuloId);
-    const cantidadSolicitada = Number(linea?.cantidadSolicitada);
-    if (!Number.isInteger(articuloId)) {
-      return res.status(400).json({ error: "Cada línea del detalle necesita un articuloId válido" });
-    }
-    if (!Number.isFinite(cantidadSolicitada) || cantidadSolicitada <= 0) {
-      return res.status(400).json({ error: "La cantidad solicitada tiene que ser mayor a 0" });
-    }
-    lineas.push({ articuloId, cantidadSolicitada });
-  }
+  const { error, lineas } = validarDetalle(detalle);
+  if (error) return res.status(400).json({ error });
 
   try {
     const requerimiento = await requerimientosServicio.crearRequerimiento({
@@ -56,7 +64,8 @@ async function postRequerimiento(req, res) {
 }
 
 async function getRequerimientos(req, res) {
-  const { estado, depositoId } = req.query;
+  const { estado, depositoId, q } = req.query;
+  const incluirAnulados = req.query.incluirAnulados === "1" || req.query.incluirAnulados === "true";
   const page = Math.max(1, Number(req.query.page) || 1);
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 10));
 
@@ -67,11 +76,52 @@ async function getRequerimientos(req, res) {
   }
 
   try {
-    const resultado = await requerimientosServicio.listarRequerimientos({ estado, depositoId, page, pageSize });
+    const resultado = await requerimientosServicio.listarRequerimientos({
+      estado,
+      depositoId,
+      q,
+      incluirAnulados,
+      page,
+      pageSize,
+    });
     return res.json(resultado);
   } catch (err) {
     console.error("Error al listar requerimientos:", err);
     return res.status(500).json({ error: "No se pudieron listar los requerimientos." });
+  }
+}
+
+async function putRequerimiento(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+
+  const depositoId = Number(req.body?.depositoId);
+  if (!Number.isInteger(depositoId)) {
+    return res.status(400).json({ error: "depositoId es obligatorio" });
+  }
+  const { error, lineas } = validarDetalle(req.body?.detalle);
+  if (error) return res.status(400).json({ error });
+
+  try {
+    const requerimiento = await requerimientosServicio.actualizarRequerimiento(id, { depositoId, detalle: lineas });
+    return res.json(requerimiento);
+  } catch (err) {
+    return manejarError(res, err, "No se pudo actualizar el requerimiento.");
+  }
+}
+
+async function postAnularRequerimiento(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+
+  const motivo = typeof req.body?.motivo === "string" ? req.body.motivo.trim() : "";
+  if (!motivo) return res.status(400).json({ error: "El motivo de anulación es obligatorio." });
+
+  try {
+    const requerimiento = await requerimientosServicio.anularRequerimiento(id, motivo);
+    return res.json(requerimiento);
+  } catch (err) {
+    return manejarError(res, err, "No se pudo anular el requerimiento.");
   }
 }
 
@@ -115,4 +165,11 @@ async function postSolicitarPresupuestos(req, res) {
   }
 }
 
-module.exports = { postRequerimiento, getRequerimientos, getRequerimientoPorId, postSolicitarPresupuestos };
+module.exports = {
+  postRequerimiento,
+  getRequerimientos,
+  getRequerimientoPorId,
+  putRequerimiento,
+  postAnularRequerimiento,
+  postSolicitarPresupuestos,
+};

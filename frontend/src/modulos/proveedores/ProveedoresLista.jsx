@@ -9,6 +9,7 @@ import { Select } from "../../componentes/Select";
 import { Pagination } from "../../componentes/Pagination";
 import { Toast } from "../../componentes/Toast";
 import { ConfirmDialog } from "../../componentes/ConfirmDialog";
+import { LimpiarFiltros } from "../../componentes/LimpiarFiltros";
 import { ProveedorModal } from "./ProveedorModal";
 import { listarProveedores, cambiarEstadoProveedor } from "./proveedores.api";
 import { RUBROS, CONDICIONES_COMERCIALES } from "../../lib/constantes";
@@ -70,6 +71,13 @@ export function ProveedoresLista() {
     setSearchParams(params);
   }
 
+  function limpiarFiltros() {
+    const params = new URLSearchParams(searchParams);
+    ["q", "rubro", "condicionComercial", "estado"].forEach((k) => params.delete(k));
+    params.set("page", "1");
+    setSearchParams(params);
+  }
+
   const hayFiltros = q || rubro || condicionComercial || estado !== "activo";
 
   return (
@@ -106,6 +114,8 @@ export function ProveedoresLista() {
             </button>
           ))}
         </div>
+
+        {hayFiltros && <LimpiarFiltros onClick={limpiarFiltros} />}
 
         <Button onClick={() => setModal({ proveedor: null })}>+ Nuevo proveedor</Button>
       </div>

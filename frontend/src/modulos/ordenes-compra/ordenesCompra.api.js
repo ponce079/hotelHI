@@ -17,11 +17,6 @@ export async function obtenerOrdenCompra(id) {
   return data;
 }
 
-export async function aprobarOrdenCompra(id, usuario) {
-  const { data } = await api.post(`/ordenes-compra/${id}/aprobar`, { usuario });
-  return data;
-}
-
 export async function enviarOrdenCompra(id, usuario) {
   const { data } = await api.post(`/ordenes-compra/${id}/enviar`, { usuario });
   return data;

@@ -23,12 +23,11 @@ import { RecepcionOCPage } from "./modulos/ordenes-compra/RecepcionOCPage";
 import { ProveedoresPage } from "./modulos/proveedores/ProveedoresPage";
 import { ProveedorDetallePage } from "./modulos/proveedores/ProveedorDetallePage";
 import { RequerimientosPage } from "./modulos/requerimientos/RequerimientosPage";
-import { RequerimientoFormPage } from "./modulos/requerimientos/RequerimientoFormPage";
 import { RequerimientoDetallePage } from "./modulos/requerimientos/RequerimientoDetallePage";
-import { SolicitarPresupuestosPage } from "./modulos/presupuestos/SolicitarPresupuestosPage";
 import { PresupuestosPage } from "./modulos/presupuestos/PresupuestosPage";
-import { PresupuestoCargaPage } from "./modulos/presupuestos/PresupuestoCargaPage";
 import { PresupuestoDetallePage } from "./modulos/presupuestos/PresupuestoDetallePage";
+import { ComprobantesPage } from "./modulos/comprobantes/ComprobantesPage";
+import { ComprobanteDetalle } from "./modulos/comprobantes/ComprobanteDetalle";
 
 // Gatekeeper de rutas: sin sesion (sin rol elegido en el login), redirige
 // a /login. No es autenticacion real contra el backend — ver lib/sesion.jsx.
@@ -62,18 +61,17 @@ export default function App() {
           <Route path="/ordenes-compra" element={<OrdenesCompraPage />} />
           <Route path="/ordenes-compra/:id" element={<OrdenCompraDetallePage />} />
           <Route path="/ordenes-compra/:id/recepcion" element={<RecepcionOCPage />} />
-          {/* Sprint 2 — Proveedores, Requerimientos y Presupuestos (HU-18 a 21, 81 a 84).
-              /requerimientos/nuevo va antes que /requerimientos/:id para que "nuevo"
-              no se lea como un id. */}
+          {/* Sprint 2 — Proveedores, Requerimientos y Presupuestos (HU-18 a 21, 81 a 84). */}
           <Route path="/proveedores" element={<ProveedoresPage />} />
           <Route path="/proveedores/:id" element={<ProveedorDetallePage />} />
           <Route path="/requerimientos" element={<RequerimientosPage />} />
-          <Route path="/requerimientos/nuevo" element={<RequerimientoFormPage />} />
           <Route path="/requerimientos/:id" element={<RequerimientoDetallePage />} />
-          <Route path="/requerimientos/:id/solicitar-presupuestos" element={<SolicitarPresupuestosPage />} />
           <Route path="/presupuestos" element={<PresupuestosPage />} />
           <Route path="/presupuestos/:id" element={<PresupuestoDetallePage />} />
-          <Route path="/presupuestos/:id/cargar" element={<PresupuestoCargaPage />} />
+          {/* Sprint 2 — Comprobantes (HU-72 a 75): el alta de factura y de
+              nota son modales sobre ComprobantesPage, no rutas propias. */}
+          <Route path="/comprobantes" element={<ComprobantesPage />} />
+          <Route path="/comprobantes/:id" element={<ComprobanteDetalle />} />
         </Route>
       </Route>
     </Routes>

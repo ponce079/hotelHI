@@ -55,7 +55,7 @@ export const VARIANTE_ESTADO_PRESUPUESTO = {
 
 // Rubro del proveedor <-> categoría del artículo (HU-82). El backend
 // valida lo mismo con esta tabla (es el que manda); acá se usa para el
-// filtro "rubro afín" de SolicitarPresupuestosPage.
+// filtro "rubro afín" de SolicitarPresupuestosModal.
 export const MAPA_RUBRO_CATEGORIA = {
   Limpieza: ["Limpieza"],
   Amenities: ["Amenities"],
