@@ -20,24 +20,50 @@ import { Check, X } from "lucide-react";
 // se completó, está en curso o todavía no llega (el color de fondo/borde ya
 // comunica el progreso). Sin `icono` el paso sigue con el check/punto/vacío
 // de siempre — no rompe a Requerimientos ni Presupuestos, que no lo pasan.
-export function PasoAPaso({ pasos, pasoActual, pasoAlternativo }) {
+//
+// `paso.sublabel` (opcional, por paso) es una segunda línea chica debajo
+// del label — pensada para "fecha y usuario responsable" de una etapa ya
+// completada (Requerimientos, ficha de detalle). Solo se pinta si el
+// llamador la manda; ningún uso existente la pasa.
+//
+// `paso.advertencia` (opcional, por paso) pinta ESE nodo puntual en tono
+// ámbar (laton) en vez del verde/pino habitual, tanto completado como
+// activo — para un estado que sí se alcanzó pero necesita revisión humana
+// (ej. "Recibida con diferencia", o una TRANSFERENCIA en "Pendiente de
+// stock" mientras está en curso). No es un error bloqueante (rojo) ni un
+// tramo limpio (verde): es su propia categoría visual.
+//
+// `ultimoPasoRequiereLlegada` (opcional, default false) desactiva la regla
+// de siempre "estar activo en el último paso = completado" — para
+// Requerimientos, donde un estado intermedio (ej. "Aprobado") puede
+// ocupar la posición del ÚLTIMO nodo del array como "actual" sin que eso
+// signifique que ya se alcanzó ese último hito (ej. "Cerrada"). Con esto
+// en true, ese nodo solo se pinta completado cuando `pasoActual` avanza
+// más allá de él (pasoActual === pasos.length). Default false: no cambia
+// a Presupuestos ni Órdenes de Compra, que sí quieren esa conveniencia.
+export function PasoAPaso({ pasos, pasoActual, pasoAlternativo, ultimoPasoRequiereLlegada = false }) {
   return (
     <div className="flex items-center justify-center gap-0 rounded-lg border border-borde bg-white px-6 py-5">
       {pasos.map((p, i) => {
         const activo = i === pasoActual;
         // El último paso, al alcanzarse, no tiene uno siguiente que lo deje
         // "atrás" — se pinta como completado (check), no como "en curso"
-        // (punto), que es la marca de un paso intermedio.
-        const completado = i < pasoActual || (activo && i === pasos.length - 1);
+        // (punto), que es la marca de un paso intermedio. Salvo que el
+        // llamador pida lo contrario (ver comentario de arriba).
+        const completado = i < pasoActual || (activo && i === pasos.length - 1 && !ultimoPasoRequiereLlegada);
         return (
           <Fragment key={p.clave}>
             <div className="flex flex-col items-center gap-1.5">
               <span
                 className={`flex h-9 w-9 items-center justify-center rounded-full ${
                   completado
-                    ? "bg-pino text-hueso"
+                    ? p.advertencia
+                      ? "bg-laton text-hueso"
+                      : "bg-pino text-hueso"
                     : activo
-                      ? "border-2 border-pino bg-pino-100 text-pino-700"
+                      ? p.advertencia
+                        ? "border-2 border-laton bg-laton-100 text-laton-700"
+                        : "border-2 border-pino bg-pino-100 text-pino-700"
                       : "border-2 border-borde bg-white text-piedra"
                 }`}
               >
@@ -46,12 +72,13 @@ export function PasoAPaso({ pasos, pasoActual, pasoAlternativo }) {
                 ) : completado ? (
                   <Check size={16} />
                 ) : activo ? (
-                  <span className="h-2.5 w-2.5 rounded-full bg-pino" />
+                  <span className={`h-2.5 w-2.5 rounded-full ${p.advertencia ? "bg-laton" : "bg-pino"}`} />
                 ) : null}
               </span>
               <span className={`text-[11.5px] font-semibold ${activo ? "text-tinta" : completado ? "text-tinta/70" : "text-piedra"}`}>
                 {p.label}
               </span>
+              {p.sublabel && <span className="text-[10.5px] text-piedra">{p.sublabel}</span>}
             </div>
             {i < pasos.length - 1 && <span className={`mb-5 h-px w-16 sm:w-28 ${i < pasoActual ? "bg-pino" : "bg-borde"}`} />}
           </Fragment>
