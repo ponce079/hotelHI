@@ -17,10 +17,14 @@ const {
 } = require("../../lib/constantes");
 
 class ErrorDeNegocio extends Error {
-  constructor(message, statusCode = 400) {
+  // `extra` es opcional — hoy solo lo usa el caso de "artículo sin central
+  // asignado" (articuloId), para que el frontend arme un link directo a su
+  // edición en el catálogo en vez de mandar a la persona a buscarlo a mano.
+  constructor(message, statusCode = 400, extra = {}) {
     super(message);
     this.name = "ErrorDeNegocio";
     this.statusCode = statusCode;
+    Object.assign(this, extra);
   }
 }
 
@@ -87,7 +91,8 @@ async function crearRequerimiento({ depositoId, origen, solicitante, detalle, ti
     if (sinCentral) {
       throw new ErrorDeNegocio(
         `El artículo "${sinCentral.nombre}" no tiene un depósito central asignado — asignaselo en el catálogo antes de pedirlo por transferencia`,
-        400
+        400,
+        { articuloId: sinCentral.id }
       );
     }
     const centrales = new Set(articulos.map((a) => a.depositoCentralId));
@@ -98,6 +103,30 @@ async function crearRequerimiento({ depositoId, origen, solicitante, detalle, ti
       );
     }
     depositoCentralId = [...centrales][0];
+
+    // `Articulo.depositoCentralId` y la habilitación real en ese depósito
+    // (ArticuloDeposito.activo) son dos datos independientes — un artículo
+    // puede tener el central asignado en el catálogo pero no estar (o ya no
+    // estar) habilitado ahí. Sin este chequeo, un requerimiento como este
+    // pasa la validación de arriba y termina en "Pendiente de stock" sin
+    // que quede claro que el problema es la habilitación, no el stock (bug
+    // reportado: JABON TOCADOR DOVE con central asignado pero deshabilitado
+    // en Central Secos/Insumos).
+    const habilitacionesCentral = await prisma.articuloDeposito.findMany({
+      where: { depositoId: depositoCentralId, articuloId: { in: articulos.map((a) => a.id) } },
+    });
+    const noHabilitadoEnCentral = articulos.find((a) => {
+      const hab = habilitacionesCentral.find((h) => h.articuloId === a.id);
+      return !hab || !hab.activo;
+    });
+    if (noHabilitadoEnCentral) {
+      const central = await prisma.deposito.findUnique({ where: { id: depositoCentralId }, select: { nombre: true } });
+      throw new ErrorDeNegocio(
+        `El artículo "${noHabilitadoEnCentral.nombre}" no está habilitado en su depósito central (${central?.nombre ?? "—"}) — pedile a depósito que lo habilite ahí`,
+        400,
+        { articuloId: noHabilitadoEnCentral.id, depositoCentralId }
+      );
+    }
   } else if (!deposito.esCentral) {
     // Se eliminó la excepción de "compra directa" desde un depósito
     // periférico (antes pedía aprobación de gerencia; ahora directamente
@@ -491,6 +520,7 @@ async function crearOSugerirReposicionCentral(
       tipo: TIPOS_REQUERIMIENTO.COMPRA,
       urgente: Boolean(urgente),
       estado: estadoInicial,
+      nacioComoSugerida: estadoInicial === ESTADOS_REQUERIMIENTO.SUGERIDA,
       solicitante: "sistema",
     },
   });
@@ -678,6 +708,7 @@ async function listarRequerimientos({
         select: {
           id: true,
           estado: true,
+          fecha: true,
           _count: { select: { detalle: true } },
           ordenCompra: { select: { estado: true } },
         },
@@ -717,6 +748,16 @@ async function listarRequerimientos({
     ocRecibida: presupuestos.some(
       (p) => p.estado === "Adjudicado" && p.ordenCompra && ESTADOS_OC_RECIBIDA.includes(p.ordenCompra.estado)
     ),
+    // Pantalla de Presupuestos: "hace cuánto espera respuesta de
+    // cotización" se cuenta desde que se invitó a los proveedores (todos
+    // los invitados de una misma solicitud se crean juntos, en la misma
+    // transacción — la fecha más vieja entre ellos alcanza), no desde que
+    // se creó el requerimiento. `null` mientras no se solicitó nada
+    // todavía (el frontend usa `fecha` en ese caso).
+    fechaSolicitudCotizacion:
+      presupuestos.length > 0
+        ? presupuestos.reduce((min, p) => (p.fecha < min ? p.fecha : min), presupuestos[0].fecha)
+        : null,
   }));
 
   return { items: conResumen, total, page, pageSize, totalPages: Math.max(1, Math.ceil(total / pageSize)) };
@@ -895,6 +936,10 @@ async function obtenerRequerimientoPorId(id) {
     include: {
       ...INCLUDE_DETALLE,
       presupuestos: {
+        // El archivo adjunto (punto 9 de Presupuestos) es un BLOB de hasta
+        // 5MB — nunca debe viajar en la ficha del requerimiento, solo en
+        // el endpoint dedicado a descargarlo (ver presupuestos.servicio.js).
+        omit: { archivoAdjunto: true },
         include: {
           proveedor: { select: { id: true, razonSocial: true, cuit: true } },
           detalle: true,

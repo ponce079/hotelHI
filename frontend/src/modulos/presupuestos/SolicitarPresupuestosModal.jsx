@@ -17,11 +17,31 @@ export function SolicitarPresupuestosModal({ requerimientoId, onClose, onExito }
   const [seleccionados, setSeleccionados] = useState([]);
   const [requiereFlete, setRequiereFlete] = useState(false);
   const [error, setError] = useState("");
+  // Para no pisar `requiereFlete` con el valor default (false) del estado
+  // de arriba la primera vez que `req` llega — solo importa cuando se está
+  // sumando un proveedor a una cotización ya en curso (ver más abajo).
+  const [fleteInicializado, setFleteInicializado] = useState(false);
 
   const { data: req, isLoading } = useQuery({
     queryKey: ["requerimiento", String(requerimientoId)],
     queryFn: () => obtenerRequerimiento(requerimientoId),
   });
+
+  // Punto 4 (Comparación de presupuestos): este mismo modal ahora también
+  // se abre para "sumar un proveedor más" a un requerimiento que ya está
+  // en cotización, no solo para el alta inicial — el backend
+  // (solicitarPresupuestos) ya lo permite. En ese caso, el pedido no
+  // "pasa" a En cotización (ya está) y el flete es el que ya se fijó al
+  // invitar por primera vez, no algo que se vuelva a elegir acá.
+  const agregandoAExistente = req?.estado === ESTADOS_REQUERIMIENTO.EN_COTIZACION;
+  if (agregandoAExistente && !fleteInicializado) {
+    setRequiereFlete(Boolean(req.requiereFlete));
+    setFleteInicializado(true);
+  }
+  const idsYaInvitados = useMemo(
+    () => new Set((req?.presupuestos ?? []).map((p) => p.proveedor?.id)),
+    [req]
+  );
 
   const { data: proveedores } = useQuery({
     queryKey: ["proveedores-activos"],
@@ -60,11 +80,14 @@ export function SolicitarPresupuestosModal({ requerimientoId, onClose, onExito }
 
   // Habilitados primero — es la parte accionable de la lista, no tiene
   // sentido que quede intercalada con las tarjetas informativas de abajo.
+  // Ya invitados no se listan más acá (punto 4): duplicaría el
+  // @@unique([requerimientoId, proveedorId]) y el backend ya lo rechaza —
+  // mejor no ofrecerlo que rechazarlo después de tildado.
   const listaOrdenada = useMemo(() => {
-    const lista = proveedores ?? [];
+    const lista = (proveedores ?? []).filter((p) => !idsYaInvitados.has(p.id));
     return [...lista].sort((a, b) => Number(esHabilitado(b)) - Number(esHabilitado(a)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [proveedores, categoriasDelPedido]);
+  }, [proveedores, categoriasDelPedido, idsYaInvitados]);
 
   const mutacion = useMutation({
     mutationFn: () => solicitarPresupuestos(requerimientoId, { proveedorIds: seleccionados, requiereFlete }),
@@ -90,7 +113,11 @@ export function SolicitarPresupuestosModal({ requerimientoId, onClose, onExito }
     mutacion.mutate();
   }
 
-  const yaSolicitado = req && req.estado !== ESTADOS_REQUERIMIENTO.PENDIENTE;
+  // Punto 4: "no se puede" ahora es un estado distinto de "Pendiente" Y de
+  // "En cotización" (Aprobado, Cerrada, Sugerida, Rechazada, o cualquier
+  // estado de Transferencia) — el backend ya rechaza esos, esto solo
+  // decide qué UI mostrar antes de intentarlo.
+  const noSePuedeSolicitar = req && req.estado !== ESTADOS_REQUERIMIENTO.PENDIENTE && !agregandoAExistente;
 
   const transicion = (
     <span className="whitespace-nowrap rounded-full bg-laton-100 px-3 py-1 text-[11.5px] font-semibold text-laton-700">
@@ -102,9 +129,21 @@ export function SolicitarPresupuestosModal({ requerimientoId, onClose, onExito }
 
   return (
     <Modal
-      titulo={req ? `Solicitar presupuestos · REQ-${String(req.id).padStart(4, "0")}` : "Solicitar presupuestos"}
-      subtitulo={req ? `${req.deposito?.nombre ?? "—"} · pasa a "En cotización" al enviar` : undefined}
-      extra={!yaSolicitado && req ? transicion : null}
+      titulo={
+        req
+          ? agregandoAExistente
+            ? `Solicitar a otro proveedor · REQ-${String(req.id).padStart(4, "0")}`
+            : `Solicitar presupuestos · REQ-${String(req.id).padStart(4, "0")}`
+          : "Solicitar presupuestos"
+      }
+      subtitulo={
+        req
+          ? agregandoAExistente
+            ? `${req.deposito?.nombre ?? "—"} · se suma a la cotización en curso`
+            : `${req.deposito?.nombre ?? "—"} · pasa a "En cotización" al enviar`
+          : undefined
+      }
+      extra={!agregandoAExistente && !noSePuedeSolicitar && req ? transicion : null}
       onClose={onClose}
       ancho="max-w-2xl"
     >
@@ -112,11 +151,11 @@ export function SolicitarPresupuestosModal({ requerimientoId, onClose, onExito }
         <p className="px-6 py-8 text-sm text-piedra">Cargando requerimiento…</p>
       ) : !req ? (
         <p className="px-6 py-8 text-sm text-error">No se pudo cargar el requerimiento.</p>
-      ) : yaSolicitado ? (
+      ) : noSePuedeSolicitar ? (
         <div className="px-6 py-8">
           <p className="text-sm">
-            Este requerimiento ya está en estado <strong>{req.estado}</strong>: los presupuestos se piden una sola
-            vez, mientras está en "{ESTADOS_REQUERIMIENTO.PENDIENTE}".
+            Este requerimiento ya está en estado <strong>{req.estado}</strong>: los presupuestos se piden mientras
+            está en "{ESTADOS_REQUERIMIENTO.PENDIENTE}" o "{ESTADOS_REQUERIMIENTO.EN_COTIZACION}".
           </p>
           <div className="mt-5 flex justify-end">
             <Button variante="secundario" onClick={onClose}>Cerrar</Button>
@@ -197,33 +236,53 @@ export function SolicitarPresupuestosModal({ requerimientoId, onClose, onExito }
                 <Info size={13} className="mt-px flex-none" /> Solo se listan habilitados en el rubro. No es una
                 restricción oculta: si hace falta, se puede invitar a cualquier proveedor activo desde su ficha.
               </p>
+              {idsYaInvitados.size > 0 && (
+                <p className="mt-1.5 text-[11px] text-piedra">
+                  Ya invitados a este requerimiento (no se listan de nuevo):{" "}
+                  {(req.presupuestos ?? []).map((p) => p.proveedor?.razonSocial).filter(Boolean).join(", ")}.
+                </p>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg bg-hueso px-4 py-3.5">
               <div>
                 <div className="font-body text-[13.5px] font-semibold text-tinta">¿Requiere flete?</div>
-                <div className="text-[11.5px] text-piedra">Cada proveedor va a poder cargar su costo aparte del precio.</div>
+                <div className="text-[11.5px] text-piedra">
+                  {agregandoAExistente
+                    ? "Ya definido al invitar por primera vez — igual para todos los proveedores de este pedido."
+                    : "Cada proveedor va a poder cargar su costo aparte del precio."}
+                </div>
               </div>
-              <div className="inline-flex overflow-hidden rounded-full border border-borde">
-                <button
-                  type="button"
-                  onClick={() => setRequiereFlete(true)}
-                  className={`cursor-pointer px-4 py-1.5 text-[12.5px] font-medium ${
-                    requiereFlete ? "bg-pino text-hueso" : "bg-transparent text-tinta hover:bg-hueso"
+              {agregandoAExistente ? (
+                <span
+                  className={`whitespace-nowrap rounded-full px-3 py-1 text-[12.5px] font-medium ${
+                    requiereFlete ? "bg-tinta text-hueso" : "bg-white text-tinta/60"
                   }`}
                 >
-                  Sí
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setRequiereFlete(false)}
-                  className={`cursor-pointer px-4 py-1.5 text-[12.5px] font-medium ${
-                    !requiereFlete ? "bg-tinta text-hueso" : "bg-transparent text-tinta hover:bg-hueso"
-                  }`}
-                >
-                  No
-                </button>
-              </div>
+                  {requiereFlete ? "Sí" : "No"}
+                </span>
+              ) : (
+                <div className="inline-flex overflow-hidden rounded-full border border-borde">
+                  <button
+                    type="button"
+                    onClick={() => setRequiereFlete(true)}
+                    className={`cursor-pointer px-4 py-1.5 text-[12.5px] font-medium ${
+                      requiereFlete ? "bg-pino text-hueso" : "bg-transparent text-tinta hover:bg-hueso"
+                    }`}
+                  >
+                    Sí
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRequiereFlete(false)}
+                    className={`cursor-pointer px-4 py-1.5 text-[12.5px] font-medium ${
+                      !requiereFlete ? "bg-tinta text-hueso" : "bg-transparent text-tinta hover:bg-hueso"
+                    }`}
+                  >
+                    No
+                  </button>
+                </div>
+              )}
             </div>
 
             <Button type="submit" className="w-full justify-center gap-2 py-3 text-[14px]" disabled={mutacion.isPending}>

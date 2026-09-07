@@ -174,14 +174,21 @@ model RequerimientoReposicion {
   id                        Int                       @id @default(autoincrement())
   depositoId                Int
   fecha                     DateTime                  @default(now())
-  // Pendiente | En cotización | Aprobado | Sugerida | Pendiente de
-  // aprobación gerencia | Pendiente de stock | En tránsito | Recibida |
-  // Cerrada | Rechazada
+  // Sugerida | Pendiente | En cotización | Aprobado | Pendiente de stock |
+  // En tránsito | Recibida | Cerrada | Rechazada (ya no alcanzable — era
+  // solo de la excepción de compra directa que se eliminó)
   estado                    String                    @default("Pendiente")
   // "MANUAL" | "ALERTA" (stock mínimo, HU-8) | "TRANSFERENCIA_BLOQUEADA"
   // (reposición del central disparada porque una transferencia no tenía
   // stock para completarse, Sprint 3)
   origen                    String                    @default("MANUAL")
+  // Solo lo puede setear crearOSugerirReposicionCentral, al nacer en
+  // "Sugerida" (modoReposicion del artículo != AUTOMATICA) — único lugar
+  // real. Fuente de verdad para el timeline (¿existe el nodo "Sugerencia
+  // confirmada"?): reemplaza parsear texto de RequerimientoLog, que era
+  // frágil (dos formatos de mensaje distintos según quién creó el
+  // registro). Default false, sin backfill de históricos.
+  nacioComoSugerida         Boolean                   @default(false)
   requiereFlete             Boolean                   @default(false)
   solicitante               String?
   // "COMPRA" (a un proveedor externo) | "TRANSFERENCIA" (a un depósito
@@ -257,6 +264,17 @@ model Presupuesto {
   plazoEntrega    String?
   costoFlete      Decimal?                @db.Decimal(12, 2)
   fecha           DateTime                @default(now())
+  // Respaldo documental del presupuesto del proveedor (punto 9 del
+  // rediseño de Presupuestos) — un solo archivo opcional, reemplazable, no
+  // una galería. Guardado como BLOB en la misma base (sin storage externo,
+  // mismo patrón simple que ya usa el resto del proyecto): el equipo no
+  // tenía confirmado si el proceso de la API corre sobre disco persistente,
+  // así que un archivo en disco local podía perderse en cada redeploy.
+  // `archivoTamano` en bytes, para mostrarlo sin releer el blob entero.
+  archivoAdjunto  Bytes?                  @db.LongBlob
+  archivoNombre   String?
+  archivoTipo     String?
+  archivoTamano   Int?
   requerimiento   RequerimientoReposicion @relation(fields: [requerimientoId], references: [id])
   proveedor       Proveedor               @relation(fields: [proveedorId], references: [id])
   detalle         PresupuestoDetalle[]

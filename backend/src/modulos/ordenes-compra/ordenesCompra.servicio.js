@@ -32,6 +32,9 @@ async function generarOC({ presupuestoId, usuario }) {
 
   const presupuesto = await prisma.presupuesto.findUnique({
     where: { id },
+    // El archivo adjunto (punto 9 de Presupuestos) es un BLOB de hasta
+    // 5MB, sin uso acá — se omite para no traerlo de más.
+    omit: { archivoAdjunto: true },
     include: {
       detalle: true, // PresupuestoDetalle[] -> { articuloId, precioUnitario }
       requerimiento: { include: { detalle: true } }, // RequerimientoDetalle[] -> { articuloId, cantidadSolicitada }

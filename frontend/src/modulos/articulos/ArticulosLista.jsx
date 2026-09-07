@@ -10,7 +10,7 @@ import { Toast } from "../../componentes/Toast";
 import { ConfirmDialog } from "../../componentes/ConfirmDialog";
 import { ArticuloModal } from "./ArticuloModal";
 import { ArticuloDetalleModal } from "./ArticuloDetalleModal";
-import { listarArticulos, cambiarEstadoArticulo } from "./articulos.api";
+import { listarArticulos, cambiarEstadoArticulo, obtenerArticulo } from "./articulos.api";
 import { listarHabilitaciones } from "../articulo-deposito/articuloDeposito.api";
 import { UNIDADES_MEDIDA_NOMBRES } from "../articulos/articulos.constantes";
 import { useToast } from "../../lib/useToast";
@@ -51,6 +51,27 @@ export function ArticulosLista() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Mismo criterio que ?nuevo=1 arriba, pero para editar un artículo puntual:
+  // lo usa el link "Asignarle un central" del error de "sin depósito central
+  // asignado" en RequerimientoModal, así la persona cae directo en su
+  // edición en vez de tener que buscarlo a mano en el catálogo.
+  const idAEditar = Number(searchParams.get("editar"));
+  const { data: articuloAEditar } = useQuery({
+    queryKey: ["articulo", idAEditar],
+    queryFn: () => obtenerArticulo(idAEditar),
+    enabled: Number.isInteger(idAEditar) && idAEditar > 0,
+  });
+
+  useEffect(() => {
+    if (articuloAEditar) {
+      setModal({ tipo: "form", articulo: articuloAEditar });
+      const params = new URLSearchParams(searchParams);
+      params.delete("editar");
+      setSearchParams(params, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [articuloAEditar]);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["articulos", { q, estado, page }],

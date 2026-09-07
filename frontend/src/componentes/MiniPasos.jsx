@@ -1,34 +1,45 @@
-import { CATEGORIAS_REQUERIMIENTO } from "../lib/constantes";
+import { estadoDelPaso } from "./PasoAPaso";
 
-// Rediseño de Requerimientos, punto 4: indicador compacto de 4 pasos para
-// una fila de tabla — sin texto, para escanear el circuito sin leer el
-// estado. Para el stepper grande con labels de la ficha de detalle, ver
-// PasoAPaso.jsx (son dos widgets distintos a propósito: ese lleva label
-// por paso y ancho para 3 pasos, este tiene que entrar angosto en una
-// celda con 4).
-// Exportado: la leyenda de colores del listado de Requerimientos usa esta
-// misma paleta para sus referencias, en vez de repetirla a mano.
-export const COLOR_RELLENO_POR_CATEGORIA = {
-  [CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION]: "bg-error-texto",
-  [CATEGORIAS_REQUERIMIENTO.EN_CURSO]: "bg-info",
-  [CATEGORIAS_REQUERIMIENTO.COMPLETADO]: "bg-pino",
-  [CATEGORIAS_REQUERIMIENTO.CANCELADO]: "bg-neutro-500",
+// Rediseño de Requerimientos, punto 4 — indicador compacto para una fila
+// de tabla, sin texto. Reescrito para consumir el mismo {pasos, pasoActual}
+// que arma requerimientosTimeline.js (construirEtapasRequerimiento) — antes
+// tenía su propio switch/if-else independiente (requerimientosPasos.js,
+// ahora borrado) con 4 segmentos fijos, que no reflejaba caminos reales de
+// 3 a 5 pasos según tipo/origen y se desincronizó del timeline grande de
+// la ficha de detalle.
+//
+// 4 colores sólidos, uno por categoría real de paso — no "un solo color de
+// fila según categoría" como antes: cada punto es SU propio estado.
+// `estadoDelPaso` es la misma función que ya usa PasoAPaso.jsx (el
+// stepper grande de la ficha), así que las dos lecturas nunca pueden
+// divergir entre sí.
+export const COLOR_POR_ESTADO_PASO = {
+  completado: "bg-pino",
+  actual: "bg-info",
+  advertencia: "bg-laton",
+  pendiente: "bg-neutro-500",
 };
 
-const NOMBRES_PASO = ["Solicitud", "Aprobación", "Compra o transferencia", "Recepción"];
-
-// `pasoActual`: índice (0-3) del último paso alcanzado — los segmentos
-// hasta ahí se pintan con el color de `categoria`, el resto queda gris.
-export function MiniPasos({ pasoActual, categoria }) {
-  const color = COLOR_RELLENO_POR_CATEGORIA[categoria] ?? "bg-neutro-500";
+// `pasos`/`pasoActual`: salida de construirEtapasRequerimiento(r) — la
+// cantidad de puntos varía por instancia, no es un número fijo.
+// `ultimoPasoRequiereLlegada` (default true): mismo criterio que ya usa
+// PasoAPaso.jsx en la ficha de detalle — un estado intermedio (ej.
+// "Aprobado") no puede pintar el último punto como completado solo por
+// ocupar esa posición.
+export function MiniPasos({ pasos, pasoActual, ultimoPasoRequiereLlegada = true }) {
   return (
-    <div
-      className="inline-flex items-center gap-1"
-      title={`${NOMBRES_PASO[pasoActual] ?? "Solicitud"} · paso ${pasoActual + 1} de ${NOMBRES_PASO.length}`}
-    >
-      {NOMBRES_PASO.map((nombre, i) => (
-        <span key={nombre} className={`h-1.5 w-5 rounded-full ${i <= pasoActual ? color : "bg-borde"}`} />
-      ))}
+    <div className="inline-flex items-center gap-1">
+      {pasos.map((p, i) => {
+        const estadoBase = estadoDelPaso(i, pasoActual, pasos.length, ultimoPasoRequiereLlegada);
+        const estado = p.advertencia && estadoBase !== "pendiente" ? "advertencia" : estadoBase;
+        return (
+          <span
+            key={p.clave}
+            title={estado === "advertencia" ? `${p.label} — necesita revisión` : p.label}
+            className={`h-1.5 w-5 rounded-full ${COLOR_POR_ESTADO_PASO[estado]}`}
+          />
+        );
+      })}
     </div>
   );
 }

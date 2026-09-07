@@ -64,6 +64,14 @@ export function ArticuloModal({ articulo, onClose, onExito }) {
     onSuccess: ({ articuloGuardado, resultadosHabilitacion }) => {
       queryClient.invalidateQueries({ queryKey: ["articulos"] });
       queryClient.invalidateQueries({ queryKey: ["articulo-depositos"] });
+      // Sin esto, un componente que ya tiene montada esta consulta en el
+      // momento del guardado (ej. un modal de "Nuevo requerimiento" abierto
+      // de fondo en la misma pestaña) se queda con el depositoCentralId
+      // viejo en su combo "Agregar artículo" — esa consulta
+      // (RequerimientoModal.jsx) lee justamente el campo que se pudo haber
+      // cambiado acá. Clave parcial ["stock"] a propósito: invalida
+      // cualquier depositoId, no solo el que esté abierto ahora mismo.
+      queryClient.invalidateQueries({ queryKey: ["stock"] });
 
       let mensaje = editando
         ? `Artículo "${articuloGuardado.nombre}" actualizado.`

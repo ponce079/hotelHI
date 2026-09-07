@@ -41,16 +41,29 @@ import { Check, X } from "lucide-react";
 // en true, ese nodo solo se pinta completado cuando `pasoActual` avanza
 // más allá de él (pasoActual === pasos.length). Default false: no cambia
 // a Presupuestos ni Órdenes de Compra, que sí quieren esa conveniencia.
+// Determina si el paso `i` está completado/activo/pendiente — compartido
+// con MiniPasos.jsx (el indicador compacto de la lista) para que las dos
+// lecturas de "en qué parte del camino está" nunca puedan divergir entre
+// sí. Devuelve un string, no JSX: cada widget decide su propio dibujo.
+export function estadoDelPaso(i, pasoActual, totalPasos, ultimoPasoRequiereLlegada = false) {
+  const activo = i === pasoActual;
+  // El último paso, al alcanzarse, no tiene uno siguiente que lo deje
+  // "atrás" — se pinta como completado, no como "en curso", que es la
+  // marca de un paso intermedio. Salvo que el llamador pida lo contrario
+  // (ver comentario de PasoAPaso más abajo).
+  const completado = i < pasoActual || (activo && i === totalPasos - 1 && !ultimoPasoRequiereLlegada);
+  if (completado) return "completado";
+  if (activo) return "actual";
+  return "pendiente";
+}
+
 export function PasoAPaso({ pasos, pasoActual, pasoAlternativo, ultimoPasoRequiereLlegada = false }) {
   return (
     <div className="flex items-center justify-center gap-0 rounded-lg border border-borde bg-white px-6 py-5">
       {pasos.map((p, i) => {
-        const activo = i === pasoActual;
-        // El último paso, al alcanzarse, no tiene uno siguiente que lo deje
-        // "atrás" — se pinta como completado (check), no como "en curso"
-        // (punto), que es la marca de un paso intermedio. Salvo que el
-        // llamador pida lo contrario (ver comentario de arriba).
-        const completado = i < pasoActual || (activo && i === pasos.length - 1 && !ultimoPasoRequiereLlegada);
+        const estado = estadoDelPaso(i, pasoActual, pasos.length, ultimoPasoRequiereLlegada);
+        const activo = estado === "actual";
+        const completado = estado === "completado";
         return (
           <Fragment key={p.clave}>
             <div className="flex flex-col items-center gap-1.5">

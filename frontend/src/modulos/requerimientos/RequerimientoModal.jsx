@@ -10,8 +10,8 @@ import { Table } from "../../componentes/Table";
 import { crearRequerimiento, actualizarRequerimiento, obtenerRequerimiento } from "./requerimientos.api";
 import { listarDepositos } from "../depositos/depositos.api";
 import { consultarStock } from "../stock/stock.api";
-import { listarArticulos } from "../articulos/articulos.api";
-import { habilitarArticuloEnDeposito } from "../articulo-deposito/articuloDeposito.api";
+import { listarArticulos, actualizarArticulo } from "../articulos/articulos.api";
+import { habilitarArticuloEnDeposito, listarHabilitaciones } from "../articulo-deposito/articuloDeposito.api";
 import { ORIGENES_REQUERIMIENTO, TIPOS_REQUERIMIENTO } from "../../lib/constantes";
 import { useSesion } from "../../lib/sesion";
 
@@ -163,6 +163,14 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
   });
   const [articuloAAgregar, setArticuloAAgregar] = useState("");
   const [error, setError] = useState("");
+  // `errorArticuloId` lo llevan dos errores de transferencia (ver
+  // requerimientos.servicio.js): "sin central asignado" y "no habilitado en
+  // su central". `errorDepositoCentralId` solo lo lleva el segundo — es lo
+  // que distingue cuál de los dos pasó y habilita la acción correcta
+  // (editar el artículo vs. habilitarlo en ese central) en vez de un
+  // mensaje de puro texto.
+  const [errorArticuloId, setErrorArticuloId] = useState(null);
+  const [errorDepositoCentralId, setErrorDepositoCentralId] = useState(null);
   const queryClient = useQueryClient();
 
   const { data: depositos } = useQuery({ queryKey: ["depositos"], queryFn: listarDepositos });
@@ -199,20 +207,53 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
   // ya filtraba por central en Transferencia, lo que hacía que un artículo
   // sin `depositoCentralId` asignado desapareciera de la lista sin ninguna
   // explicación (bug reportado: TONER/RESMA BLANCO en Administración). Se
-  // sigue mostrando, pero deshabilitado — ver `esElegible` más abajo.
+  // sigue mostrando, pero deshabilitado — ver `motivoNoElegible` más abajo.
   const disponibles = useMemo(() => filasStock ?? [], [filasStock]);
 
-  // Sin depósito central asignado, el artículo no se puede pedir por
-  // transferencia — el sistema no tendría a quién dirigirla. Solo importa
-  // en modo Transferencia: en Compra (central o excepción) no hay ninguna
-  // restricción de este tipo.
-  function esElegible(f) {
-    return tipo !== TIPOS_REQUERIMIENTO.TRANSFERENCIA || f.depositoCentralId != null;
+  // Necesario para el segundo motivo de "no elegible": `Articulo.
+  // depositoCentralId` y la habilitación real en ese depósito
+  // (ArticuloDeposito.activo) son dos datos independientes — un artículo
+  // puede tener el central asignado en el catálogo pero no (o ya no) estar
+  // habilitado ahí (bug reportado: JABON TOCADOR DOVE). Mismo dataset que ya
+  // usan ArticulosLista.jsx/ArticuloModal.jsx, solo se pide cuando hace
+  // falta (Transferencia).
+  const { data: habilitacionesTodas } = useQuery({
+    queryKey: ["articulo-depositos"],
+    queryFn: listarHabilitaciones,
+    enabled: tipo === TIPOS_REQUERIMIENTO.TRANSFERENCIA,
+  });
+
+  function habilitadoEnCentral(articuloId, depositoCentralId) {
+    return (habilitacionesTodas ?? []).some(
+      (h) => h.articuloId === articuloId && h.depositoId === depositoCentralId && h.activo
+    );
   }
 
-  const hayNoElegiblesPorCentral = useMemo(
-    () => tipo === TIPOS_REQUERIMIENTO.TRANSFERENCIA && disponibles.some((f) => f.depositoCentralId == null),
+  // Devuelve por qué un artículo no se puede pedir por transferencia, o
+  // `null` si sí se puede — dos motivos distintos, cada uno con su propia
+  // acción correctiva (ver hints más abajo y el manejo de error al
+  // guardar): "sin-central" hay que asignarle uno en el catálogo;
+  // "no-habilitado" ya tiene central pero no está habilitado ahí.
+  function motivoNoElegible(f) {
+    if (tipo !== TIPOS_REQUERIMIENTO.TRANSFERENCIA) return null;
+    if (f.depositoCentralId == null) return "sin-central";
+    if (!habilitadoEnCentral(f.articuloId, f.depositoCentralId)) return "no-habilitado";
+    return null;
+  }
+
+  function esElegible(f) {
+    return motivoNoElegible(f) === null;
+  }
+
+  const hayFaltaCentral = useMemo(
+    () => disponibles.some((f) => motivoNoElegible(f) === "sin-central"),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [disponibles, tipo]
+  );
+  const hayNoHabilitadosEnCentral = useMemo(
+    () => disponibles.some((f) => motivoNoElegible(f) === "no-habilitado"),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [disponibles, tipo, habilitacionesTodas]
   );
 
   const yaAgregados = lineas.map((l) => l.articuloId);
@@ -263,10 +304,24 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
     navigate("/articulos?nuevo=1");
   }
 
+  // Mismo mecanismo de borrador que `irADarDeAltaArticulo` (misma pestaña,
+  // el modal se desmonta al navegar) — lo dispara el link del error "sin
+  // depósito central asignado" (ver mutación de abajo).
+  function irAAsignarCentral(articuloId) {
+    try {
+      sessionStorage.setItem(CLAVE_BORRADOR, JSON.stringify({ depositoId, lineas, guardadoEn: Date.now() }));
+    } catch {
+      // Igual que en irADarDeAltaArticulo: si no se pudo guardar, no bloquea
+      // la navegación, simplemente no habrá nada que recuperar después.
+    }
+    navigate(`/articulos?editar=${articuloId}`);
+  }
+
   function elegirDeposito(valor) {
     setDepositoId(valor);
     setLineas([]);
     setMostrarHabilitar(false);
+    setAvisoCentral("");
     // Punto 1: a compras no se le recuerda depósito entre altas — cada
     // solicitud es para "el que corresponda", no "el de siempre".
     if (!editando && !esCompras) {
@@ -316,15 +371,40 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
       a.nombre.toLowerCase().includes(busquedaCatalogo.trim().toLowerCase())
   );
 
+  // Punto nuevo: habilitar un artículo en un depósito central que todavía
+  // no tiene `depositoCentralId` asignado en el catálogo es exactamente la
+  // situación que después dispara el error "sin depósito central asignado"
+  // al pedirlo por transferencia — evitable en el momento si la persona que
+  // lo habilita ya sabe que ESTE depósito es su origen. Default tildado:
+  // es el caso más común (recién se está armando el central).
+  const [sugerirCentral, setSugerirCentral] = useState(true);
+  // Confirmación transitoria de "se marcó como central" — se limpia sola al
+  // volver a abrir el panel de habilitar o al cambiar de depósito.
+  const [avisoCentral, setAvisoCentral] = useState("");
+
   const mutacionHabilitar = useMutation({
-    // El endpoint soporta selector múltiple de depósitos (HU-4) — acá
-    // siempre es una lista de uno solo, el depósito de esta solicitud.
-    mutationFn: (articuloId) => habilitarArticuloEnDeposito({ articuloId, depositoIds: [Number(depositoId)] }),
-    onSuccess: (_data, articuloId) => {
+    // El endpoint de habilitación soporta selector múltiple de depósitos
+    // (HU-4) — acá siempre es una lista de uno solo, el depósito de esta
+    // solicitud. Recibe el artículo completo (no solo el id): si corresponde
+    // marcarlo con este central, hace falta el resto de sus campos para el
+    // PUT (actualizarArticulo no admite un parche parcial).
+    mutationFn: async (articulo) => {
+      await habilitarArticuloEnDeposito({ articuloId: articulo.id, depositoIds: [Number(depositoId)] });
+      const marcadoCentral = sugerirCentral && depositoSeleccionado?.esCentral && articulo.depositoCentralId == null;
+      if (marcadoCentral) {
+        await actualizarArticulo(articulo.id, { ...articulo, depositoCentralId: Number(depositoId) });
+      }
+      return { articuloId: articulo.id, nombreArticulo: articulo.nombre, marcadoCentral };
+    },
+    onSuccess: ({ articuloId, nombreArticulo, marcadoCentral }) => {
       // El stock recién habilitado (sin fila de ArticuloDepositoStock
       // todavía) igual aparece en /api/stock — datosDe() ya sabe mostrar
       // "—" cuando no hay stockActual/stockMinimo cargado.
       queryClient.invalidateQueries({ queryKey: ["stock", { depositoId }] });
+      if (marcadoCentral) {
+        queryClient.invalidateQueries({ queryKey: ["articulos-catalogo-completo"] });
+        setAvisoCentral(`"${nombreArticulo}" quedó con ${depositoSeleccionado?.nombre} como depósito central de origen.`);
+      }
       setLineas((prev) => (prev.some((l) => l.articuloId === articuloId) ? prev : [...prev, { articuloId, cantidadSolicitada: "" }]));
       setMostrarHabilitar(false);
       setBusquedaCatalogo("");
@@ -357,13 +437,37 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
         guardado
       );
     },
-    onError: (err) =>
-      setError(err?.response?.data?.error ?? `No se pudo ${editando ? "actualizar" : "crear"} el requerimiento.`),
+    onError: (err) => {
+      setError(err?.response?.data?.error ?? `No se pudo ${editando ? "actualizar" : "crear"} el requerimiento.`);
+      setErrorArticuloId(err?.response?.data?.articuloId ?? null);
+      setErrorDepositoCentralId(err?.response?.data?.depositoCentralId ?? null);
+    },
+  });
+
+  // Acción rápida del error "no habilitado en su central": habilita el
+  // artículo ahí mismo (mismo endpoint que ya usa el flujo de "Habilitar
+  // artículo" de este modal, apuntado al depósito CENTRAL en vez del que
+  // está pidiendo) — evita mandar a la persona a buscarlo a mano en
+  // /depositos. La línea ya está en `lineas` (el submit falló, no se
+  // limpia), así que después de esto alcanza con volver a apretar "Crear
+  // requerimiento".
+  const mutacionHabilitarEnCentral = useMutation({
+    mutationFn: () =>
+      habilitarArticuloEnDeposito({ articuloId: errorArticuloId, depositoIds: [errorDepositoCentralId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["stock"] });
+      queryClient.invalidateQueries({ queryKey: ["articulo-depositos"] });
+      setError("");
+      setErrorArticuloId(null);
+      setErrorDepositoCentralId(null);
+    },
   });
 
   function handleSubmit(e) {
     e.preventDefault();
     setError("");
+    setErrorArticuloId(null);
+    setErrorDepositoCentralId(null);
     if (!depositoId) return setError("Elegí el depósito que necesita la reposición.");
     if (lineas.length === 0) return setError("Agregá al menos un artículo al requerimiento.");
     const sinCantidad = lineas.find((l) => !(Number(l.cantidadSolicitada) > 0));
@@ -399,7 +503,38 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
             </div>
           )}
 
-          {error && <p className="text-sm text-error">{error}</p>}
+          {error && (
+            <p className="text-sm text-error">
+              {error}
+              {errorArticuloId != null && errorDepositoCentralId == null && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    onClick={() => irAAsignarCentral(errorArticuloId)}
+                    className="cursor-pointer underline hover:opacity-80"
+                  >
+                    Asignarle un central ahora
+                  </button>
+                </>
+              )}
+              {errorDepositoCentralId != null && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    disabled={mutacionHabilitarEnCentral.isPending}
+                    onClick={() => mutacionHabilitarEnCentral.mutate()}
+                    className="cursor-pointer underline hover:opacity-80 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {mutacionHabilitarEnCentral.isPending
+                      ? "Habilitando…"
+                      : `Habilitar ahora en ${depositosDisponibles.find((d) => d.id === errorDepositoCentralId)?.nombre ?? "el central"}`}
+                  </button>
+                </>
+              )}
+            </p>
+          )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="flex flex-col gap-1.5">
@@ -469,12 +604,16 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
                   <option value="">{depositoId ? "Buscar artículo…" : "Elegí primero un depósito"}</option>
                   {disponibles
                     .filter((f) => !yaAgregados.includes(f.articuloId))
-                    .map((f) => (
-                      <option key={f.articuloDepositoId} value={f.articuloId} disabled={!esElegible(f)}>
-                        {f.nombre} — stock {f.stockActual} {f.unidadMedida}
-                        {!esElegible(f) ? " (sin central asignado)" : ""}
-                      </option>
-                    ))}
+                    .map((f) => {
+                      const motivo = motivoNoElegible(f);
+                      return (
+                        <option key={f.articuloDepositoId} value={f.articuloId} disabled={motivo !== null}>
+                          {f.nombre} — stock {f.stockActual} {f.unidadMedida}
+                          {motivo === "sin-central" ? " (sin central asignado)" : ""}
+                          {motivo === "no-habilitado" ? " (no habilitado en el central)" : ""}
+                        </option>
+                      );
+                    })}
                 </Select>
               </div>
               <Button type="button" variante="secundario" onClick={agregarArticulo} disabled={!articuloAAgregar}>
@@ -482,10 +621,16 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
               </Button>
             </div>
 
-            {hayNoElegiblesPorCentral && (
+            {hayFaltaCentral && (
               <p className="mt-2 text-[11.5px] text-piedra">
-                Los artículos marcados "sin central asignado" no se pueden pedir por transferencia — pedile a compras
+                Los artículos marcados "sin central asignado" no se pueden pedir por transferencia — pedile a depósito
                 que los clasifique.
+              </p>
+            )}
+            {hayNoHabilitadosEnCentral && (
+              <p className="mt-2 text-[11.5px] text-piedra">
+                Los artículos marcados "no habilitado en el central" ya tienen un depósito central asignado, pero no
+                están habilitados ahí — pedile a depósito que los habilite en su central de origen.
               </p>
             )}
 
@@ -503,13 +648,20 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
               ) : !mostrarHabilitar ? (
                 <button
                   type="button"
-                  onClick={() => setMostrarHabilitar(true)}
+                  onClick={() => {
+                    setMostrarHabilitar(true);
+                    setAvisoCentral("");
+                  }}
                   disabled={!depositoId}
                   className="text-[12px] text-piedra underline hover:text-tinta disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   ¿No lo encontrás? Habilitar un artículo en este depósito
                 </button>
-              ) : (
+              ) : null}
+              {!mostrarHabilitar && avisoCentral && (
+                <p className="mt-1.5 text-[11.5px] text-pino-700">{avisoCentral}</p>
+              )}
+              {mostrarHabilitar && (
                 <div className="rounded-lg border border-borde bg-hueso p-3">
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-body text-[12px] font-semibold text-tinta">Habilitar artículo del catálogo</span>
@@ -540,7 +692,7 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
                           key={a.id}
                           type="button"
                           disabled={mutacionHabilitar.isPending}
-                          onClick={() => mutacionHabilitar.mutate(a.id)}
+                          onClick={() => mutacionHabilitar.mutate(a)}
                           className="flex w-full cursor-pointer items-center justify-between rounded-md px-2 py-1.5 text-left text-[13px] hover:bg-white disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           <span>{a.nombre}</span>
@@ -549,6 +701,21 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
                       ))
                     )}
                   </div>
+                  {depositoSeleccionado?.esCentral && (
+                    <label className="mt-2 flex items-start gap-1.5 text-[11.5px] text-piedra">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5 h-3.5 w-3.5 rounded border-borde"
+                        checked={sugerirCentral}
+                        onChange={(e) => setSugerirCentral(e.target.checked)}
+                      />
+                      <span>
+                        Si el artículo todavía no tiene un depósito central de origen asignado, marcar a{" "}
+                        <strong>{depositoSeleccionado.nombre}</strong> como tal (para que después pueda pedirse por
+                        transferencia).
+                      </span>
+                    </label>
+                  )}
                   <button
                     type="button"
                     onClick={irADarDeAltaArticulo}

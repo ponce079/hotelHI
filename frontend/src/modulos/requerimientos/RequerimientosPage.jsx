@@ -7,7 +7,7 @@ import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Select } from "../../componentes/Select";
 import { Cifra } from "../../componentes/Cifra";
-import { MiniPasos, COLOR_RELLENO_POR_CATEGORIA } from "../../componentes/MiniPasos";
+import { MiniPasos, COLOR_POR_ESTADO_PASO } from "../../componentes/MiniPasos";
 import { MenuAcciones } from "../../componentes/MenuAcciones";
 import { Pagination } from "../../componentes/Pagination";
 import { SinPermiso } from "../../componentes/SinPermiso";
@@ -30,7 +30,7 @@ import {
   VARIANTE_POR_CATEGORIA,
   categoriaDeRequerimiento,
 } from "../../lib/constantes";
-import { pasoDeRequerimiento } from "../../lib/requerimientosPasos";
+import { construirEtapasRequerimiento } from "../../lib/requerimientosTimeline";
 import { formatearFechaSolo } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
@@ -68,12 +68,16 @@ const TARJETAS = [
 
 // Punto 4 del pedido: referencia fija de qué significa cada color de la
 // columna Progreso, para no depender de que el usuario lo infiera solo.
-// Misma paleta que MiniPasos.jsx (importada de ahí, no repetida a mano).
+// Misma paleta que MiniPasos.jsx (importada de ahí, no repetida a mano) —
+// ahora son 4 puntos por ESTADO DE PASO (completado/actual/advertencia/
+// pendiente), no por categoría de fila: cada punto de MiniPasos es su
+// propio estado, ya no "toda la fila pintada del mismo color". El color
+// de categoría de la fila entera sigue viéndose en la columna Estado.
 const LEYENDA_PROGRESO = [
-  { categoria: CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION, label: "Necesita acción" },
-  { categoria: CATEGORIAS_REQUERIMIENTO.EN_CURSO, label: "En curso" },
-  { categoria: CATEGORIAS_REQUERIMIENTO.COMPLETADO, label: "Completado" },
-  { categoria: CATEGORIAS_REQUERIMIENTO.CANCELADO, label: "Cancelado" },
+  { clave: "completado", label: "Completado" },
+  { clave: "actual", label: "En curso" },
+  { clave: "advertencia", label: "Necesita revisión" },
+  { clave: "pendiente", label: "Pendiente" },
 ];
 
 export function RequerimientosPage() {
@@ -352,8 +356,8 @@ export function RequerimientosPage() {
                 <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 font-body text-[11px] text-piedra">
                   <span className="font-semibold uppercase tracking-[0.06em] text-tinta/55">Progreso:</span>
                   {LEYENDA_PROGRESO.map((l) => (
-                    <span key={l.categoria} className="flex items-center gap-1.5">
-                      <span className={`h-2 w-2 rounded-full ${COLOR_RELLENO_POR_CATEGORIA[l.categoria]}`} />
+                    <span key={l.clave} className="flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${COLOR_POR_ESTADO_PASO[l.clave]}`} />
                       {l.label}
                     </span>
                   ))}
@@ -405,7 +409,7 @@ export function RequerimientosPage() {
                       <td className="px-3 py-2.5 text-right align-middle font-body text-[12.5px]">{r.cantidadArticulos}</td>
                       <td className="px-3 py-2.5 align-middle">
                         {!r.anulado && r.estado !== ESTADOS_REQUERIMIENTO.RECHAZADA && (
-                          <MiniPasos pasoActual={pasoDeRequerimiento(r)} categoria={cat} />
+                          <MiniPasos {...construirEtapasRequerimiento(r)} />
                         )}
                       </td>
                       <td className="px-3 py-2.5 align-middle">

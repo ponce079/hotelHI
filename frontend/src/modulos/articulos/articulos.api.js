@@ -5,6 +5,11 @@ export async function listarArticulos(params) {
   return data;
 }
 
+export async function obtenerArticulo(id) {
+  const { data } = await api.get(`/articulos/${id}`);
+  return data;
+}
+
 export async function crearArticulo(payload) {
   const { data } = await api.post("/articulos", payload);
   return data;

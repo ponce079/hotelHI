@@ -106,4 +106,66 @@ async function postAprobarPresupuesto(req, res) {
   }
 }
 
-module.exports = { getPresupuestos, getPresupuestoPorId, putCargarPresupuesto, postAprobarPresupuesto };
+// Punto 9 — respaldo documental del presupuesto (PDF/imagen), guardado
+// como BLOB en la misma base (ver comentario de schema.prisma sobre por
+// qué no se usó disco local ni storage externo). `multer` (memoryStorage)
+// ya validó el límite de tamaño antes de llegar acá — ver presupuestos.routes.js.
+async function getAdjuntoPresupuesto(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+
+  try {
+    const presupuesto = await presupuestosServicio.obtenerAdjuntoPresupuesto(id);
+    if (!presupuesto || !presupuesto.archivoAdjunto) {
+      return res.status(404).json({ error: "Este presupuesto no tiene un archivo adjunto." });
+    }
+    res.setHeader("Content-Type", presupuesto.archivoTipo || "application/octet-stream");
+    // inline (no "attachment"): un PDF/imagen se puede previsualizar en el
+    // navegador, no hace falta forzar la descarga.
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(presupuesto.archivoNombre || "adjunto")}"`);
+    return res.send(presupuesto.archivoAdjunto);
+  } catch (err) {
+    console.error("Error al obtener el adjunto del presupuesto:", err);
+    return res.status(500).json({ error: "No se pudo obtener el archivo adjunto." });
+  }
+}
+
+async function postAdjuntoPresupuesto(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+  if (!req.file) return res.status(400).json({ error: "No se recibió ningún archivo." });
+
+  try {
+    const resultado = await presupuestosServicio.guardarAdjuntoPresupuesto(id, {
+      buffer: req.file.buffer,
+      mimetype: req.file.mimetype,
+      originalname: req.file.originalname,
+      size: req.file.size,
+    });
+    return res.status(201).json(resultado);
+  } catch (err) {
+    return manejarError(res, err, "No se pudo guardar el archivo adjunto.");
+  }
+}
+
+async function deleteAdjuntoPresupuesto(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+
+  try {
+    await presupuestosServicio.eliminarAdjuntoPresupuesto(id);
+    return res.status(204).end();
+  } catch (err) {
+    return manejarError(res, err, "No se pudo eliminar el archivo adjunto.");
+  }
+}
+
+module.exports = {
+  getPresupuestos,
+  getPresupuestoPorId,
+  putCargarPresupuesto,
+  postAprobarPresupuesto,
+  getAdjuntoPresupuesto,
+  postAdjuntoPresupuesto,
+  deleteAdjuntoPresupuesto,
+};

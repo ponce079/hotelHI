@@ -13,8 +13,13 @@ import { ComparacionPresupuestosPage } from "./ComparacionPresupuestosPage";
 import { SolicitarPresupuestosModal } from "./SolicitarPresupuestosModal";
 import { listarRequerimientos } from "../requerimientos/requerimientos.api";
 import { listarDepositos } from "../depositos/depositos.api";
-import { ESTADOS_REQUERIMIENTO, VARIANTE_ESTADO_REQUERIMIENTO, ORIGENES_REQUERIMIENTO } from "../../lib/constantes";
-import { formatearFechaSolo } from "../../lib/fechas";
+import {
+  ESTADOS_REQUERIMIENTO,
+  VARIANTE_ESTADO_REQUERIMIENTO,
+  ORIGENES_REQUERIMIENTO,
+  TIPOS_REQUERIMIENTO,
+} from "../../lib/constantes";
+import { formatearFechaSolo, diasDesde } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 
@@ -28,6 +33,17 @@ import { useToast } from "../../lib/useToast";
 // acotar con estas mismas pestañas — mismos colores que RequerimientosPage
 // (Todos=tinta, Por solicitar/En cotización=laton, Adjudicados=pino) para
 // que el mismo estado se vea igual en las dos pantallas.
+// "Todos" (bug reportado) no es de verdad "todo lo que hay tipo COMPRA" —
+// es "todo lo que sigue activo en ESTE circuito de 3 etapas". "Sugerida"
+// vive en /requerimientos (todavía no es un pedido confirmado, nada que
+// cotizar); "Cerrada"/"Rechazada" ya salieron del circuito (la compra
+// terminó o se descartó) — mostrarlas acá era ruido, no señal.
+const ESTADOS_CIRCUITO_PRESUPUESTOS = [
+  ESTADOS_REQUERIMIENTO.PENDIENTE,
+  ESTADOS_REQUERIMIENTO.EN_COTIZACION,
+  ESTADOS_REQUERIMIENTO.APROBADO,
+];
+
 const ESTADOS_FILTRO = [
   { valor: "", label: "Todos", activo: "border-tinta bg-tinta text-hueso" },
   { valor: ESTADOS_REQUERIMIENTO.PENDIENTE, label: "Por solicitar", activo: "border-laton bg-laton text-hueso" },
@@ -46,6 +62,51 @@ function varianteCotizaciones(cotizados, total) {
   if (cotizados === 0) return "error";
   if (cotizados < total) return "alerta";
   return "ok";
+}
+
+// Punto 4 del rediseño: más de este umbral sin respuesta de ningún
+// proveedor invitado amerita seguimiento manual — número elegido a criterio
+// (no hay un SLA formal de proveedores todavía), fácil de ajustar acá si
+// hace falta más adelante.
+const DIAS_ALERTA_SIN_RESPUESTA = 3;
+
+// Orden por defecto (punto 5): prioriza lo más urgente de resolver dentro
+// del circuito de presupuestos — primero lo que ni se solicitó (más viejo
+// primero, porque es lo que lleva más tiempo sin arrancar), después lo que
+// ya se solicitó y espera respuesta (más días esperando primero), y al
+// final lo ya adjudicado (más reciente primero, es solo referencia). El
+// pin de "urgente abierto" que ya aplica el backend se respeta como
+// criterio previo — un urgente sigue arriba de todo, esto solo decide el
+// orden DENTRO de cada uno de esos dos grupos.
+function prioridadEstado(estado) {
+  if (estado === ESTADOS_REQUERIMIENTO.PENDIENTE) return 0;
+  if (estado === ESTADOS_REQUERIMIENTO.EN_COTIZACION) return 1;
+  if (estado === ESTADOS_REQUERIMIENTO.APROBADO) return 2;
+  // Cualquier otro estado no pertenece de verdad a este circuito (ver punto
+  // 1, todavía sin resolver) — se dejan al final, no se les inventa un
+  // criterio de orden que no pidieron.
+  return 3;
+}
+
+function compararParaPresupuestos(a, b) {
+  const pa = prioridadEstado(a.estado);
+  const pb = prioridadEstado(b.estado);
+  if (pa !== pb) return pa - pb;
+  if (pa === 0) return new Date(a.fecha) - new Date(b.fecha); // Por solicitar: más antiguo primero
+  if (pa === 1) {
+    return diasDesde(b.fechaSolicitudCotizacion ?? b.fecha) - diasDesde(a.fechaSolicitudCotizacion ?? a.fecha); // En cotización: más días esperando primero
+  }
+  return new Date(b.fecha) - new Date(a.fecha); // Adjudicados (y el resto): más reciente primero
+}
+
+function ordenarPresupuestos(items) {
+  const estadosFinalizados = [ESTADOS_REQUERIMIENTO.CERRADA, ESTADOS_REQUERIMIENTO.RECHAZADA];
+  const esUrgenteAbierto = (r) => r.urgente && !r.anulado && !estadosFinalizados.includes(r.estado);
+  return [...items].sort((a, b) => {
+    const urgenteDiff = Number(esUrgenteAbierto(b)) - Number(esUrgenteAbierto(a));
+    if (urgenteDiff !== 0) return urgenteDiff;
+    return compararParaPresupuestos(a, b);
+  });
 }
 
 // Una sola ruta /presupuestos con dos caras: con ?requerimientoId= es la
@@ -82,11 +143,22 @@ export function PresupuestosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Bug reportado: sin `tipo`, esta pantalla traía TRANSFERENCIA además de
+  // COMPRA (una transferencia nunca pide presupuesto a proveedores, no
+  // pertenece acá bajo ningún estado).
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["requerimientos", { estado, q, depositoId, pageSize: 50 }],
-    queryFn: () => listarRequerimientos({ estado, q, depositoId, pageSize: 50 }),
+    queryKey: ["requerimientos", { estado, q, depositoId, tipo: TIPOS_REQUERIMIENTO.COMPRA, pageSize: 50 }],
+    queryFn: () => listarRequerimientos({ estado, q, depositoId, tipo: TIPOS_REQUERIMIENTO.COMPRA, pageSize: 50 }),
     enabled: !requerimientoId && (puede("gestionarPresupuestos") || puede("aprobarPresupuesto")),
   });
+
+  // "Todos" (estado === "") no filtra por un único valor en el backend —
+  // acá se lo acota al circuito de 3 etapas real (ver comentario de
+  // ESTADOS_CIRCUITO_PRESUPUESTOS). Con una pestaña puntual seleccionada
+  // esto no hace nada (el backend ya trajo un solo estado exacto).
+  const items = (data?.items ?? []).filter(
+    (r) => estado !== "" || ESTADOS_CIRCUITO_PRESUPUESTOS.includes(r.estado)
+  );
 
   const { data: depositos } = useQuery({
     queryKey: ["depositos"],
@@ -174,7 +246,7 @@ export function PresupuestosPage() {
       {data && (
         <div className="rounded-lg border border-borde bg-white p-5">
           <div className="mb-3 text-xs text-piedra">
-            {data.total} requerimiento{data.total === 1 ? "" : "s"}{" "}
+            {items.length} requerimiento{items.length === 1 ? "" : "s"}{" "}
             {estado === ""
               ? "en el circuito de presupuestos"
               : estado === ESTADOS_REQUERIMIENTO.APROBADO
@@ -186,26 +258,38 @@ export function PresupuestosPage() {
           <Table
             columnas={["N°", "Fecha", "Depósito", "Artículos", "Cotizaciones", "Estado", ""]}
             columnasDerecha={["Artículos", "Cotizaciones"]}
-            filas={data.items}
+            filas={ordenarPresupuestos(items)}
             vacio={hayFiltros ? "Ningún requerimiento coincide con los filtros." : "No hay requerimientos en este estado por ahora."}
             renderFila={(r) => {
-              const esPorSolicitar = r.estado === ESTADOS_REQUERIMIENTO.PENDIENTE;
+              // Punto 2 del rediseño: tanto el botón como el click de la
+              // fila reflejan si YA se solicitó cotización (tenga o no
+              // respuestas todavía), no el estado puntual — más directo, y
+              // evita que el botón diga "Solicitar" mientras el click de la
+              // fila abriera la comparación (vacía) en vez del modal, que es
+              // justo lo que pasaba con las filas que no pertenecen de
+              // verdad a este circuito (ver punto 1, TRANSFERENCIA/Sugerida
+              // sin presupuestos). Si de verdad no se puede pedir para este
+              // requerimiento (tipo TRANSFERENCIA, o ya no está en
+              // "Pendiente"), el propio modal lo va a rechazar con el error
+              // real del backend — mejor eso que navegar a una pantalla
+              // vacía sin explicación.
+              const necesitaSolicitar = r.cantidadPresupuestos === 0;
               // Solicitar presupuestos es tarea de Compras — el gerente
               // puede ver este tab (transparencia sobre el pipeline) pero
               // no dispara el modal de acción.
-              const puedeSolicitar = esPorSolicitar && puede("gestionarPresupuestos");
+              const puedeSolicitar = necesitaSolicitar && puede("gestionarPresupuestos");
               return (
                 <tr
                   key={r.id}
                   onClick={() => {
-                    if (esPorSolicitar) {
+                    if (necesitaSolicitar) {
                       if (puedeSolicitar) setParaSolicitar(r);
                     } else {
                       navigate(`/presupuestos?requerimientoId=${r.id}`);
                     }
                   }}
                   className={`border-b border-borde last:border-0 hover:bg-hueso ${
-                    esPorSolicitar && !puedeSolicitar ? "" : "cursor-pointer"
+                    necesitaSolicitar && !puedeSolicitar ? "" : "cursor-pointer"
                   }`}
                 >
                   <td className="px-3 py-2 font-mono text-xs">
@@ -221,7 +305,7 @@ export function PresupuestosPage() {
                   <td className="px-3 py-2 text-right font-body text-[12.5px]">{r.cantidadArticulos}</td>
                   <td className="px-3 py-2 text-right font-body text-[12.5px]">
                     {r.cantidadPresupuestos === 0 ? (
-                      <span className="text-piedra">—</span>
+                      <span className="text-piedra">Sin solicitar</span>
                     ) : (
                       <Badge variante={varianteCotizaciones(r.presupuestosCotizados, r.cantidadPresupuestos)}>
                         {r.presupuestosCotizados}/{r.cantidadPresupuestos}
@@ -230,13 +314,25 @@ export function PresupuestosPage() {
                   </td>
                   <td className="px-3 py-2">
                     <Badge variante={VARIANTE_ESTADO_REQUERIMIENTO[r.estado] ?? "neutro"}>{r.estado}</Badge>
+                    {r.estado === ESTADOS_REQUERIMIENTO.EN_COTIZACION &&
+                      r.fechaSolicitudCotizacion &&
+                      (() => {
+                        const dias = diasDesde(r.fechaSolicitudCotizacion);
+                        const alerta = dias > DIAS_ALERTA_SIN_RESPUESTA;
+                        return (
+                          <div className={`mt-1 flex items-center gap-1 text-[10.5px] ${alerta ? "text-error" : "text-piedra"}`}>
+                            <span className={`inline-block h-1.5 w-1.5 rounded-full ${alerta ? "bg-error" : "bg-piedra"}`} />
+                            {dias === 0 ? "Solicitado hoy" : `${dias} día${dias === 1 ? "" : "s"} esperando respuesta`}
+                          </div>
+                        );
+                      })()}
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {esPorSolicitar && !puedeSolicitar ? (
+                    {necesitaSolicitar && !puedeSolicitar ? (
                       <span className="text-[11.5px] text-piedra">Sin acción</span>
                     ) : (
                       <Button variante="secundario" tamano="fila">
-                        {esPorSolicitar ? "Solicitar →" : "Comparar →"}
+                        {necesitaSolicitar ? "Solicitar →" : "Comparar →"}
                       </Button>
                     )}
                   </td>

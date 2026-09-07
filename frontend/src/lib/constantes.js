@@ -56,10 +56,14 @@ export const CATEGORIA_POR_ESTADO = {
   [ESTADOS_REQUERIMIENTO.PENDIENTE]: CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION,
   [ESTADOS_REQUERIMIENTO.SUGERIDA]: CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION,
   [ESTADOS_REQUERIMIENTO.PENDIENTE_DE_STOCK]: CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION,
+  // "Recibida" implica que la recepción tuvo una diferencia sin resolver:
+  // alguien de compras todavía tiene que revisarla antes de que pase a
+  // Cerrada. Mismo criterio que el nodo ámbar del timeline
+  // (requerimientosTimeline.js) — no es un estado "completado" todavía.
+  [ESTADOS_REQUERIMIENTO.RECIBIDA]: CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION,
   [ESTADOS_REQUERIMIENTO.EN_COTIZACION]: CATEGORIAS_REQUERIMIENTO.EN_CURSO,
   [ESTADOS_REQUERIMIENTO.APROBADO]: CATEGORIAS_REQUERIMIENTO.EN_CURSO,
   [ESTADOS_REQUERIMIENTO.EN_TRANSITO]: CATEGORIAS_REQUERIMIENTO.EN_CURSO,
-  [ESTADOS_REQUERIMIENTO.RECIBIDA]: CATEGORIAS_REQUERIMIENTO.COMPLETADO,
   [ESTADOS_REQUERIMIENTO.CERRADA]: CATEGORIAS_REQUERIMIENTO.COMPLETADO,
   [ESTADOS_REQUERIMIENTO.RECHAZADA]: CATEGORIAS_REQUERIMIENTO.CANCELADO,
 };
@@ -117,6 +121,13 @@ export const VARIANTE_ESTADO_PRESUPUESTO = {
   Rechazado: "error",
   Adjudicado: "ok",
 };
+
+// Plazo de entrega de un presupuesto (HU-83): número de días + esta unidad
+// fija, en vez de texto libre — así se puede comparar objetivamente entre
+// proveedores en la pantalla de comparación (ver parsearDiasPlazo en
+// lib/fechas.js). Presupuesto.plazoEntrega sigue siendo un String en la
+// base: esto arma/valida el texto ("5 días hábiles"), no cambia el modelo.
+export const UNIDADES_PLAZO_ENTREGA = { HABILES: "días hábiles", CORRIDOS: "días corridos" };
 
 // Rubro del proveedor <-> categoría del artículo (HU-82). El backend
 // valida lo mismo con esta tabla (es el que manda); acá se usa para el

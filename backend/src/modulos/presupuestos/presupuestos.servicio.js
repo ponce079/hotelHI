@@ -49,6 +49,14 @@ const INCLUDE_FICHA = {
   ordenCompra: { select: { id: true, numero: true } },
 };
 
+// Punto 9 (adjuntar presupuesto): `archivoAdjunto` es un BLOB que puede
+// pesar hasta 5MB — nunca debe viajar en un listado ni en una ficha de
+// paso, solo en el endpoint dedicado a descargarlo. Todo `include` de acá
+// abajo que no sea ESE endpoint usa este `omit` (Prisma trae todos los
+// escalares por default con `include`, no hay forma de "no pedirlo" salvo
+// excluirlo a mano).
+const OMIT_ARCHIVO = { archivoAdjunto: true };
+
 // Total de un presupuesto = Σ (precioUnitario × cantidad solicitada) + flete.
 // La cantidad NO vive en PresupuestoDetalle: es la del requerimiento, que
 // es la misma para todos los proveedores invitados (por eso son
@@ -83,7 +91,7 @@ async function solicitarPresupuestos(requerimientoId, { proveedorIds, requiereFl
   const requerimiento = await prisma.requerimientoReposicion.findUnique({
     where: { id: requerimientoId },
     include: {
-      presupuestos: true,
+      presupuestos: { omit: OMIT_ARCHIVO },
       detalle: { include: { articulo: { select: { categoria: true } } } },
     },
   });
@@ -93,9 +101,16 @@ async function solicitarPresupuestos(requerimientoId, { proveedorIds, requiereFl
   if (requerimiento.tipo === TIPOS_REQUERIMIENTO.TRANSFERENCIA) {
     throw new ErrorDeNegocio('Un requerimiento de tipo "TRANSFERENCIA" no pide presupuestos a proveedores.', 409);
   }
-  if (requerimiento.estado !== ESTADOS_REQUERIMIENTO.PENDIENTE) {
+  // Punto 4 (Comparación de presupuestos): además del alta inicial
+  // (Pendiente -> En cotización), esta misma función ahora también cubre
+  // "sumar un proveedor más" a uno que YA está en cotización — evita
+  // duplicar en un segundo lugar la validación de rubro/proveedor activo.
+  // Una vez Aprobado (o cualquier otro estado) ya no se puede: adjudicar
+  // cierra la comparación.
+  const yaEnCotizacion = requerimiento.estado === ESTADOS_REQUERIMIENTO.EN_COTIZACION;
+  if (!yaEnCotizacion && requerimiento.estado !== ESTADOS_REQUERIMIENTO.PENDIENTE) {
     throw new ErrorDeNegocio(
-      `Solo se pueden pedir presupuestos de un requerimiento en estado "${ESTADOS_REQUERIMIENTO.PENDIENTE}" (este está en "${requerimiento.estado}")`,
+      `Solo se pueden pedir presupuestos de un requerimiento en estado "${ESTADOS_REQUERIMIENTO.PENDIENTE}" o "${ESTADOS_REQUERIMIENTO.EN_COTIZACION}" (este está en "${requerimiento.estado}")`,
       409
     );
   }
@@ -111,6 +126,19 @@ async function solicitarPresupuestos(requerimientoId, { proveedorIds, requiereFl
   const inactivo = proveedores.find((p) => !p.activo);
   if (inactivo) {
     throw new ErrorDeNegocio(`El proveedor "${inactivo.razonSocial}" está dado de baja y no puede ser invitado`, 400);
+  }
+
+  // Sumar un proveedor ya invitado chocaría contra el
+  // @@unique([requerimientoId, proveedorId]) con un P2002 sin explicación
+  // — se valida acá para dar un mensaje claro de cuál.
+  const idsYaInvitados = new Set(requerimiento.presupuestos.map((p) => p.proveedorId));
+  const yaInvitados = proveedores.filter((p) => idsYaInvitados.has(p.id));
+  if (yaInvitados.length > 0) {
+    const nombres = yaInvitados.map((p) => p.razonSocial).join(", ");
+    throw new ErrorDeNegocio(
+      `${nombres} ya ${yaInvitados.length === 1 ? "fue invitado" : "fueron invitados"} a cotizar este requerimiento.`,
+      409
+    );
   }
 
   // HU-82: solo se puede invitar a proveedores habilitados para el rubro
@@ -140,15 +168,23 @@ async function solicitarPresupuestos(requerimientoId, { proveedorIds, requiereFl
         estado: ESTADOS_PRESUPUESTO.SOLICITADO,
       })),
     });
-    await tx.requerimientoReposicion.update({
-      where: { id: requerimientoId },
-      data: { estado: ESTADOS_REQUERIMIENTO.EN_COTIZACION, requiereFlete: Boolean(requiereFlete) },
-    });
+    // `requiereFlete` es una condición del pedido, igual para todos los
+    // invitados (ver comentario de arriba) — si ya estaba "En cotización"
+    // ese valor ya está fijado por la invitación inicial y no se pisa acá
+    // solo porque alguien sume un proveedor más.
+    if (!yaEnCotizacion) {
+      await tx.requerimientoReposicion.update({
+        where: { id: requerimientoId },
+        data: { estado: ESTADOS_REQUERIMIENTO.EN_COTIZACION, requiereFlete: Boolean(requiereFlete) },
+      });
+    }
   }, OPCIONES_TRANSACCION);
 
   return prisma.requerimientoReposicion.findUnique({
     where: { id: requerimientoId },
-    include: { presupuestos: { include: { proveedor: { select: { id: true, razonSocial: true } } } } },
+    include: {
+      presupuestos: { omit: OMIT_ARCHIVO, include: { proveedor: { select: { id: true, razonSocial: true } } } },
+    },
   });
 }
 
@@ -158,6 +194,7 @@ async function solicitarPresupuestos(requerimientoId, { proveedorIds, requiereFl
 async function cargarPresupuesto(id, { precios, plazoEntrega, costoFlete }) {
   const presupuesto = await prisma.presupuesto.findUnique({
     where: { id },
+    omit: OMIT_ARCHIVO,
     include: { requerimiento: { include: { detalle: true } } },
   });
   if (!presupuesto) throw new ErrorDeNegocio("Presupuesto no encontrado", 404);
@@ -214,7 +251,9 @@ async function cargarPresupuesto(id, { precios, plazoEntrega, costoFlete }) {
   }, OPCIONES_TRANSACCION);
 
   // La ficha con includes son varias consultas más: fuera del commit.
-  return conTotales(await prisma.presupuesto.findUnique({ where: { id }, include: INCLUDE_FICHA }));
+  return conTotales(
+    await prisma.presupuesto.findUnique({ where: { id }, omit: OMIT_ARCHIVO, include: INCLUDE_FICHA })
+  );
 }
 
 // HU-84 — la transacción más importante del sprint. Adjudicar un
@@ -239,8 +278,9 @@ async function aprobarPresupuesto(id, usuario) {
 
     const presupuesto = await tx.presupuesto.findUnique({
       where: { id },
+      omit: OMIT_ARCHIVO,
       include: {
-        requerimiento: { include: { presupuestos: true } },
+        requerimiento: { include: { presupuestos: { omit: OMIT_ARCHIVO } } },
         proveedor: { select: { razonSocial: true } },
       },
     });
@@ -289,7 +329,9 @@ async function aprobarPresupuesto(id, usuario) {
 
   // La ficha con includes queda fuera del commit — ver comentario de
   // cargarPresupuesto sobre por qué (P2028 con la base remota).
-  return conTotales(await prisma.presupuesto.findUnique({ where: { id }, include: INCLUDE_FICHA }));
+  return conTotales(
+    await prisma.presupuesto.findUnique({ where: { id }, omit: OMIT_ARCHIVO, include: INCLUDE_FICHA })
+  );
 }
 
 // Sprint 3 — punto 9: "compra express". Para un requerimiento COMPRA
@@ -335,6 +377,7 @@ async function listarPresupuestos({ requerimientoId, proveedorId, estado } = {})
       ...(proveedorId ? { proveedorId: Number(proveedorId) } : {}),
       ...(estado ? { estado } : {}),
     },
+    omit: OMIT_ARCHIVO,
     include: INCLUDE_FICHA,
     orderBy: { id: "asc" },
   });
@@ -366,8 +409,50 @@ async function listarPresupuestos({ requerimientoId, proveedorId, estado } = {})
 }
 
 async function obtenerPresupuestoPorId(id) {
-  const presupuesto = await prisma.presupuesto.findUnique({ where: { id }, include: INCLUDE_FICHA });
+  const presupuesto = await prisma.presupuesto.findUnique({ where: { id }, omit: OMIT_ARCHIVO, include: INCLUDE_FICHA });
   return conTotales(presupuesto);
+}
+
+// Punto 9 — el archivo adjunto SÍ se pide acá, a propósito: es el único
+// lugar de todo el módulo que lo necesita (servir la descarga). `select`
+// en vez de `include`: no hace falta nada del resto de la ficha.
+async function obtenerAdjuntoPresupuesto(id) {
+  return prisma.presupuesto.findUnique({
+    where: { id },
+    select: { archivoAdjunto: true, archivoNombre: true, archivoTipo: true, archivoTamano: true },
+  });
+}
+
+const TIPOS_ARCHIVO_PERMITIDOS = ["application/pdf", "image/jpeg", "image/png"];
+const TAMANO_MAXIMO_ARCHIVO = 5 * 1024 * 1024; // 5MB
+
+// Guarda (o reemplaza) el respaldo documental de un presupuesto — no exige
+// ningún estado puntual: a diferencia de cargar precios (una sola vez,
+// solo en "Solicitado"), el archivo es de referencia y se puede agregar o
+// cambiar en cualquier momento del ciclo de vida del presupuesto.
+async function guardarAdjuntoPresupuesto(id, { buffer, mimetype, originalname, size }) {
+  const existe = await prisma.presupuesto.findUnique({ where: { id }, select: { id: true } });
+  if (!existe) throw new ErrorDeNegocio("Presupuesto no encontrado", 404);
+  if (!TIPOS_ARCHIVO_PERMITIDOS.includes(mimetype)) {
+    throw new ErrorDeNegocio("Solo se aceptan archivos PDF, JPG o PNG", 400);
+  }
+  if (size > TAMANO_MAXIMO_ARCHIVO) {
+    throw new ErrorDeNegocio("El archivo no puede superar los 5MB", 400);
+  }
+  await prisma.presupuesto.update({
+    where: { id },
+    data: { archivoAdjunto: buffer, archivoNombre: originalname, archivoTipo: mimetype, archivoTamano: size },
+  });
+  return { archivoNombre: originalname, archivoTipo: mimetype, archivoTamano: size };
+}
+
+async function eliminarAdjuntoPresupuesto(id) {
+  const existe = await prisma.presupuesto.findUnique({ where: { id }, select: { id: true } });
+  if (!existe) throw new ErrorDeNegocio("Presupuesto no encontrado", 404);
+  await prisma.presupuesto.update({
+    where: { id },
+    data: { archivoAdjunto: null, archivoNombre: null, archivoTipo: null, archivoTamano: null },
+  });
 }
 
 module.exports = {
@@ -380,4 +465,9 @@ module.exports = {
   listarPresupuestos,
   obtenerPresupuestoPorId,
   calcularTotales,
+  obtenerAdjuntoPresupuesto,
+  guardarAdjuntoPresupuesto,
+  eliminarAdjuntoPresupuesto,
+  TIPOS_ARCHIVO_PERMITIDOS,
+  TAMANO_MAXIMO_ARCHIVO,
 };

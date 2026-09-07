@@ -11,7 +11,16 @@ const presupuestosServicio = require("../presupuestos/presupuestos.servicio");
 
 function manejarError(res, err, mensajeGenerico) {
   if (err instanceof requerimientosServicio.ErrorDeNegocio || err instanceof presupuestosServicio.ErrorDeNegocio) {
-    return res.status(err.statusCode).json({ error: err.message });
+    const body = { error: err.message };
+    // `articuloId`: lo llevan dos errores de transferencia — "sin central
+    // asignado" y "no habilitado en su central" — el frontend lo usa para
+    // armar una acción directa en vez de mandar a la persona a buscar el
+    // artículo a mano. `depositoCentralId` solo lo lleva el segundo: es lo
+    // que distingue "hay que asignarle un central" (sin este campo) de
+    // "ya tiene central, hay que habilitarlo ahí" (con este campo).
+    if (err.articuloId != null) body.articuloId = err.articuloId;
+    if (err.depositoCentralId != null) body.depositoCentralId = err.depositoCentralId;
+    return res.status(err.statusCode).json(body);
   }
   console.error(mensajeGenerico, err);
   return res.status(500).json({ error: mensajeGenerico });
