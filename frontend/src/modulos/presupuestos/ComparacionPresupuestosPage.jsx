@@ -21,7 +21,7 @@ export function ComparacionPresupuestosPage() {
   const navigate = useNavigate();
   const volver = useVolver("/presupuestos");
   const queryClient = useQueryClient();
-  const { puede } = useSesion();
+  const { puede, usuario } = useSesion();
   const { toast, mostrarToast } = useToast();
 
   const requerimientoId = searchParams.get("requerimientoId");
@@ -35,7 +35,7 @@ export function ComparacionPresupuestosPage() {
   });
 
   const mutacion = useMutation({
-    mutationFn: (id) => aprobarPresupuesto(id),
+    mutationFn: (id) => aprobarPresupuesto(id, usuario),
     onSuccess: (presupuesto) => {
       queryClient.invalidateQueries({ queryKey: ["presupuestos"] });
       queryClient.invalidateQueries({ queryKey: ["requerimientos"] });

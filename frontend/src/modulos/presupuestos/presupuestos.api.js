@@ -18,7 +18,7 @@ export async function cargarPresupuesto(id, payload) {
 
 // HU-84 — adjudicar. Rechaza a los demás del mismo requerimiento y lo
 // deja aprobado, todo en una transacción del lado del backend.
-export async function aprobarPresupuesto(id) {
-  const { data } = await api.post(`/presupuestos/${id}/aprobar`);
+export async function aprobarPresupuesto(id, usuario) {
+  const { data } = await api.post(`/presupuestos/${id}/aprobar`, { usuario });
   return data;
 }

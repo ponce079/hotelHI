@@ -221,7 +221,7 @@ async function cargarPresupuesto(id, { precios, plazoEntrega, costoFlete }) {
 // presupuesto son tres escrituras que tienen que pasar juntas o ninguna:
 // si se cae a la mitad, un requerimiento podría quedar "Aprobado" con dos
 // presupuestos adjudicados, o con ninguno.
-async function aprobarPresupuesto(id) {
+async function aprobarPresupuesto(id, usuario) {
   // Chequeo rápido ("fail fast") antes de la transacción, no toma locks.
   const existe = await prisma.presupuesto.findUnique({ where: { id }, select: { id: true, requerimientoId: true } });
   if (!existe) throw new ErrorDeNegocio("Presupuesto no encontrado", 404);
@@ -239,7 +239,10 @@ async function aprobarPresupuesto(id) {
 
     const presupuesto = await tx.presupuesto.findUnique({
       where: { id },
-      include: { requerimiento: { include: { presupuestos: true } } },
+      include: {
+        requerimiento: { include: { presupuestos: true } },
+        proveedor: { select: { razonSocial: true } },
+      },
     });
     if (presupuesto.estado !== ESTADOS_PRESUPUESTO.PENDIENTE_APROBACION) {
       throw new ErrorDeNegocio(
@@ -271,6 +274,16 @@ async function aprobarPresupuesto(id) {
     await tx.requerimientoReposicion.update({
       where: { id: presupuesto.requerimientoId },
       data: { estado: ESTADOS_REQUERIMIENTO.APROBADO },
+    });
+    // Sin este registro, el nodo "Aprobado" del timeline de la ficha de
+    // Requerimiento no tiene de dónde sacar fecha/usuario (ver
+    // construirEtapasCompra en RequerimientoDetallePage.jsx).
+    await tx.requerimientoLog.create({
+      data: {
+        requerimientoId: presupuesto.requerimientoId,
+        usuario: usuario || "gerente",
+        accion: `Presupuesto adjudicado — ${presupuesto.proveedor.razonSocial}`,
+      },
     });
   }, OPCIONES_TRANSACCION);
 
