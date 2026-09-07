@@ -29,3 +29,11 @@ export const NOMBRE_MAX_LENGTH = 150;
 
 // Letras (con acentos/ñ), números y espacios. Sin símbolos ni signos de puntuación.
 export const NOMBRE_REGEX = /^[\p{L}\p{N}\s]+$/u;
+
+// Sprint 3 — Transferencia a Central.
+export const MODOS_REPOSICION = ["SUGERIDA", "AUTOMATICA"];
+
+export const MODOS_REPOSICION_NOMBRES = {
+  SUGERIDA: "Sugerida (confirmar a mano)",
+  AUTOMATICA: "Automática",
+};

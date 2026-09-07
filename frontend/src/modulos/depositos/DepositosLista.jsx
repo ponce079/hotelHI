@@ -96,6 +96,7 @@ export function DepositosLista({ onEditar, onNuevo }) {
               <div>
                 <div className="flex items-center gap-2">
                   <Warehouse size={18} className="text-pino" /> <Cifra tamano={21}>{d.nombre}</Cifra>
+                  {d.esCentral && <Badge variante="neutro">Central</Badge>}
                 </div>
                 <div className="font-body text-xs text-tinta/55">
                   {d.ubicacion} · {d.responsable}

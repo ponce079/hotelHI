@@ -10,12 +10,19 @@ const CARACTERES_INVALIDOS_NOMBRE = /[^\p{L}\p{N}\s]/gu;
 const CARACTERES_INVALIDOS_RESPONSABLE = /[^\p{L}\s]/gu;
 const CARACTERES_INVALIDOS_UBICACION = /[^\p{L}\p{N}\s]/gu;
 
-const VACIO = { nombre: "", ubicacion: "", responsable: "" };
+const VACIO = { nombre: "", ubicacion: "", responsable: "", esCentral: false };
 
 export function DepositoModal({ deposito, onClose, onExito }) {
   const editando = Boolean(deposito);
   const [form, setForm] = useState(
-    deposito ? { nombre: deposito.nombre, ubicacion: deposito.ubicacion, responsable: deposito.responsable } : VACIO
+    deposito
+      ? {
+          nombre: deposito.nombre,
+          ubicacion: deposito.ubicacion,
+          responsable: deposito.responsable,
+          esCentral: Boolean(deposito.esCentral),
+        }
+      : VACIO
   );
   const [errores, setErrores] = useState({});
   const queryClient = useQueryClient();
@@ -24,7 +31,8 @@ export function DepositoModal({ deposito, onClose, onExito }) {
     mutationFn: () => (editando ? actualizarDeposito(deposito.id, form) : crearDeposito(form)),
     onSuccess: (guardado) => {
       queryClient.invalidateQueries({ queryKey: ["depositos"] });
-      onExito(editando ? `Depósito "${guardado.nombre}" actualizado.` : `Depósito "${guardado.nombre}" guardado exitosamente.`);
+      const base = editando ? `Depósito "${guardado.nombre}" actualizado.` : `Depósito "${guardado.nombre}" guardado exitosamente.`;
+      onExito(guardado.advertencia ? `${base} ${guardado.advertencia}` : base);
     },
     onError: (error) => {
       const mensaje = error?.response?.data?.error ?? `No se pudo ${editando ? "editar" : "crear"} el depósito.`;
@@ -103,6 +111,20 @@ export function DepositoModal({ deposito, onClose, onExito }) {
               placeholder="Nombre y apellido"
               maxLength={RESPONSABLE_MAX_LENGTH}
             />
+            <label className="flex items-start gap-2.5 text-sm text-tinta">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-4 w-4 rounded border-borde"
+                checked={form.esCentral}
+                onChange={(e) => setForm({ ...form, esCentral: e.target.checked })}
+              />
+              <span>
+                Depósito central
+                <span className="mt-0.5 block font-mono text-[11px] text-piedra">
+                  Origen de las transferencias internas. Se esperan 1 o 2 en todo el sistema.
+                </span>
+              </span>
+            </label>
           </div>
 
           <div className="flex justify-end gap-2.5 border-t border-borde px-6 py-4">

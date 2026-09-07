@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
 import { Search } from "lucide-react";
@@ -36,6 +36,21 @@ export function ArticulosLista() {
   const [modal, setModal] = useState(null); // { tipo: "form" | "detalle", articulo }
   const [paraCambiarEstado, setParaCambiarEstado] = useState(null);
   const { toast, mostrarToast } = useToast();
+
+  // Alta desde "Nuevo requerimiento" (RequerimientoModal): cuando el
+  // artículo buscado no existe en el catálogo, ese link manda para acá con
+  // ?nuevo=1 para abrir el alta directo — mismo criterio que el
+  // origen=ALERTA de RequerimientosPage. Se lee una sola vez al montar y se
+  // limpia de la URL para no reabrirse en cada refresh.
+  useEffect(() => {
+    if (searchParams.get("nuevo") === "1") {
+      setModal({ tipo: "form", articulo: null });
+      const params = new URLSearchParams(searchParams);
+      params.delete("nuevo");
+      setSearchParams(params, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["articulos", { q, estado, page }],

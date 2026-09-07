@@ -44,7 +44,8 @@ function normalizarYValidar(body) {
   if (!RESPONSABLE_REGEX.test(responsable)) {
     return { error: "responsable solo puede contener letras y espacios" };
   }
-  return { nombre, ubicacion, responsable };
+  const esCentral = Boolean(body?.esCentral);
+  return { nombre, ubicacion, responsable, esCentral };
 }
 
 async function postDeposito(req, res) {
@@ -52,11 +53,12 @@ async function postDeposito(req, res) {
   if (validado.error) {
     return res.status(400).json({ error: validado.error });
   }
-  const { nombre, ubicacion, responsable } = validado;
+  const { nombre, ubicacion, responsable, esCentral } = validado;
 
   try {
-    const deposito = await depositosServicio.crearDeposito({ nombre, ubicacion, responsable });
-    return res.status(201).json(deposito);
+    const deposito = await depositosServicio.crearDeposito({ nombre, ubicacion, responsable, esCentral });
+    const advertencia = await advertenciaCentral(esCentral, null);
+    return res.status(201).json({ ...deposito, advertencia });
   } catch (err) {
     if (err.code === "P2002") {
       return res.status(409).json({ error: `Ya existe un deposito con el nombre "${nombre}"` });
@@ -64,6 +66,17 @@ async function postDeposito(req, res) {
     console.error("Error al crear deposito:", err);
     return res.status(500).json({ error: "No se pudo crear el deposito." });
   }
+}
+
+// Sprint 3: el diseño espera 1 o 2 depósitos centrales, pero no es un límite
+// duro — el ABM avisa en vez de bloquear si ya hay otros marcados.
+async function advertenciaCentral(esCentral, idPropio) {
+  if (!esCentral) return null;
+  const otros = await depositosServicio.contarCentrales(idPropio);
+  if (otros >= 2) {
+    return `Ya hay ${otros} depósitos marcados como centrales. Se esperan 1 o 2 — revisá si esto es intencional.`;
+  }
+  return null;
 }
 
 async function putDeposito(req, res) {
@@ -76,15 +89,16 @@ async function putDeposito(req, res) {
   if (validado.error) {
     return res.status(400).json({ error: validado.error });
   }
-  const { nombre, ubicacion, responsable } = validado;
+  const { nombre, ubicacion, responsable, esCentral } = validado;
 
   try {
     const existente = await depositosServicio.obtenerDepositoPorId(id);
     if (!existente) {
       return res.status(404).json({ error: "Deposito no encontrado" });
     }
-    const deposito = await depositosServicio.actualizarDeposito(id, { nombre, ubicacion, responsable });
-    return res.json(deposito);
+    const deposito = await depositosServicio.actualizarDeposito(id, { nombre, ubicacion, responsable, esCentral });
+    const advertencia = await advertenciaCentral(esCentral, id);
+    return res.json({ ...deposito, advertencia });
   } catch (err) {
     if (err.code === "P2002") {
       return res.status(409).json({ error: `Ya existe un deposito con el nombre "${nombre}"` });

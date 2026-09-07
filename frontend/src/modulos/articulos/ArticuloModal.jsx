@@ -7,14 +7,31 @@ import { Button } from "../../componentes/Button";
 import { crearArticulo, actualizarArticulo } from "./articulos.api";
 import { habilitarArticuloEnDeposito, listarHabilitaciones } from "../articulo-deposito/articuloDeposito.api";
 import { listarDepositos } from "../depositos/depositos.api";
-import { UNIDADES_MEDIDA, UNIDADES_MEDIDA_NOMBRES, CATEGORIAS, NOMBRE_MAX_LENGTH } from "./articulos.constantes";
+import {
+  UNIDADES_MEDIDA,
+  UNIDADES_MEDIDA_NOMBRES,
+  CATEGORIAS,
+  NOMBRE_MAX_LENGTH,
+  MODOS_REPOSICION,
+  MODOS_REPOSICION_NOMBRES,
+} from "./articulos.constantes";
 
 const CARACTERES_INVALIDOS_NOMBRE = /[^\p{L}\p{N}\s]/gu;
-const VACIO = { nombre: "", unidadMedida: "", categoria: "" };
+const VACIO = { nombre: "", unidadMedida: "", categoria: "", depositoCentralId: "", modoReposicion: "SUGERIDA" };
 
 export function ArticuloModal({ articulo, onClose, onExito }) {
   const editando = Boolean(articulo);
-  const [form, setForm] = useState(articulo ? { nombre: articulo.nombre, unidadMedida: articulo.unidadMedida, categoria: articulo.categoria } : VACIO);
+  const [form, setForm] = useState(
+    articulo
+      ? {
+          nombre: articulo.nombre,
+          unidadMedida: articulo.unidadMedida,
+          categoria: articulo.categoria,
+          depositoCentralId: articulo.depositoCentralId ?? "",
+          modoReposicion: articulo.modoReposicion ?? "SUGERIDA",
+        }
+      : VACIO
+  );
   const [errores, setErrores] = useState({});
   const [depositosSeleccionados, setDepositosSeleccionados] = useState([]);
   const queryClient = useQueryClient();
@@ -157,7 +174,30 @@ export function ArticuloModal({ articulo, onClose, onExito }) {
                   <option key={c} value={c}>{c}</option>
                 ))}
               </Select>
+              <Select
+                label="Depósito central de origen"
+                value={form.depositoCentralId}
+                onChange={(e) => setForm({ ...form, depositoCentralId: e.target.value })}
+              >
+                <option value="">Sin asignar</option>
+                {(depositos ?? []).filter((d) => d.esCentral).map((d) => (
+                  <option key={d.id} value={d.id}>{d.nombre}</option>
+                ))}
+              </Select>
+              <Select
+                label="Modo de reposición del central"
+                value={form.modoReposicion}
+                onChange={(e) => setForm({ ...form, modoReposicion: e.target.value })}
+              >
+                {MODOS_REPOSICION.map((m) => (
+                  <option key={m} value={m}>{MODOS_REPOSICION_NOMBRES[m]}</option>
+                ))}
+              </Select>
             </div>
+            <p className="text-[11.5px] text-piedra">
+              Sin depósito central asignado, este artículo no puede pedirse por transferencia interna — solo por
+              compra a un proveedor.
+            </p>
 
             <div>
               <span className="text-sm font-semibold text-tinta">

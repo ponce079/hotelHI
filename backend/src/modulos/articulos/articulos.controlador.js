@@ -1,7 +1,25 @@
 // src/modulos/articulos/articulos.controlador.js
 
-const { UNIDADES_MEDIDA, CATEGORIAS, NOMBRE_MAX_LENGTH, NOMBRE_REGEX } = require("./articulos.constantes");
+const { UNIDADES_MEDIDA, CATEGORIAS, NOMBRE_MAX_LENGTH, NOMBRE_REGEX, MODOS_REPOSICION } = require("./articulos.constantes");
 const articulosServicio = require("./articulos.servicio");
+
+// Compartido por alta y edicion: normaliza y valida depositoCentralId (opcional,
+// entero o null) y modoReposicion (default SUGERIDA). Devuelve { error } o los
+// valores normalizados.
+function normalizarReposicion(body) {
+  const modoReposicion = body?.modoReposicion ?? "SUGERIDA";
+  if (!MODOS_REPOSICION.includes(modoReposicion)) {
+    return { error: `modoReposicion invalida. Valores permitidos: ${MODOS_REPOSICION.join(", ")}` };
+  }
+  let depositoCentralId = null;
+  if (body?.depositoCentralId != null && body.depositoCentralId !== "") {
+    depositoCentralId = Number(body.depositoCentralId);
+    if (!Number.isInteger(depositoCentralId)) {
+      return { error: "depositoCentralId invalido" };
+    }
+  }
+  return { depositoCentralId, modoReposicion };
+}
 
 async function postArticulo(req, res) {
   const { unidadMedida, categoria } = req.body ?? {};
@@ -22,9 +40,23 @@ async function postArticulo(req, res) {
   if (!CATEGORIAS.includes(categoria)) {
     return res.status(400).json({ error: `categoria invalida. Valores permitidos: ${CATEGORIAS.join(", ")}` });
   }
+  const reposicion = normalizarReposicion(req.body);
+  if (reposicion.error) {
+    return res.status(400).json({ error: reposicion.error });
+  }
+  const errorCentral = await articulosServicio.validarDepositoCentral(reposicion.depositoCentralId);
+  if (errorCentral) {
+    return res.status(400).json({ error: errorCentral });
+  }
 
   try {
-    const articulo = await articulosServicio.crearArticulo({ nombre, unidadMedida, categoria });
+    const articulo = await articulosServicio.crearArticulo({
+      nombre,
+      unidadMedida,
+      categoria,
+      depositoCentralId: reposicion.depositoCentralId,
+      modoReposicion: reposicion.modoReposicion,
+    });
     return res.status(201).json(articulo);
   } catch (err) {
     if (err.code === "P2002") {
@@ -91,13 +123,27 @@ async function putArticulo(req, res) {
   if (!CATEGORIAS.includes(categoria)) {
     return res.status(400).json({ error: `categoria invalida. Valores permitidos: ${CATEGORIAS.join(", ")}` });
   }
+  const reposicion = normalizarReposicion(req.body);
+  if (reposicion.error) {
+    return res.status(400).json({ error: reposicion.error });
+  }
+  const errorCentral = await articulosServicio.validarDepositoCentral(reposicion.depositoCentralId);
+  if (errorCentral) {
+    return res.status(400).json({ error: errorCentral });
+  }
 
   try {
     const existente = await articulosServicio.obtenerArticuloPorId(id);
     if (!existente) {
       return res.status(404).json({ error: "Articulo no encontrado" });
     }
-    const articulo = await articulosServicio.actualizarArticulo(id, { nombre, unidadMedida, categoria });
+    const articulo = await articulosServicio.actualizarArticulo(id, {
+      nombre,
+      unidadMedida,
+      categoria,
+      depositoCentralId: reposicion.depositoCentralId,
+      modoReposicion: reposicion.modoReposicion,
+    });
     return res.json(articulo);
   } catch (err) {
     if (err.code === "P2002") {

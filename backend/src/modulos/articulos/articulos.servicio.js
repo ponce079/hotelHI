@@ -4,9 +4,11 @@ const prisma = require("../../lib/prisma");
 
 // El codigo se genera solo (ART-0001, correlativo por id) recien despues del
 // alta, porque el id autoincrement no se conoce hasta que el insert termina.
-async function crearArticulo({ nombre, unidadMedida, categoria }) {
+async function crearArticulo({ nombre, unidadMedida, categoria, depositoCentralId, modoReposicion }) {
   return prisma.$transaction(async (tx) => {
-    const creado = await tx.articulo.create({ data: { nombre, unidadMedida, categoria } });
+    const creado = await tx.articulo.create({
+      data: { nombre, unidadMedida, categoria, depositoCentralId: depositoCentralId ?? null, modoReposicion },
+    });
     return tx.articulo.update({
       where: { id: creado.id },
       data: { codigo: `ART-${String(creado.id).padStart(4, "0")}` },
@@ -14,11 +16,23 @@ async function crearArticulo({ nombre, unidadMedida, categoria }) {
   });
 }
 
-async function actualizarArticulo(id, { nombre, unidadMedida, categoria }) {
+async function actualizarArticulo(id, { nombre, unidadMedida, categoria, depositoCentralId, modoReposicion }) {
   return prisma.articulo.update({
     where: { id },
-    data: { nombre, unidadMedida, categoria },
+    data: { nombre, unidadMedida, categoria, depositoCentralId: depositoCentralId ?? null, modoReposicion },
   });
+}
+
+// Sprint 3 — Transferencia a Central: valida que, si se indica un depósito
+// central para el artículo, ese depósito exista, esté activo y esté
+// realmente marcado como central (si no, una TRANSFERENCIA terminaría
+// dirigida a un depósito cualquiera sin que nadie lo haya decidido así).
+async function validarDepositoCentral(depositoCentralId) {
+  if (depositoCentralId == null) return null;
+  const deposito = await prisma.deposito.findUnique({ where: { id: depositoCentralId } });
+  if (!deposito || !deposito.activo) return "El depósito central indicado no existe o está dado de baja";
+  if (!deposito.esCentral) return `"${deposito.nombre}" no está marcado como depósito central`;
+  return null;
 }
 
 // Dar de baja un articulo cascadea a sus habilitaciones por deposito — si no,
@@ -67,4 +81,5 @@ module.exports = {
   cambiarEstadoArticulo,
   listarArticulos,
   obtenerArticuloPorId,
+  validarDepositoCentral,
 };

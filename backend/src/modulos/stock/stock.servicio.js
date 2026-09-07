@@ -29,6 +29,7 @@ async function consultarStock({ articuloId, categoria, depositoId, incluirInacti
     nombre: h.articulo.nombre,
     categoria: h.articulo.categoria,
     unidadMedida: h.articulo.unidadMedida,
+    depositoCentralId: h.articulo.depositoCentralId,
     depositoId: h.deposito.id,
     deposito: h.deposito.nombre,
     activo: h.activo,
