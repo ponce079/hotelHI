@@ -9,6 +9,8 @@
 // no se podía hacer.
 
 const prisma = require("../../lib/prisma");
+const { verificarStockMinimoCentral } = require("../requerimientos/requerimientos.servicio");
+const { ESTADOS_REQUERIMIENTO } = require("../../lib/constantes");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -277,6 +279,11 @@ async function registrarTransferencia({ depositoId, depositoDestinoId, detalle, 
             `Stock insuficiente para el artículo ${item.articuloId}. Actual: ${stockActual}, Solicitado: ${cantidad}.`
           );
         }
+
+        // Sprint 3 — Transferencia a Central: una transferencia manual
+        // (HU-14) puede salir justamente DESDE un central. Si lo deja bajo
+        // el mínimo, dispara su reposición igual que cualquier otra salida.
+        await verificarStockMinimoCentral(tx, articuloDepositoId);
       }
 
       return tx.movimientoStock.findUnique({
@@ -402,6 +409,30 @@ async function confirmarRecepcion(id, { lineas, usuario } = {}) {
         where: { id: movimiento.id },
         data: { estado: estadoFinal, movimientoRelacionadoId: entrada.id },
       });
+
+      // Sprint 3 — Fase 4: si este movimiento es el que reservó una
+      // TRANSFERENCIA (requerimientos.servicio.js:intentarAprobarTransferencia),
+      // cierra el círculo. "Recibida" (no "Cerrada") si faltó algo — mismo
+      // criterio que "Recibida con diferencia" en Ordenes de Compra: queda
+      // una marca visible de que no llegó completo, sin re-disparar sola
+      // otra reposición por la diferencia (eso lo decide una persona).
+      const requerimiento = await tx.requerimientoReposicion.findUnique({
+        where: { movimientoStockId: movimiento.id },
+      });
+      if (requerimiento) {
+        const estadoRequerimiento = hayDiferencia ? ESTADOS_REQUERIMIENTO.RECIBIDA : ESTADOS_REQUERIMIENTO.CERRADA;
+        await tx.requerimientoReposicion.update({
+          where: { id: requerimiento.id },
+          data: { estado: estadoRequerimiento },
+        });
+        await tx.requerimientoLog.create({
+          data: {
+            requerimientoId: requerimiento.id,
+            usuario: usuario || "sistema",
+            accion: `Recepción confirmada — ${estadoRequerimiento}`,
+          },
+        });
+      }
 
       return tx.movimientoStock.findUnique({
         where: { id: entrada.id },

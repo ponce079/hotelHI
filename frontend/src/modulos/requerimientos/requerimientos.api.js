@@ -36,3 +36,9 @@ export async function solicitarPresupuestos(requerimientoId, payload) {
   const { data } = await api.post(`/requerimientos/${requerimientoId}/solicitar-presupuestos`, payload);
   return data;
 }
+
+// Sprint 3 — confirma una sugerencia de reposición automática del central.
+export async function confirmarSugerencia(id, usuario) {
+  const { data } = await api.post(`/requerimientos/${id}/confirmar-sugerencia`, { usuario });
+  return data;
+}

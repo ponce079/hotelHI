@@ -37,3 +37,8 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
+
+// Red de seguridad de la reposición automática de centrales — ver
+// src/lib/jobsStockMinimo.js. Se arranca después de levantar el server,
+// no antes: no tiene que bloquear ni condicionar que el servidor escuche.
+require("./src/lib/jobsStockMinimo").iniciarBarridoStockMinimoCentral();

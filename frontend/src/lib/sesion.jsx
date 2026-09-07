@@ -104,6 +104,9 @@ export function SesionProvider({ children }) {
         if (accion === "verOrdenesCompra") return rol === "compras" || rol === "gerente" || rol === "deposito";
         if (accion === "gestionarOC") return rol === "compras"; // generar (HU-22) / enviar / anular — sin aprobación de gerente, esa ya se dio al adjudicar el presupuesto
         if (accion === "recibirOC") return rol === "deposito";
+        // Confirmar o descartar una sugerencia de reposición automática del
+        // central: mismo rol que gestiona el resto del ciclo de compra.
+        if (accion === "gestionarSugerencias") return rol === "compras";
         return false;
       },
     };

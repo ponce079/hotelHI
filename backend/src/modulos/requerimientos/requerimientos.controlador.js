@@ -1,6 +1,6 @@
 // src/modulos/requerimientos/requerimientos.controlador.js
 
-const { ESTADOS_REQUERIMIENTO, ORIGENES_REQUERIMIENTO } = require("../../lib/constantes");
+const { ESTADOS_REQUERIMIENTO, ORIGENES_REQUERIMIENTO, TIPOS_REQUERIMIENTO } = require("../../lib/constantes");
 const requerimientosServicio = require("./requerimientos.servicio");
 const presupuestosServicio = require("../presupuestos/presupuestos.servicio");
 
@@ -37,7 +37,8 @@ function validarDetalle(detalle) {
 async function postRequerimiento(req, res) {
   const depositoId = Number(req.body?.depositoId);
   const origen = req.body?.origen ?? ORIGENES_REQUERIMIENTO.MANUAL;
-  const { solicitante, detalle } = req.body ?? {};
+  const tipo = req.body?.tipo ?? TIPOS_REQUERIMIENTO.COMPRA;
+  const { solicitante, detalle, urgente } = req.body ?? {};
 
   if (!Number.isInteger(depositoId)) {
     return res.status(400).json({ error: "depositoId es obligatorio" });
@@ -47,6 +48,11 @@ async function postRequerimiento(req, res) {
       error: `origen inválido. Valores permitidos: ${Object.values(ORIGENES_REQUERIMIENTO).join(", ")}`,
     });
   }
+  if (!Object.values(TIPOS_REQUERIMIENTO).includes(tipo)) {
+    return res.status(400).json({
+      error: `tipo inválido. Valores permitidos: ${Object.values(TIPOS_REQUERIMIENTO).join(", ")}`,
+    });
+  }
   const { error, lineas } = validarDetalle(detalle);
   if (error) return res.status(400).json({ error });
 
@@ -54,6 +60,8 @@ async function postRequerimiento(req, res) {
     const requerimiento = await requerimientosServicio.crearRequerimiento({
       depositoId,
       origen,
+      tipo,
+      urgente: Boolean(urgente),
       solicitante: typeof solicitante === "string" ? solicitante.trim() : null,
       detalle: lineas,
     });
@@ -165,6 +173,23 @@ async function postSolicitarPresupuestos(req, res) {
   }
 }
 
+// Sprint 3 — confirma una sugerencia de reposición automática del central
+// (estado "Sugerida"). Para descartarla se reutiliza el endpoint de
+// anular: mecánicamente es la misma baja lógica.
+async function postConfirmarSugerencia(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+
+  const usuario = typeof req.body?.usuario === "string" ? req.body.usuario.trim() : null;
+
+  try {
+    const requerimiento = await requerimientosServicio.confirmarSugerencia(id, usuario);
+    return res.json(requerimiento);
+  } catch (err) {
+    return manejarError(res, err, "No se pudo confirmar la sugerencia.");
+  }
+}
+
 module.exports = {
   postRequerimiento,
   getRequerimientos,
@@ -172,4 +197,5 @@ module.exports = {
   putRequerimiento,
   postAnularRequerimiento,
   postSolicitarPresupuestos,
+  postConfirmarSugerencia,
 };

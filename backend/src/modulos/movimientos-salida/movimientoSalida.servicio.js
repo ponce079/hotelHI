@@ -11,6 +11,7 @@
 // quiere unificarla más adelante, se puede mover a src/lib/errores.js.
 
 const prisma = require("../../lib/prisma");
+const { verificarStockMinimoCentral } = require("../requerimientos/requerimientos.servicio");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -121,6 +122,11 @@ async function registrarSalida({ depositoId, tipoMovStockId, detalle, usuario, i
             `Stock insuficiente para el artículo ${item.articuloId}. Actual: ${stockActual}, Solicitado: ${cantidad}.`
           );
         }
+
+        // Sprint 3 — Transferencia a Central: si este depósito es central
+        // y la salida lo dejó bajo el mínimo, dispara (o acumula sobre)
+        // su reposición. No hace nada si el depósito no es central.
+        await verificarStockMinimoCentral(tx, articuloDepositoId);
       }
 
       return tx.movimientoStock.findUnique({

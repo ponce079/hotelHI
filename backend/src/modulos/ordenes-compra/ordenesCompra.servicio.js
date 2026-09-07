@@ -8,6 +8,8 @@
 const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
 const { crearConNumeroSecuencial } = require("../../lib/numeracion");
+const { ESTADOS_REQUERIMIENTO, TIPOS_REQUERIMIENTO } = require("../../lib/constantes");
+const { reintentarTransferenciasPendientes } = require("../requerimientos/requerimientos.servicio");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -270,7 +272,7 @@ async function registrarRecepcion(id, detalleRecibido, usuario) {
   const ocId = Number(id);
   const oc = await prisma.ordenCompra.findUnique({
     where: { id: ocId },
-    include: { detalle: true },
+    include: { detalle: true, deposito: true, presupuesto: true },
   });
   if (!oc) throw new ErrorDeNegocio("Orden de compra no encontrada.", 404);
   if (oc.estado !== "Enviada") {
@@ -384,6 +386,17 @@ async function registrarRecepcion(id, detalleRecibido, usuario) {
           create: { articuloDepositoId: habilitacion.id, stockActual: cantidadRecibida },
           update: { stockActual: { increment: cantidadRecibida } },
         });
+
+        // Sprint 3 — Fase 4: si esta OC repone un depósito central,
+        // retoma las transferencias que se habían quedado "Pendiente de
+        // stock" esperando este artículo. No hace nada si el depósito no
+        // es central.
+        if (oc.deposito.esCentral) {
+          await reintentarTransferenciasPendientes(tx, {
+            depositoCentralId: oc.depositoId,
+            articuloId: Number(linea.articuloId),
+          });
+        }
       }
 
       const ocActualizada = await tx.ordenCompra.update({
@@ -398,6 +411,33 @@ async function registrarRecepcion(id, detalleRecibido, usuario) {
           accion: `Recepción registrada — ${estadoFinalOC}`,
         },
       });
+
+      // Sprint 3 — Fase 4: si esta OC viene de una reposición automática o
+      // sugerida del central, su trabajo termina acá — se cierra el
+      // círculo completo (punto 8). Ojo: el filtro es `oc.deposito.esCentral`,
+      // NO `tipo === COMPRA` — COMPRA es el tipo de CUALQUIER compra común
+      // (incluidas todas las de Sprint 1/2, desde depósitos no centrales);
+      // sin este filtro, cualquier requerimiento de compra ordinario se
+      // cerraría solo al recibir su OC, un estado nuevo que ese flujo
+      // nunca tuvo antes de este sprint.
+      if (oc.deposito.esCentral && oc.presupuesto?.requerimientoId) {
+        const origen = await tx.requerimientoReposicion.findUnique({
+          where: { id: oc.presupuesto.requerimientoId },
+        });
+        if (origen && origen.tipo === TIPOS_REQUERIMIENTO.COMPRA && origen.estado === ESTADOS_REQUERIMIENTO.APROBADO) {
+          await tx.requerimientoReposicion.update({
+            where: { id: origen.id },
+            data: { estado: ESTADOS_REQUERIMIENTO.CERRADA },
+          });
+          await tx.requerimientoLog.create({
+            data: {
+              requerimientoId: origen.id,
+              usuario: usuario || "sistema",
+              accion: `Cerrada — recepción de ${oc.numero} registrada (${estadoFinalOC})`,
+            },
+          });
+        }
+      }
 
       return ocActualizada;
     },
