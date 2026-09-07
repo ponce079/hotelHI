@@ -173,6 +173,47 @@ async function postSolicitarPresupuestos(req, res) {
   }
 }
 
+// Sprint 3 — punto 9: compra express. Mismo criterio que
+// postSolicitarPresupuestos: la ruta cuelga de requerimientos (es la
+// acción que dispara), la lógica vive en presupuestos.servicio.js.
+async function postCompraExpress(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
+
+  const { proveedorId, precios, plazoEntrega, costoFlete } = req.body ?? {};
+  const proveedorIdNum = Number(proveedorId);
+  if (!Number.isInteger(proveedorIdNum)) {
+    return res.status(400).json({ error: "proveedorId es obligatorio" });
+  }
+  if (!Array.isArray(precios) || precios.length === 0) {
+    return res.status(400).json({ error: "Cargá el precio unitario de cada artículo" });
+  }
+  const lineas = [];
+  for (const linea of precios) {
+    const articuloId = Number(linea?.articuloId);
+    const precioUnitario = Number(linea?.precioUnitario);
+    if (!Number.isInteger(articuloId)) {
+      return res.status(400).json({ error: "Cada línea necesita un articuloId válido" });
+    }
+    if (!Number.isFinite(precioUnitario) || precioUnitario <= 0) {
+      return res.status(400).json({ error: "Cada precio unitario tiene que ser mayor a 0" });
+    }
+    lineas.push({ articuloId, precioUnitario });
+  }
+
+  try {
+    const resultado = await presupuestosServicio.generarPresupuestoExpress(id, {
+      proveedorId: proveedorIdNum,
+      precios: lineas,
+      plazoEntrega: typeof plazoEntrega === "string" ? plazoEntrega : null,
+      costoFlete: costoFlete != null && costoFlete !== "" ? Number(costoFlete) : null,
+    });
+    return res.status(201).json(resultado);
+  } catch (err) {
+    return manejarError(res, err, "No se pudo generar la compra express.");
+  }
+}
+
 // Sprint 3 — confirma una sugerencia de reposición automática del central
 // (estado "Sugerida"). Para descartarla se reutiliza el endpoint de
 // anular: mecánicamente es la misma baja lógica.
@@ -197,5 +238,6 @@ module.exports = {
   putRequerimiento,
   postAnularRequerimiento,
   postSolicitarPresupuestos,
+  postCompraExpress,
   postConfirmarSugerencia,
 };

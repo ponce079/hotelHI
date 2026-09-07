@@ -16,6 +16,7 @@ const { redondear } = require("../../lib/comprobantes");
 const {
   ESTADOS_REQUERIMIENTO,
   ESTADOS_PRESUPUESTO,
+  TIPOS_REQUERIMIENTO,
   OPCIONES_TRANSACCION,
   rubroCubreCategoria,
 } = require("../../lib/constantes");
@@ -87,6 +88,11 @@ async function solicitarPresupuestos(requerimientoId, { proveedorIds, requiereFl
     },
   });
   if (!requerimiento) throw new ErrorDeNegocio("Requerimiento no encontrado", 404);
+  // Sprint 3: una TRANSFERENCIA no tiene proveedor — la resuelve el
+  // sistema contra el depósito central, nunca pidiendo presupuestos.
+  if (requerimiento.tipo === TIPOS_REQUERIMIENTO.TRANSFERENCIA) {
+    throw new ErrorDeNegocio('Un requerimiento de tipo "TRANSFERENCIA" no pide presupuestos a proveedores.', 409);
+  }
   if (requerimiento.estado !== ESTADOS_REQUERIMIENTO.PENDIENTE) {
     throw new ErrorDeNegocio(
       `Solo se pueden pedir presupuestos de un requerimiento en estado "${ESTADOS_REQUERIMIENTO.PENDIENTE}" (este está en "${requerimiento.estado}")`,
@@ -273,6 +279,39 @@ async function aprobarPresupuesto(id) {
   return conTotales(await prisma.presupuesto.findUnique({ where: { id }, include: INCLUDE_FICHA }));
 }
 
+// Sprint 3 — punto 9: "compra express". Para un requerimiento COMPRA
+// marcado urgente, salta la instancia de invitar a varios proveedores y
+// esperar cotizaciones: se elige UN proveedor y se cargan sus precios de
+// una sola vez. No es un camino nuevo — es la misma secuencia de siempre
+// (solicitarPresupuestos -> cargarPresupuesto -> aprobarPresupuesto),
+// reutilizada tal cual, solo que la dispara un único llamado en vez de
+// tres pantallas separadas. Deliberadamente NO genera la Orden de Compra:
+// esa sigue siendo una acción manual y visible desde la bandeja de
+// Órdenes de Compra (así quedó el flujo normal tras el rediseño de
+// Sprint 2) — "express" acorta la cotización, no salta la revisión antes
+// de emitirle una orden real a un proveedor.
+async function generarPresupuestoExpress(requerimientoId, { proveedorId, precios, plazoEntrega, costoFlete }) {
+  const requerimiento = await prisma.requerimientoReposicion.findUnique({ where: { id: requerimientoId } });
+  if (!requerimiento) throw new ErrorDeNegocio("Requerimiento no encontrado", 404);
+  if (!requerimiento.urgente) {
+    throw new ErrorDeNegocio("La compra express solo está disponible para requerimientos marcados urgentes.", 409);
+  }
+
+  // Las validaciones de tipo/estado/proveedor/rubro ya viven en
+  // solicitarPresupuestos — no hay que repetirlas acá. Su propio resultado
+  // ya trae el presupuesto recién creado (un solo proveedor invitado, así
+  // que hay exactamente uno) — evita un findUnique de más contra una base
+  // remota que ya mostró latencia alta en esta misma sesión.
+  const conPresupuesto = await solicitarPresupuestos(requerimientoId, {
+    proveedorIds: [proveedorId],
+    requiereFlete: costoFlete != null && Number(costoFlete) > 0,
+  });
+  const presupuestoId = conPresupuesto.presupuestos[0].id;
+
+  await cargarPresupuesto(presupuestoId, { precios, plazoEntrega, costoFlete });
+  return aprobarPresupuesto(presupuestoId);
+}
+
 // Listado para la pantalla de comparación: todos los presupuestos de un
 // requerimiento, con sus totales ya calculados y ordenados de más barato
 // a más caro (los que todavía no cotizaron quedan al final).
@@ -324,6 +363,7 @@ module.exports = {
   solicitarPresupuestos,
   cargarPresupuesto,
   aprobarPresupuesto,
+  generarPresupuestoExpress,
   listarPresupuestos,
   obtenerPresupuestoPorId,
   calcularTotales,

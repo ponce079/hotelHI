@@ -11,6 +11,7 @@ router.get("/:id", requerimientosControlador.getRequerimientoPorId);
 router.put("/:id", requerimientosControlador.putRequerimiento);
 router.post("/:id/anular", requerimientosControlador.postAnularRequerimiento);
 router.post("/:id/solicitar-presupuestos", requerimientosControlador.postSolicitarPresupuestos);
+router.post("/:id/compra-express", requerimientosControlador.postCompraExpress);
 router.post("/:id/confirmar-sugerencia", requerimientosControlador.postConfirmarSugerencia);
 
 module.exports = router;

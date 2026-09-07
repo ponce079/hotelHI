@@ -42,3 +42,11 @@ export async function confirmarSugerencia(id, usuario) {
   const { data } = await api.post(`/requerimientos/${id}/confirmar-sugerencia`, { usuario });
   return data;
 }
+
+// Sprint 3 — punto 9: compra express. Un proveedor + precios en un solo
+// paso para un requerimiento COMPRA marcado urgente — salta la instancia
+// de invitar a varios proveedores y esperar cotizaciones.
+export async function compraExpress(id, payload) {
+  const { data } = await api.post(`/requerimientos/${id}/compra-express`, payload);
+  return data;
+}
