@@ -5,6 +5,8 @@ import { ArrowLeft, Flame, Bot, FileText, ChevronRight, Printer, Copy, AlertTria
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
+import { CodigoClave } from "../../componentes/CodigoClave";
+import { NombreClave } from "../../componentes/NombreClave";
 import { PasoAPaso } from "../../componentes/PasoAPaso";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { Toast } from "../../componentes/Toast";
@@ -282,9 +284,11 @@ export function RequerimientoDetallePage() {
                   key={d.id}
                   className={`border-b border-borde last:border-0 ${esLineaBloqueante ? "bg-error-suave" : ""}`}
                 >
-                  <td className="px-3 py-3.5 font-mono text-xs text-tinta/70">REQ-{String(req.id).padStart(4, "0")}</td>
-                  <td className="px-3 py-3.5 font-body text-[14px] text-tinta">
-                    {d.articulo?.nombre}
+                  <td className="px-3 py-3.5">
+                    <CodigoClave className="text-tinta/70">REQ-{String(req.id).padStart(4, "0")}</CodigoClave>
+                  </td>
+                  <td className="px-3 py-3.5">
+                    <NombreClave title={d.articulo?.nombre}>{d.articulo?.nombre}</NombreClave>
                     {esLineaBloqueante && <span className="ml-1.5 text-[11px] font-semibold text-error-texto">· sin stock suficiente</span>}
                   </td>
                   <td className="px-3 py-3.5 text-right font-body text-[14px] text-tinta">

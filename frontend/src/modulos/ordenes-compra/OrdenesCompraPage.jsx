@@ -6,6 +6,8 @@ import { Select } from "../../componentes/Select";
 import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
+import { CodigoClave } from "../../componentes/CodigoClave";
+import { NombreClave } from "../../componentes/NombreClave";
 import { Pagination } from "../../componentes/Pagination";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { Toast } from "../../componentes/Toast";
@@ -150,9 +152,11 @@ export function OrdenesCompraPage() {
                 }`}
               >
                 <div className="min-w-0">
-                  <div className="font-body text-[13.5px] font-semibold text-tinta">{p.proveedor?.razonSocial}</div>
+                  <NombreClave className="block truncate" title={p.proveedor?.razonSocial}>
+                    {p.proveedor?.razonSocial}
+                  </NombreClave>
                   <div className="text-[11.5px] text-piedra">
-                    REQ-{String(p.requerimientoId).padStart(4, "0")}
+                    <CodigoClave className="text-piedra">REQ-{String(p.requerimientoId).padStart(4, "0")}</CodigoClave>
                     {p.requerimiento?.deposito?.nombre && ` · ${p.requerimiento.deposito.nombre}`}
                     {" · "}$ {formatearMonto(p.total)}
                   </div>
@@ -259,13 +263,17 @@ export function OrdenesCompraPage() {
                     onClick={() => navigate(`/ordenes-compra/${o.id}`)}
                     className="cursor-pointer border-b border-borde last:border-0 hover:bg-hueso"
                   >
-                    <td className="px-2 py-2.5 font-mono text-[12.5px]">
+                    <td className="px-2 py-2.5">
                       <span className="inline-flex items-center gap-1.5">
-                        {o.numero}
+                        <CodigoClave>{o.numero}</CodigoClave>
                         {o.estado === "Recibida con diferencia" && <Diamond size={10} className="fill-error text-error" />}
                       </span>
                     </td>
-                    <td className="px-2 py-2.5 text-[13px]">{o.proveedor?.razonSocial}</td>
+                    <td className="px-2 py-2.5">
+                      <NombreClave className="block truncate" title={o.proveedor?.razonSocial}>
+                        {o.proveedor?.razonSocial}
+                      </NombreClave>
+                    </td>
                     <td className="px-2 py-2.5 text-right text-[13.5px] font-semibold">
                       $ {formatearMonto(Number(o.montoTotal) + Number(o.flete || 0))}
                     </td>

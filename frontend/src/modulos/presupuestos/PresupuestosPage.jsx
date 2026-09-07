@@ -4,6 +4,7 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import { FileText, Search, Zap } from "lucide-react";
 import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
+import { CodigoClave } from "../../componentes/CodigoClave";
 import { Button } from "../../componentes/Button";
 import { Select } from "../../componentes/Select";
 import { SinPermiso } from "../../componentes/SinPermiso";
@@ -292,9 +293,9 @@ export function PresupuestosPage() {
                     necesitaSolicitar && !puedeSolicitar ? "" : "cursor-pointer"
                   }`}
                 >
-                  <td className="px-3 py-2 font-mono text-xs">
+                  <td className="px-3 py-2">
                     <span className="inline-flex items-center gap-1">
-                      REQ-{String(r.id).padStart(4, "0")}
+                      <CodigoClave>REQ-{String(r.id).padStart(4, "0")}</CodigoClave>
                       {r.origen === ORIGENES_REQUERIMIENTO.ALERTA && (
                         <Zap size={13} className="text-laton" title="Generado desde una alerta de stock mínimo" />
                       )}

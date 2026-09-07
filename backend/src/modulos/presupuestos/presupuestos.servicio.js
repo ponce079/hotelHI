@@ -260,7 +260,7 @@ async function cargarPresupuesto(id, { precios, plazoEntrega, costoFlete }) {
 // presupuesto son tres escrituras que tienen que pasar juntas o ninguna:
 // si se cae a la mitad, un requerimiento podría quedar "Aprobado" con dos
 // presupuestos adjudicados, o con ninguno.
-async function aprobarPresupuesto(id, usuario) {
+async function aprobarPresupuesto(id, usuario, comentario) {
   // Chequeo rápido ("fail fast") antes de la transacción, no toma locks.
   const existe = await prisma.presupuesto.findUnique({ where: { id }, select: { id: true, requerimientoId: true } });
   if (!existe) throw new ErrorDeNegocio("Presupuesto no encontrado", 404);
@@ -303,7 +303,14 @@ async function aprobarPresupuesto(id, usuario) {
       );
     }
 
-    await tx.presupuesto.update({ where: { id }, data: { estado: ESTADOS_PRESUPUESTO.ADJUDICADO } });
+    await tx.presupuesto.update({
+      where: { id },
+      data: {
+        estado: ESTADOS_PRESUPUESTO.ADJUDICADO,
+        fechaAdjudicacion: new Date(),
+        comentarioAdjudicacion: comentario?.trim() || null,
+      },
+    });
     await tx.presupuesto.updateMany({
       where: { requerimientoId: presupuesto.requerimientoId, id: { not: id } },
       data: { estado: ESTADOS_PRESUPUESTO.RECHAZADO },

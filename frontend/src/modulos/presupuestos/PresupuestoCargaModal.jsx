@@ -5,6 +5,8 @@ import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
+import { CodigoClave } from "../../componentes/CodigoClave";
+import { NombreClave } from "../../componentes/NombreClave";
 import { MoneyInput } from "../../componentes/MoneyInput";
 import { Paperclip, Trash2 } from "lucide-react";
 import {
@@ -149,8 +151,9 @@ export function PresupuestoCargaModal({ presupuestoId, onClose, onExito }) {
       ) : (
         <form onSubmit={handleSubmit}>
           <div className="flex flex-col gap-4 px-6 py-5">
-            <p className="-mt-1 font-mono text-[11px] text-tinta/55">
-              HU-83 · {presupuesto.proveedor?.razonSocial} — REQ-{String(presupuesto.requerimientoId).padStart(4, "0")}
+            <p className="-mt-1 flex flex-wrap items-baseline gap-x-1.5 text-[11px] text-tinta/55">
+              HU-83 · <NombreClave className="text-tinta">{presupuesto.proveedor?.razonSocial}</NombreClave> —{" "}
+              <CodigoClave className="text-tinta">REQ-{String(presupuesto.requerimientoId).padStart(4, "0")}</CodigoClave>
             </p>
 
             {error && <p className="text-sm text-error">{error}</p>}
@@ -178,7 +181,9 @@ export function PresupuestoCargaModal({ presupuestoId, onClose, onExito }) {
                     const sinPrecio = intentoGuardar && !(precio > 0);
                     return (
                       <tr key={d.id} className="border-b border-borde last:border-0">
-                        <td className="px-3 py-2 font-body text-[13px] font-semibold">{d.articulo?.nombre}</td>
+                        <td className="px-3 py-2">
+                          <NombreClave title={d.articulo?.nombre}>{d.articulo?.nombre}</NombreClave>
+                        </td>
                         <td className="px-3 py-2 font-body text-[12.5px]">{d.articulo?.unidadMedida}</td>
                         <td className="px-3 py-2 text-right font-body text-[13px]">{Number(d.cantidadSolicitada)}</td>
                         <td className="px-3 py-2">
@@ -260,9 +265,11 @@ export function PresupuestoCargaModal({ presupuestoId, onClose, onExito }) {
                     href={urlAdjuntoPresupuesto(presupuestoId)}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-pino hover:underline"
+                    title={presupuesto.archivoNombre}
+                    className="inline-flex min-w-0 max-w-[220px] items-center gap-1.5 text-[12.5px] font-semibold text-pino hover:underline"
                   >
-                    <Paperclip size={14} /> {presupuesto.archivoNombre}
+                    <Paperclip size={14} className="flex-none" />
+                    <span className="truncate">{presupuesto.archivoNombre}</span>
                   </a>
                   <label className="cursor-pointer text-[12px] text-piedra underline hover:text-tinta">
                     {mutacionSubirArchivo.isPending ? "Subiendo…" : "Reemplazar"}

@@ -5,6 +5,7 @@ import { ShoppingCart, Lock, Truck, TriangleAlert, PackageCheck, Clock, Send } f
 import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
+import { NombreClave } from "../../componentes/NombreClave";
 import { Toast } from "../../componentes/Toast";
 import { ConfirmDialog } from "../../componentes/ConfirmDialog";
 import { PasoAPaso } from "../../componentes/PasoAPaso";
@@ -205,7 +206,9 @@ export function OrdenCompraDetallePage() {
                     Number(d.cantidadRecibida) !== Number(d.cantidad);
                   return (
                     <tr key={d.id} className="border-b border-borde last:border-0">
-                      <td className="px-3 py-3 font-body text-[13.5px] text-tinta">{d.articulo?.nombre}</td>
+                      <td className="px-3 py-3">
+                        <NombreClave title={d.articulo?.nombre}>{d.articulo?.nombre}</NombreClave>
+                      </td>
                       <td className="px-3 py-3 text-right font-body text-[13px] text-tinta">
                         {Number(d.cantidad)} <span className="text-tinta/55">{d.articulo?.unidadMedida}</span>
                       </td>

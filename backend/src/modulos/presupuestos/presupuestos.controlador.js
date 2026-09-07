@@ -97,9 +97,12 @@ async function postAprobarPresupuesto(req, res) {
   if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
 
   const usuario = typeof req.body?.usuario === "string" ? req.body.usuario.trim() : null;
+  // Punto 4 (Comparación de presupuestos) — opcional: por qué se eligió
+  // este presupuesto, para dejar respaldo de la decisión.
+  const comentario = typeof req.body?.comentario === "string" ? req.body.comentario.trim() : null;
 
   try {
-    const presupuesto = await presupuestosServicio.aprobarPresupuesto(id, usuario);
+    const presupuesto = await presupuestosServicio.aprobarPresupuesto(id, usuario, comentario);
     return res.json(presupuesto);
   } catch (err) {
     return manejarError(res, err, "No se pudo aprobar el presupuesto.");

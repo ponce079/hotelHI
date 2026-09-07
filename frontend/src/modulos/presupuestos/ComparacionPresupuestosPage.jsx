@@ -5,6 +5,8 @@ import { ArrowRight, TrendingDown, Clock, Paperclip } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
+import { CodigoClave } from "../../componentes/CodigoClave";
+import { NombreClave } from "../../componentes/NombreClave";
 import { ConfirmDialog } from "../../componentes/ConfirmDialog";
 import { Toast } from "../../componentes/Toast";
 import { SinPermiso } from "../../componentes/SinPermiso";
@@ -30,6 +32,9 @@ export function ComparacionPresupuestosPage() {
   const [paraAprobar, setParaAprobar] = useState(null);
   const [paraCargar, setParaCargar] = useState(null);
   const [solicitandoMas, setSolicitandoMas] = useState(false);
+  // Punto 4: comentario opcional de por qué se elige este presupuesto —
+  // vive en el mismo ConfirmDialog de adjudicar, se limpia al abrir/cerrar.
+  const [comentarioAdjudicacion, setComentarioAdjudicacion] = useState("");
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ["presupuestos", { requerimientoId }],
@@ -38,7 +43,7 @@ export function ComparacionPresupuestosPage() {
   });
 
   const mutacion = useMutation({
-    mutationFn: (id) => aprobarPresupuesto(id, usuario),
+    mutationFn: (id) => aprobarPresupuesto(id, usuario, comentarioAdjudicacion),
     onSuccess: (presupuesto) => {
       queryClient.invalidateQueries({ queryKey: ["presupuestos"] });
       queryClient.invalidateQueries({ queryKey: ["requerimientos"] });
@@ -46,6 +51,7 @@ export function ComparacionPresupuestosPage() {
         `Presupuesto de ${presupuesto.proveedor?.razonSocial} adjudicado. El requerimiento quedó aprobado y el resto de los presupuestos, rechazados.`
       );
       setParaAprobar(null);
+      setComentarioAdjudicacion("");
     },
     onError: (err) => {
       mostrarToast(err?.response?.data?.error ?? "No se pudo aprobar el presupuesto.");
@@ -100,8 +106,8 @@ export function ComparacionPresupuestosPage() {
           ← Volver
         </Button>
         <h1 className="font-heading text-[34px] font-semibold">Comparación de presupuestos</h1>
-        <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-          HU-84 · REQ-{String(requerimientoId).padStart(4, "0")}
+        <p className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 text-[11px] text-tinta/55">
+          HU-84 · <CodigoClave className="text-tinta">REQ-{String(requerimientoId).padStart(4, "0")}</CodigoClave>
           {req?.deposito?.nombre && ` — ${req.deposito.nombre}`}
         </p>
       </div>
@@ -141,22 +147,31 @@ export function ComparacionPresupuestosPage() {
               const dias = diasDesde(p.fecha);
               const diasPlazo = diasPlazoPorPresupuesto.get(p.id);
               const esMasRapido = cotizo && diasPlazo != null && diasPlazo === menorPlazoDias;
+              // Punto 3: "esMasBajo" (precio más barato) y "el que ganó" no
+              // son lo mismo — el gerente puede adjudicar uno que no sea el
+              // más barato (mejor plazo, mejor proveedor, etc.). El anillo
+              // verde de "destacado" tiene que seguir al que de verdad ganó
+              // una vez que hay un ganador, no seguir marcando el más
+              // barato como si lo fuera.
+              const esGanador = p.estado === ESTADOS_PRESUPUESTO.ADJUDICADO;
+              const destacar = yaAdjudicado ? esGanador : p.esMasBajo;
               return (
                 <div
                   key={p.id}
                   className={`flex w-[340px] flex-none flex-col rounded-lg border bg-white ${
-                    p.esMasBajo ? "border-pino ring-2 ring-pino/25" : "border-borde"
+                    esGanador
+                      ? "border-exito ring-2 ring-exito/25 bg-exito-suave/40"
+                      : destacar
+                        ? "border-pino ring-2 ring-pino/25"
+                        : "border-borde"
                   }`}
                 >
                   <div className="border-b border-borde px-5 py-4">
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
-                        <div
-                          className="truncate font-heading text-[17px] font-semibold text-tinta"
-                          title={p.proveedor?.razonSocial}
-                        >
+                        <NombreClave tamano="card" className="block truncate" title={p.proveedor?.razonSocial}>
                           {p.proveedor?.razonSocial}
-                        </div>
+                        </NombreClave>
                         <div className="font-mono text-[11px] text-tinta/55">{p.proveedor?.cuit}</div>
                       </div>
                       <Badge variante={VARIANTE_ESTADO_PRESUPUESTO[p.estado] ?? "neutro"}>{p.estado}</Badge>
@@ -165,6 +180,16 @@ export function ComparacionPresupuestosPage() {
                       <div className="mt-1.5 text-[11px] text-piedra">
                         {dias <= 0 ? "Solicitado hoy" : `Solicitado hace ${dias} día${dias === 1 ? "" : "s"}`}
                       </div>
+                    )}
+                    {/* Punto 5 */}
+                    {esGanador && p.fechaAdjudicacion && (
+                      <div className="mt-1.5 text-[11px] font-semibold text-exito">
+                        Adjudicado el {new Date(p.fechaAdjudicacion).toLocaleDateString("es-AR")}
+                      </div>
+                    )}
+                    {/* Punto 4 */}
+                    {esGanador && p.comentarioAdjudicacion && (
+                      <p className="mt-1.5 text-[11.5px] italic text-tinta/70">"{p.comentarioAdjudicacion}"</p>
                     )}
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {p.esMasBajo && (
@@ -187,6 +212,7 @@ export function ComparacionPresupuestosPage() {
                         href={urlAdjuntoPresupuesto(p.id)}
                         target="_blank"
                         rel="noreferrer"
+                        title={p.archivoNombre}
                         className="mt-2 inline-flex items-center gap-1 text-[11.5px] text-pino hover:underline"
                       >
                         <Paperclip size={12} /> Ver presupuesto adjunto
@@ -209,10 +235,16 @@ export function ComparacionPresupuestosPage() {
                         {lineasReq.map((d) => {
                           const precio = preciosPorArticulo.get(d.articuloId);
                           return (
-                            <div key={d.id} className="flex items-baseline justify-between gap-2 text-[12.5px]">
-                              <span className="min-w-0 truncate text-tinta/70">{d.articulo?.nombre}</span>
-                              <span className="flex-none font-mono text-xs">
-                                {precio ? `$ ${formatearMonto(precio)}` : "—"}
+                            <div key={d.id} className="flex items-baseline justify-between gap-2">
+                              {/* Punto 1: la cantidad estaba ausente acá — el
+                                  subtotal de la card no se explicaba visualmente
+                                  sin saber cuánto de cada artículo se cotizó. */}
+                              <span className="min-w-0 truncate">
+                                <NombreClave title={d.articulo?.nombre}>{d.articulo?.nombre}</NombreClave>
+                                <span className="text-[12px] text-tinta/55"> × {Number(d.cantidadSolicitada)}</span>
+                              </span>
+                              <span className="flex-none font-mono text-xs text-tinta/70">
+                                {precio ? `$ ${formatearMonto(precio)} c/u` : "—"}
                               </span>
                             </div>
                           );
@@ -241,7 +273,7 @@ export function ComparacionPresupuestosPage() {
                       </div>
                       <div className="mt-3 border-t border-borde pt-3">
                         <div className="text-[10px] uppercase tracking-wide text-tinta/55">Total</div>
-                        <Cifra tamano={26} className={p.esMasBajo ? "text-pino-700" : ""}>
+                        <Cifra tamano={26} className={esGanador ? "text-exito" : destacar ? "text-pino-700" : ""}>
                           $ {formatearMonto(p.total)}
                         </Cifra>
                       </div>
@@ -310,9 +342,23 @@ export function ComparacionPresupuestosPage() {
         }
         textoConfirmar="Sí, adjudicar"
         variante="ok"
-        onCancelar={() => setParaAprobar(null)}
+        onCancelar={() => {
+          setParaAprobar(null);
+          setComentarioAdjudicacion("");
+        }}
         onConfirmar={() => mutacion.mutate(paraAprobar.id)}
-      />
+      >
+        <label className="flex flex-col gap-1.5 font-body text-sm">
+          <span className="text-[12px] text-tinta/70">Comentario (opcional)</span>
+          <textarea
+            value={comentarioAdjudicacion}
+            onChange={(e) => setComentarioAdjudicacion(e.target.value)}
+            rows={2}
+            placeholder="Ej. mejor relación precio-calidad, entrega más rápida…"
+            className="rounded-md border border-borde bg-white px-3 py-2 text-[13px] text-tinta placeholder:text-tinta/45 focus:outline-none focus:ring-2 focus:ring-pino/40"
+          />
+        </label>
+      </ConfirmDialog>
 
       {paraCargar && (
         <PresupuestoCargaModal

@@ -7,6 +7,7 @@ import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Select } from "../../componentes/Select";
 import { Cifra } from "../../componentes/Cifra";
+import { CodigoClave } from "../../componentes/CodigoClave";
 import { MiniPasos, COLOR_POR_ESTADO_PASO } from "../../componentes/MiniPasos";
 import { MenuAcciones } from "../../componentes/MenuAcciones";
 import { Pagination } from "../../componentes/Pagination";
@@ -378,9 +379,9 @@ export function RequerimientosPage() {
                       onClick={() => navigate(`/requerimientos/${r.id}`)}
                       className={`cursor-pointer border-b border-borde align-middle transition-colors last:border-0 hover:bg-hueso ${r.anulado ? "opacity-55" : ""}`}
                     >
-                      <td className="px-3 py-2.5 align-middle font-mono text-xs">
+                      <td className="px-3 py-2.5 align-middle">
                         <div className="flex flex-col gap-1">
-                          <span>REQ-{String(r.id).padStart(4, "0")}</span>
+                          <CodigoClave>REQ-{String(r.id).padStart(4, "0")}</CodigoClave>
                           {(r.urgente || r.origen !== ORIGENES_REQUERIMIENTO.MANUAL) && (
                             <span className="flex flex-wrap gap-1">
                               {r.urgente && (

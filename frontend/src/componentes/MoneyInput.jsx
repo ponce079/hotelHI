@@ -66,7 +66,6 @@ function separarEnteroYDecimal(bruto) {
 // como string numerico con punto decimal (ej. "1210.5"), el mismo
 // formato que ya esperan los calculos con Number(...) en el wizard.
 export function MoneyInput({ label, value, onChange, error, placeholder = "0,00", className = "" }) {
-  const inputRef = useRef(null);
   const ultimoEmitido = useRef(null);
   const [texto, setTexto] = useState(() => formatearParaEditar(String(value ?? "").replace(".", ",")));
 
@@ -81,25 +80,46 @@ export function MoneyInput({ label, value, onChange, error, placeholder = "0,00"
     setTexto(formatearParaEditar(entrante.replace(".", ",")));
   }, [value]);
 
-  function emitir(nuevoTexto, posicionCursor) {
+  // `elemento` es el <input> nativo (viene de `e.target`, siempre a mano en
+  // los dos callers) — reposicionar el cursor ACÁ, sincrónico, en vez de
+  // con requestAnimationFrame como antes: rAF depende de que el navegador
+  // efectivamente llegue a pintar un frame, que en pestañas en segundo
+  // plano (o ciertos entornos automatizados de test) puede tardar mucho o
+  // no llegar a dispararse nunca, dejando el cursor donde React lo puso
+  // por default (el final del texto) en vez de donde correspondía.
+  // Escribir `elemento.value` a mano ANTES de que termine el evento nativo
+  // y reposicionar en el mismo tick es el patrón está documentado para
+  // este problema: cuando React vuelva a renderizar con el mismo string
+  // que ya está en el DOM, no le toca la selección.
+  function emitir(nuevoTexto, posicionCursor, elemento) {
     const numero = textoANumero(nuevoTexto);
     ultimoEmitido.current = numero;
     setTexto(nuevoTexto);
     onChange(numero);
-    requestAnimationFrame(() => {
-      if (!inputRef.current) return;
-      inputRef.current.setSelectionRange(posicionCursor, posicionCursor);
-    });
+    if (elemento) {
+      elemento.value = nuevoTexto;
+      elemento.setSelectionRange(posicionCursor, posicionCursor);
+    }
   }
 
   function manejarCambio(e) {
+    // Bug real (el reportado): acá se contaba sobre `texto` (el estado
+    // VIEJO, previo a esta tecla), pero `cursorAnterior` viene de
+    // `e.target` — el value NATIVO ya incluye el caracter recién tipeado
+    // por el navegador. Son dos strings distintos; contar dígitos del
+    // viejo hasta una posición medida en el nuevo subestima el conteo en
+    // cualquier tecla que cambie la longitud (o sea, siempre que se
+    // tipea), y el cursor termina reubicado antes de donde corresponde —
+    // con más de una tecla seguida, cada dígito nuevo entra ANTES del
+    // anterior en vez de después (ej. tipear "1", "2", "5" de corrido da
+    // "521", no "125").
     const cursorAnterior = e.target.selectionStart ?? e.target.value.length;
-    const digitosAntes = contarDigitos(texto, cursorAnterior);
+    const digitosAntes = contarDigitos(e.target.value, cursorAnterior);
 
     const { crudo, separadorRecienTipeado } = separarEnteroYDecimal(e.target.value);
     const nuevoTexto = formatearParaEditar(crudo);
     const pos = separadorRecienTipeado ? nuevoTexto.length : posicionParaDigitos(nuevoTexto, digitosAntes);
-    emitir(nuevoTexto, pos);
+    emitir(nuevoTexto, pos, e.target);
   }
 
   // Si lo que se borra es justo la coma, no dejamos que el navegador
@@ -114,7 +134,7 @@ export function MoneyInput({ label, value, onChange, error, placeholder = "0,00"
     if (texto[posBorrada] !== ",") return;
     e.preventDefault();
     const nuevoTexto = formatearParaEditar(texto.slice(0, posBorrada).replace(/\D/g, ""));
-    emitir(nuevoTexto, nuevoTexto.length);
+    emitir(nuevoTexto, nuevoTexto.length, el);
   }
 
   // Una coma sin decimales todavia (ej. "1.210,") se limpia sola al
@@ -134,7 +154,6 @@ export function MoneyInput({ label, value, onChange, error, placeholder = "0,00"
       >
         <span className="text-[13.5px] text-tinta/55">$</span>
         <input
-          ref={inputRef}
           type="text"
           inputMode="decimal"
           className="w-full bg-transparent text-[13.5px] text-tinta placeholder:text-tinta/45 focus:outline-none"
