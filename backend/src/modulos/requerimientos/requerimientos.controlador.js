@@ -1,6 +1,11 @@
 // src/modulos/requerimientos/requerimientos.controlador.js
 
-const { ESTADOS_REQUERIMIENTO, ORIGENES_REQUERIMIENTO, TIPOS_REQUERIMIENTO } = require("../../lib/constantes");
+const {
+  ESTADOS_REQUERIMIENTO,
+  ORIGENES_REQUERIMIENTO,
+  TIPOS_REQUERIMIENTO,
+  CATEGORIAS_REQUERIMIENTO,
+} = require("../../lib/constantes");
 const requerimientosServicio = require("./requerimientos.servicio");
 const presupuestosServicio = require("../presupuestos/presupuestos.servicio");
 
@@ -72,7 +77,9 @@ async function postRequerimiento(req, res) {
 }
 
 async function getRequerimientos(req, res) {
-  const { estado, depositoId, q } = req.query;
+  const { estado, categoria, depositoId, tipo, q } = req.query;
+  const urgente = req.query.urgente === "1" || req.query.urgente === "true";
+  const soloAbiertas = req.query.soloAbiertas === "1" || req.query.soloAbiertas === "true";
   const incluirAnulados = req.query.incluirAnulados === "1" || req.query.incluirAnulados === "true";
   const page = Math.max(1, Number(req.query.page) || 1);
   const pageSize = Math.min(100, Math.max(1, Number(req.query.pageSize) || 10));
@@ -82,12 +89,29 @@ async function getRequerimientos(req, res) {
       error: `estado inválido. Valores permitidos: ${Object.values(ESTADOS_REQUERIMIENTO).join(", ")}`,
     });
   }
+  if (categoria && !Object.values(CATEGORIAS_REQUERIMIENTO).includes(categoria)) {
+    return res.status(400).json({
+      error: `categoria inválida. Valores permitidos: ${Object.values(CATEGORIAS_REQUERIMIENTO).join(", ")}`,
+    });
+  }
+  if (tipo && !Object.values(TIPOS_REQUERIMIENTO).includes(tipo)) {
+    return res.status(400).json({
+      error: `tipo inválido. Valores permitidos: ${Object.values(TIPOS_REQUERIMIENTO).join(", ")}`,
+    });
+  }
 
   try {
     const resultado = await requerimientosServicio.listarRequerimientos({
-      estado,
+      // `estado` (dropdown puntual) y `categoria` (tarjetas de resumen)
+      // son mutuamente excluyentes: si llegan los dos, gana `estado` — es
+      // el filtro más específico.
+      estado: estado || undefined,
+      categoria: estado ? undefined : categoria || undefined,
       depositoId,
+      tipo,
       q,
+      urgente,
+      soloAbiertas,
       incluirAnulados,
       page,
       pageSize,
@@ -96,6 +120,24 @@ async function getRequerimientos(req, res) {
   } catch (err) {
     console.error("Error al listar requerimientos:", err);
     return res.status(500).json({ error: "No se pudieron listar los requerimientos." });
+  }
+}
+
+// Rediseño de la pantalla — los 4 contadores de las tarjetas de resumen.
+async function getResumen(req, res) {
+  const { depositoId, tipo, q } = req.query;
+  if (tipo && !Object.values(TIPOS_REQUERIMIENTO).includes(tipo)) {
+    return res.status(400).json({
+      error: `tipo inválido. Valores permitidos: ${Object.values(TIPOS_REQUERIMIENTO).join(", ")}`,
+    });
+  }
+
+  try {
+    const resumen = await requerimientosServicio.obtenerResumenRequerimientos({ depositoId, tipo, q });
+    return res.json(resumen);
+  } catch (err) {
+    console.error("Error al obtener el resumen de requerimientos:", err);
+    return res.status(500).json({ error: "No se pudo obtener el resumen de requerimientos." });
   }
 }
 
@@ -234,6 +276,7 @@ async function postConfirmarSugerencia(req, res) {
 module.exports = {
   postRequerimiento,
   getRequerimientos,
+  getResumen,
   getRequerimientoPorId,
   putRequerimiento,
   postAnularRequerimiento,

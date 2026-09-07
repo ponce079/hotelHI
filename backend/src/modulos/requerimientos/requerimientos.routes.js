@@ -7,6 +7,8 @@ const router = express.Router();
 
 router.post("/", requerimientosControlador.postRequerimiento);
 router.get("/", requerimientosControlador.getRequerimientos);
+// Antes de "/:id": si no, Express intenta resolver "resumen" como un id.
+router.get("/resumen", requerimientosControlador.getResumen);
 router.get("/:id", requerimientosControlador.getRequerimientoPorId);
 router.put("/:id", requerimientosControlador.putRequerimiento);
 router.post("/:id/anular", requerimientosControlador.postAnularRequerimiento);

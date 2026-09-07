@@ -58,6 +58,14 @@
   --color-error-suave: #f7e4de;
   --color-error-texto: #8f3322; /* texto sobre error-suave */
 
+  /* "info" — azul apagado, a tono con el resto de la paleta (nada de un
+     azul saturado tipo Bootstrap). Rediseño de Requerimientos: es el color
+     de la categoría "En curso", que no tenía representante antes de esto —
+     ok/alerta/error/neutro no alcanzaban para las 4 categorías fijas. */
+  --color-info: #3d6480;
+  --color-info-suave: #e4edf2;
+  --color-info-texto: #2c4a5e;
+
   --font-heading: "Fraunces", ui-serif, Georgia, serif;
   --font-body: "Sora", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;

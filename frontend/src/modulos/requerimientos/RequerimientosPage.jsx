@@ -1,49 +1,111 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Search, Zap, ClipboardList } from "lucide-react";
+import { Search, ClipboardList, Flame, Bot, AlertTriangle, Clock, CheckCircle2 } from "lucide-react";
 import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Select } from "../../componentes/Select";
+import { Cifra } from "../../componentes/Cifra";
+import { MiniPasos, COLOR_RELLENO_POR_CATEGORIA } from "../../componentes/MiniPasos";
+import { MenuAcciones } from "../../componentes/MenuAcciones";
 import { Pagination } from "../../componentes/Pagination";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { Toast } from "../../componentes/Toast";
 import { LimpiarFiltros } from "../../componentes/LimpiarFiltros";
 import { RequerimientoModal } from "./RequerimientoModal";
 import { AnularRequerimientoModal } from "./AnularRequerimientoModal";
-import { listarRequerimientos } from "./requerimientos.api";
+import { CompraExpressModal } from "./CompraExpressModal";
+import {
+  listarRequerimientos,
+  obtenerResumenRequerimientos,
+  confirmarSugerencia,
+} from "./requerimientos.api";
 import { listarDepositos } from "../depositos/depositos.api";
-import { ESTADOS_REQUERIMIENTO, VARIANTE_ESTADO_REQUERIMIENTO, ORIGENES_REQUERIMIENTO } from "../../lib/constantes";
+import {
+  ESTADOS_REQUERIMIENTO,
+  ORIGENES_REQUERIMIENTO,
+  TIPOS_REQUERIMIENTO,
+  CATEGORIAS_REQUERIMIENTO,
+  VARIANTE_POR_CATEGORIA,
+  categoriaDeRequerimiento,
+} from "../../lib/constantes";
+import { pasoDeRequerimiento } from "../../lib/requerimientosPasos";
 import { formatearFechaSolo } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 
 const PAGE_SIZE = 10;
 
-// Mismos colores por estado que ArticulosLista/ProveedoresLista (guía
-// visual, sección 5): activo = pino, en curso = laton (mismo tono que su
-// Badge "alerta"), todos = tinta.
-const ESTADOS = [
-  { valor: "", label: "Todos", activo: "border-tinta bg-tinta text-hueso" },
-  { valor: ESTADOS_REQUERIMIENTO.PENDIENTE, label: "Pendiente", activo: "border-laton bg-laton text-hueso" },
-  { valor: ESTADOS_REQUERIMIENTO.EN_COTIZACION, label: "En cotización", activo: "border-laton bg-laton text-hueso" },
-  { valor: ESTADOS_REQUERIMIENTO.APROBADO, label: "Aprobado", activo: "border-pino bg-pino text-hueso" },
+// Rediseño: reemplazan a los dos grupos de pills de estado que había antes
+// (uno para el ciclo de compra, otro para los estados nuevos de
+// transferencia) — cada tarjeta es un filtro rápido por categoría, no por
+// estado puntual. El dropdown de más abajo sigue cubriendo "quiero este
+// estado exacto".
+const TARJETAS = [
+  {
+    categoria: CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION,
+    campoResumen: "necesitaAccion",
+    label: "Esperan tu acción",
+    icon: AlertTriangle,
+    clase: "text-error-texto",
+  },
+  {
+    categoria: CATEGORIAS_REQUERIMIENTO.EN_CURSO,
+    campoResumen: "enCurso",
+    label: "En curso",
+    icon: Clock,
+    clase: "text-info-texto",
+  },
+  {
+    categoria: CATEGORIAS_REQUERIMIENTO.COMPLETADO,
+    campoResumen: "completadas",
+    label: "Completadas",
+    icon: CheckCircle2,
+    clase: "text-pino",
+  },
+];
+
+// Punto 4 del pedido: referencia fija de qué significa cada color de la
+// columna Progreso, para no depender de que el usuario lo infiera solo.
+// Misma paleta que MiniPasos.jsx (importada de ahí, no repetida a mano).
+const LEYENDA_PROGRESO = [
+  { categoria: CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION, label: "Necesita acción" },
+  { categoria: CATEGORIAS_REQUERIMIENTO.EN_CURSO, label: "En curso" },
+  { categoria: CATEGORIAS_REQUERIMIENTO.COMPLETADO, label: "Completado" },
+  { categoria: CATEGORIAS_REQUERIMIENTO.CANCELADO, label: "Cancelado" },
 ];
 
 export function RequerimientosPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
-  const { puede } = useSesion();
+  const { puede, usuario } = useSesion();
   const { toast, mostrarToast } = useToast();
+  const queryClient = useQueryClient();
 
   const q = searchParams.get("q") ?? "";
   const estado = searchParams.get("estado") ?? "";
+  const categoria = searchParams.get("categoria") ?? "";
+  const soloUrgentesAbiertas = searchParams.get("urgente") === "1" && searchParams.get("soloAbiertas") === "1";
   const depositoId = searchParams.get("depositoId") ?? "";
+  const tipo = searchParams.get("tipo") ?? "";
   const page = Number(searchParams.get("page")) || 1;
 
   const [modal, setModal] = useState(null); // null | { prefill } | { requerimiento }
   const [paraAnular, setParaAnular] = useState(null);
+  const [paraCompraExpress, setParaCompraExpress] = useState(null);
+
+  function invalidarYAvisar(mensaje) {
+    queryClient.invalidateQueries({ queryKey: ["requerimientos"] });
+    queryClient.invalidateQueries({ queryKey: ["requerimientos-resumen"] });
+    mostrarToast(mensaje);
+  }
+
+  const mutacionConfirmarSugerencia = useMutation({
+    mutationFn: (id) => confirmarSugerencia(id, usuario),
+    onSuccess: (_data, id) => invalidarYAvisar(`Sugerencia REQ-${String(id).padStart(4, "0")} confirmada.`),
+    onError: (err) => mostrarToast(err?.response?.data?.error ?? "No se pudo confirmar la sugerencia."),
+  });
 
   // Alta desde Alertas (HU-8 -> HU-81): la alerta navega acá con estos
   // parámetros para abrir el modal ya precargado. Se leen una sola vez al
@@ -68,20 +130,67 @@ export function RequerimientosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const puedeVerPagina = puede("crearRequerimiento");
+
+  const { data: resumen } = useQuery({
+    queryKey: ["requerimientos-resumen", { q, depositoId, tipo }],
+    queryFn: () => obtenerResumenRequerimientos({ q, depositoId, tipo }),
+    enabled: puedeVerPagina,
+  });
+
   const { data, isLoading, isError } = useQuery({
-    queryKey: ["requerimientos", { q, estado, depositoId, page }],
+    queryKey: ["requerimientos", { q, estado, categoria, soloUrgentesAbiertas, depositoId, tipo, page }],
     // incluirAnulados: esta es la pantalla de seguimiento — un anulado se ve
     // igual (con su propio badge), no desaparece del historial.
-    queryFn: () => listarRequerimientos({ q, estado, depositoId, page, pageSize: PAGE_SIZE, incluirAnulados: true }),
-    enabled: puede("crearRequerimiento"),
+    queryFn: () =>
+      listarRequerimientos({
+        q,
+        estado,
+        categoria,
+        urgente: soloUrgentesAbiertas ? "1" : undefined,
+        soloAbiertas: soloUrgentesAbiertas ? "1" : undefined,
+        depositoId,
+        tipo,
+        page,
+        pageSize: PAGE_SIZE,
+        incluirAnulados: true,
+      }),
+    enabled: puedeVerPagina,
   });
 
   const { data: depositos } = useQuery({ queryKey: ["depositos"], queryFn: listarDepositos });
 
+  // Estado (dropdown), categoría (tarjeta) y "urgentes abiertas" (tarjeta)
+  // son 3 formas mutuamente excluyentes de acotar por estado — elegir una
+  // limpia las otras dos, así nunca se pisan entre sí.
+  function limpiarFiltrosDeEstado(params) {
+    ["estado", "categoria", "urgente", "soloAbiertas"].forEach((k) => params.delete(k));
+  }
+
   function actualizarFiltro(clave, valor) {
     const params = new URLSearchParams(searchParams);
+    if (clave === "estado") limpiarFiltrosDeEstado(params);
     if (valor) params.set(clave, valor);
     else params.delete(clave);
+    params.set("page", "1");
+    setSearchParams(params);
+  }
+
+  function alternarCategoria(cat) {
+    const params = new URLSearchParams(searchParams);
+    limpiarFiltrosDeEstado(params);
+    if (categoria !== cat) params.set("categoria", cat);
+    params.set("page", "1");
+    setSearchParams(params);
+  }
+
+  function alternarUrgentesAbiertas() {
+    const params = new URLSearchParams(searchParams);
+    limpiarFiltrosDeEstado(params);
+    if (!soloUrgentesAbiertas) {
+      params.set("urgente", "1");
+      params.set("soloAbiertas", "1");
+    }
     params.set("page", "1");
     setSearchParams(params);
   }
@@ -94,12 +203,56 @@ export function RequerimientosPage() {
 
   function limpiarFiltros() {
     const params = new URLSearchParams(searchParams);
-    ["q", "estado", "depositoId"].forEach((k) => params.delete(k));
+    ["q", "estado", "categoria", "urgente", "soloAbiertas", "depositoId", "tipo"].forEach((k) => params.delete(k));
     params.set("page", "1");
     setSearchParams(params);
   }
 
-  const hayFiltros = q || estado || depositoId;
+  const hayFiltros = q || estado || categoria || soloUrgentesAbiertas || depositoId || tipo;
+
+  // Acción principal de la fila (punto 6): una sola, siempre visible,
+  // cambia según el estado. "Ver" es el default para cualquier estado sin
+  // acción propia — reemplaza a los tres bloques de botones sueltos que
+  // había antes (uno por cada acción condicional).
+  function accionPrincipal(r) {
+    const ver = { label: "Ver", variante: "secundario", onClick: () => navigate(`/requerimientos/${r.id}`) };
+    if (r.anulado) return ver;
+    if (r.estado === ESTADOS_REQUERIMIENTO.SUGERIDA && puede("gestionarSugerencias")) {
+      return {
+        label: "Confirmar",
+        disabled: mutacionConfirmarSugerencia.isPending,
+        onClick: () => mutacionConfirmarSugerencia.mutate(r.id),
+      };
+    }
+    if (
+      r.estado === ESTADOS_REQUERIMIENTO.PENDIENTE &&
+      r.tipo === TIPOS_REQUERIMIENTO.COMPRA &&
+      puede("gestionarPresupuestos")
+    ) {
+      return { label: "Solicitar presupuesto", onClick: () => navigate(`/presupuestos?solicitarRequerimientoId=${r.id}`) };
+    }
+    return ver;
+  }
+
+  // Acciones secundarias: las mismas que ya existían por estado, solo que
+  // ahora conviven al lado de una acción principal fija en vez de ser tres
+  // grupos que se mostraban o no según el caso.
+  function accionesSecundarias(r) {
+    if (r.anulado) return [];
+    if (r.estado === ESTADOS_REQUERIMIENTO.SUGERIDA) {
+      return puede("gestionarSugerencias") ? [{ label: "Descartar", variante: "baja", onClick: () => setParaAnular(r) }] : [];
+    }
+    if (r.estado === ESTADOS_REQUERIMIENTO.PENDIENTE && puede("crearRequerimiento")) {
+      const secundarias = [];
+      if (r.tipo === TIPOS_REQUERIMIENTO.COMPRA && r.urgente && puede("gestionarPresupuestos")) {
+        secundarias.push({ label: "Compra express", onClick: () => setParaCompraExpress(r) });
+      }
+      secundarias.push({ label: "Editar", variante: "secundario", onClick: () => setModal({ requerimientoId: r.id }) });
+      secundarias.push({ label: "Anular", variante: "baja", onClick: () => setParaAnular(r) });
+      return secundarias;
+    }
+    return [];
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -112,10 +265,43 @@ export function RequerimientosPage() {
         </p>
       </div>
 
-      {!puede("crearRequerimiento") ? (
+      {!puedeVerPagina ? (
         <SinPermiso />
       ) : (
         <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+            {TARJETAS.map((t) => {
+              const activa = categoria === t.categoria;
+              return (
+                <button
+                  key={t.categoria}
+                  type="button"
+                  onClick={() => alternarCategoria(t.categoria)}
+                  className={`cursor-pointer rounded-[18px] bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(46,43,37,0.14)] transition-colors ${
+                    activa ? "ring-2 ring-pino" : "hover:bg-hueso"
+                  }`}
+                >
+                  <div className={`flex items-center gap-1.5 font-body text-[11px] uppercase tracking-[0.08em] ${t.clase}`}>
+                    <t.icon size={13} /> {t.label}
+                  </div>
+                  <Cifra tamano={28}>{resumen?.[t.campoResumen] ?? "—"}</Cifra>
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={alternarUrgentesAbiertas}
+              className={`cursor-pointer rounded-[18px] bg-white p-3.5 text-left shadow-[0_1px_2px_rgba(46,43,37,0.14)] transition-colors ${
+                soloUrgentesAbiertas ? "ring-2 ring-pino" : "hover:bg-hueso"
+              }`}
+            >
+              <div className="flex items-center gap-1.5 font-body text-[11px] uppercase tracking-[0.08em] text-error-texto">
+                <Flame size={13} /> Urgentes abiertas
+              </div>
+              <Cifra tamano={28}>{resumen?.urgentesAbiertas ?? "—"}</Cifra>
+            </button>
+          </div>
+
           <div className="flex flex-wrap items-center gap-3">
             <div className="relative min-w-[240px] flex-1">
               <Search size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-piedra" />
@@ -134,24 +320,24 @@ export function RequerimientosPage() {
               ))}
             </Select>
 
-            <div className="inline-flex overflow-hidden rounded-full border border-borde">
-              {ESTADOS.map((e) => (
-                <button
-                  key={e.valor}
-                  type="button"
-                  onClick={() => actualizarFiltro("estado", e.valor)}
-                  className={`cursor-pointer whitespace-nowrap px-4 py-2 text-[12.5px] font-medium ${
-                    estado === e.valor ? e.activo : "bg-transparent text-tinta hover:bg-hueso"
-                  }`}
-                >
-                  {e.label}
-                </button>
+            <Select value={tipo} onChange={(e) => actualizarFiltro("tipo", e.target.value)}>
+              <option value="">Compra y transferencia</option>
+              <option value={TIPOS_REQUERIMIENTO.COMPRA}>Solo compra</option>
+              <option value={TIPOS_REQUERIMIENTO.TRANSFERENCIA}>Solo transferencia</option>
+            </Select>
+
+            <Select value={estado} onChange={(e) => actualizarFiltro("estado", e.target.value)}>
+              <option value="">Todos los estados</option>
+              {Object.values(ESTADOS_REQUERIMIENTO).map((e) => (
+                <option key={e} value={e}>{e}</option>
               ))}
-            </div>
+            </Select>
 
             {hayFiltros && <LimpiarFiltros onClick={limpiarFiltros} />}
 
-            <Button onClick={() => setModal({ prefill: null })}>+ Nuevo requerimiento</Button>
+            {puede("crearRequerimiento") && (
+              <Button onClick={() => setModal({ prefill: null })}>+ Nuevo requerimiento</Button>
+            )}
           </div>
 
           {isLoading && <p className="text-sm text-piedra">Cargando requerimientos…</p>}
@@ -159,72 +345,83 @@ export function RequerimientosPage() {
 
           {data && (
             <div className="rounded-lg border border-borde bg-white p-5">
-              <div className="mb-3 text-xs text-piedra">
-                {data.total} requerimiento{data.total === 1 ? "" : "s"}
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="text-xs text-piedra">
+                  {data.total} requerimiento{data.total === 1 ? "" : "s"}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-3.5 gap-y-1 font-body text-[11px] text-piedra">
+                  <span className="font-semibold uppercase tracking-[0.06em] text-tinta/55">Progreso:</span>
+                  {LEYENDA_PROGRESO.map((l) => (
+                    <span key={l.categoria} className="flex items-center gap-1.5">
+                      <span className={`h-2 w-2 rounded-full ${COLOR_RELLENO_POR_CATEGORIA[l.categoria]}`} />
+                      {l.label}
+                    </span>
+                  ))}
+                </div>
               </div>
               <Table
-                columnas={["N°", "Fecha", "Depósito", "Artículos", "Presupuestos", "Estado", ""]}
-                columnasDerecha={["Artículos", "Presupuestos"]}
+                columnas={["N°", "Tipo", "Fecha", "Depósito", "Artículos", "Progreso", "Estado", "Acciones"]}
+                columnasDerecha={["Artículos", "Acciones"]}
                 filas={data.items}
                 vacio={hayFiltros ? "Ningún requerimiento coincide con los filtros." : "Todavía no hay requerimientos cargados."}
                 renderFila={(r) => {
-                  // Editar/Anular solo tienen sentido en "Pendiente": una
-                  // vez que se pidieron presupuestos, el requerimiento
-                  // queda congelado (ver comentario en requerimientos.servicio.js).
-                  const puedeModificar = r.estado === ESTADOS_REQUERIMIENTO.PENDIENTE && !r.anulado;
+                  const cat = categoriaDeRequerimiento(r);
+                  const principal = accionPrincipal(r);
+                  const secundarias = accionesSecundarias(r);
                   return (
                     <tr
                       key={r.id}
                       onClick={() => navigate(`/requerimientos/${r.id}`)}
-                      className={`cursor-pointer border-b border-borde last:border-0 hover:bg-hueso ${r.anulado ? "opacity-55" : ""}`}
+                      className={`cursor-pointer border-b border-borde align-middle transition-colors last:border-0 hover:bg-hueso ${r.anulado ? "opacity-55" : ""}`}
                     >
-                      <td className="px-3 py-2 font-mono text-xs">
-                        <span className="inline-flex items-center gap-1">
-                          REQ-{String(r.id).padStart(4, "0")}
-                          {r.origen === ORIGENES_REQUERIMIENTO.ALERTA && (
-                            <Zap size={13} className="text-laton" title="Generado desde una alerta de stock mínimo" />
+                      <td className="px-3 py-2.5 align-middle font-mono text-xs">
+                        <div className="flex flex-col gap-1">
+                          <span>REQ-{String(r.id).padStart(4, "0")}</span>
+                          {(r.urgente || r.origen !== ORIGENES_REQUERIMIENTO.MANUAL) && (
+                            <span className="flex flex-wrap gap-1">
+                              {r.urgente && (
+                                <Badge variante="error">
+                                  <Flame size={11} /> Urgente
+                                </Badge>
+                              )}
+                              {r.origen !== ORIGENES_REQUERIMIENTO.MANUAL && (
+                                <Badge variante="neutro">
+                                  <Bot size={11} /> Automática
+                                </Badge>
+                              )}
+                            </span>
                           )}
-                        </span>
+                        </div>
                       </td>
-                      <td className="px-3 py-2 font-body text-[12.5px]">{formatearFechaSolo(r.fecha)}</td>
-                      <td className="px-3 py-2 font-body text-[12.5px] font-semibold">{r.deposito?.nombre}</td>
-                      <td className="px-3 py-2 text-right font-body text-[12.5px]">{r.cantidadArticulos}</td>
-                      <td className="px-3 py-2 text-right font-body text-[12.5px]">
-                        {r.cantidadPresupuestos === 0 ? (
-                          <span className="text-piedra">—</span>
-                        ) : (
-                          <span>
-                            {r.presupuestosCotizados}/{r.cantidadPresupuestos}
-                            <span className="ml-1 text-[11px] text-piedra">cotizados</span>
-                          </span>
+                      <td className="px-3 py-2.5 align-middle">
+                        <Badge variante="neutro">
+                          {r.tipo === TIPOS_REQUERIMIENTO.TRANSFERENCIA ? "Transferencia" : "Compra"}
+                        </Badge>
+                      </td>
+                      <td className="px-3 py-2.5 align-middle font-body text-[12.5px] whitespace-nowrap">{formatearFechaSolo(r.fecha)}</td>
+                      <td className="max-w-[160px] truncate px-3 py-2.5 align-middle font-body text-[12.5px] font-semibold" title={r.deposito?.nombre}>
+                        {r.deposito?.nombre}
+                      </td>
+                      <td className="px-3 py-2.5 text-right align-middle font-body text-[12.5px]">{r.cantidadArticulos}</td>
+                      <td className="px-3 py-2.5 align-middle">
+                        {!r.anulado && r.estado !== ESTADOS_REQUERIMIENTO.RECHAZADA && (
+                          <MiniPasos pasoActual={pasoDeRequerimiento(r)} categoria={cat} />
                         )}
                       </td>
-                      <td className="px-3 py-2">
+                      <td className="px-3 py-2.5 align-middle">
                         {r.anulado ? (
                           <Badge variante="neutro">Anulado</Badge>
                         ) : (
-                          <Badge variante={VARIANTE_ESTADO_REQUERIMIENTO[r.estado] ?? "neutro"}>{r.estado}</Badge>
+                          <Badge variante={VARIANTE_POR_CATEGORIA[cat] ?? "neutro"}>{r.estado}</Badge>
                         )}
                       </td>
-                      <td className="px-3 py-2 text-right">
-                        {puedeModificar && (
-                          <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                            {puede("gestionarPresupuestos") && (
-                              <Button
-                                tamano="fila"
-                                onClick={() => navigate(`/presupuestos?solicitarRequerimientoId=${r.id}`)}
-                              >
-                                Solicitar presupuesto
-                              </Button>
-                            )}
-                            <Button variante="secundario" tamano="fila" onClick={() => setModal({ requerimientoId: r.id })}>
-                              Editar
-                            </Button>
-                            <Button variante="baja" tamano="fila" onClick={() => setParaAnular(r)}>
-                              Anular
-                            </Button>
-                          </div>
-                        )}
+                      <td className="px-3 py-2.5 text-right align-middle">
+                        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                          <Button variante={principal.variante} tamano="fila" disabled={principal.disabled} onClick={principal.onClick}>
+                            {principal.label}
+                          </Button>
+                          <MenuAcciones acciones={secundarias} />
+                        </div>
                       </td>
                     </tr>
                   );
@@ -236,9 +433,10 @@ export function RequerimientosPage() {
             </div>
           )}
 
-          <p className="border-t border-dashed border-borde pt-3 text-xs text-piedra">
-            El ⚡ marca los requerimientos generados desde una alerta de stock mínimo. Un requerimiento llega a
-            "Aprobado" solamente cuando el gerente adjudica uno de sus presupuestos.
+          <p className="flex items-center gap-1.5 border-t border-dashed border-borde pt-3 text-xs text-piedra">
+            <Bot size={13} className="flex-none" /> marca los requerimientos que generó el sistema solo (alerta de
+            stock mínimo o transferencia sin stock). Un requerimiento llega a "Aprobado" solamente cuando el gerente
+            adjudica uno de sus presupuestos.
           </p>
         </div>
       )}
@@ -250,7 +448,7 @@ export function RequerimientosPage() {
           onClose={() => setModal(null)}
           onExito={(mensaje) => {
             setModal(null);
-            mostrarToast(mensaje);
+            invalidarYAvisar(mensaje);
           }}
         />
       )}
@@ -261,7 +459,18 @@ export function RequerimientosPage() {
           onClose={() => setParaAnular(null)}
           onExito={(mensaje) => {
             setParaAnular(null);
-            mostrarToast(mensaje);
+            invalidarYAvisar(mensaje);
+          }}
+        />
+      )}
+
+      {paraCompraExpress && (
+        <CompraExpressModal
+          requerimientoId={paraCompraExpress.id}
+          onClose={() => setParaCompraExpress(null)}
+          onExito={(mensaje) => {
+            setParaCompraExpress(null);
+            invalidarYAvisar(mensaje);
           }}
         />
       )}

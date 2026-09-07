@@ -5,6 +5,15 @@ export async function listarRequerimientos(params) {
   return data;
 }
 
+// Rediseño de la pantalla — los 4 contadores de las tarjetas de resumen.
+// Mismos filtros de búsqueda/depósito/tipo que listarRequerimientos, pero
+// nunca estado/categoría: son ellos los que se usan para filtrar por
+// categoría al hacerles click.
+export async function obtenerResumenRequerimientos(params) {
+  const { data } = await api.get("/requerimientos/resumen", { params });
+  return data;
+}
+
 export async function obtenerRequerimiento(id) {
   const { data } = await api.get(`/requerimientos/${id}`);
   return data;
