@@ -36,17 +36,76 @@ const CONDICIONES_COMERCIALES = [
   "60 días cta. cte.",
 ];
 
-// Estados de un requerimiento de reposición (HU-81). "Aprobado" NO se
-// setea a mano: es consecuencia de aprobar un presupuesto (HU-84).
+// Estados de un requerimiento de reposición (HU-81, ampliado en Sprint 3 —
+// Transferencia a Central). "Aprobado" NO se setea a mano: es consecuencia
+// de aprobar un presupuesto (HU-84). Los de Sprint 3 son: "Sugerida" (la
+// reposición automática del central que espera confirmación humana) y el
+// resto del circuito de una TRANSFERENCIA ("Pendiente de stock" → "En
+// tránsito" → "Recibida" → "Cerrada"). No existe una "compra directa" desde
+// un depósito periférico: el tipo es 100% inferido de `deposito.esCentral`
+// (periférico → TRANSFERENCIA, central → COMPRA), sin excepción — ver el
+// guard en crearRequerimiento (requerimientos.servicio.js).
 const ESTADOS_REQUERIMIENTO = {
+  SUGERIDA: "Sugerida",
   PENDIENTE: "Pendiente",
   EN_COTIZACION: "En cotización",
   APROBADO: "Aprobado",
+  PENDIENTE_DE_STOCK: "Pendiente de stock",
+  EN_TRANSITO: "En tránsito",
+  RECIBIDA: "Recibida",
+  CERRADA: "Cerrada",
+  RECHAZADA: "Rechazada",
 };
 
-// De dónde salió el requerimiento: cargado a mano o disparado desde una
-// alerta de stock mínimo (HU-8, Sprint 1).
-const ORIGENES_REQUERIMIENTO = { MANUAL: "MANUAL", ALERTA: "ALERTA" };
+// De dónde salió el requerimiento: cargado a mano, disparado desde una
+// alerta de stock mínimo (HU-8, Sprint 1), o generado porque una
+// TRANSFERENCIA no tenía stock del central para completarse (Sprint 3).
+const ORIGENES_REQUERIMIENTO = { MANUAL: "MANUAL", ALERTA: "ALERTA", TRANSFERENCIA_BLOQUEADA: "TRANSFERENCIA_BLOQUEADA" };
+
+// Rediseño de la pantalla de Requerimientos — cada estado (más el booleano
+// `anulado`, que pisa cualquier estado) mapea a UNA de estas 4 categorías
+// visuales fijas. Agregar un estado nuevo el día de mañana es una sola
+// línea acá, no tocar cada componente que dibuja un color. Espejo exacto
+// en frontend/src/lib/constantes.js.
+const CATEGORIAS_REQUERIMIENTO = {
+  NECESITA_ACCION: "NECESITA_ACCION",
+  EN_CURSO: "EN_CURSO",
+  COMPLETADO: "COMPLETADO",
+  CANCELADO: "CANCELADO",
+};
+
+const CATEGORIA_POR_ESTADO = {
+  [ESTADOS_REQUERIMIENTO.PENDIENTE]: CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION,
+  [ESTADOS_REQUERIMIENTO.SUGERIDA]: CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION,
+  [ESTADOS_REQUERIMIENTO.PENDIENTE_DE_STOCK]: CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION,
+  [ESTADOS_REQUERIMIENTO.EN_COTIZACION]: CATEGORIAS_REQUERIMIENTO.EN_CURSO,
+  [ESTADOS_REQUERIMIENTO.APROBADO]: CATEGORIAS_REQUERIMIENTO.EN_CURSO,
+  [ESTADOS_REQUERIMIENTO.EN_TRANSITO]: CATEGORIAS_REQUERIMIENTO.EN_CURSO,
+  [ESTADOS_REQUERIMIENTO.RECIBIDA]: CATEGORIAS_REQUERIMIENTO.COMPLETADO,
+  [ESTADOS_REQUERIMIENTO.CERRADA]: CATEGORIAS_REQUERIMIENTO.COMPLETADO,
+  [ESTADOS_REQUERIMIENTO.RECHAZADA]: CATEGORIAS_REQUERIMIENTO.CANCELADO,
+};
+
+// `anulado` siempre pisa la categoría por estado — mismo criterio que ya
+// usa el badge de la lista hoy ("Anulado" en vez del estado real).
+function categoriaDeRequerimiento({ estado, anulado }) {
+  if (anulado) return CATEGORIAS_REQUERIMIENTO.CANCELADO;
+  return CATEGORIA_POR_ESTADO[estado] ?? CATEGORIAS_REQUERIMIENTO.EN_CURSO;
+}
+
+// Estados agrupados por categoría, derivados de CATEGORIA_POR_ESTADO (no
+// se listan a mano dos veces) — los usa obtenerResumenRequerimientos para
+// los contadores y el filtro por categoría de la pantalla.
+function estadosDeCategoria(categoria) {
+  return Object.entries(CATEGORIA_POR_ESTADO)
+    .filter(([, cat]) => cat === categoria)
+    .map(([estado]) => estado);
+}
+
+// Sprint 3 — Transferencia a Central. "COMPRA": a un proveedor externo
+// (el único tipo que existía hasta Sprint 2). "TRANSFERENCIA": a un
+// depósito central interno, resuelto por el sistema sin proveedor.
+const TIPOS_REQUERIMIENTO = { COMPRA: "COMPRA", TRANSFERENCIA: "TRANSFERENCIA" };
 
 // Estados de un presupuesto (HU-82 a 84). "Solicitado" es la invitación
 // a cotizar (todavía sin precios); "Adjudicado" es el único que habilita
@@ -109,6 +168,11 @@ module.exports = {
   CONDICIONES_COMERCIALES,
   ESTADOS_REQUERIMIENTO,
   ORIGENES_REQUERIMIENTO,
+  TIPOS_REQUERIMIENTO,
+  CATEGORIAS_REQUERIMIENTO,
+  CATEGORIA_POR_ESTADO,
+  categoriaDeRequerimiento,
+  estadosDeCategoria,
   ESTADOS_PRESUPUESTO,
   MAPA_RUBRO_CATEGORIA,
   rubroCubreCategoria,

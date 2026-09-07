@@ -22,13 +22,68 @@ export const CONDICIONES_COMERCIALES = [
   "60 días cta. cte.",
 ];
 
+// Ampliado en Sprint 3 — Transferencia a Central (ver backend/src/lib/constantes.js).
 export const ESTADOS_REQUERIMIENTO = {
+  SUGERIDA: "Sugerida",
   PENDIENTE: "Pendiente",
   EN_COTIZACION: "En cotización",
   APROBADO: "Aprobado",
+  PENDIENTE_DE_STOCK: "Pendiente de stock",
+  EN_TRANSITO: "En tránsito",
+  RECIBIDA: "Recibida",
+  CERRADA: "Cerrada",
+  RECHAZADA: "Rechazada",
 };
 
-export const ORIGENES_REQUERIMIENTO = { MANUAL: "MANUAL", ALERTA: "ALERTA" };
+export const ORIGENES_REQUERIMIENTO = { MANUAL: "MANUAL", ALERTA: "ALERTA", TRANSFERENCIA_BLOQUEADA: "TRANSFERENCIA_BLOQUEADA" };
+
+// Sprint 3 — Transferencia a Central.
+export const TIPOS_REQUERIMIENTO = { COMPRA: "COMPRA", TRANSFERENCIA: "TRANSFERENCIA" };
+
+// Rediseño de la pantalla de Requerimientos — cada estado (más `anulado`,
+// que pisa cualquier estado) mapea a UNA de estas 4 categorías visuales
+// fijas. Espejo exacto de backend/src/lib/constantes.js: agregar un
+// estado nuevo es una línea acá y otra allá, no tocar cada componente que
+// dibuja un color.
+export const CATEGORIAS_REQUERIMIENTO = {
+  NECESITA_ACCION: "NECESITA_ACCION",
+  EN_CURSO: "EN_CURSO",
+  COMPLETADO: "COMPLETADO",
+  CANCELADO: "CANCELADO",
+};
+
+export const CATEGORIA_POR_ESTADO = {
+  [ESTADOS_REQUERIMIENTO.PENDIENTE]: CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION,
+  [ESTADOS_REQUERIMIENTO.SUGERIDA]: CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION,
+  [ESTADOS_REQUERIMIENTO.PENDIENTE_DE_STOCK]: CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION,
+  [ESTADOS_REQUERIMIENTO.EN_COTIZACION]: CATEGORIAS_REQUERIMIENTO.EN_CURSO,
+  [ESTADOS_REQUERIMIENTO.APROBADO]: CATEGORIAS_REQUERIMIENTO.EN_CURSO,
+  [ESTADOS_REQUERIMIENTO.EN_TRANSITO]: CATEGORIAS_REQUERIMIENTO.EN_CURSO,
+  [ESTADOS_REQUERIMIENTO.RECIBIDA]: CATEGORIAS_REQUERIMIENTO.COMPLETADO,
+  [ESTADOS_REQUERIMIENTO.CERRADA]: CATEGORIAS_REQUERIMIENTO.COMPLETADO,
+  [ESTADOS_REQUERIMIENTO.RECHAZADA]: CATEGORIAS_REQUERIMIENTO.CANCELADO,
+};
+
+export function categoriaDeRequerimiento({ estado, anulado }) {
+  if (anulado) return CATEGORIAS_REQUERIMIENTO.CANCELADO;
+  return CATEGORIA_POR_ESTADO[estado] ?? CATEGORIAS_REQUERIMIENTO.EN_CURSO;
+}
+
+export function estadosDeCategoria(categoria) {
+  return Object.entries(CATEGORIA_POR_ESTADO)
+    .filter(([, cat]) => cat === categoria)
+    .map(([estado]) => estado);
+}
+
+// Variante de <Badge> por categoría (no por estado puntual — ver punto 3
+// del rediseño). "info" (azul) se agregó a Badge.jsx específicamente para
+// esto: las 4 que había (ok/alerta/error/neutro) no cubrían "en curso".
+export const VARIANTE_POR_CATEGORIA = {
+  [CATEGORIAS_REQUERIMIENTO.NECESITA_ACCION]: "error",
+  [CATEGORIAS_REQUERIMIENTO.EN_CURSO]: "info",
+  [CATEGORIAS_REQUERIMIENTO.COMPLETADO]: "ok",
+  [CATEGORIAS_REQUERIMIENTO.CANCELADO]: "neutro",
+};
 
 export const ESTADOS_PRESUPUESTO = {
   SOLICITADO: "Solicitado",
@@ -37,13 +92,23 @@ export const ESTADOS_PRESUPUESTO = {
   ADJUDICADO: "Adjudicado",
 };
 
-// Variante de <Badge> por estado. Las 4 variantes que existen alcanzan
-// (ok / alerta / error / neutro) — no inventar una quinta sin avisar al
-// grupo (Guía Técnica, sección 0.5).
+// Variante de <Badge> por estado puntual — la usa la ficha de detalle.
+// El listado usa VARIANTE_POR_CATEGORIA (más arriba) para las 4 categorías
+// fijas del rediseño; esta sigue viva para mostrar el estado real, más
+// específico, en la ficha.
 export const VARIANTE_ESTADO_REQUERIMIENTO = {
+  Sugerida: "neutro",
   Pendiente: "alerta",
   "En cotización": "alerta",
   Aprobado: "ok",
+  "Pendiente de stock": "alerta",
+  "En tránsito": "alerta",
+  // "alerta", no "ok" como Cerrada: implica que llegó CON diferencia y
+  // alguien todavía tiene que revisarla (ver ordenesCompra.servicio.js) —
+  // mismo criterio que el nodo del timeline en RequerimientoDetallePage.
+  Recibida: "alerta",
+  Cerrada: "ok",
+  Rechazada: "error",
 };
 
 export const VARIANTE_ESTADO_PRESUPUESTO = {

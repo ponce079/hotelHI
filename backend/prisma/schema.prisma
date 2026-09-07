@@ -13,26 +13,43 @@ model Articulo {
   unidadMedida          String
   categoria             String
   activo                Boolean                  @default(true)
+  // A qué depósito central pertenece este artículo (Sprint 3 — Transferencia
+  // a Central). Sin asignar, el artículo no puede pedirse por TRANSFERENCIA:
+  // el sistema no tendría a quién dirigirla sin preguntarle al usuario.
+  depositoCentralId     Int?
+  // "SUGERIDA" | "AUTOMATICA" — controla si la reposición del central
+  // disparada por punto de reorden o por una transferencia bloqueada por
+  // falta de stock entra directo al tablero de Compras (Pendiente, igual
+  // que el origen ALERTA de hoy) o queda en una bandeja de sugerencias que
+  // alguien debe confirmar antes.
+  modoReposicion        String                   @default("SUGERIDA")
+  depositoCentral       Deposito?                @relation("ArticuloDepositoCentral", fields: [depositoCentralId], references: [id])
   articuloDepositos     ArticuloDeposito[]
   detalleMovimientos    MovimientoStockDetalle[]
   detalleOC             OrdenCompraDetalle[]
   detalleRequerimientos RequerimientoDetalle[]
   detallePresupuestos   PresupuestoDetalle[]
 
+  @@index([depositoCentralId], map: "articulos_depositoCentralId_fkey")
   @@map("articulos")
 }
 
 model Deposito {
-  id                 Int                       @id @default(autoincrement())
-  nombre             String                    @unique
-  ubicacion          String?
-  responsable        String?
-  activo             Boolean                   @default(true)
-  articulos          ArticuloDeposito[]
-  movimientos        MovimientoStock[]
-  movimientosDestino MovimientoStock[]         @relation("MovimientoDestino")
-  requerimientos     RequerimientoReposicion[]
-  ordenesCompra      OrdenCompra[]
+  id                    Int                       @id @default(autoincrement())
+  nombre                String                    @unique
+  ubicacion             String?
+  responsable           String?
+  activo                Boolean                   @default(true)
+  // Depósito central (Sprint 3): origen de las transferencias internas.
+  // Existen 1 o 2 en todo el sistema, marcados a mano desde el ABM.
+  esCentral             Boolean                   @default(false)
+  articulos             ArticuloDeposito[]
+  articulosCentral      Articulo[]                @relation("ArticuloDepositoCentral")
+  movimientos           MovimientoStock[]
+  movimientosDestino    MovimientoStock[]         @relation("MovimientoDestino")
+  requerimientos        RequerimientoReposicion[]
+  requerimientosCentral RequerimientoReposicion[] @relation("RequerimientoDepositoCentral")
+  ordenesCompra         OrdenCompra[]
 
   @@map("depositos")
 }
@@ -93,6 +110,7 @@ model MovimientoStock {
   tipoMovStock            TipoMovimientoStock      @relation(fields: [tipoMovStockId], references: [id])
   ordenCompra             OrdenCompra?             @relation(fields: [ordenCompraId], references: [id])
   detalleMovimientos      MovimientoStockDetalle[]
+  requerimiento           RequerimientoReposicion?
 
   @@index([depositoId], map: "movimientos_stock_depositoId_fkey")
   @@index([depositoDestinoId], map: "movimientos_stock_depositoDestinoId_fkey")
@@ -153,26 +171,68 @@ model ProveedorRubro {
 }
 
 model RequerimientoReposicion {
-  id            Int                    @id @default(autoincrement())
-  depositoId    Int
-  fecha         DateTime               @default(now())
-  // Pendiente | En cotización | Aprobado
-  estado        String                 @default("Pendiente")
-  // "MANUAL" | "ALERTA" (generado desde la alerta de stock mínimo, HU-8)
-  origen        String                 @default("MANUAL")
-  requiereFlete Boolean                @default(false)
-  solicitante   String?
+  id                        Int                       @id @default(autoincrement())
+  depositoId                Int
+  fecha                     DateTime                  @default(now())
+  // Pendiente | En cotización | Aprobado | Sugerida | Pendiente de
+  // aprobación gerencia | Pendiente de stock | En tránsito | Recibida |
+  // Cerrada | Rechazada
+  estado                    String                    @default("Pendiente")
+  // "MANUAL" | "ALERTA" (stock mínimo, HU-8) | "TRANSFERENCIA_BLOQUEADA"
+  // (reposición del central disparada porque una transferencia no tenía
+  // stock para completarse, Sprint 3)
+  origen                    String                    @default("MANUAL")
+  requiereFlete             Boolean                   @default(false)
+  solicitante               String?
+  // "COMPRA" (a un proveedor externo) | "TRANSFERENCIA" (a un depósito
+  // central interno). Sprint 3 — Transferencia a Central.
+  tipo                      String                    @default("COMPRA")
+  // Prioriza en el picking del central y habilita "compra express" (saltar
+  // Presupuesto) cuando tipo = COMPRA.
+  urgente                   Boolean                   @default(false)
+  // Solo para tipo TRANSFERENCIA: a qué central se le pide. Desnormalizado
+  // desde Articulo.depositoCentralId de las líneas del detalle (todas
+  // tienen que compartir el mismo central, si no se pide dividir la
+  // solicitud).
+  depositoCentralId         Int?
+  // El traslado físico (MovimientoStock "En tránsito" → recibido) una vez
+  // que la transferencia se aprueba y reserva stock del central.
+  movimientoStockId         Int?                      @unique
+  // Auto-relación: en una TRANSFERENCIA que cae en "Pendiente de stock",
+  // apunta al requerimiento tipo COMPRA (reposición del central) generado
+  // para destrabarla.
+  requerimientoCompraId     Int?
   // Baja lógica — mismo criterio que OrdenCompra.motivoAnulacion: solo se
-  // puede anular en "Pendiente" (antes de comprometer a un proveedor con
-  // una solicitud de presupuesto), nunca se borra el registro.
-  anulado         Boolean                @default(false)
-  motivoAnulacion String?
-  deposito      Deposito               @relation(fields: [depositoId], references: [id])
-  detalle       RequerimientoDetalle[]
-  presupuestos  Presupuesto[]
+  // puede anular en "Pendiente" o "Sugerida" (antes de comprometer a un
+  // proveedor con una solicitud de presupuesto o de reservar stock del
+  // central), nunca se borra el registro.
+  anulado                   Boolean                   @default(false)
+  motivoAnulacion           String?
+  deposito                  Deposito                  @relation(fields: [depositoId], references: [id])
+  depositoCentral           Deposito?                 @relation("RequerimientoDepositoCentral", fields: [depositoCentralId], references: [id])
+  movimientoStock           MovimientoStock?          @relation(fields: [movimientoStockId], references: [id])
+  requerimientoCompra       RequerimientoReposicion?  @relation("ReposicionPorTransferenciaBloqueada", fields: [requerimientoCompraId], references: [id])
+  transferenciasQueDestraba RequerimientoReposicion[] @relation("ReposicionPorTransferenciaBloqueada")
+  detalle                   RequerimientoDetalle[]
+  presupuestos              Presupuesto[]
+  log                       RequerimientoLog[]
 
   @@index([depositoId], map: "requerimientos_reposicion_depositoId_fkey")
+  @@index([depositoCentralId], map: "requerimientos_reposicion_depositoCentralId_fkey")
+  @@index([requerimientoCompraId], map: "requerimientos_reposicion_requerimientoCompraId_fkey")
   @@map("requerimientos_reposicion")
+}
+
+model RequerimientoLog {
+  id              Int                     @id @default(autoincrement())
+  requerimientoId Int
+  usuario         String
+  accion          String
+  fecha           DateTime                @default(now())
+  requerimiento   RequerimientoReposicion @relation(fields: [requerimientoId], references: [id])
+
+  @@index([requerimientoId], map: "requerimientos_reposicion_log_requerimientoId_fkey")
+  @@map("requerimientos_reposicion_log")
 }
 
 model RequerimientoDetalle {
