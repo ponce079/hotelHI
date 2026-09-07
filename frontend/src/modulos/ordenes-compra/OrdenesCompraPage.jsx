@@ -21,6 +21,26 @@ import { ESTADOS_OC, BADGE_ESTADO_OC } from "./ordenesCompra.constantes";
 const FILTROS_VACIOS = { q: "", estado: "", proveedorId: "", desde: "", hasta: "" };
 const PAGE_SIZE = 10;
 
+// Mismo patrón de pastillas que Proveedores (fila "Rubro") y Requerimientos
+// (fila "Estado") — acá con más opciones que esas, así que van sueltas con
+// gap en vez de un único control segmentado. El color de cada pastilla
+// activa sale de BADGE_ESTADO_OC (una sola fuente de verdad con el badge
+// de la tabla), no se duplica.
+const PILL_ACTIVO_POR_VARIANTE = {
+  alerta: "border-laton bg-laton text-hueso",
+  ok: "border-pino bg-pino text-hueso",
+  neutro: "border-[#867d68] bg-[#867d68] text-hueso",
+  error: "border-error bg-error text-hueso",
+};
+const ESTADOS_FILTRO_OC = [
+  { valor: "", label: "Todos", activo: "border-tinta bg-tinta text-hueso" },
+  ...ESTADOS_OC.map((estado) => ({
+    valor: estado,
+    label: estado,
+    activo: PILL_ACTIVO_POR_VARIANTE[BADGE_ESTADO_OC[estado]] ?? "border-tinta bg-tinta text-hueso",
+  })),
+];
+
 export function OrdenesCompraPage() {
   const { puede, usuario } = useSesion();
   const tienePermiso = puede("verOrdenesCompra");
@@ -112,7 +132,7 @@ export function OrdenesCompraPage() {
       </div>
 
       {presupuestosPorGenerar.length > 0 && (
-        <div className="flex flex-col gap-3 rounded-[18.4px] border border-laton bg-laton-100/50 px-6 py-5">
+        <div className="flex flex-col gap-3 rounded-lg border border-laton bg-laton-100/50 p-5">
           <div>
             <h2 className="font-heading text-[16px] font-semibold text-tinta">
               Presupuestos adjudicados por generar · {presupuestosPorGenerar.length}
@@ -166,15 +186,6 @@ export function OrdenesCompraPage() {
           />
         </div>
 
-        <Select value={filtros.estado} onChange={(e) => setFiltros((f) => ({ ...f, estado: e.target.value }))}>
-          <option value="">Todos los estados</option>
-          {ESTADOS_OC.map((e) => (
-            <option key={e} value={e}>
-              {e}
-            </option>
-          ))}
-        </Select>
-
         <Select value={filtros.proveedorId} onChange={(e) => setFiltros((f) => ({ ...f, proveedorId: e.target.value }))}>
           <option value="">Todos los proveedores</option>
           {proveedoresDisponibles.map((p) => (
@@ -206,22 +217,38 @@ export function OrdenesCompraPage() {
         {hayFiltros && <LimpiarFiltros onClick={() => setFiltros(FILTROS_VACIOS)} />}
       </div>
 
-      <div className="flex flex-col gap-3 rounded-[18.4px] bg-white px-6 py-4">
+      <div className="flex flex-wrap items-center gap-[7px]">
+        <span className="mr-1 text-[11.5px] text-piedra">Estado:</span>
+        {ESTADOS_FILTRO_OC.map((e) => (
+          <button
+            key={e.valor || "todos"}
+            type="button"
+            onClick={() => setFiltros((f) => ({ ...f, estado: e.valor }))}
+            className={`cursor-pointer rounded-full border px-3 py-[5px] text-xs ${
+              filtros.estado === e.valor ? e.activo : "border-tinta/20 text-tinta hover:bg-hueso"
+            }`}
+          >
+            {e.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="rounded-lg border border-borde bg-white p-5">
         {isLoading ? (
           <p className="py-8 text-center text-sm text-piedra">Cargando…</p>
         ) : isError ? (
           <p className="py-8 text-center text-sm text-error">No se pudieron cargar las órdenes de compra.</p>
         ) : (
           <>
-            <div className="flex items-center justify-between pb-1">
-              <span className="font-body text-[12.5px] text-tinta/55">{data?.total ?? 0} orden(es) de compra</span>
-              <span className="flex items-center gap-1 font-body text-[11.5px] text-tinta/50">
+            <div className="mb-3 flex items-center justify-between text-xs text-piedra">
+              <span>{data?.total ?? 0} orden(es) de compra</span>
+              <span className="flex items-center gap-1 text-tinta/50">
                 <Diamond size={11} className="fill-error text-error" /> marca las OC recibidas con diferencia
               </span>
             </div>
             <Table
-              columnas={["N° OC", "Proveedor", "Monto total", "Estado", "Fecha", "Acciones"]}
-              columnasDerecha={["Monto total", "Acciones"]}
+              columnas={["N° OC", "Proveedor", "Monto total", "Estado", "Fecha", ""]}
+              columnasDerecha={["Monto total", ""]}
               filas={data?.items ?? []}
               vacio="Ninguna orden de compra coincide con los filtros."
               renderFila={(o) => {
@@ -259,11 +286,14 @@ export function OrdenesCompraPage() {
                 );
               }}
             />
-            {data && <Pagination page={data.page} totalPages={data.totalPages} onChange={setPagina} />}
+            {data && (
+              <div className="mt-3">
+                <Pagination page={data.page} totalPages={data.totalPages} onChange={setPagina} />
+              </div>
+            )}
           </>
         )}
       </div>
-
 
       <Toast mensaje={toast} />
     </div>
