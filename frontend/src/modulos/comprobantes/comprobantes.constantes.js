@@ -18,3 +18,19 @@ export const VARIANTE_ESTADO_COMPROBANTE = {
   Pagado: "ok",
   Anulado: "neutro",
 };
+
+// Umbral (en días) para marcar una factura "por vencer" — ajustable acá,
+// un solo lugar para ComprobantesPage y el wizard de Pagos.
+export const UMBRAL_VENCIMIENTO_DIAS = 5;
+
+// Variante de <Badge> por estado de vencimiento (ver estadoVencimiento en
+// lib/fechas.js) — vencido en rojo, por vencer en amarillo, null = sin badge.
+export const VARIANTE_VENCIMIENTO = {
+  vencido: "error",
+  porVencer: "alerta",
+};
+
+export const LABEL_VENCIMIENTO = {
+  vencido: "Vencida",
+  porVencer: "Por vencer",
+};

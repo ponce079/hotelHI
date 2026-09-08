@@ -1,7 +1,8 @@
 const { Prisma } = require('@prisma/client');
 const prisma = require('../../lib/prisma');
-const { calcularSaldoComprobante, calcularSaldosComprobantes, calcularPagosAplicados, pagoVigente } = require('../../lib/comprobantes');
+const { calcularSaldoComprobante, calcularSaldosComprobantes, calcularPagosAplicados, pagoVigente, calcularFechaVencimiento } = require('../../lib/comprobantes');
 const { TIPOS_COMPROBANTE, ESTADOS_MATCHING, ESTADOS_COMPROBANTE } = require('./comprobantes.constantes');
+const ordenesCompraServicio = require('../ordenes-compra/ordenesCompra.servicio');
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -14,7 +15,7 @@ class ErrorDeNegocio extends Error {
 // Creación de comprobante (Factura / ND / NC)
 // --------------------------------------------------------------
 async function crearComprobante(data) {
-  const { proveedorId, tipo, numero, fecha, importeTotal, ordenCompraId } = data;
+  const { proveedorId, tipo, numero, fecha, importeTotal, ordenCompraId, comprobanteRelacionadoId } = data;
 
   // Validaciones básicas
   if (!proveedorId) throw new ErrorDeNegocio('proveedorId es obligatorio.');
@@ -25,6 +26,17 @@ async function crearComprobante(data) {
   if (!fecha) throw new ErrorDeNegocio('La fecha es obligatoria.');
   if (typeof importeTotal !== 'number' || importeTotal <= 0) {
     throw new ErrorDeNegocio('importeTotal debe ser un número mayor a 0.');
+  }
+  // Una ND/NC solo se crea a través de este endpoint genérico si viene
+  // vinculada a su factura original — el camino sin vínculo (nota
+  // "suelta") se sacó del modal genérico y solo queda disponible desde
+  // crearNota/NotaModal. Este chequeo es la barrera del lado del
+  // servidor: sin esto, alguien podría colarse por API directa aunque el
+  // frontend ya no ofrezca la opción.
+  if (tipo !== 'Factura' && !comprobanteRelacionadoId) {
+    throw new ErrorDeNegocio(
+      'Las Notas de Débito/Crédito deben crearse vinculadas a una factura, usá la opción correspondiente.'
+    );
   }
 
   // Verificar proveedor
@@ -54,6 +66,28 @@ async function crearComprobante(data) {
     }
   }
 
+  // Si es ND/NC (ya sabemos que comprobanteRelacionadoId vino, por el
+  // chequeo de arriba), el original tiene que existir, ser una Factura
+  // del mismo proveedor y no estar anulado — mismas condiciones que
+  // exige crearNota, el camino normal para esto.
+  if (comprobanteRelacionadoId) {
+    const original = await prisma.comprobanteProveedor.findUnique({ where: { id: Number(comprobanteRelacionadoId) } });
+    if (!original) throw new ErrorDeNegocio('El comprobante original no existe.', 404);
+    if (original.proveedorId !== proveedorId) {
+      throw new ErrorDeNegocio('El comprobante original no pertenece a este proveedor.');
+    }
+    if (original.tipo !== 'Factura') {
+      throw new ErrorDeNegocio('Solo se pueden crear notas sobre comprobantes de tipo Factura.');
+    }
+    if (original.anulado) throw new ErrorDeNegocio('No se puede ajustar un comprobante anulado.');
+  }
+
+  // Vencimiento (solo Factura: una ND/NC no tiene saldo propio, ver
+  // calcularEstadoComprobante) — se calcula una sola vez acá a partir de
+  // la condición comercial pactada con el proveedor, no en cada lectura.
+  const fechaVencimiento =
+    tipo === 'Factura' ? calcularFechaVencimiento(proveedor.condicionComercial, fecha) : null;
+
   // Crear comprobante
   let comprobante;
   try {
@@ -64,7 +98,9 @@ async function crearComprobante(data) {
         numero: numero.trim(),
         fecha: new Date(fecha),
         importeTotal,
-        ordenCompraId: ordenCompraId || null
+        ordenCompraId: ordenCompraId || null,
+        comprobanteRelacionadoId: comprobanteRelacionadoId ? Number(comprobanteRelacionadoId) : null,
+        fechaVencimiento
       },
       include: {
         proveedor: true,
@@ -331,22 +367,35 @@ async function crearNota(comprobanteId, data) {
   // Para Nota de Crédito: si el importe supera el saldo actual, se acota (el cálculo de saldo lo maneja)
   // No bloqueamos, simplemente guardamos el importe tal cual; el saldo se calculará después.
 
-  // Crear la nota, apuntando al original
-  const nota = await prisma.comprobanteProveedor.create({
-    data: {
-      proveedorId: original.proveedorId,
-      tipo,
-      numero: numero.trim(),
-      fecha: new Date(),
-      importeTotal,
-      comprobanteRelacionadoId: original.id,
-      motivo: motivo.trim(),
-    },
-    include: {
-      proveedor: true,
-      comprobanteRelacionado: true
+  // Todo en una transacción: una Nota de Crédito lo bastante grande deja
+  // el saldo de la factura original en 0 sin que haya habido ningún pago
+  // (calcularEstadoComprobante la muestra "Pagado" igual, por saldo) — si
+  // esa factura está vinculada a una OC, hay que revisar el cierre
+  // automático acá también, no solo al confirmar un pago (ver
+  // verificarCierrePorPagos en ordenesCompra.servicio.js).
+  const nota = await prisma.$transaction(async (tx) => {
+    const creada = await tx.comprobanteProveedor.create({
+      data: {
+        proveedorId: original.proveedorId,
+        tipo,
+        numero: numero.trim(),
+        fecha: new Date(),
+        importeTotal,
+        comprobanteRelacionadoId: original.id,
+        motivo: motivo.trim(),
+      },
+      include: {
+        proveedor: true,
+        comprobanteRelacionado: true
+      }
+    });
+
+    if (tipo === 'Nota de Crédito' && original.ordenCompraId) {
+      await ordenesCompraServicio.verificarCierrePorPagos(tx, original.ordenCompraId);
     }
-  });
+
+    return creada;
+  }, { timeout: 15000, maxWait: 10000 });
 
   return nota;
 }

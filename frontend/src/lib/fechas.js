@@ -24,6 +24,24 @@ export function diasDesde(fechaIso) {
   return Math.floor((Date.now() - new Date(fechaIso).getTime()) / (1000 * 60 * 60 * 24));
 }
 
+// Estado de vencimiento de una fecha "solo día" (ComprobanteProveedor.
+// fechaVencimiento) contra hoy — comparación por día calendario en UTC,
+// no por milisegundos, para que "vence hoy" no dependa de a qué hora del
+// día se mire la pantalla. `umbralDias` (default 5) es el punto de corte
+// para el badge amarillo, pedido como ajustable — se pasa desde
+// comprobantes.constantes.js en vez de hardcodearse acá.
+export function estadoVencimiento(fechaVencimiento, umbralDias = 5) {
+  if (!fechaVencimiento) return null;
+  const hoy = new Date();
+  const hoyUTC = Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate());
+  const venc = new Date(fechaVencimiento);
+  const vencUTC = Date.UTC(venc.getUTCFullYear(), venc.getUTCMonth(), venc.getUTCDate());
+  const diasRestantes = Math.round((vencUTC - hoyUTC) / (1000 * 60 * 60 * 24));
+  if (diasRestantes < 0) return "vencido";
+  if (diasRestantes <= umbralDias) return "porVencer";
+  return null;
+}
+
 // Presupuesto.plazoEntrega sigue siendo texto libre en la base (no se
 // agregó un campo numérico — ver PresupuestoCargaModal), pero desde que ese
 // modal pasó a un número + selector de unidad, todo lo cargado de ahí en

@@ -33,6 +33,14 @@ import { Check, X } from "lucide-react";
 // stock" mientras está en curso). No es un error bloqueante (rojo) ni un
 // tramo limpio (verde): es su propia categoría visual.
 //
+// `paso.cerrado` (opcional, por paso, no cambia ningún uso existente) es
+// la contraparte "fuera de circuito, completado con éxito" — mismo tono
+// gris oscuro que la variante `cerrado` de <Badge> (rediseño de Órdenes de
+// Compra): un cierre real, no solo "llegó bien" (verde) ni "necesita
+// revisión" (ámbar). Tiene prioridad sobre `advertencia` si por algún
+// motivo un caller pasara los dos juntos, aunque en la práctica son
+// mutuamente excluyentes (un paso puntual es una cosa o la otra).
+//
 // `ultimoPasoRequiereLlegada` (opcional, default false) desactiva la regla
 // de siempre "estar activo en el último paso = completado" — para
 // Requerimientos, donde un estado intermedio (ej. "Aprobado") puede
@@ -70,13 +78,17 @@ export function PasoAPaso({ pasos, pasoActual, pasoAlternativo, ultimoPasoRequie
               <span
                 className={`flex h-9 w-9 items-center justify-center rounded-full ${
                   completado
-                    ? p.advertencia
-                      ? "bg-laton text-hueso"
-                      : "bg-pino text-hueso"
+                    ? p.cerrado
+                      ? "bg-neutro-700 text-hueso"
+                      : p.advertencia
+                        ? "bg-laton text-hueso"
+                        : "bg-pino text-hueso"
                     : activo
-                      ? p.advertencia
-                        ? "border-2 border-laton bg-laton-100 text-laton-700"
-                        : "border-2 border-pino bg-pino-100 text-pino-700"
+                      ? p.cerrado
+                        ? "border-2 border-neutro-700 bg-neutro-300 text-neutro-900"
+                        : p.advertencia
+                          ? "border-2 border-laton bg-laton-100 text-laton-700"
+                          : "border-2 border-pino bg-pino-100 text-pino-700"
                       : "border-2 border-borde bg-white text-piedra"
                 }`}
               >
@@ -85,7 +97,7 @@ export function PasoAPaso({ pasos, pasoActual, pasoAlternativo, ultimoPasoRequie
                 ) : completado ? (
                   <Check size={16} />
                 ) : activo ? (
-                  <span className={`h-2.5 w-2.5 rounded-full ${p.advertencia ? "bg-laton" : "bg-pino"}`} />
+                  <span className={`h-2.5 w-2.5 rounded-full ${p.cerrado ? "bg-neutro-700" : p.advertencia ? "bg-laton" : "bg-pino"}`} />
                 ) : null}
               </span>
               <span className={`text-[11.5px] font-semibold ${activo ? "text-tinta" : completado ? "text-tinta/70" : "text-piedra"}`}>

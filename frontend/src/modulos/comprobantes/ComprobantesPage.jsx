@@ -14,8 +14,15 @@ import { useToast } from '../../lib/useToast';
 import { useSesion } from '../../lib/sesion';
 import { SinPermiso } from '../../componentes/SinPermiso';
 import { formatearMonto } from '../../lib/moneda';
+import { formatearFechaSolo, estadoVencimiento } from '../../lib/fechas';
 import { listarComprobantes, anularComprobante } from './comprobantes.api';
-import { ESTADOS_COMPROBANTE, VARIANTE_ESTADO_COMPROBANTE } from './comprobantes.constantes';
+import {
+  ESTADOS_COMPROBANTE,
+  VARIANTE_ESTADO_COMPROBANTE,
+  UMBRAL_VENCIMIENTO_DIAS,
+  VARIANTE_VENCIMIENTO,
+  LABEL_VENCIMIENTO,
+} from './comprobantes.constantes';
 import { listarProveedoresConSaldo } from '../pagos/pagos.api'; // si existe, o crear función propia
 import { ComprobanteModal } from './ComprobanteModal';
 import { NotaModal } from './NotaModal';
@@ -163,10 +170,12 @@ export function ComprobantesPage() {
         {isError && <p className="text-sm text-error">Error al cargar los comprobantes.</p>}
         {comprobantes && (
           <Table
-            columnas={['Tipo', 'Número', 'Proveedor', 'Fecha', 'Total', 'Saldo', 'Matching', 'Estado', '']}
+            columnas={['Tipo', 'Número', 'Proveedor', 'Fecha', 'Vencimiento', 'Total', 'Saldo', 'Matching', 'Estado', '']}
             filas={comprobantes}
             vacio="No hay comprobantes que coincidan con los filtros."
-            renderFila={(c) => (
+            renderFila={(c) => {
+              const vencimiento = estadoVencimiento(c.fechaVencimiento, UMBRAL_VENCIMIENTO_DIAS);
+              return (
               <tr
                 key={c.id}
                 className="border-b border-borde last:border-0 hover:bg-hueso cursor-pointer"
@@ -176,6 +185,18 @@ export function ComprobantesPage() {
                 <td className="px-3 py-2 font-mono text-xs">{c.numero}</td>
                 <td className="px-3 py-2">{c.proveedor?.razonSocial}</td>
                 <td className="px-3 py-2 text-[12.5px]">{new Date(c.fecha).toLocaleDateString('es-AR')}</td>
+                <td className="px-3 py-2 text-[12.5px]">
+                  {c.fechaVencimiento ? (
+                    <div className="flex items-center gap-1.5">
+                      <span>{formatearFechaSolo(c.fechaVencimiento)}</span>
+                      {vencimiento && (
+                        <Badge variante={VARIANTE_VENCIMIENTO[vencimiento]}>{LABEL_VENCIMIENTO[vencimiento]}</Badge>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="text-piedra">—</span>
+                  )}
+                </td>
                 <td className="px-3 py-2 font-mono text-[13px]">$ {formatearMonto(c.importeTotal)}</td>
                 <td className="px-3 py-2 font-mono text-[13px] font-semibold">
                   $ {formatearMonto(c.saldo)}
@@ -210,7 +231,8 @@ export function ComprobantesPage() {
                   </div>
                 </td>
               </tr>
-            )}
+              );
+            }}
           />
         )}
       </div>

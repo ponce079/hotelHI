@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShoppingCart, Lock, Truck, TriangleAlert, PackageCheck, Clock, Send } from "lucide-react";
+import { ShoppingCart, Lock, TriangleAlert, PackageCheck, Clock, Send, Printer, CheckCheck } from "lucide-react";
 import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
@@ -27,6 +27,8 @@ const PILDORA_VARIANTES = {
   alerta: "bg-laton-100 text-laton-700",
   error: "bg-error-suave text-error-texto",
   neutro: "bg-neutro-100 text-neutro-700",
+  info: "bg-info-suave text-info-texto",
+  cerrado: "bg-neutro-300 text-neutro-900",
 };
 function Pildora({ variante = "neutro", children }) {
   return (
@@ -110,15 +112,32 @@ export function OrdenCompraDetallePage() {
   const puedeEnviar = puede("gestionarOC") && oc?.estado === "Pendiente";
   const puedeAnular = puede("gestionarOC") && oc && !["Recibida", "Recibida con diferencia", "Anulada", "Cerrada"].includes(oc.estado);
   const puedeRecibir = puede("recibirOC") && oc?.estado === "Enviada";
+  // Punto 5 del rediseño: la columna "Recibido" no aporta nada mientras no
+  // hubo recepción — antes repetía un "—" en cada fila para Pendiente/
+  // Enviada/Anulada (anular está bloqueado una vez Recibida, así que una OC
+  // Anulada nunca tuvo recepción). Se muestra recién cuando hay datos reales.
+  const mostrarRecibido = ["Recibida", "Recibida con diferencia", "Cerrada"].includes(oc?.estado);
 
+  // "Recibida con diferencia" no es un paso propio — ocupa el mismo lugar
+  // que "Recibida" (mismo círculo), solo cambia a tono ámbar + label +
+  // ícono cuando corresponde (punto 3 del rediseño). "Cerrada" sí es un
+  // paso más, después de "Recibida": marca que ya no queda nada de
+  // facturación/pago pendiente — por eso "Recibida" sola (sin llegar a
+  // Cerrada) se ve como el paso ACTUAL, no completado, aunque la
+  // mercadería ya haya llegado bien.
+  const conDiferencia = oc?.estado === "Recibida con diferencia";
   const pasosOC = [
     { clave: "Pendiente", label: "Pendiente", icono: Clock },
     { clave: "Enviada", label: "Enviada", icono: Send },
-    { clave: "Recibida", label: "Recibida", icono: PackageCheck },
+    {
+      clave: "Recibida",
+      label: conDiferencia ? "Recibida con diferencia" : "Recibida",
+      icono: conDiferencia ? TriangleAlert : PackageCheck,
+      advertencia: conDiferencia,
+    },
+    { clave: "Cerrada", label: "Cerrada", icono: CheckCheck, cerrado: true },
   ];
-  // "Recibida con diferencia" ocupa el mismo lugar que "Recibida" — ya se
-  // llegó al final del camino, la diferencia se ve en el badge de estado.
-  const estadoParaPaso = oc?.estado === "Recibida con diferencia" ? "Recibida" : oc?.estado;
+  const estadoParaPaso = conDiferencia ? "Recibida" : oc?.estado;
   // Una OC anulada ya no tiene un "estado" dentro de pasosOC (es una
   // bifurcación, no un paso más) — para no perder en qué punto del camino
   // se cortó, se infiere del propio log: si llegó a mandarse al proveedor
@@ -130,7 +149,7 @@ export function OrdenCompraDetallePage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <Button variante="secundario" onClick={volver} className="w-fit text-xs">
+      <Button variante="secundario" onClick={volver} className="w-fit text-xs print:hidden">
         ← Volver
       </Button>
 
@@ -140,7 +159,39 @@ export function OrdenCompraDetallePage() {
         <p className="py-16 text-center text-sm text-error">No se pudo cargar la orden de compra.</p>
       ) : (
         <>
-          <div>
+          {/* Punto 8 — encabezado formal solo para impresión/PDF: reemplaza
+              el header de pantalla (pensado para navegar la app, no para
+              archivar) por uno con los datos que tiene que llevar una Orden
+              de Compra real. Invisible en pantalla, visible solo al
+              imprimir — mismo mecanismo que print:hidden, invertido. */}
+          <div className="hidden print:block">
+            <div className="mb-6 flex items-start justify-between border-b-2 border-tinta pb-4">
+              <div>
+                <p className="font-heading text-xl font-semibold">Holiday Inn</p>
+                <p className="text-xs text-piedra">SGH · Gestión Hotelera</p>
+              </div>
+              <div className="text-right">
+                <p className="font-heading text-lg font-semibold">Orden de Compra</p>
+                <p className="font-mono text-sm">{oc.numero}</p>
+                <p className="text-xs text-piedra">{new Date(oc.fecha).toLocaleDateString("es-AR")}</p>
+                <p className="mt-1 text-xs text-piedra">Estado: {oc.estado}</p>
+              </div>
+            </div>
+            <div className="mb-6 grid grid-cols-2 gap-4 text-[13px]">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-piedra">Proveedor</p>
+                <p className="font-semibold">{oc.proveedor?.razonSocial}</p>
+                <p className="text-piedra">CUIT {oc.proveedor?.cuit}</p>
+                <p className="text-piedra">Condición de pago: {oc.proveedor?.condicionComercial ?? "—"}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-piedra">Entregar en</p>
+                <p className="font-semibold">{oc.deposito?.nombre}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="print:hidden">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <h1 className="flex items-center gap-2 font-heading text-[28px] font-semibold">
                 <ShoppingCart size={22} className="text-pino" /> {oc.numero} · {oc.proveedor?.razonSocial}
@@ -149,20 +200,59 @@ export function OrdenCompraDetallePage() {
                 <Pildora variante={BADGE_ESTADO_OC[oc.estado] ?? "neutro"}>
                   {oc.estado === "Recibida con diferencia" && <TriangleAlert size={12} />} {oc.estado}
                 </Pildora>
-                {/* Sin movimiento de stock de entrada todavía — se crea recién al
-                    registrar la recepción (HU-85), así que es cierto para toda OC
-                    que no llegó a "Recibida" (o "Recibida con diferencia") aún. */}
-                {["Pendiente", "Enviada"].includes(oc.estado) && (
+                {/* Punto 4 del rediseño: mismo texto de base, pero el tono
+                    depende de si es esperable o no. Pendiente/Enviada: neutro,
+                    todavía no le toca (el movimiento recién se crea al
+                    registrar la recepción, HU-85). Recibida/Recibida con
+                    diferencia sin movimiento: eso NO debería pasar nunca
+                    (registrarRecepcion siempre lo crea en la misma
+                    transacción) — si pasa, es un problema real de datos, se
+                    marca en rojo en vez de repetir la misma pastilla neutra. */}
+                {["Pendiente", "Enviada"].includes(oc.estado) ? (
                   <Pildora variante="neutro">Sin stock de entrada aún</Pildora>
+                ) : (
+                  ["Recibida", "Recibida con diferencia"].includes(oc.estado) &&
+                  (oc.movimientos?.length ?? 0) === 0 && (
+                    <Pildora variante="error">
+                      <TriangleAlert size={11} /> Sin movimiento de stock — revisar
+                    </Pildora>
+                  )
                 )}
+                <Button variante="secundario" onClick={() => window.print()}>
+                  <Printer size={15} /> Imprimir OC
+                </Button>
               </div>
             </div>
-            <p className="mt-1 font-body text-[12.5px] text-tinta/60">
-              Desde {oc.presupuestoId ? `PR-${String(oc.presupuestoId).padStart(4, "0")}` : "—"} adjudicado
-              {" · $ "}
-              {formatearMonto(Number(oc.montoTotal) + Number(oc.flete || 0))}
-              {" · "}
-              {new Date(oc.fecha).toLocaleDateString("es-AR")}
+            <p className="mt-1 flex flex-wrap items-center gap-x-1 font-body text-[12.5px] text-tinta/60">
+              <span>Desde</span>
+              {oc.presupuesto ? (
+                <Link
+                  to={`/presupuestos?requerimientoId=${oc.presupuesto.requerimientoId}`}
+                  className="font-semibold text-pino underline decoration-pino/40 underline-offset-2 hover:text-pino-oscuro hover:decoration-pino-oscuro"
+                >
+                  PR-{String(oc.presupuestoId).padStart(4, "0")}
+                </Link>
+              ) : (
+                <span>—</span>
+              )}
+              <span>adjudicado</span>
+              {oc.presupuesto?.requerimiento && (
+                <>
+                  <span>· Requerimiento</span>
+                  <Link
+                    to={`/requerimientos/${oc.presupuesto.requerimiento.id}`}
+                    className="font-semibold text-pino underline decoration-pino/40 underline-offset-2 hover:text-pino-oscuro hover:decoration-pino-oscuro"
+                  >
+                    REQ-{String(oc.presupuesto.requerimiento.id).padStart(4, "0")}
+                  </Link>
+                </>
+              )}
+              <span>
+                {" · $ "}
+                {formatearMonto(Number(oc.montoTotal) + Number(oc.flete || 0))}
+                {" · "}
+                {new Date(oc.fecha).toLocaleDateString("es-AR")}
+              </span>
             </p>
           </div>
 
@@ -172,14 +262,16 @@ export function OrdenCompraDetallePage() {
             </p>
           )}
 
-          <PasoAPaso pasos={pasosOC} pasoActual={pasoActualOC} pasoAlternativo={pasoAlternativo} />
+          <div className="print:hidden">
+            <PasoAPaso pasos={pasosOC} pasoActual={pasoActualOC} pasoAlternativo={pasoAlternativo} />
+          </div>
 
-          <div className="rounded-[18.4px] bg-white px-7 py-6">
-            <div className="mb-5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-tinta/55">
+          <div className="rounded-[18.4px] bg-white px-7 py-6 print:px-0 print:py-0">
+            <div className="mb-5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-tinta/55 print:hidden">
               <Lock size={12} /> Estos datos vienen del presupuesto adjudicado y no se pueden modificar acá
             </div>
 
-            <div className="mb-5 grid grid-cols-1 gap-x-6 gap-y-1.5 text-[13px] sm:grid-cols-2">
+            <div className="mb-5 grid grid-cols-1 gap-x-6 gap-y-1.5 text-[13px] sm:grid-cols-2 print:hidden">
               <div>
                 <span className="text-tinta/55">CUIT:</span> <span className="text-tinta">{oc.proveedor?.cuit}</span>
               </div>
@@ -188,10 +280,19 @@ export function OrdenCompraDetallePage() {
               </div>
             </div>
 
-            <div className="overflow-hidden rounded-xl border border-borde">
+            <div className="overflow-hidden rounded-xl border border-borde print:border-0">
               <Table
-                columnas={["Artículo", "Cantidad", "Precio unitario", "Subtotal", "Recibido"]}
-                columnasDerecha={["Cantidad", "Precio unitario", "Subtotal", "Recibido"]}
+                columnas={
+                  mostrarRecibido
+                    ? ["Artículo", "Cantidad", "Precio unitario", "Subtotal", "Recibido"]
+                    : ["Artículo", "Cantidad", "Precio unitario", "Subtotal"]
+                }
+                columnasDerecha={
+                  mostrarRecibido
+                    ? ["Cantidad", "Precio unitario", "Subtotal", "Recibido"]
+                    : ["Cantidad", "Precio unitario", "Subtotal"]
+                }
+                columnasOcultarImprimir={mostrarRecibido ? ["Recibido"] : []}
                 encabezadoDestacado
                 filas={oc.detalle}
                 renderFila={(d) => {
@@ -218,26 +319,35 @@ export function OrdenCompraDetallePage() {
                       <td className="px-3 py-3 text-right font-heading text-[14px] font-semibold text-tinta">
                         $ {formatearMonto(subtotal)}
                       </td>
-                      <td className={`px-3 py-3 text-right font-body text-[13px] ${huboDiferencia ? "font-semibold text-laton-700" : "text-tinta/55"}`}>
-                        {d.cantidadRecibida === null || d.cantidadRecibida === undefined ? "—" : Number(d.cantidadRecibida)}
-                      </td>
+                      {mostrarRecibido && (
+                        <td
+                          className={`px-3 py-3 text-right font-body text-[13px] print:hidden ${huboDiferencia ? "font-semibold text-laton-700" : "text-tinta/55"}`}
+                        >
+                          {d.cantidadRecibida === null || d.cantidadRecibida === undefined ? "—" : Number(d.cantidadRecibida)}
+                        </td>
+                      )}
                     </tr>
                   );
                 }}
               />
             </div>
 
-            <div className="mt-4 flex flex-col gap-1.5">
+            {/* Puntos 6 y 7 del rediseño: un solo bloque con fondo — antes
+                Flete flotaba como texto suelto sin fondo mientras Total OC sí
+                lo tenía, dos tratamientos distintos para un mismo resumen. El
+                ícono de camión también salió: ninguna otra fila de la tabla
+                (ni Total) usa íconos, así que era la única inconsistencia. El
+                destaque fuerte queda solo para el total (Cifra + semibold),
+                Flete es una línea más chica arriba, separada por un borde. */}
+            <div className="mt-4 overflow-hidden rounded-lg bg-hueso">
               {oc.flete != null && (
-                <div className="flex items-center justify-between gap-3 text-[13px] text-tinta/70">
-                  <span className="inline-flex items-center gap-1.5">
-                    <Truck size={14} /> Flete
-                  </span>
+                <div className="flex items-center justify-between gap-3 border-b border-borde/70 px-3.5 py-2.5 text-[13px] text-tinta/70">
+                  <span>Flete</span>
                   <span className="font-mono">$ {formatearMonto(oc.flete)}</span>
                 </div>
               )}
 
-              <div className="flex items-center justify-between gap-3 rounded-lg bg-hueso px-3.5 py-3">
+              <div className="flex items-center justify-between gap-3 px-3.5 py-3">
                 <span className="font-body text-[13px] font-semibold text-tinta">Total OC</span>
                 <Cifra tamano={22} className="text-tinta">
                   $ {formatearMonto(Number(oc.montoTotal) + Number(oc.flete || 0))}
@@ -247,7 +357,7 @@ export function OrdenCompraDetallePage() {
           </div>
 
           {(puedeEnviar || puedeRecibir || puedeAnular) && (
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-4 print:hidden">
               {anulando ? (
                 <div className="flex flex-col gap-2 rounded-[14px] bg-hueso px-4 py-3.5">
                   <span className="text-[12px] font-semibold text-tinta">Motivo de anulación *</span>
@@ -281,17 +391,22 @@ export function OrdenCompraDetallePage() {
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-wrap justify-end gap-2.5">
-                  {puedeRecibir && (
-                    <Button variante="ok" onClick={() => navigate(`/ordenes-compra/${oc.id}/recepcion`)}>
-                      <PackageCheck size={16} /> Registrar recepción
-                    </Button>
-                  )}
-                  {puedeEnviar && (
-                    <Button variante="secundario" onClick={() => setConfirmarAccion("enviar")}>
-                      Marcar como enviada
-                    </Button>
-                  )}
+                // Punto 9 del rediseño: primaria (siguiente paso lógico del
+                // circuito) a la izquierda, Anular — destructiva — separada a
+                // la derecha, nunca pegada a la que hace avanzar la OC.
+                <div className="flex flex-wrap items-center justify-between gap-2.5">
+                  <div className="flex flex-wrap gap-2.5">
+                    {puedeRecibir && (
+                      <Button variante="ok" onClick={() => navigate(`/ordenes-compra/${oc.id}/recepcion`)}>
+                        <PackageCheck size={16} /> Registrar recepción
+                      </Button>
+                    )}
+                    {puedeEnviar && (
+                      <Button variante="secundario" onClick={() => setConfirmarAccion("enviar")}>
+                        Marcar como enviada
+                      </Button>
+                    )}
+                  </div>
                   {puedeAnular && (
                     <Button variante="baja" onClick={() => setAnulando(true)}>
                       Anular Orden de Compra
@@ -302,10 +417,15 @@ export function OrdenCompraDetallePage() {
             </div>
           )}
 
-          <div>
+          <div className="print:hidden">
             <span className="text-[11px] font-semibold tracking-wide text-piedra uppercase">Auditoría</span>
             <div className="relative mt-4 flex flex-col gap-4 pl-5">
-              <div className="absolute bottom-1.5 left-[5px] top-1.5 w-px bg-borde" />
+              {/* Punto 8 del rediseño: la línea ya existía acá, pero `bg-borde`
+                  es negro al 13% de opacidad — a 1px de ancho, prácticamente
+                  invisible contra el fondo blanco (no era un bug de posición,
+                  era de contraste). `bg-piedra/25` a 1.5px la hace legible sin
+                  que compita con los puntos. */}
+              <div className="absolute bottom-1.5 left-[5px] top-1.5 w-[1.5px] bg-piedra/25" />
               {oc.log
                 .slice()
                 .reverse()

@@ -16,6 +16,7 @@ const {
 } = require("../../lib/comprobantes");
 const { crearConNumeroSecuencial } = require("../../lib/numeracion");
 const { MEDIOS_PAGO, BANCOS, ESTADOS_CHEQUE } = require("./pagos.constantes");
+const ordenesCompraServicio = require("../ordenes-compra/ordenesCompra.servicio");
 // HU-76: para exigir confirmación de diferencia de matching antes de
 // pagar (ver más abajo), se reutiliza el cálculo de HU-72 tal cual —no
 // se reimplementa una segunda vez.
@@ -245,7 +246,7 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
         }
       }
 
-      return crearConNumeroSecuencial(tx, "ordenPago", {
+      const ordenCreada = await crearConNumeroSecuencial(tx, "ordenPago", {
         prefijo: "OP",
         data: {
           proveedorId: Number(proveedorId),
@@ -273,6 +274,17 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
           medios: true,
         },
       });
+
+      // Este pago puede haber dejado en "Pagado" (saldo <= 0) a facturas de
+      // más de una Orden de Compra (un proveedor puede tener varias OC
+      // abiertas a la vez) — se revisa el cierre automático de cada una,
+      // sin duplicar si dos comprobantes pagados acá comparten la misma OC.
+      const ordenesCompraAfectadas = [...new Set(comprobantesFrescos.map((c) => c.ordenCompraId).filter(Boolean))];
+      for (const ordenCompraId of ordenesCompraAfectadas) {
+        await ordenesCompraServicio.verificarCierrePorPagos(tx, ordenCompraId);
+      }
+
+      return ordenCreada;
     },
     { timeout: 30000, maxWait: 15000 }
   );

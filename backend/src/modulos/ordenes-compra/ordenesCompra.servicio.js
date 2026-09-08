@@ -10,6 +10,7 @@ const prisma = require("../../lib/prisma");
 const { crearConNumeroSecuencial } = require("../../lib/numeracion");
 const { ESTADOS_REQUERIMIENTO, TIPOS_REQUERIMIENTO } = require("../../lib/constantes");
 const { reintentarTransferenciasPendientes } = require("../requerimientos/requerimientos.servicio");
+const { calcularSaldosComprobantes } = require("../../lib/comprobantes");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -130,6 +131,52 @@ async function generarOC({ presupuestoId, usuario }) {
 // Listado y ficha
 // ---------------------------------------------------------------------------
 
+// A partir de cuántos días de "Recibida" sin ningún comprobante cargado se
+// marca el indicador "Sin comprobante" en la lista — ajustable acá.
+const UMBRAL_SIN_COMPROBANTE_DIAS = 3;
+const MS_POR_DIA = 1000 * 60 * 60 * 24;
+
+// Indicador de facturación/pago de una OC (rediseño de la lista de OC) —
+// solo tiene sentido mientras la OC sigue "abierta" del lado de
+// facturación (Recibida/Recibida con diferencia); una Cerrada ya tiene
+// todo pagado por definición y una Anulada/Pendiente/Enviada todavía no
+// llegó a esta etapa. Devuelve null si no hay nada que señalar.
+function calcularAlertaFacturacion(oc, saldoPorComprobante) {
+  if (!["Recibida", "Recibida con diferencia"].includes(oc.estado)) return null;
+
+  const facturasActivas = oc.comprobantes.filter((c) => c.tipo === "Factura" && !c.anulado);
+  const ahora = Date.now();
+
+  const vencida = facturasActivas.find((f) => {
+    if (!f.fechaVencimiento) return false;
+    const saldo = saldoPorComprobante.get(f.id) ?? 0;
+    return saldo > 0 && new Date(f.fechaVencimiento).getTime() < ahora;
+  });
+  if (vencida) {
+    return {
+      tipo: "facturaVencida",
+      numero: vencida.numero,
+      dias: Math.floor((ahora - new Date(vencida.fechaVencimiento).getTime()) / MS_POR_DIA),
+    };
+  }
+
+  if (facturasActivas.length === 0 && oc.fechaRecibida) {
+    const dias = Math.floor((ahora - new Date(oc.fechaRecibida).getTime()) / MS_POR_DIA);
+    if (dias >= UMBRAL_SIN_COMPROBANTE_DIAS) return { tipo: "sinComprobante", dias };
+  }
+
+  return null;
+}
+
+// Orden por defecto de la lista (punto 4 del rediseño): lo que necesita
+// atención arriba, lo que ya salió del circuito abajo. 0 = más urgente.
+function calcularPrioridad(oc, alertaFacturacion) {
+  if (oc.estado === "Recibida con diferencia" || alertaFacturacion?.tipo === "facturaVencida") return 0;
+  if (oc.estado === "Enviada") return 1;
+  if (["Cerrada", "Anulada"].includes(oc.estado)) return 3;
+  return 2;
+}
+
 async function listarOCs({ estado, proveedorId, desde, hasta, q, page = 1, pageSize = 20 } = {}) {
   const where = {};
   if (estado) where.estado = estado;
@@ -146,25 +193,57 @@ async function listarOCs({ estado, proveedorId, desde, hasta, q, page = 1, pageS
     where.OR = [{ numero: { contains: texto } }, { proveedor: { razonSocial: { contains: texto } } }];
   }
 
-  const skip = (Number(page) - 1) * Number(pageSize);
+  // El orden por defecto (prioridad de atención) depende del indicador de
+  // facturación, que cruza datos de ComprobanteProveedor/OrdenPagoDetalle —
+  // no se puede resolver con un simple ORDER BY de SQL. Por eso acá se trae
+  // el conjunto COMPLETO que matchea el filtro (no solo la página pedida),
+  // se calcula el indicador y la prioridad de cada uno, se ordena en
+  // memoria y recién ahí se pagina — mismo criterio ya usado en
+  // listarOrdenesPago (pagos.servicio.js) para los totales del período: en
+  // este sistema (decenas/cientos de OC, no millones) es más barato que
+  // duplicar esta lógica en SQL. select liviano en `comprobantes`: nada de
+  // traer de más.
+  const todas = await prisma.ordenCompra.findMany({
+    where,
+    include: {
+      proveedor: true,
+      comprobantes: {
+        select: { id: true, tipo: true, anulado: true, fechaVencimiento: true, importeTotal: true, numero: true },
+      },
+    },
+  });
 
-  const [items, total] = await Promise.all([
-    prisma.ordenCompra.findMany({
-      where,
-      include: { proveedor: true },
-      orderBy: { fecha: "desc" },
-      skip,
-      take: Number(pageSize),
-    }),
-    prisma.ordenCompra.count({ where }),
-  ]);
+  const facturasParaSaldo = todas.flatMap((oc) => oc.comprobantes.filter((c) => c.tipo === "Factura" && !c.anulado));
+  const saldoPorComprobante = await calcularSaldosComprobantes(facturasParaSaldo);
+
+  const enriquecidas = todas.map((oc) => {
+    const alertaFacturacion = calcularAlertaFacturacion(oc, saldoPorComprobante);
+    return { oc, alertaFacturacion, prioridad: calcularPrioridad(oc, alertaFacturacion) };
+  });
+  // Dentro de cada nivel de prioridad, más antigua primero — "esperando
+  // hace más tiempo" para Enviada, y en general la que lleva más tiempo
+  // sin resolverse dentro de su mismo nivel de urgencia.
+  enriquecidas.sort((a, b) => {
+    if (a.prioridad !== b.prioridad) return a.prioridad - b.prioridad;
+    return new Date(a.oc.fecha) - new Date(b.oc.fecha);
+  });
+
+  const total = enriquecidas.length;
+  const pageNum = Number(page);
+  const pageSizeNum = Number(pageSize);
+  const items = enriquecidas
+    .slice((pageNum - 1) * pageSizeNum, (pageNum - 1) * pageSizeNum + pageSizeNum)
+    .map(({ oc, alertaFacturacion }) => {
+      const { comprobantes, ...resto } = oc;
+      return { ...resto, alertaFacturacion };
+    });
 
   return {
     items,
     total,
-    page: Number(page),
-    pageSize: Number(pageSize),
-    totalPages: Math.max(1, Math.ceil(total / Number(pageSize))),
+    page: pageNum,
+    pageSize: pageSizeNum,
+    totalPages: Math.max(1, Math.ceil(total / pageSizeNum)),
   };
 }
 
@@ -180,6 +259,21 @@ async function obtenerOCPorId(id) {
       deposito: true,
       detalle: { include: { articulo: true } },
       log: { orderBy: { fecha: "asc" } }, // el campo en el schema es "log", no "logs"
+      // Para el link Requerimiento/Presupuesto del detalle de OC — el
+      // archivo adjunto del presupuesto (BLOB, hasta 5MB) se omite acá
+      // porque esta ficha no lo usa, mismo criterio que generarOC más arriba.
+      presupuesto: {
+        omit: { archivoAdjunto: true },
+        include: { requerimiento: true },
+      },
+      // Punto 4 del rediseño del detalle: solo para distinguir "todavía no
+      // se recibió, es normal que no haya movimiento" (Pendiente/Enviada)
+      // de "está Recibida pero el movimiento de entrada no existe" — un
+      // problema de integridad real que no debería pasar (registrarRecepcion
+      // siempre lo crea en la misma transacción), pero si pasa merece alerta,
+      // no la misma pastilla neutra de "todavía no llegó". select liviano:
+      // alcanza con saber si existe al menos uno.
+      movimientos: { select: { id: true }, take: 1 },
     },
   });
   if (!oc) {
@@ -402,9 +496,9 @@ async function registrarRecepcion(id, detalleRecibido, usuario) {
         }
       }
 
-      const ocActualizada = await tx.ordenCompra.update({
+      await tx.ordenCompra.update({
         where: { id: oc.id },
-        data: { estado: estadoFinalOC },
+        data: { estado: estadoFinalOC, fechaRecibida: new Date() },
       });
 
       await tx.ordenCompraLog.create({
@@ -442,10 +536,71 @@ async function registrarRecepcion(id, detalleRecibido, usuario) {
         }
       }
 
-      return ocActualizada;
+      // Si el pago ya se había completado ANTES de esta recepción (ej. un
+      // anticipo), nada más vuelve a revisar el cierre automático después
+      // de este punto — se chequea acá también, no solo al confirmar un
+      // pago (ver verificarCierrePorPagos más abajo).
+      await verificarCierrePorPagos(tx, oc.id, { usuario });
+
+      return tx.ordenCompra.findUnique({ where: { id: oc.id } });
     },
     { timeout: 30000, maxWait: 15000 }
   );
+}
+
+// ---------------------------------------------------------------------------
+// Cierre automático — una OC pasa a "Cerrada" cuando todos los comprobantes
+// vinculados a ella (Facturas con ordenCompraId = esta OC) llegan a
+// "Pagado" (saldo <= 0, mismo criterio que calcularEstadoComprobante en
+// comprobantes.servicio.js — ahí el estado nunca se persiste, se deriva
+// del saldo en cada lectura). Por eso este chequeo no vive en un único
+// lugar: hay que llamarlo desde cualquier operación que pueda llevar un
+// saldo a 0 sin pasar por acá (un pago que la cubre, o una Nota de
+// Crédito lo bastante grande) Y desde la recepción (si el pago ya se
+// había completado ANTES de recibir la mercadería, nada más vuelve a
+// revisar el cierre después).
+//
+// Un comprobante Anulado nunca tuvo un pago ni un ajuste real aplicado
+// (anularComprobante lo bloquea si los tiene), así que no cuenta como
+// "Pagado" pero tampoco bloquea el cierre — se excluye del chequeo. Si
+// no queda ninguna Factura activa (todas anuladas), no se cierra: nada
+// que declarar pagado.
+//
+// Debe llamarse SIEMPRE dentro de la misma transacción (`tx`) que la
+// operación que la dispara, para no crear una ventana donde otro proceso
+// vea un estado a medio actualizar.
+async function verificarCierrePorPagos(tx, ordenCompraId, { usuario } = {}) {
+  const oc = await tx.ordenCompra.findUnique({
+    where: { id: ordenCompraId },
+    include: { comprobantes: true },
+  });
+  if (!oc) return;
+  if (!["Recibida", "Recibida con diferencia"].includes(oc.estado)) return;
+
+  const facturasActivas = oc.comprobantes.filter((c) => c.tipo === "Factura" && !c.anulado);
+  if (facturasActivas.length === 0) return;
+
+  // FOR UPDATE recién acá (no antes del chequeo de estado/facturas de
+  // arriba, que no necesita el lock): evita que dos pagos concurrentes a
+  // distintas facturas de la misma OC pisen el estado si ambos llegan a
+  // "todo pagado" casi al mismo tiempo. Mismo patrón que anularOC/
+  // registrarRecepcion.
+  await tx.$queryRaw(Prisma.sql`SELECT id FROM ordenes_compra WHERE id = ${oc.id} FOR UPDATE`);
+  const ocFresca = await tx.ordenCompra.findUnique({ where: { id: oc.id } });
+  if (!["Recibida", "Recibida con diferencia"].includes(ocFresca.estado)) return;
+
+  const saldos = await calcularSaldosComprobantes(facturasActivas, tx);
+  const todasPagadas = facturasActivas.every((f) => (saldos.get(f.id) ?? 0) <= 0);
+  if (!todasPagadas) return;
+
+  await tx.ordenCompra.update({ where: { id: oc.id }, data: { estado: "Cerrada" } });
+  await tx.ordenCompraLog.create({
+    data: {
+      ordenCompraId: oc.id,
+      usuario: usuario || "sistema",
+      accion: `Cerrada automáticamente — comprobante(s) ${facturasActivas.map((f) => f.numero).join(", ")} totalmente pagado(s)`,
+    },
+  });
 }
 
 module.exports = {
@@ -455,5 +610,6 @@ module.exports = {
   enviarOC,
   anularOC,
   registrarRecepcion,
+  verificarCierrePorPagos,
   ErrorDeNegocio,
 };

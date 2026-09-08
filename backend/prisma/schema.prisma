@@ -321,6 +321,12 @@ model OrdenCompra {
   flete           Decimal?               @db.Decimal(12, 2)
   motivoAnulacion String?
   fecha           DateTime               @default(now())
+  // Cuándo pasó a Recibida/Recibida con diferencia (registrarRecepcion) —
+  // persistido en vez de inferirlo de OrdenCompraLog para saber "hace
+  // cuánto está recibida sin comprobante" (indicador de la lista de OC).
+  // Mismo criterio que nacioComoSugerida/fechaAdjudicacion en otros
+  // módulos: nada de parsear texto de log para esto.
+  fechaRecibida   DateTime?
   proveedor       Proveedor              @relation(fields: [proveedorId], references: [id])
   presupuesto     Presupuesto            @relation(fields: [presupuestoId], references: [id])
   deposito        Deposito               @relation(fields: [depositoId], references: [id])
@@ -375,6 +381,14 @@ model ComprobanteProveedor {
   motivoAnulacion          String?
   // Motivo de la nota de débito/crédito (HU-73). Null para Factura.
   motivo                   String?
+  // Calculada al crear el comprobante a partir de proveedor.condicionComercial
+  // (Contado = misma fecha; "N días cta. cte." = fecha + N días) — se
+  // persiste en vez de recalcularse en cada lectura porque la condición
+  // comercial del proveedor puede cambiar después sin que eso deba mover
+  // el vencimiento de facturas ya emitidas. Solo aplica a Factura; null
+  // para ND/NC y para comprobantes cuyo proveedor no tiene condición
+  // comercial cargada.
+  fechaVencimiento         DateTime?
   proveedor                Proveedor              @relation(fields: [proveedorId], references: [id])
   ordenCompra              OrdenCompra?           @relation(fields: [ordenCompraId], references: [id])
   comprobanteRelacionado   ComprobanteProveedor?  @relation("AjustesComprobante", fields: [comprobanteRelacionadoId], references: [id])

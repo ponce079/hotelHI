@@ -1,4 +1,4 @@
-import { useState, Fragment } from "react";
+import { useMemo, useState, Fragment } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Modal } from "../../componentes/Modal";
 import { Input } from "../../componentes/Input";
@@ -8,10 +8,11 @@ import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
 import { Badge } from "../../componentes/Badge";
-import { formatearFechaSolo } from "../../lib/fechas";
+import { formatearFechaSolo, estadoVencimiento } from "../../lib/fechas";
 import { formatearMonto } from "../../lib/moneda";
 import { listarProveedoresConSaldo, listarComprobantesPendientes, crearOrdenPago } from "./pagos.api";
 import { MEDIOS_PAGO, BANCOS } from "./pagos.constantes";
+import { UMBRAL_VENCIMIENTO_DIAS, VARIANTE_VENCIMIENTO, LABEL_VENCIMIENTO } from "../comprobantes/comprobantes.constantes";
 
 // Sin paso de "importe a aplicar": cada comprobante seleccionado se
 // cancela siempre por su saldo total, no hay pago parcial de un
@@ -49,6 +50,18 @@ export function OrdenPagoWizard({ onClose, onExito }) {
     queryFn: () => listarComprobantesPendientes(form.proveedorId),
     enabled: Boolean(form.proveedorId),
   });
+
+  // Las más vencidas primero, para priorizar de un vistazo sin tener que
+  // adivinar — sin fechaVencimiento (proveedor sin condición comercial
+  // cargada) quedan al final, no arriba ni mezcladas.
+  const comprobantesOrdenados = useMemo(() => {
+    return [...(comprobantes ?? [])].sort((a, b) => {
+      if (!a.fechaVencimiento && !b.fechaVencimiento) return 0;
+      if (!a.fechaVencimiento) return 1;
+      if (!b.fechaVencimiento) return -1;
+      return new Date(a.fechaVencimiento) - new Date(b.fechaVencimiento);
+    });
+  }, [comprobantes]);
 
   const seleccionados = Object.keys(form.montos).map(Number);
   const seleccionadosDatos = (comprobantes ?? []).filter((c) => seleccionados.includes(c.id));
@@ -185,14 +198,15 @@ export function OrdenPagoWizard({ onClose, onExito }) {
 
           {form.proveedorId && (
             <Table
-              columnas={["", "N° comprobante", "Fecha", "Estado", "Saldo pendiente"]}
+              columnas={["", "N° comprobante", "Fecha", "Vencimiento", "Estado", "Saldo pendiente"]}
               columnasDerecha={["Saldo pendiente"]}
-              filas={comprobantes ?? []}
+              filas={comprobantesOrdenados}
               vacio="Este proveedor no tiene comprobantes con saldo pendiente."
               renderFila={(c) => {
                 const marcado = seleccionados.includes(c.id);
                 const conDiferencia = Boolean(c.matching?.tieneDiferencia);
                 const confirmado = Boolean(form.confirmaciones[c.id]);
+                const vencimiento = estadoVencimiento(c.fechaVencimiento, UMBRAL_VENCIMIENTO_DIAS);
                 return (
                   <Fragment key={c.id}>
                     <tr
@@ -210,6 +224,18 @@ export function OrdenPagoWizard({ onClose, onExito }) {
                       </td>
                       <td className="px-2 py-2.5 font-mono text-[12.5px]">{c.numero}</td>
                       <td className="px-2 py-2.5 text-[12.5px]">{formatearFechaSolo(c.fecha)}</td>
+                      <td className="px-2 py-2.5 text-[12.5px]">
+                        {c.fechaVencimiento ? (
+                          <div className="flex items-center gap-1.5">
+                            <span>{formatearFechaSolo(c.fechaVencimiento)}</span>
+                            {vencimiento && (
+                              <Badge variante={VARIANTE_VENCIMIENTO[vencimiento]}>{LABEL_VENCIMIENTO[vencimiento]}</Badge>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-piedra">—</span>
+                        )}
+                      </td>
                       <td className="px-2 py-2.5">
                         {conDiferencia ? (
                           <Badge variante="alerta">Revisar</Badge>
@@ -223,7 +249,7 @@ export function OrdenPagoWizard({ onClose, onExito }) {
                     </tr>
                     {marcado && conDiferencia && (
                       <tr className="border-b border-borde last:border-0" onClick={(e) => e.stopPropagation()}>
-                        <td colSpan={5} className="bg-error-suave px-4 py-3">
+                        <td colSpan={6} className="bg-error-suave px-4 py-3">
                           <label className="flex cursor-pointer items-start gap-2.5 text-[12.5px] text-error-texto">
                             <input
                               type="checkbox"

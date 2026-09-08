@@ -28,11 +28,21 @@ export function ComprobanteModal({ onClose, onExito }) {
     queryFn: listarProveedoresConSaldo,
   });
 
+  // El backend (crearComprobante) solo bloquea OCs "Anulada" — acá se
+  // acota igual a "ya recibida" (Recibida o Recibida con diferencia) por
+  // UX, pero sin ese filtro de más el combo antes excluía justo el caso
+  // "Recibida con diferencia", donde más falta hace cargar el comprobante
+  // para revisar el matching. listarOrdenesCompra solo filtra por un
+  // `estado` exacto, así que se trae sin filtro y se filtran acá los dos
+  // valores válidos (pageSize alto para no cortar el listado del proveedor).
   const { data: ordenes } = useQuery({
-    queryKey: ['ordenes-compra', { estado: 'Recibida' }], // solo OC recibidas
-    queryFn: () => listarOrdenesCompra({ estado: 'Recibida' }),
+    queryKey: ['ordenes-compra', 'para-comprobante'],
+    queryFn: () => listarOrdenesCompra({ pageSize: 500 }),
     enabled: !!form.proveedorId,
   });
+  const ordenesElegibles = ordenes?.items?.filter(
+    (o) => o.proveedorId === Number(form.proveedorId) && ['Recibida', 'Recibida con diferencia'].includes(o.estado)
+  );
 
   const mutacion = useMutation({
     mutationFn: () =>
@@ -95,10 +105,11 @@ export function ComprobanteModal({ onClose, onExito }) {
           </Select>
 
           <div className="grid grid-cols-2 gap-4">
+            {/* Solo Factura: una ND/NC ahora se crea únicamente desde
+                NotaModal, vinculada obligatoriamente a su factura original
+                (comprobanteRelacionadoId) — ver comprobantes.servicio.js. */}
             <Select label="Tipo *" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
               <option value="Factura">Factura</option>
-              <option value="Nota de Débito">Nota de Débito</option>
-              <option value="Nota de Crédito">Nota de Crédito</option>
             </Select>
             <Input
               label="Número *"
@@ -122,13 +133,11 @@ export function ComprobanteModal({ onClose, onExito }) {
               onChange={(e) => setForm({ ...form, ordenCompraId: e.target.value })}
             >
               <option value="">Sin OC</option>
-              {ordenes?.items
-                ?.filter((o) => o.proveedorId === Number(form.proveedorId))
-                .map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.numero} - ${formatearMonto(o.montoTotal)}
-                  </option>
-                ))}
+              {ordenesElegibles?.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.numero} - ${formatearMonto(o.montoTotal)}
+                </option>
+              ))}
             </Select>
           </div>
 

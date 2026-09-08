@@ -23,6 +23,29 @@ function esFactura(comprobante) {
   return comprobante.tipo === "Factura";
 }
 
+// Fecha de vencimiento de pago a partir de la condición comercial pactada
+// con el proveedor (HU-18: "Contado" | "15/30/60 días cta. cte.", lista
+// cerrada validada en proveedores.controlador.js — nunca texto libre). Se
+// calcula una sola vez al crear el comprobante, no en cada lectura: ver
+// comentario de ComprobanteProveedor.fechaVencimiento en schema.prisma.
+// Devuelve null si no hay condición comercial cargada (proveedor legado
+// sin el campo) en vez de asumir un plazo — mejor sin vencimiento que uno
+// inventado.
+function calcularFechaVencimiento(condicionComercial, fechaComprobante) {
+  if (!condicionComercial) return null;
+  const base = new Date(fechaComprobante);
+  if (condicionComercial === "Contado") return base;
+  const dias = /^(\d+)\s+días/.exec(condicionComercial.trim());
+  if (!dias) return null;
+  // setUTCDate (no setDate): fechaComprobante es una fecha "solo día"
+  // guardada como medianoche UTC (ver formatearFechaSolo en
+  // frontend/src/lib/fechas.js) — sumar con setDate corre el resultado al
+  // aplicar el huso horario local del proceso.
+  const vencimiento = new Date(base);
+  vencimiento.setUTCDate(vencimiento.getUTCDate() + Number(dias[1]));
+  return vencimiento;
+}
+
 // Una orden de pago deja de "contar" contra el saldo si se anulo o si
 // uno de sus cheques fue rechazado (HU-79, HU-86) — en ambos casos el
 // comprobante recupera el saldo automaticamente sin tocar ninguna fila
@@ -158,4 +181,5 @@ module.exports = {
   sumarImportesMedios,
   resumenSaldosPorProveedor,
   redondear,
+  calcularFechaVencimiento,
 };
