@@ -302,7 +302,7 @@ export function RecepcionesPage() {
           <h2 className="font-heading text-[20px] font-semibold">Recepción de proveedor</h2>
           <Badge variante="alerta">{ocsPendientes?.total ?? 0}</Badge>
         </div>
-        <div className="flex flex-col gap-2.5 overflow-y-auto px-5 pb-5 lg:max-h-[560px]">
+        <div className="flex flex-col gap-2.5 px-5 pb-5">
         {cargandoOCs && <p className="text-sm text-piedra">Cargando…</p>}
         {!cargandoOCs && (ocsPendientes?.items?.length ?? 0) === 0 && (
           <div className="rounded-[18.4px] bg-white p-6">
@@ -419,7 +419,7 @@ export function RecepcionesPage() {
           <Truck size={18} className="text-laton" />
           <h2 className="font-heading text-[20px] font-semibold">Recepción de transferencia</h2>
         </div>
-        <div className="overflow-y-auto px-5 pb-5 lg:max-h-[560px]">
+        <div className="px-5 pb-5">
         <p className="mb-4 text-[13px] text-tinta/70">
           Toda transferencia queda <strong>en tránsito</strong> hasta que el depósito destino la confirma. Quien recibe declara
           la cantidad que realmente llegó: si difiere de la enviada, el sistema registra la diferencia y la deja visible para
