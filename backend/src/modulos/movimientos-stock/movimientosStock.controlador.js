@@ -58,4 +58,45 @@ async function postRecepcion(req, res) {
   }
 }
 
-module.exports = { registrarEntrada, getMovimientos, registrarTransferencia, postRecepcion };
+async function postRevisarDiferencia(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "id invalido" });
+  }
+  try {
+    const resultado = await movimientosStockServicio.marcarDiferenciaRevisada(id, req.body);
+    return res.status(200).json(resultado);
+  } catch (err) {
+    if (err instanceof movimientosStockServicio.ErrorDeNegocio) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
+    console.error("Error al marcar la diferencia como revisada:", err);
+    return res.status(500).json({ error: "No se pudo marcar la diferencia como revisada." });
+  }
+}
+
+async function postPedirFaltantes(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "id invalido" });
+  }
+  try {
+    const resultado = await movimientosStockServicio.pedirFaltantesPorDiferencia(id, req.body);
+    return res.status(201).json(resultado);
+  } catch (err) {
+    if (err instanceof movimientosStockServicio.ErrorDeNegocio) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
+    console.error("Error al pedir los faltantes de la diferencia:", err);
+    return res.status(500).json({ error: "No se pudo generar el pedido de los faltantes." });
+  }
+}
+
+module.exports = {
+  registrarEntrada,
+  getMovimientos,
+  registrarTransferencia,
+  postRecepcion,
+  postRevisarDiferencia,
+  postPedirFaltantes,
+};

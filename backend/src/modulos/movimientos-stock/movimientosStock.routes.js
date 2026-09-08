@@ -10,5 +10,7 @@ router.get("/", movimientosStockControlador.getMovimientos);
 router.post("/entrada", movimientosStockControlador.registrarEntrada);
 router.post("/transferencia", movimientosStockControlador.registrarTransferencia);
 router.post("/:id/recepcion", movimientosStockControlador.postRecepcion);
+router.post("/:id/revisar-diferencia", movimientosStockControlador.postRevisarDiferencia);
+router.post("/:id/pedir-faltantes", movimientosStockControlador.postPedirFaltantes);
 
 module.exports = router;

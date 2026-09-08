@@ -8,7 +8,7 @@
 const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
 const { crearConNumeroSecuencial } = require("../../lib/numeracion");
-const { ESTADOS_REQUERIMIENTO, TIPOS_REQUERIMIENTO } = require("../../lib/constantes");
+const { ESTADOS_REQUERIMIENTO, TIPOS_REQUERIMIENTO, MOTIVOS_RESOLUCION_DIFERENCIA_OC } = require("../../lib/constantes");
 const { reintentarTransferenciasPendientes } = require("../requerimientos/requerimientos.servicio");
 const { calcularSaldosComprobantes } = require("../../lib/comprobantes");
 
@@ -177,10 +177,26 @@ function calcularPrioridad(oc, alertaFacturacion) {
   return 2;
 }
 
-async function listarOCs({ estado, proveedorId, desde, hasta, q, page = 1, pageSize = 20 } = {}) {
+async function listarOCs({
+  estado,
+  proveedorId,
+  depositoId,
+  desde,
+  hasta,
+  q,
+  page = 1,
+  pageSize = 20,
+  incluirDetalle,
+} = {}) {
+  // Opt-in (no default): el listado general no necesita el detalle por
+  // artículo, solo la pantalla de Recepciones para mostrar enviado/recibido
+  // de una OC "Recibida con diferencia" — pedirlo solo cuando hace falta
+  // evita cargar de más al listado principal de Órdenes de Compra.
+  const debeIncluirDetalle = incluirDetalle === true || incluirDetalle === "true";
   const where = {};
   if (estado) where.estado = estado;
   if (proveedorId) where.proveedorId = Number(proveedorId);
+  if (depositoId) where.depositoId = Number(depositoId);
   if (desde || hasta) {
     where.fecha = {};
     if (desde) where.fecha.gte = new Date(desde);
@@ -207,9 +223,11 @@ async function listarOCs({ estado, proveedorId, desde, hasta, q, page = 1, pageS
     where,
     include: {
       proveedor: true,
+      deposito: true,
       comprobantes: {
         select: { id: true, tipo: true, anulado: true, fechaVencimiento: true, importeTotal: true, numero: true },
       },
+      ...(debeIncluirDetalle ? { detalle: { include: { articulo: true } } } : {}),
     },
   });
 
@@ -235,7 +253,12 @@ async function listarOCs({ estado, proveedorId, desde, hasta, q, page = 1, pageS
     .slice((pageNum - 1) * pageSizeNum, (pageNum - 1) * pageSizeNum + pageSizeNum)
     .map(({ oc, alertaFacturacion }) => {
       const { comprobantes, ...resto } = oc;
-      return { ...resto, alertaFacturacion };
+      // El listado general no necesita mandar comprobantes al cliente (se
+      // usan acá adentro nomás, para alertaFacturacion) — pero Recepciones
+      // sí, para el aviso de "Nota de crédito pendiente de cargar" sobre
+      // una OC con diferencia. Mismo flag que `detalle`: opt-in, no cambia
+      // el peso de la respuesta para quien no lo pide.
+      return { ...resto, alertaFacturacion, ...(debeIncluirDetalle ? { comprobantes } : {}) };
     });
 
   return {
@@ -431,7 +454,7 @@ async function registrarRecepcion(id, detalleRecibido, usuario) {
   });
   const estadoFinalOC = huboDiferencia ? "Recibida con diferencia" : "Recibida";
 
-  return prisma.$transaction(
+  const resultado = await prisma.$transaction(
     async (tx) => {
       // Re-chequeo protegido contra carreras: FOR UPDATE bloquea la fila de
       // la OC hasta que esta transacción termine — un doble envío del mismo
@@ -484,16 +507,15 @@ async function registrarRecepcion(id, detalleRecibido, usuario) {
           update: { stockActual: { increment: cantidadRecibida } },
         });
 
-        // Sprint 3 — Fase 4: si esta OC repone un depósito central,
-        // retoma las transferencias que se habían quedado "Pendiente de
-        // stock" esperando este artículo. No hace nada si el depósito no
-        // es central.
-        if (oc.deposito.esCentral) {
-          await reintentarTransferenciasPendientes(tx, {
-            depositoCentralId: oc.depositoId,
-            articuloId: Number(linea.articuloId),
-          });
-        }
+        // Sprint 3 — Fase 4: si esta OC repone un depósito central, hay que
+        // retomar las transferencias "Pendiente de stock" que esperaban este
+        // artículo. Eso YA NO pasa acá: reintentarTransferenciasPendientes
+        // hace sus propias consultas por cada transferencia pendiente, y
+        // corriendo eso adentro de esta misma transacción atómica un central
+        // con varias transferencias de prueba acumuladas hacía que la
+        // recepción entera superara el timeout de 30s (causa real reportada
+        // por el equipo). Se dispara después del commit — ver
+        // dispararReintentoTransferenciasPendientes más abajo.
       }
 
       await tx.ordenCompra.update({
@@ -546,6 +568,91 @@ async function registrarRecepcion(id, detalleRecibido, usuario) {
     },
     { timeout: 30000, maxWait: 15000 }
   );
+
+  // Fase 2 (Sprint 3 · Fase 4), fuera de la transacción de arriba: recién
+  // acá, con la recepción ya commiteada, se retoman las transferencias
+  // "Pendiente de stock" que esperaban alguno de los artículos recibidos.
+  // No se espera (`await`) ni bloquea la respuesta al cliente.
+  if (oc.deposito.esCentral) {
+    const articulosRecibidos = detalleRecibido
+      .filter((linea) => Number(linea.cantidadRecibida) > 0)
+      .map((linea) => Number(linea.articuloId));
+    dispararReintentoTransferenciasPendientes(oc.depositoId, articulosRecibidos);
+  }
+
+  return resultado;
+}
+
+// Dispara reintentarTransferenciasPendientes (requerimientos.servicio.js)
+// después del commit de registrarRecepcion, desacoplada a propósito de esa
+// transacción atómica: con setImmediate para no demorar la respuesta HTTP,
+// y sin pasarle el `tx` de la recepción — reintentarTransferenciasPendientes
+// abre su propia transacción CORTA por cada transferencia pendiente (mismo
+// patrón que barrerStockMinimoCentral en requerimientos.servicio.js), así
+// que un central con muchas transferencias de prueba acumuladas ya no puede
+// hacer que la recepción entera supere el timeout.
+//
+// RIESGO RESIDUAL ACEPTADO — decisión consciente, no un descuido: si el
+// proceso muere entre el commit de la recepción y que este setImmediate
+// llegue a correr (o a terminar), la(s) transferencia(s) de este artículo
+// quedan en "Pendiente de stock" sin que nadie las reintente hasta el
+// próximo disparador — otra recepción de ese mismo artículo en el central,
+// o el barrido periódico de red de seguridad (barrerTransferenciasPendientes
+// en requerimientos.servicio.js, corrido cada 6hs por jobsStockMinimo.js).
+// Es decir, en el peor caso la transferencia se resuelve hasta 6hs más
+// tarde en vez de al instante. Se acepta ese delay a cambio de NO traer
+// infraestructura de colas (Redis/Bull/etc.) a un proyecto que hoy no la
+// tiene — reintentarTransferenciasPendientes solo actúa sobre lo que sigue
+// en PENDIENTE_DE_STOCK, así que dispararla de más (por el evento Y por el
+// barrido) nunca duplica ni corrompe nada, es idempotente.
+function dispararReintentoTransferenciasPendientes(depositoCentralId, articuloIds) {
+  setImmediate(async () => {
+    for (const articuloId of articuloIds) {
+      try {
+        await reintentarTransferenciasPendientes({ depositoCentralId, articuloId });
+      } catch (err) {
+        console.error(
+          `[registrarRecepcion] fallo reintentando transferencias pendientes (central=${depositoCentralId}, articulo=${articuloId}):`,
+          err.message
+        );
+      }
+    }
+  });
+}
+
+// Recepciones Parte B: registra que compras ya revisó la diferencia de una
+// OC "Recibida con diferencia" — Nota de Crédito cargada aparte en
+// Comprobantes, reposición pedida al proveedor, o simplemente aceptada.
+// Ninguno de los 3 motivos dispara nada automático (a diferencia de
+// "Pedir los N faltantes" en transferencias, Parte A): no hay endpoint que
+// arme una Nota de Crédito ni una nueva compra desde acá — ver diagnóstico.
+// No toca `estado` ni ningún otro dato de la recepción: es una marca
+// aparte, igual que MovimientoStock.diferenciaRevisada.
+async function marcarDiferenciaRevisada(id, { motivoResolucion, usuario } = {}) {
+  const ocId = Number(id);
+  if (!Number.isInteger(ocId)) throw new ErrorDeNegocio("id de orden de compra inválido.");
+  if (!MOTIVOS_RESOLUCION_DIFERENCIA_OC.includes(motivoResolucion)) {
+    throw new ErrorDeNegocio(`motivoResolucion inválido. Valores permitidos: ${MOTIVOS_RESOLUCION_DIFERENCIA_OC.join(", ")}`);
+  }
+
+  const oc = await prisma.ordenCompra.findUnique({ where: { id: ocId } });
+  if (!oc) throw new ErrorDeNegocio("Orden de compra no encontrada.", 404);
+  if (oc.estado !== "Recibida con diferencia") {
+    throw new ErrorDeNegocio("Solo se puede revisar la diferencia de una OC en estado Recibida con diferencia.");
+  }
+  if (oc.diferenciaRevisada) {
+    throw new ErrorDeNegocio("La diferencia de esta orden de compra ya fue marcada como revisada.", 409);
+  }
+
+  return prisma.ordenCompra.update({
+    where: { id: ocId },
+    data: {
+      diferenciaRevisada: true,
+      motivoResolucion,
+      revisadoPor: usuario || null,
+      fechaRevision: new Date(),
+    },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -611,5 +718,6 @@ module.exports = {
   anularOC,
   registrarRecepcion,
   verificarCierrePorPagos,
+  marcarDiferenciaRevisada,
   ErrorDeNegocio,
 };

@@ -12,6 +12,7 @@ import { MinMaxPage } from "./modulos/stock/MinMaxPage";
 import { TiposMovimientoPage } from "./modulos/tipos-movimiento/TiposMovimientoPage";
 import { MovimientosPage } from "./modulos/movimientos/MovimientosPage";
 import { RecepcionesPage } from "./modulos/recepciones/RecepcionesPage";
+import { HistorialRecepcionesPage } from "./modulos/recepciones/HistorialRecepcionesPage";
 import { KardexPage } from "./modulos/kardex/KardexPage";
 import { ReportePage } from "./modulos/reporte/ReportePage";
 import { PagosPage } from "./modulos/pagos/PagosPage";
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/tipos-movimiento" element={<TiposMovimientoPage />} />
           <Route path="/movimientos" element={<MovimientosPage />} />
           <Route path="/recepciones" element={<RecepcionesPage />} />
+          <Route path="/recepciones/historial" element={<HistorialRecepcionesPage />} />
           <Route path="/kardex" element={<KardexPage />} />
           <Route path="/reporte" element={<ReportePage />} />
           <Route path="/stock" element={<StockPage />} />

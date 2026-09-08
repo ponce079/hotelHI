@@ -389,14 +389,62 @@ async function marcarPendienteDeStockYReponer(tx, requerimiento, faltantes, moti
   }
 }
 
+// Reintenta un lote YA RESUELTO de transferencias "Pendiente de stock", una
+// por una, cada una en su PROPIA transacción corta — a propósito NO recibe
+// un `tx` de afuera. Antes esto corría dentro de la misma transacción
+// atómica de registrarRecepcion (ordenesCompra.servicio.js): con la base
+// remota compartida por el equipo acumulando transferencias de prueba, la
+// cantidad de reintentos escalaba y la recepción entera superaba su timeout
+// de 30s. Ahora cada transferencia abre/cierra su propia conexión corta
+// (mismo patrón que barrerStockMinimoCentral más abajo), así que el costo ya
+// no se acumula sobre la transacción de quien dispara el reintento.
+// Reusado por reintentarTransferenciasPendientes (evento puntual) y por
+// barrerTransferenciasPendientes (red de seguridad periódica) — ver la nota
+// de riesgo residual en dispararReintentoTransferenciasPendientes
+// (ordenesCompra.servicio.js) para el porqué de este desacople.
+async function reintentarLotePendientes(pendientes) {
+  for (const pendiente of pendientes) {
+    try {
+      await prisma.$transaction(
+        (tx) =>
+          intentarAprobarTransferencia(tx, {
+            id: pendiente.id,
+            depositoId: pendiente.depositoId,
+            depositoCentralId: pendiente.depositoCentralId,
+            urgente: pendiente.urgente,
+            requerimientoCompraId: pendiente.requerimientoCompraId,
+            detalle: pendiente.detalle.map((d) => ({ articuloId: d.articuloId, cantidadSolicitada: d.cantidadSolicitada })),
+          }),
+        OPCIONES_TRANSACCION
+      );
+    } catch (err) {
+      // Un problema reintentando ESTA transferencia puntual (p.ej. falta la
+      // semilla de tipos de movimiento) no puede tirar abajo el resto de la
+      // cola — queda registrado en su propio log (fuera de la transacción
+      // que acaba de fallar/revertirse) y se sigue con las demás.
+      try {
+        await prisma.requerimientoLog.create({
+          data: {
+            requerimientoId: pendiente.id,
+            usuario: "sistema",
+            accion: truncarAccion(`No se pudo reintentar la transferencia: ${err.message}`),
+          },
+        });
+      } catch (logErr) {
+        console.error(`[reintentarLotePendientes] no se pudo loggear el fallo de REQ-${pendiente.id}:`, logErr.message);
+      }
+    }
+  }
+}
+
 // Sprint 3 — Fase 4 (cierre del circuito, punto 3 y 9): cuando el central
 // recibe mercadería de una compra, esta función busca las transferencias
 // que se habían quedado "Pendiente de stock" esperando justo ese artículo
 // y reintenta aprobarlas — por orden de urgente primero y después por
 // antigüedad (FIFO), para que la reposición se reparta en el orden en que
 // se pidió, no en el orden en que a cada una le toque reintentarse sola.
-async function reintentarTransferenciasPendientes(tx, { depositoCentralId, articuloId }) {
-  const pendientes = await tx.requerimientoReposicion.findMany({
+async function reintentarTransferenciasPendientes({ depositoCentralId, articuloId }) {
+  const pendientes = await prisma.requerimientoReposicion.findMany({
     where: {
       tipo: TIPOS_REQUERIMIENTO.TRANSFERENCIA,
       estado: ESTADOS_REQUERIMIENTO.PENDIENTE_DE_STOCK,
@@ -408,30 +456,31 @@ async function reintentarTransferenciasPendientes(tx, { depositoCentralId, artic
     orderBy: [{ urgente: "desc" }, { fecha: "asc" }],
   });
 
-  for (const pendiente of pendientes) {
-    try {
-      await intentarAprobarTransferencia(tx, {
-        id: pendiente.id,
-        depositoId: pendiente.depositoId,
-        depositoCentralId: pendiente.depositoCentralId,
-        urgente: pendiente.urgente,
-        requerimientoCompraId: pendiente.requerimientoCompraId,
-        detalle: pendiente.detalle.map((d) => ({ articuloId: d.articuloId, cantidadSolicitada: d.cantidadSolicitada })),
-      });
-    } catch (err) {
-      // Un problema reintentando ESTA transferencia puntual (p.ej. falta
-      // la semilla de tipos de movimiento) no puede tirar abajo la
-      // recepción de la OC que disparó el reintento, ni el resto de la
-      // cola — queda registrado en su propio log y se sigue con las demás.
-      await tx.requerimientoLog.create({
-        data: {
-          requerimientoId: pendiente.id,
-          usuario: "sistema",
-          accion: truncarAccion(`No se pudo reintentar la transferencia: ${err.message}`),
-        },
-      });
-    }
-  }
+  await reintentarLotePendientes(pendientes);
+}
+
+// Red de seguridad (ver riesgo residual documentado en
+// dispararReintentoTransferenciasPendientes, ordenesCompra.servicio.js):
+// barre TODAS las transferencias "Pendiente de stock" de cualquier central
+// activo, no solo las de un artículo puntual. Cubre el caso en que el
+// proceso se cayó justo entre el commit de una recepción y el reintento por
+// evento — sin esto, esa transferencia quedaría pendiente para siempre en
+// vez de hasta la próxima corrida de este barrido. Se llama junto con
+// barrerStockMinimoCentral desde jobsStockMinimo.js.
+async function barrerTransferenciasPendientes() {
+  const pendientes = await prisma.requerimientoReposicion.findMany({
+    where: {
+      tipo: TIPOS_REQUERIMIENTO.TRANSFERENCIA,
+      estado: ESTADOS_REQUERIMIENTO.PENDIENTE_DE_STOCK,
+      anulado: false,
+      depositoCentral: { activo: true },
+    },
+    include: { detalle: true },
+    orderBy: [{ urgente: "desc" }, { fecha: "asc" }],
+  });
+
+  await reintentarLotePendientes(pendientes);
+  return { revisadas: pendientes.length };
 }
 
 // Sprint 3 — genera (o acumula sobre) la solicitud de reposición del
@@ -969,6 +1018,7 @@ module.exports = {
   confirmarSugerencia,
   verificarStockMinimoCentral,
   barrerStockMinimoCentral,
+  barrerTransferenciasPendientes,
   intentarAprobarTransferencia,
   reintentarTransferenciasPendientes,
 };

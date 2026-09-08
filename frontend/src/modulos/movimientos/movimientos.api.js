@@ -24,3 +24,13 @@ export async function confirmarRecepcion(id, payload) {
   const { data } = await api.post(`/movimientos-stock/${id}/recepcion`, payload);
   return data;
 }
+
+export async function marcarDiferenciaRevisada(id, payload) {
+  const { data } = await api.post(`/movimientos-stock/${id}/revisar-diferencia`, payload);
+  return data;
+}
+
+export async function pedirFaltantesPorDiferencia(id, payload) {
+  const { data } = await api.post(`/movimientos-stock/${id}/pedir-faltantes`, payload);
+  return data;
+}

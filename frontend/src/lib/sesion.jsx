@@ -76,6 +76,13 @@ export function SesionProvider({ children }) {
         if (accion === "abmArticulo") return rol === "admin" || rol === "deposito";
         if (accion === "operar") return rol === "admin" || rol === "deposito";
         if (accion === "param") return rol === "admin" || rol === "compras";
+        // Recepciones (transferencias + OC, hub unificado): "operar" sigue
+        // siendo quien puede CONFIRMAR (admin/depósito, sin cambios). Compras
+        // y gerente necesitan ver el panorama completo (todas las
+        // recepciones pendientes, sin acotar a un depósito) pero de solo
+        // lectura — no tienen botón de confirmar ni acceden a RecepcionOCPage
+        // (esa sigue gateada por recibirOC).
+        if (accion === "verRecepciones") return rol === "admin" || rol === "deposito" || rol === "compras" || rol === "gerente";
         // Sprint 2 — Pagos a Proveedores (HU-76 a 79, 86): backend no
         // valida rol todavia (ver sesion.jsx arriba), asi que esta
         // pantalla depende de este chequeo + <SinPermiso />.
@@ -104,6 +111,11 @@ export function SesionProvider({ children }) {
         if (accion === "verOrdenesCompra") return rol === "compras" || rol === "gerente" || rol === "deposito";
         if (accion === "gestionarOC") return rol === "compras"; // generar (HU-22) / enviar / anular — sin aprobación de gerente, esa ya se dio al adjudicar el presupuesto
         if (accion === "recibirOC") return rol === "deposito";
+        // Recepciones Parte B: resolver la diferencia de una OC "Recibida
+        // con diferencia" (Nota de Crédito / reposición al proveedor /
+        // aceptarla) es una decisión de facturación, no de depósito —
+        // mismo rol que registrarComprobante, no recibirOC.
+        if (accion === "resolverDiferenciaOC") return rol === "compras";
         // Confirmar o descartar una sugerencia de reposición automática del
         // central: mismo rol que gestiona el resto del ciclo de compra.
         if (accion === "gestionarSugerencias") return rol === "compras";

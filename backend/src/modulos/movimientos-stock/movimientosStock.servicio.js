@@ -9,8 +9,8 @@
 // no se podía hacer.
 
 const prisma = require("../../lib/prisma");
-const { verificarStockMinimoCentral } = require("../requerimientos/requerimientos.servicio");
-const { ESTADOS_REQUERIMIENTO } = require("../../lib/constantes");
+const { verificarStockMinimoCentral, crearRequerimiento } = require("../requerimientos/requerimientos.servicio");
+const { ESTADOS_REQUERIMIENTO, TIPOS_REQUERIMIENTO, MOTIVOS_RESOLUCION_DIFERENCIA } = require("../../lib/constantes");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -449,4 +449,121 @@ async function confirmarRecepcion(id, { lineas, usuario } = {}) {
   return resultado;
 }
 
-module.exports = { registrarEntrada, listarMovimientos, registrarTransferencia, confirmarRecepcion, ErrorDeNegocio };
+// Trae la transferencia "Con diferencia" puntual (la fila con
+// depositoDestinoId, no su entrada relacionada — ver el comentario de
+// confirmarRecepcion sobre por qué ambas comparten `estado`) y valida que
+// todavía se pueda actuar sobre su diferencia. Reusado por
+// marcarDiferenciaRevisada y pedirFaltantesPorDiferencia.
+async function obtenerTransferenciaConDiferencia(id) {
+  const movimientoId = Number(id);
+  if (!Number.isInteger(movimientoId)) throw new ErrorDeNegocio("id de movimiento inválido.");
+
+  const movimiento = await prisma.movimientoStock.findUnique({
+    where: { id: movimientoId },
+    include: { detalleMovimientos: true },
+  });
+  if (!movimiento) throw new ErrorDeNegocio("Movimiento no encontrado.", 404);
+  if (movimiento.estado !== "Con diferencia" || !movimiento.depositoDestinoId) {
+    throw new ErrorDeNegocio("Este movimiento no es una transferencia Con diferencia.");
+  }
+  if (movimiento.diferenciaRevisada) {
+    throw new ErrorDeNegocio("La diferencia de este movimiento ya fue marcada como revisada.", 409);
+  }
+  return movimiento;
+}
+
+// HU-14/17 — punto 2 del rediseño de Recepciones: registra que alguien ya
+// miró la diferencia entre lo enviado y lo recibido, sin tocar
+// cantidadRecibida ni ningún otro dato de la recepción en sí. Una vez
+// revisada, listarMovimientos({estado:"Con diferencia"}) la sigue
+// devolviendo (el estado no cambia) — es la pantalla de Recepciones la que
+// decide no mostrarla más en la subsección activa, filtrando por
+// diferenciaRevisada del lado del cliente.
+async function marcarDiferenciaRevisada(id, { motivoResolucion, usuario } = {}) {
+  const movimiento = await obtenerTransferenciaConDiferencia(id);
+  if (!MOTIVOS_RESOLUCION_DIFERENCIA.includes(motivoResolucion)) {
+    throw new ErrorDeNegocio(`motivoResolucion inválido. Valores permitidos: ${MOTIVOS_RESOLUCION_DIFERENCIA.join(", ")}`);
+  }
+
+  return prisma.movimientoStock.update({
+    where: { id: movimiento.id },
+    data: {
+      diferenciaRevisada: true,
+      motivoResolucion,
+      revisadoPor: usuario || null,
+      fechaRevision: new Date(),
+    },
+  });
+}
+
+// HU-14/17 — punto 3 del rediseño: atajo "Pedir los N faltantes". Arma un
+// RequerimientoReposicion de tipo TRANSFERENCIA con lo que faltó de cada
+// línea y reusa crearRequerimiento tal cual (mismo motor que el alta manual
+// desde el modal) — no reimplementa la resolución del depósito central, la
+// habilitación ni el dedupe contra un pedido ya abierto: si algo de eso
+// falla (ej. el artículo no tiene central asignado), el error de
+// crearRequerimiento sube tal cual, sin marcar la diferencia como resuelta.
+async function pedirFaltantesPorDiferencia(id, { usuario } = {}) {
+  const movimiento = await obtenerTransferenciaConDiferencia(id);
+
+  const faltantes = movimiento.detalleMovimientos
+    .filter((d) => d.cantidadRecibida != null && Number(d.cantidadRecibida) < Number(d.cantidad))
+    .map((d) => ({
+      articuloId: d.articuloId,
+      cantidadSolicitada: Number(d.cantidad) - Number(d.cantidadRecibida),
+    }));
+  if (faltantes.length === 0) {
+    throw new ErrorDeNegocio("Este movimiento no tiene líneas con diferencia para pedir.");
+  }
+
+  // crearRequerimiento tira SU PROPIO ErrorDeNegocio (clase distinta a la
+  // de este archivo — mismo patrón repetido en cada servicio, ver
+  // ordenesCompra.servicio.js) — sin este catch, el `instanceof
+  // movimientosStockServicio.ErrorDeNegocio` del controlador no lo
+  // reconoce y una validación real (ej. "sin depósito central asignado")
+  // le llegaría al usuario como un 500 genérico en vez del mensaje útil.
+  let requerimiento;
+  try {
+    requerimiento = await crearRequerimiento({
+      depositoId: movimiento.depositoDestinoId,
+      tipo: TIPOS_REQUERIMIENTO.TRANSFERENCIA,
+      solicitante: usuario,
+      detalle: faltantes,
+    });
+  } catch (err) {
+    if (typeof err.statusCode === "number") {
+      throw new ErrorDeNegocio(err.message, err.statusCode);
+    }
+    throw err;
+  }
+
+  await prisma.requerimientoLog.create({
+    data: {
+      requerimientoId: requerimiento.id,
+      usuario: usuario || "sistema",
+      accion: `Generado automáticamente por la diferencia de MOV-${String(movimiento.id).padStart(4, "0")}`,
+    },
+  });
+
+  await prisma.movimientoStock.update({
+    where: { id: movimiento.id },
+    data: {
+      diferenciaRevisada: true,
+      motivoResolucion: "Se generó pedido por la diferencia",
+      revisadoPor: usuario || null,
+      fechaRevision: new Date(),
+    },
+  });
+
+  return requerimiento;
+}
+
+module.exports = {
+  registrarEntrada,
+  listarMovimientos,
+  registrarTransferencia,
+  confirmarRecepcion,
+  marcarDiferenciaRevisada,
+  pedirFaltantesPorDiferencia,
+  ErrorDeNegocio,
+};

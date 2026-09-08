@@ -398,7 +398,7 @@ export function OrdenCompraDetallePage() {
                   <div className="flex flex-wrap gap-2.5">
                     {puedeRecibir && (
                       <Button variante="ok" onClick={() => navigate(`/ordenes-compra/${oc.id}/recepcion`)}>
-                        <PackageCheck size={16} /> Registrar recepción
+                        <PackageCheck size={16} /> Registrar recepción de mercadería
                       </Button>
                     )}
                     {puedeEnviar && (

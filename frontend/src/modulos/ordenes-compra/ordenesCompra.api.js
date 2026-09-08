@@ -31,3 +31,8 @@ export async function registrarRecepcionOC(id, detalle, usuario) {
   const { data } = await api.post(`/ordenes-compra/${id}/recepcion`, { detalle, usuario });
   return data;
 }
+
+export async function marcarDiferenciaRevisadaOC(id, payload) {
+  const { data } = await api.post(`/ordenes-compra/${id}/revisar-diferencia`, payload);
+  return data;
+}

@@ -145,3 +145,20 @@ export const MAPA_RUBRO_CATEGORIA = {
 export function rubroCubreCategoria(rubro, categoria) {
   return (MAPA_RUBRO_CATEGORIA[rubro] ?? []).includes(categoria);
 }
+
+// Motivo al marcar como revisada la diferencia de una transferencia
+// (MovimientoStock.motivoResolucion, HU-14/17) — ver backend/src/lib/constantes.js.
+export const MOTIVOS_RESOLUCION_DIFERENCIA = [
+  "Reclamado al depósito",
+  "Se acepta la diferencia",
+  "Se generó pedido por la diferencia",
+  "Otro",
+];
+
+// Motivo al marcar como revisada la diferencia de una OC "Recibida con
+// diferencia" (OrdenCompra.motivoResolucion) — ver backend/src/lib/constantes.js.
+export const MOTIVOS_RESOLUCION_DIFERENCIA_OC = [
+  "Nota de crédito registrada",
+  "Reposición pedida al proveedor",
+  "Se acepta la diferencia",
+];

@@ -97,6 +97,23 @@ async function postRecepcionOC(req, res) {
   }
 }
 
+async function postRevisarDiferencia(req, res) {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id)) {
+    return res.status(400).json({ error: "id invalido" });
+  }
+  try {
+    const oc = await ordenesCompraServicio.marcarDiferenciaRevisada(id, req.body);
+    return res.status(200).json(oc);
+  } catch (err) {
+    if (err instanceof ordenesCompraServicio.ErrorDeNegocio) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
+    console.error("Error al marcar la diferencia de la orden de compra como revisada:", err);
+    return res.status(500).json({ error: "No se pudo marcar la diferencia como revisada." });
+  }
+}
+
 module.exports = {
   postGenerarOC,
   getOrdenesCompra,
@@ -104,4 +121,5 @@ module.exports = {
   postEnviarOC,
   postAnularOC,
   postRecepcionOC,
+  postRevisarDiferencia,
 };

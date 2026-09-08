@@ -103,7 +103,7 @@ export function RecepcionOCPage() {
 
       <div>
         <h1 className="flex items-center gap-2 font-heading text-[30px] font-semibold">
-          <PackageCheck size={24} className="text-pino" /> Recepción de {oc.numero}
+          <PackageCheck size={24} className="text-pino" /> Recepción de compra — {oc.numero}
         </h1>
         <p className="mt-1.5 font-body text-[12.5px] text-tinta/60">
           {oc.proveedor?.razonSocial} · Depósito {oc.deposito?.nombre}

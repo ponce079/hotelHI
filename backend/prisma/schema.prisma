@@ -105,6 +105,17 @@ model MovimientoStock {
   estado                  String                   @default("Confirmado")
   activo                  Boolean                  @default(true)
   usuario                 String?
+  // Seguimiento de la resolución de una transferencia "Con diferencia"
+  // (HU-14/17) — vive en la fila de la transferencia (depositoDestinoId
+  // no nulo), no en su entrada relacionada. No toca cantidadRecibida ni
+  // ningún otro dato histórico: es una marca aparte de "alguien ya miró
+  // esto", independiente de la recepción en sí.
+  // "Reclamado al depósito" | "Se acepta la diferencia" |
+  // "Se generó pedido por la diferencia" | "Otro" — ver MOTIVOS_RESOLUCION_DIFERENCIA.
+  diferenciaRevisada      Boolean                  @default(false)
+  motivoResolucion        String?
+  revisadoPor             String?
+  fechaRevision           DateTime?
   deposito                Deposito                 @relation(fields: [depositoId], references: [id])
   depositoDestino         Deposito?                @relation("MovimientoDestino", fields: [depositoDestinoId], references: [id])
   tipoMovStock            TipoMovimientoStock      @relation(fields: [tipoMovStockId], references: [id])
@@ -310,30 +321,45 @@ model PresupuestoDetalle {
 }
 
 model OrdenCompra {
-  id              Int                    @id @default(autoincrement())
-  numero          String                 @unique
-  proveedorId     Int
-  presupuestoId   Int                    @unique
-  depositoId      Int
+  id                 Int                    @id @default(autoincrement())
+  numero             String                 @unique
+  proveedorId        Int
+  presupuestoId      Int                    @unique
+  depositoId         Int
   // Pendiente | Enviada | Recibida | Recibida con diferencia | Cerrada | Anulada
-  estado          String                 @default("Pendiente")
-  montoTotal      Decimal                @default(0.00) @db.Decimal(12, 2)
-  flete           Decimal?               @db.Decimal(12, 2)
-  motivoAnulacion String?
-  fecha           DateTime               @default(now())
+  estado             String                 @default("Pendiente")
+  montoTotal         Decimal                @default(0.00) @db.Decimal(12, 2)
+  flete              Decimal?               @db.Decimal(12, 2)
+  motivoAnulacion    String?
+  fecha              DateTime               @default(now())
   // Cuándo pasó a Recibida/Recibida con diferencia (registrarRecepcion) —
   // persistido en vez de inferirlo de OrdenCompraLog para saber "hace
   // cuánto está recibida sin comprobante" (indicador de la lista de OC).
   // Mismo criterio que nacioComoSugerida/fechaAdjudicacion en otros
   // módulos: nada de parsear texto de log para esto.
-  fechaRecibida   DateTime?
-  proveedor       Proveedor              @relation(fields: [proveedorId], references: [id])
-  presupuesto     Presupuesto            @relation(fields: [presupuestoId], references: [id])
-  deposito        Deposito               @relation(fields: [depositoId], references: [id])
-  detalle         OrdenCompraDetalle[]
-  log             OrdenCompraLog[]
-  movimientos     MovimientoStock[]
-  comprobantes    ComprobanteProveedor[]
+  fechaRecibida      DateTime?
+  // Seguimiento de la resolución de una OC "Recibida con diferencia" —
+  // mismo patrón que MovimientoStock.diferenciaRevisada (Parte A), pero acá
+  // vive en la cabecera de la OC, no por línea: la resolución (Nota de
+  // Crédito / reposición al proveedor / se acepta) se decide una sola vez
+  // por OC aunque la diferencia haya sido en varias líneas. Independiente
+  // de matching de 3 vías (comprobantes.servicio.js:calcularMatching): ese
+  // se calcula al vuelo contra el importeTotal original de la factura y
+  // una Nota de Crédito nunca lo cambia, así que no puede ser la misma
+  // bandera — ver diagnóstico de Recepciones Parte B.
+  // "Nota de crédito registrada" | "Reposición pedida al proveedor" |
+  // "Se acepta la diferencia" — ver MOTIVOS_RESOLUCION_DIFERENCIA_OC.
+  diferenciaRevisada Boolean                @default(false)
+  motivoResolucion   String?
+  revisadoPor        String?
+  fechaRevision      DateTime?
+  proveedor          Proveedor              @relation(fields: [proveedorId], references: [id])
+  presupuesto        Presupuesto            @relation(fields: [presupuestoId], references: [id])
+  deposito           Deposito               @relation(fields: [depositoId], references: [id])
+  detalle            OrdenCompraDetalle[]
+  log                OrdenCompraLog[]
+  movimientos        MovimientoStock[]
+  comprobantes       ComprobanteProveedor[]
 
   @@index([proveedorId], map: "ordenes_compra_proveedorId_fkey")
   @@index([depositoId], map: "ordenes_compra_depositoId_fkey")

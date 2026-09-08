@@ -169,6 +169,32 @@ if (rubrosSinMapear.length > 0) {
 // después del commit.
 const OPCIONES_TRANSACCION = { timeout: 20000, maxWait: 10000 };
 
+// Motivo al marcar como revisada la diferencia de una transferencia
+// (MovimientoStock.motivoResolucion, HU-14/17). "Se generó pedido por la
+// diferencia" lo pone solo el atajo "Pedir los N faltantes" — no está
+// pensado para elegirlo a mano desde el dropdown, pero se valida igual del
+// lado del servidor sin distinguir el origen del pedido.
+const MOTIVOS_RESOLUCION_DIFERENCIA = [
+  "Reclamado al depósito",
+  "Se acepta la diferencia",
+  "Se generó pedido por la diferencia",
+  "Otro",
+];
+
+// Motivo al marcar como revisada la diferencia de una OC "Recibida con
+// diferencia" (OrdenCompra.motivoResolucion) — Recepciones Parte B. Lista
+// distinta de MOTIVOS_RESOLUCION_DIFERENCIA (transferencias): acá la
+// resolución pasa por proveedor/facturación, no por depósito. Ninguna de
+// las 3 dispara nada solo: "Nota de crédito registrada" y "Reposición
+// pedida al proveedor" documentan una gestión que la persona ya hizo (o va
+// a hacer) a mano en Comprobantes/Requerimientos — no hay atajo automático
+// como "Pedir los N faltantes" del lado de transferencias, ver diagnóstico.
+const MOTIVOS_RESOLUCION_DIFERENCIA_OC = [
+  "Nota de crédito registrada",
+  "Reposición pedida al proveedor",
+  "Se acepta la diferencia",
+];
+
 module.exports = {
   RUBROS,
   CONDICIONES_COMERCIALES,
@@ -183,4 +209,6 @@ module.exports = {
   MAPA_RUBRO_CATEGORIA,
   rubroCubreCategoria,
   OPCIONES_TRANSACCION,
+  MOTIVOS_RESOLUCION_DIFERENCIA,
+  MOTIVOS_RESOLUCION_DIFERENCIA_OC,
 };
