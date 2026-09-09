@@ -313,6 +313,11 @@ async function obtenerOCPorId(id) {
       // no la misma pastilla neutra de "todavía no llegó". select liviano:
       // alcanza con saber si existe al menos uno.
       movimientos: { select: { id: true }, take: 1 },
+      // Para el alta de comprobantes (ComprobanteModal): saber si esta OC ya
+      // tiene una Nota de Crédito activa antes de ofrecer la sección
+      // automática por diferencia de recepción — mismo select liviano que
+      // ya usa listarOCs con incluirDetalle, no hace falta traer más.
+      comprobantes: { select: { id: true, tipo: true, anulado: true, numero: true } },
     },
   });
   if (!oc) {

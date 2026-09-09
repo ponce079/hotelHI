@@ -1,24 +1,46 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Modal } from '../../componentes/Modal';
 import { Input } from '../../componentes/Input';
 import { Select } from '../../componentes/Select';
 import { Button } from '../../componentes/Button';
-import { crearNota, listarComprobantes } from './comprobantes.api';
+import { crearNota, listarComprobantes, obtenerComprobante } from './comprobantes.api';
 import { formatearMonto } from '../../lib/moneda';
+import { PATRON_NUMERO_COMPROBANTE } from './comprobantes.constantes';
+import { NumeroComprobanteInput } from './NumeroComprobanteInput';
 
 const VACIO = { comprobanteId: '', tipo: 'Nota de Crédito', numero: '', importeTotal: '', motivo: '' };
 
-export function NotaModal({ onClose, onExito }) {
-  const [form, setForm] = useState(VACIO);
+function formatoValido(numero) {
+  return PATRON_NUMERO_COMPROBANTE.test((numero || '').trim());
+}
+
+// Mini-formulario de ajuste (punto 4 del rediseño de comprobantes): Crédito/
+// Débito + motivo + monto sobre una factura ya cargada. Dos entradas:
+//  - comprobanteId ausente: selector de factura visible (botón "Nueva nota"
+//    en ComprobantesPage) — mismo rol que tenía NotaModal.
+//  - comprobanteId presente: factura fija, sin selector (botón "Cargar nota
+//    de crédito" en Recepciones, para el caso de NC tardía del punto 6).
+export function AjusteModal({ comprobanteId = null, onClose, onExito }) {
+  const [form, setForm] = useState({ ...VACIO, comprobanteId: comprobanteId ?? '' });
   const [errores, setErrores] = useState({});
-  const [saldoActual, setSaldoActual] = useState(0);
   const queryClient = useQueryClient();
 
   const { data: facturas } = useQuery({
     queryKey: ['comprobantes', { soloSaldo: true, tipo: 'Factura' }],
     queryFn: () => listarComprobantes({ soloSaldo: true, tipo: 'Factura' }),
+    enabled: !comprobanteId,
   });
+
+  const { data: facturaPreseteada } = useQuery({
+    queryKey: ['comprobantes', comprobanteId],
+    queryFn: () => obtenerComprobante(comprobanteId),
+    enabled: !!comprobanteId,
+  });
+
+  const facturaSeleccionada = comprobanteId
+    ? facturaPreseteada
+    : facturas?.find((f) => f.id === Number(form.comprobanteId));
 
   const mutacion = useMutation({
     mutationFn: () =>
@@ -30,6 +52,7 @@ export function NotaModal({ onClose, onExito }) {
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['comprobantes'] });
+      queryClient.invalidateQueries({ queryKey: ['ordenes-compra'] });
       onExito('Nota creada correctamente.');
     },
     onError: (error) => {
@@ -46,6 +69,9 @@ export function NotaModal({ onClose, onExito }) {
     e.preventDefault();
     if (!form.comprobanteId) return setErrores({ comprobanteId: 'Seleccione una factura.' });
     if (!form.numero.trim()) return setErrores({ numero: 'Número obligatorio.' });
+    if (!formatoValido(form.numero)) {
+      return setErrores({ numero: 'Formato esperado: letra-4 dígitos-8 dígitos (ej. A-0001-00012345).' });
+    }
     if (!form.importeTotal || parseFloat(form.importeTotal) <= 0) {
       return setErrores({ importeTotal: 'Importe mayor a 0.' });
     }
@@ -54,11 +80,7 @@ export function NotaModal({ onClose, onExito }) {
     mutacion.mutate();
   }
 
-  const facturaSeleccionada = facturas?.find((f) => f.id === Number(form.comprobanteId));
-  useEffect(() => {
-    if (facturaSeleccionada) setSaldoActual(facturaSeleccionada.saldo);
-  }, [facturaSeleccionada]);
-
+  const saldoActual = facturaSeleccionada?.saldo ?? 0;
   const saldoResultante =
     form.tipo === 'Nota de Crédito'
       ? Math.max(0, saldoActual - (parseFloat(form.importeTotal) || 0))
@@ -70,19 +92,27 @@ export function NotaModal({ onClose, onExito }) {
         <div className="flex flex-col gap-4 px-6 py-5">
           {errores.general && <p className="text-sm text-error">{errores.general}</p>}
 
-          <Select
-            label="Factura original *"
-            value={form.comprobanteId}
-            onChange={(e) => setForm({ ...form, comprobanteId: e.target.value })}
-            error={errores.comprobanteId}
-          >
-            <option value="">Seleccionar factura...</option>
-            {facturas?.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.numero} - ${formatearMonto(f.saldo)} saldo
-              </option>
-            ))}
-          </Select>
+          {comprobanteId ? (
+            <div className="rounded-md bg-hueso p-3 text-sm">
+              <p>
+                Factura: <strong>{facturaPreseteada?.numero ?? '...'}</strong>
+              </p>
+            </div>
+          ) : (
+            <Select
+              label="Factura original *"
+              value={form.comprobanteId}
+              onChange={(e) => setForm({ ...form, comprobanteId: e.target.value })}
+              error={errores.comprobanteId}
+            >
+              <option value="">Seleccionar factura...</option>
+              {facturas?.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.numero} - ${formatearMonto(f.saldo)} saldo
+                </option>
+              ))}
+            </Select>
+          )}
 
           {facturaSeleccionada && (
             <div className="rounded-md bg-hueso p-3 text-sm">
@@ -95,18 +125,17 @@ export function NotaModal({ onClose, onExito }) {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <Select label="Tipo *" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
-              <option value="Nota de Débito">Nota de Débito</option>
-              <option value="Nota de Crédito">Nota de Crédito</option>
-            </Select>
-            <Input
-              label="Número *"
-              value={form.numero}
-              onChange={(e) => setForm({ ...form, numero: e.target.value })}
-              error={errores.numero}
-            />
-          </div>
+          <Select label="Tipo *" value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })}>
+            <option value="Nota de Débito">Nota de Débito</option>
+            <option value="Nota de Crédito">Nota de Crédito</option>
+          </Select>
+
+          <NumeroComprobanteInput
+            label="Número *"
+            value={form.numero}
+            onChange={(numero) => setForm({ ...form, numero })}
+            error={errores.numero}
+          />
 
           <Input
             label="Importe total *"

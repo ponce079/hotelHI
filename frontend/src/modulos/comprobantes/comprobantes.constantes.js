@@ -1,5 +1,9 @@
 // Espejo de backend/src/modulos/comprobantes/comprobantes.constantes.js.
 
+// Formato AFIP (letra-4 dígitos-8 dígitos, ej. A-0001-00012345) — mismo
+// patrón que valida el backend, acá solo para dar el error antes del submit.
+export const PATRON_NUMERO_COMPROBANTE = /^[A-Za-z]-\d{4}-\d{8}$/;
+
 // Estado del comprobante (HU-74) — lo calcula el backend a partir del
 // saldo, no es un campo que se elija acá; esto solo nombra los 4 valores
 // posibles para el filtro y el badge.

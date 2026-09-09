@@ -15,6 +15,11 @@ export async function crearComprobante(payload) {
   return data;
 }
 
+export async function crearComprobanteConAjustes(payload) {
+  const { data } = await api.post('/comprobantes/con-ajustes', payload);
+  return data;
+}
+
 export async function crearNota(comprobanteId, payload) {
   const { data } = await api.post(`/comprobantes/${comprobanteId}/nota`, payload);
   return data;

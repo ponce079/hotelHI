@@ -1,7 +1,13 @@
 const { Prisma } = require('@prisma/client');
 const prisma = require('../../lib/prisma');
 const { calcularSaldoComprobante, calcularSaldosComprobantes, calcularPagosAplicados, pagoVigente, calcularFechaVencimiento } = require('../../lib/comprobantes');
-const { TIPOS_COMPROBANTE, ESTADOS_MATCHING, ESTADOS_COMPROBANTE } = require('./comprobantes.constantes');
+const {
+  TIPOS_COMPROBANTE,
+  PATRON_NUMERO_COMPROBANTE,
+  MOTIVO_NC_DIFERENCIA_RECEPCION,
+  ESTADOS_MATCHING,
+  ESTADOS_COMPROBANTE
+} = require('./comprobantes.constantes');
 const ordenesCompraServicio = require('../ordenes-compra/ordenesCompra.servicio');
 
 class ErrorDeNegocio extends Error {
@@ -9,6 +15,21 @@ class ErrorDeNegocio extends Error {
     super(mensaje);
     this.statusCode = statusCode;
   }
+}
+
+// El número de comprobante nunca se autogenera: lo emite el proveedor y hay
+// que tipearlo copiándolo del documento real (es un dato legal, distinto
+// del id autoincremental interno). Se valida acá, una sola vez, para los
+// tres puntos de alta (crearComprobante, crearNota, crearComprobanteConAjustes).
+function validarNumeroComprobante(numero) {
+  const limpio = (numero || '').trim();
+  if (!limpio) throw new ErrorDeNegocio('El número de comprobante es obligatorio.');
+  if (!PATRON_NUMERO_COMPROBANTE.test(limpio)) {
+    throw new ErrorDeNegocio(
+      `El número "${numero}" no tiene el formato esperado (letra-4 dígitos-8 dígitos, ej. A-0001-00012345).`
+    );
+  }
+  return limpio;
 }
 
 // --------------------------------------------------------------
@@ -22,7 +43,7 @@ async function crearComprobante(data) {
   if (!TIPOS_COMPROBANTE.includes(tipo)) {
     throw new ErrorDeNegocio(`tipo inválido. Permitidos: ${TIPOS_COMPROBANTE.join(', ')}`);
   }
-  if (!numero || !numero.trim()) throw new ErrorDeNegocio('El número de comprobante es obligatorio.');
+  const numeroValidado = validarNumeroComprobante(numero);
   if (!fecha) throw new ErrorDeNegocio('La fecha es obligatoria.');
   if (typeof importeTotal !== 'number' || importeTotal <= 0) {
     throw new ErrorDeNegocio('importeTotal debe ser un número mayor a 0.');
@@ -45,11 +66,11 @@ async function crearComprobante(data) {
 
   // Verificar unicidad (proveedorId, tipo, numero)
   const existente = await prisma.comprobanteProveedor.findFirst({
-    where: { proveedorId, tipo, numero: numero.trim() }
+    where: { proveedorId, tipo, numero: numeroValidado }
   });
   if (existente) {
     throw new ErrorDeNegocio(
-      `Ya existe un comprobante de tipo "${tipo}" con número "${numero}" para este proveedor.`,
+      `Ya existe un comprobante de tipo "${tipo}" con número "${numeroValidado}" para este proveedor.`,
       409
     );
   }
@@ -95,7 +116,7 @@ async function crearComprobante(data) {
       data: {
         proveedorId,
         tipo,
-        numero: numero.trim(),
+        numero: numeroValidado,
         fecha: new Date(fecha),
         importeTotal,
         ordenCompraId: ordenCompraId || null,
@@ -337,7 +358,7 @@ async function crearNota(comprobanteId, data) {
   if (!TIPOS_COMPROBANTE.includes(tipo) || tipo === 'Factura') {
     throw new ErrorDeNegocio('tipo debe ser "Nota de Débito" o "Nota de Crédito".');
   }
-  if (!numero || !numero.trim()) throw new ErrorDeNegocio('El número de nota es obligatorio.');
+  const numeroValidado = validarNumeroComprobante(numero);
   if (typeof importeTotal !== 'number' || importeTotal <= 0) {
     throw new ErrorDeNegocio('importeTotal debe ser un número mayor a 0.');
   }
@@ -355,11 +376,11 @@ async function crearNota(comprobanteId, data) {
 
   // Verificar unicidad de la nota
   const existente = await prisma.comprobanteProveedor.findFirst({
-    where: { proveedorId: original.proveedorId, tipo, numero: numero.trim() }
+    where: { proveedorId: original.proveedorId, tipo, numero: numeroValidado }
   });
   if (existente) {
     throw new ErrorDeNegocio(
-      `Ya existe una nota de tipo "${tipo}" con número "${numero}" para este proveedor.`,
+      `Ya existe una nota de tipo "${tipo}" con número "${numeroValidado}" para este proveedor.`,
       409
     );
   }
@@ -373,31 +394,230 @@ async function crearNota(comprobanteId, data) {
   // esa factura está vinculada a una OC, hay que revisar el cierre
   // automático acá también, no solo al confirmar un pago (ver
   // verificarCierrePorPagos en ordenesCompra.servicio.js).
-  const nota = await prisma.$transaction(async (tx) => {
-    const creada = await tx.comprobanteProveedor.create({
-      data: {
-        proveedorId: original.proveedorId,
-        tipo,
-        numero: numero.trim(),
-        fecha: new Date(),
-        importeTotal,
-        comprobanteRelacionadoId: original.id,
-        motivo: motivo.trim(),
-      },
-      include: {
-        proveedor: true,
-        comprobanteRelacionado: true
+  let nota;
+  try {
+    nota = await prisma.$transaction(async (tx) => {
+      const creada = await tx.comprobanteProveedor.create({
+        data: {
+          proveedorId: original.proveedorId,
+          tipo,
+          numero: numeroValidado,
+          fecha: new Date(),
+          importeTotal,
+          // Mismo ordenCompraId que la factura original (si tiene): sin
+          // esto, la nota queda "invisible" para oc.comprobantes (que
+          // filtra por ordenCompraId directo) y ComprobanteModal la
+          // ofrecería de nuevo como si la OC no tuviera NC todavía.
+          ordenCompraId: original.ordenCompraId ?? null,
+          comprobanteRelacionadoId: original.id,
+          motivo: motivo.trim(),
+        },
+        include: {
+          proveedor: true,
+          comprobanteRelacionado: true
+        }
+      });
+
+      if (tipo === 'Nota de Crédito' && original.ordenCompraId) {
+        await ordenesCompraServicio.verificarCierrePorPagos(tx, original.ordenCompraId);
       }
-    });
 
-    if (tipo === 'Nota de Crédito' && original.ordenCompraId) {
-      await ordenesCompraServicio.verificarCierrePorPagos(tx, original.ordenCompraId);
+      return creada;
+    }, { timeout: 15000, maxWait: 10000 });
+  } catch (err) {
+    // Misma red de seguridad que crearComprobante: el findFirst de arriba
+    // no cubre una condición de carrera contra el unique de BD.
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      throw new ErrorDeNegocio(
+        `Ya existe una nota de tipo "${tipo}" con número "${numeroValidado}" para este proveedor.`,
+        409
+      );
     }
-
-    return creada;
-  }, { timeout: 15000, maxWait: 10000 });
+    throw err;
+  }
 
   return nota;
+}
+
+// --------------------------------------------------------------
+// Alta de factura con ajustes opcionales (rediseño de carga de
+// comprobantes): un solo submit crea la Factura y, si corresponde, la Nota
+// de Crédito automática por diferencia de recepción y/o un ajuste manual
+// (Débito o Crédito) — todo o nada, en una única transacción. El caso de
+// "NC tardía" (llega días después, sin factura para crear) sigue usando
+// crearNota tal cual, no pasa por acá.
+// --------------------------------------------------------------
+async function crearComprobanteConAjustes(data) {
+  const { factura, notaCreditoAutomatica, ajusteManual } = data || {};
+  if (!factura) throw new ErrorDeNegocio('Los datos de la factura son obligatorios.');
+
+  const { proveedorId, fecha, importeTotal, ordenCompraId } = factura;
+  const numeroFactura = validarNumeroComprobante(factura.numero);
+  if (!proveedorId) throw new ErrorDeNegocio('proveedorId es obligatorio.');
+  if (!fecha) throw new ErrorDeNegocio('La fecha es obligatoria.');
+  if (typeof importeTotal !== 'number' || importeTotal <= 0) {
+    throw new ErrorDeNegocio('El importe de la factura debe ser un número mayor a 0.');
+  }
+
+  const proveedor = await prisma.proveedor.findUnique({ where: { id: proveedorId } });
+  if (!proveedor) throw new ErrorDeNegocio('El proveedor no existe.', 404);
+
+  let ordenCompra = null;
+  if (ordenCompraId) {
+    ordenCompra = await prisma.ordenCompra.findUnique({ where: { id: ordenCompraId } });
+    if (!ordenCompra) throw new ErrorDeNegocio('La orden de compra no existe.', 404);
+    if (ordenCompra.estado === 'Anulada') {
+      throw new ErrorDeNegocio('La orden de compra está anulada y no puede asociarse a un comprobante.');
+    }
+  }
+
+  // Normalizar y validar cada ajuste opcional. El motivo de la NC
+  // automática es siempre el mismo (no lo tipea el usuario, ver HU de este
+  // rediseño); el del ajuste manual sí es libre, como en crearNota.
+  const ajustes = [];
+  let ncAutoNormalizada = null;
+  if (notaCreditoAutomatica) {
+    const numeroNC = validarNumeroComprobante(notaCreditoAutomatica.numero);
+    if (typeof notaCreditoAutomatica.importeTotal !== 'number' || notaCreditoAutomatica.importeTotal <= 0) {
+      throw new ErrorDeNegocio('El importe de la Nota de Crédito por diferencia debe ser un número mayor a 0.');
+    }
+    ncAutoNormalizada = {
+      tipo: 'Nota de Crédito',
+      numero: numeroNC,
+      importeTotal: notaCreditoAutomatica.importeTotal,
+      motivo: MOTIVO_NC_DIFERENCIA_RECEPCION,
+    };
+    ajustes.push(ncAutoNormalizada);
+  }
+
+  let ajusteManualNormalizado = null;
+  if (ajusteManual) {
+    if (!['Nota de Crédito', 'Nota de Débito'].includes(ajusteManual.tipo)) {
+      throw new ErrorDeNegocio('El tipo del ajuste manual debe ser "Nota de Crédito" o "Nota de Débito".');
+    }
+    const numeroAjuste = validarNumeroComprobante(ajusteManual.numero);
+    if (typeof ajusteManual.importeTotal !== 'number' || ajusteManual.importeTotal <= 0) {
+      throw new ErrorDeNegocio('El importe del ajuste manual debe ser un número mayor a 0.');
+    }
+    if (!ajusteManual.motivo || !ajusteManual.motivo.trim()) {
+      throw new ErrorDeNegocio('El motivo del ajuste manual es obligatorio.');
+    }
+    ajusteManualNormalizado = {
+      tipo: ajusteManual.tipo,
+      numero: numeroAjuste,
+      importeTotal: ajusteManual.importeTotal,
+      motivo: ajusteManual.motivo.trim(),
+    };
+    ajustes.push(ajusteManualNormalizado);
+  }
+
+  // La NC automática y el ajuste manual todavía no tienen id: la constraint
+  // de BD (proveedorId, tipo, numero) no los distingue entre sí si vinieran
+  // con el mismo tipo+número, hay que chequearlo acá antes de insertar.
+  if (
+    ncAutoNormalizada &&
+    ajusteManualNormalizado &&
+    ncAutoNormalizada.tipo === ajusteManualNormalizado.tipo &&
+    ncAutoNormalizada.numero === ajusteManualNormalizado.numero
+  ) {
+    throw new ErrorDeNegocio('La Nota de Crédito automática y el ajuste manual no pueden tener el mismo número.');
+  }
+
+  // Duplicados contra lo ya existente en la base (factura + cada ajuste).
+  const existenteFactura = await prisma.comprobanteProveedor.findFirst({
+    where: { proveedorId, tipo: 'Factura', numero: numeroFactura }
+  });
+  if (existenteFactura) {
+    throw new ErrorDeNegocio(`Ya existe una Factura con número "${numeroFactura}" para este proveedor.`, 409);
+  }
+  for (const ajuste of ajustes) {
+    const existente = await prisma.comprobanteProveedor.findFirst({
+      where: { proveedorId, tipo: ajuste.tipo, numero: ajuste.numero }
+    });
+    if (existente) {
+      throw new ErrorDeNegocio(
+        `Ya existe un comprobante de tipo "${ajuste.tipo}" con número "${ajuste.numero}" para este proveedor.`,
+        409
+      );
+    }
+  }
+
+  const fechaVencimiento = calcularFechaVencimiento(proveedor.condicionComercial, fecha);
+
+  let resultado;
+  try {
+    resultado = await prisma.$transaction(async (tx) => {
+      const facturaCreada = await tx.comprobanteProveedor.create({
+        data: {
+          proveedorId,
+          tipo: 'Factura',
+          numero: numeroFactura,
+          fecha: new Date(fecha),
+          importeTotal,
+          ordenCompraId: ordenCompraId || null,
+          fechaVencimiento,
+        },
+      });
+
+      let ncAutoCreada = null;
+      if (ncAutoNormalizada) {
+        ncAutoCreada = await tx.comprobanteProveedor.create({
+          data: {
+            proveedorId,
+            tipo: ncAutoNormalizada.tipo,
+            numero: ncAutoNormalizada.numero,
+            fecha: new Date(),
+            importeTotal: ncAutoNormalizada.importeTotal,
+            // Mismo ordenCompraId que la factura: para que oc.comprobantes
+            // (filtro directo por ordenCompraId) la vea y ComprobanteModal
+            // no vuelva a ofrecer la sección automática la próxima vez.
+            ordenCompraId: ordenCompraId || null,
+            comprobanteRelacionadoId: facturaCreada.id,
+            motivo: ncAutoNormalizada.motivo,
+          },
+        });
+      }
+
+      let ajusteManualCreado = null;
+      if (ajusteManualNormalizado) {
+        ajusteManualCreado = await tx.comprobanteProveedor.create({
+          data: {
+            proveedorId,
+            tipo: ajusteManualNormalizado.tipo,
+            numero: ajusteManualNormalizado.numero,
+            fecha: new Date(),
+            importeTotal: ajusteManualNormalizado.importeTotal,
+            ordenCompraId: ordenCompraId || null,
+            comprobanteRelacionadoId: facturaCreada.id,
+            motivo: ajusteManualNormalizado.motivo,
+          },
+        });
+      }
+
+      // Mismo criterio que crearNota: si se generó alguna Nota de Crédito y
+      // la factura está vinculada a una OC, revisar el cierre automático acá
+      // también (una NC puede dejar el saldo en 0 sin que haya habido pago).
+      const huboNotaDeCredito = [ncAutoCreada, ajusteManualCreado].some((c) => c?.tipo === 'Nota de Crédito');
+      if (huboNotaDeCredito && ordenCompraId) {
+        await ordenesCompraServicio.verificarCierrePorPagos(tx, ordenCompraId);
+      }
+
+      return { facturaCreada, ncAutoCreada, ajusteManualCreado };
+    }, { timeout: 15000, maxWait: 10000 });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      throw new ErrorDeNegocio('Uno de los números de comprobante ingresados ya existe para este proveedor.', 409);
+    }
+    throw err;
+  }
+
+  const facturaCompleta = await obtenerComprobante(resultado.facturaCreada.id);
+
+  return {
+    factura: facturaCompleta,
+    notaCreditoAutomatica: resultado.ncAutoCreada,
+    ajusteManual: resultado.ajusteManualCreado,
+  };
 }
 
 // --------------------------------------------------------------
@@ -509,6 +729,7 @@ async function calcularMatching(comprobante) {
 // --------------------------------------------------------------
 module.exports = {
   crearComprobante,
+  crearComprobanteConAjustes,
   listarComprobantes,
   obtenerComprobante,
   crearNota,

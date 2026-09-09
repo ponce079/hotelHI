@@ -15,6 +15,20 @@ async function postComprobante(req, res) {
   }
 }
 
+// POST /api/comprobantes/con-ajustes
+async function postComprobanteConAjustes(req, res) {
+  try {
+    const resultado = await comprobantesServicio.crearComprobanteConAjustes(req.body);
+    return res.status(201).json(resultado);
+  } catch (err) {
+    if (err instanceof comprobantesServicio.ErrorDeNegocio) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
+    console.error('Error al crear comprobante con ajustes:', err);
+    return res.status(500).json({ error: 'No se pudo crear el comprobante.' });
+  }
+}
+
 // GET /api/comprobantes
 async function getComprobantes(req, res) {
   try {
@@ -81,6 +95,7 @@ async function postAnular(req, res) {
 
 module.exports = {
   postComprobante,
+  postComprobanteConAjustes,
   getComprobantes,
   getComprobantePorId,
   postNota,

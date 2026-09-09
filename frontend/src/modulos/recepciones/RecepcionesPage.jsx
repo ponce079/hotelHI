@@ -17,6 +17,7 @@ import {
 } from "../movimientos/movimientos.api";
 import { listarOrdenesCompra, marcarDiferenciaRevisadaOC } from "../ordenes-compra/ordenesCompra.api";
 import { listarDepositos } from "../depositos/depositos.api";
+import { AjusteModal } from "../comprobantes/AjusteModal";
 import { useToast } from "../../lib/useToast";
 import { useSesion } from "../../lib/sesion";
 import { MOTIVOS_RESOLUCION_DIFERENCIA, MOTIVOS_RESOLUCION_DIFERENCIA_OC } from "../../lib/constantes";
@@ -43,6 +44,7 @@ export function RecepcionesPage() {
   const [paraConfirmar, setParaConfirmar] = useState(null); // movimiento en tránsito
   const [motivoPorMov, setMotivoPorMov] = useState({}); // movId -> motivoResolucion elegido
   const [motivoPorOC, setMotivoPorOC] = useState({}); // ocId -> motivoResolucion elegido
+  const [ajusteParaFactura, setAjusteParaFactura] = useState(null); // comprobanteId de la factura para la NC tardía
 
   // Quién puede accionar es un permiso, no depende de qué depósito estás
   // mirando: recibirOC/operar deciden si aparecen los botones, el selector
@@ -54,6 +56,10 @@ export function RecepcionesPage() {
   // registrarComprobante, no recibirOC (eso es "confirmar que llegó la
   // mercadería", una cosa de depósito, no de plata).
   const puedeResolverDiferenciaOC = puede("resolverDiferenciaOC");
+  // Cargar la Nota de Crédito tardía (botón de la subsección "Con
+  // diferencia") es un alta de comprobante — mismo permiso que
+  // ComprobantesPage, no resolverDiferenciaOC.
+  const puedeRegistrarComprobante = puede("registrarComprobante");
   const esSoloLectura = !puedeAccionarTransferencias && !puedeAccionarOC && !puedeResolverDiferenciaOC;
 
   // Default "Todos" (cadena vacía) para cualquier rol — ya no es un
@@ -237,12 +243,11 @@ export function RecepcionesPage() {
     }, 0);
   }
 
-  // Recepciones Parte B: la única Factura activa de la OC, si ya se cargó
-  // una — no hay (todavía) un link directo al alta de la Nota de Crédito
-  // sobre ESTE comprobante puntual (NotaModal no acepta un comprobanteId
-  // precargado, y la ficha de OC ni siquiera trae sus comprobantes — queda
-  // anotado como tarea aparte). Mientras tanto, mostrar el número acá
-  // ahorra tener que ir a buscarlo a mano en Comprobantes.
+  // La única Factura activa de la OC, si ya se cargó una — para el caso de
+  // Nota de Crédito tardía: el proveedor la manda días después, sin
+  // diferencia resuelta en ese momento. Se resuelve con el mismo mini-
+  // formulario de ajuste que "+ Agregar otro ajuste" en el alta de factura,
+  // pre-vinculado a este comprobanteId (ver AjusteModal).
   function facturaVinculada(oc) {
     return (oc.comprobantes ?? []).find((c) => c.tipo === "Factura" && !c.anulado) ?? null;
   }
@@ -364,17 +369,21 @@ export function RecepcionesPage() {
                           </div>
                         ))}
                     </div>
-                    {/* Punto pendiente (ver diagnóstico Parte B): no hay
-                        todavía un link directo al alta de la NC sobre este
-                        comprobante puntual — NotaModal no acepta un
-                        comprobanteId precargado y la ficha de OC no trae
-                        sus comprobantes. Mientras tanto, mostrar el número
-                        acá para no obligar a buscarlo de nuevo a mano. */}
                     <p className="border-t border-laton-300 pt-2 font-body text-[12px] text-laton-700/80">
                       {factura ? (
                         <>
-                          Nota de crédito pendiente de cargar — Comprobante <strong>{factura.numero}</strong>, andá a{" "}
-                          <Link to="/comprobantes" className="underline">Comprobantes</Link>.
+                          Nota de crédito pendiente de cargar — Comprobante <strong>{factura.numero}</strong>.{" "}
+                          {puedeRegistrarComprobante ? (
+                            <button
+                              type="button"
+                              className="underline"
+                              onClick={() => setAjusteParaFactura(factura.id)}
+                            >
+                              Cargar nota de crédito
+                            </button>
+                          ) : (
+                            <>Andá a <Link to="/comprobantes" className="underline">Comprobantes</Link>.</>
+                          )}
                         </>
                       ) : (
                         "Todavía no hay ningún comprobante cargado para esta orden de compra."
@@ -621,6 +630,17 @@ export function RecepcionesPage() {
         onCancelar={() => setParaConfirmar(null)}
         onConfirmar={confirmar}
       />
+
+      {ajusteParaFactura && (
+        <AjusteModal
+          comprobanteId={ajusteParaFactura}
+          onClose={() => setAjusteParaFactura(null)}
+          onExito={(mensaje) => {
+            setAjusteParaFactura(null);
+            mostrarToast(mensaje);
+          }}
+        />
+      )}
 
       <Toast mensaje={toast} />
     </div>
