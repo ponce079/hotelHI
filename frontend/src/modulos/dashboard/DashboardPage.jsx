@@ -12,7 +12,7 @@ import { listarHabilitaciones } from "../articulo-deposito/articuloDeposito.api"
 import { listarTiposMovimiento } from "../tipos-movimiento/tiposMovimiento.api";
 import { listarMovimientos } from "../movimientos/movimientos.api";
 import { consultarStock } from "../stock/stock.api";
-import { hoyISO, primerDiaDelMesISO } from "../../lib/fechas";
+import { hoyEnHoraLocal, primerDiaDelMesISO } from "../../lib/fechas";
 
 export function DashboardPage() {
   const navigate = useNavigate();
@@ -31,12 +31,12 @@ export function DashboardPage() {
   const { data: tipos } = useQuery({ queryKey: ["tipos-movimiento"], queryFn: listarTiposMovimiento });
   const { data: stock } = useQuery({ queryKey: ["stock", {}], queryFn: () => consultarStock({}) });
   const { data: movimientosHoy } = useQuery({
-    queryKey: ["movimientos", { desde: hoyISO(), hasta: hoyISO() }],
-    queryFn: () => listarMovimientos({ desde: hoyISO(), hasta: hoyISO() }),
+    queryKey: ["movimientos", { desde: hoyEnHoraLocal(), hasta: hoyEnHoraLocal() }],
+    queryFn: () => listarMovimientos({ desde: hoyEnHoraLocal(), hasta: hoyEnHoraLocal() }),
   });
   const { data: movimientosDelMes } = useQuery({
-    queryKey: ["movimientos", { desde: primerDiaDelMesISO(), hasta: hoyISO() }],
-    queryFn: () => listarMovimientos({ desde: primerDiaDelMesISO(), hasta: hoyISO() }),
+    queryKey: ["movimientos", { desde: primerDiaDelMesISO(), hasta: hoyEnHoraLocal() }],
+    queryFn: () => listarMovimientos({ desde: primerDiaDelMesISO(), hasta: hoyEnHoraLocal() }),
   });
   const { data: enTransito } = useQuery({
     queryKey: ["movimientos", { estado: "En tránsito" }],
@@ -63,7 +63,7 @@ export function DashboardPage() {
       { label: "Tipos de movimiento", value: tipos?.length ?? "—", hint: "activos (E / S)" },
     ],
     deposito: [
-      { label: "Movimientos hoy", value: movimientosHoy?.length ?? "—", hint: hoyISO() },
+      { label: "Movimientos hoy", value: movimientosHoy?.length ?? "—", hint: hoyEnHoraLocal() },
       { label: "Alertas de stock", value: alertas.length, hint: "artículos en el mínimo" },
       { label: "Por recibir", value: enTransito?.length ?? "—", hint: "transferencias en tránsito" },
       { label: "Con diferencia", value: conDiferencia.length, hint: "llegó menos de lo enviado" },

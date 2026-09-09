@@ -1,5 +1,5 @@
 import { ESTADOS_REQUERIMIENTO, TIPOS_REQUERIMIENTO } from "./constantes";
-import { formatearFechaSolo } from "./fechas";
+import { formatearTimestamp } from "./fechas";
 
 // Timeline construido por instancia, no un array fijo de pasos: cada
 // requerimiento tiene su propio camino real. Compartido entre la ficha de
@@ -29,7 +29,7 @@ import { formatearFechaSolo } from "./fechas";
 // redacción, pero es lo único que existe hoy; no hay un campo de "tipo de
 // evento" estructurado en RequerimientoLog.
 function subLabelDe(log) {
-  return log ? `${formatearFechaSolo(log.fecha)} · ${log.usuario}` : undefined;
+  return log ? `${formatearTimestamp(log.fecha)} · ${log.usuario}` : undefined;
 }
 
 // COMPRA: siempre depósito central (ya no existe la excepción periférica).
@@ -39,7 +39,7 @@ function construirEtapasCompra(req) {
   const logConfirmacion = req.log?.find((l) => l.accion === "Sugerencia de reposición confirmada");
   const logCierre = req.log?.slice().reverse().find((l) => l.accion?.startsWith("Cerrada"));
 
-  const pasos = [{ clave: "creado", label: "Creado", sublabel: `${formatearFechaSolo(req.fecha)} · ${req.solicitante || "—"}` }];
+  const pasos = [{ clave: "creado", label: "Creado", sublabel: `${formatearTimestamp(req.fecha)} · ${req.solicitante || "—"}` }];
   if (fueSugerida) {
     pasos.push({ clave: "sugerida", label: "Sugerencia confirmada", sublabel: subLabelDe(logConfirmacion) });
   }
@@ -91,7 +91,7 @@ function construirEtapasTransferencia(req) {
   const logRecepcion = req.log?.slice().reverse().find((l) => l.accion?.startsWith("Recepción confirmada"));
 
   const pasos = [
-    { clave: "creado", label: "Creado", sublabel: `${formatearFechaSolo(req.fecha)} · ${req.solicitante || "—"}` },
+    { clave: "creado", label: "Creado", sublabel: `${formatearTimestamp(req.fecha)} · ${req.solicitante || "—"}` },
     {
       clave: "transito",
       label: "En tránsito",

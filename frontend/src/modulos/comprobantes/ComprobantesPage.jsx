@@ -14,7 +14,7 @@ import { useToast } from '../../lib/useToast';
 import { useSesion } from '../../lib/sesion';
 import { SinPermiso } from '../../componentes/SinPermiso';
 import { formatearMonto } from '../../lib/moneda';
-import { formatearFechaSolo, estadoVencimiento } from '../../lib/fechas';
+import { formatearFechaSinHora, formatearFechaComprobante, estadoVencimiento } from '../../lib/fechas';
 import { listarComprobantes, anularComprobante } from './comprobantes.api';
 import {
   ESTADOS_COMPROBANTE,
@@ -186,11 +186,11 @@ export function ComprobantesPage() {
                 <td className="px-3 py-2 font-body text-[13px]">{c.tipo}</td>
                 <td className="px-3 py-2 font-mono text-xs">{c.numero}</td>
                 <td className="px-3 py-2">{c.proveedor?.razonSocial}</td>
-                <td className="px-3 py-2 text-[12.5px]">{new Date(c.fecha).toLocaleDateString('es-AR')}</td>
+                <td className="px-3 py-2 text-[12.5px]">{formatearFechaComprobante(c.tipo, c.fecha)}</td>
                 <td className="px-3 py-2 text-[12.5px]">
                   {c.fechaVencimiento ? (
                     <div className="flex items-center gap-1.5">
-                      <span>{formatearFechaSolo(c.fechaVencimiento)}</span>
+                      <span>{formatearFechaSinHora(c.fechaVencimiento)}</span>
                       {vencimiento && (
                         <Badge variante={VARIANTE_VENCIMIENTO[vencimiento]}>{LABEL_VENCIMIENTO[vencimiento]}</Badge>
                       )}

@@ -8,7 +8,7 @@ import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
 import { Badge } from "../../componentes/Badge";
-import { formatearFechaSolo, estadoVencimiento } from "../../lib/fechas";
+import { formatearFechaSinHora, estadoVencimiento } from "../../lib/fechas";
 import { formatearMonto } from "../../lib/moneda";
 import { listarProveedoresConSaldo, listarComprobantesPendientes, crearOrdenPago } from "./pagos.api";
 import { MEDIOS_PAGO, BANCOS } from "./pagos.constantes";
@@ -223,11 +223,11 @@ export function OrdenPagoWizard({ onClose, onExito }) {
                         </span>
                       </td>
                       <td className="px-2 py-2.5 font-mono text-[12.5px]">{c.numero}</td>
-                      <td className="px-2 py-2.5 text-[12.5px]">{formatearFechaSolo(c.fecha)}</td>
+                      <td className="px-2 py-2.5 text-[12.5px]">{formatearFechaSinHora(c.fecha)}</td>
                       <td className="px-2 py-2.5 text-[12.5px]">
                         {c.fechaVencimiento ? (
                           <div className="flex items-center gap-1.5">
-                            <span>{formatearFechaSolo(c.fechaVencimiento)}</span>
+                            <span>{formatearFechaSinHora(c.fechaVencimiento)}</span>
                             {vencimiento && (
                               <Badge variante={VARIANTE_VENCIMIENTO[vencimiento]}>{LABEL_VENCIMIENTO[vencimiento]}</Badge>
                             )}

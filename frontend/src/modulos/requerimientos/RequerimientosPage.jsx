@@ -32,7 +32,7 @@ import {
   categoriaDeRequerimiento,
 } from "../../lib/constantes";
 import { construirEtapasRequerimiento } from "../../lib/requerimientosTimeline";
-import { formatearFechaSolo } from "../../lib/fechas";
+import { formatearTimestamp } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 
@@ -403,7 +403,7 @@ export function RequerimientosPage() {
                           {r.tipo === TIPOS_REQUERIMIENTO.TRANSFERENCIA ? "Transferencia" : "Compra"}
                         </Badge>
                       </td>
-                      <td className="px-3 py-2.5 align-middle font-body text-[12.5px] whitespace-nowrap">{formatearFechaSolo(r.fecha)}</td>
+                      <td className="px-3 py-2.5 align-middle font-body text-[12.5px] whitespace-nowrap">{formatearTimestamp(r.fecha)}</td>
                       <td className="max-w-[160px] truncate px-3 py-2.5 align-middle font-body text-[12.5px] font-semibold" title={r.deposito?.nombre}>
                         {r.deposito?.nombre}
                       </td>

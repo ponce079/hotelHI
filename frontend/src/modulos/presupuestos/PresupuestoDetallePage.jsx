@@ -10,7 +10,7 @@ import { SinPermiso } from "../../componentes/SinPermiso";
 import { obtenerPresupuesto } from "./presupuestos.api";
 import { ESTADOS_PRESUPUESTO, VARIANTE_ESTADO_PRESUPUESTO } from "../../lib/constantes";
 import { formatearMonto } from "../../lib/moneda";
-import { formatearFechaSolo } from "../../lib/fechas";
+import { formatearTimestamp } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useVolver } from "../../lib/useVolver";
 
@@ -59,7 +59,7 @@ export function PresupuestoDetallePage() {
           <Badge variante={VARIANTE_ESTADO_PRESUPUESTO[p.estado] ?? "neutro"}>{p.estado}</Badge>
         </h1>
         <p className="mt-1.5 text-[12.5px] text-tinta/60">
-          REQ-{String(p.requerimientoId).padStart(4, "0")} · {formatearFechaSolo(p.fecha)}
+          REQ-{String(p.requerimientoId).padStart(4, "0")} · {formatearTimestamp(p.fecha)}
         </p>
       </div>
 

@@ -23,7 +23,7 @@ import {
   ORIGENES_REQUERIMIENTO,
   TIPOS_REQUERIMIENTO,
 } from "../../lib/constantes";
-import { formatearFechaSolo } from "../../lib/fechas";
+import { formatearTimestamp } from "../../lib/fechas";
 import { formatearMonto } from "../../lib/moneda";
 import { variantePorStock } from "../../lib/alertas";
 import { useSesion } from "../../lib/sesion";
@@ -195,7 +195,7 @@ export function RequerimientoDetallePage() {
                   ? "Generado automáticamente · reposición del central"
                   : "Carga manual"}
               {" · "}
-              {formatearFechaSolo(req.fecha)}
+              {formatearTimestamp(req.fecha)}
               {req.solicitante && ` · solicitó ${req.solicitante}`}
             </p>
           </div>

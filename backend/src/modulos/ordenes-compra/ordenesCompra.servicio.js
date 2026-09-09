@@ -136,6 +136,18 @@ async function generarOC({ presupuestoId, usuario }) {
 const UMBRAL_SIN_COMPROBANTE_DIAS = 3;
 const MS_POR_DIA = 1000 * 60 * 60 * 24;
 
+// fechaVencimiento es "solo día" (medianoche UTC del día elegido — ver
+// calcularFechaVencimiento en lib/comprobantes.js), no un instante real.
+// Compararla contra Date.now() la corre ~3hs antes en Argentina (UTC-3):
+// una factura que vence el 10/9 quedaba marcada "vencida" ya a las 21hs
+// ART del 9/9. Mismo criterio que frontend/src/lib/fechas.js
+// estadoVencimiento(): anclar "hoy" al día calendario argentino (vía
+// Intl con la zona horaria), no al instante UTC exacto del proceso.
+function hoyArgentinaUTCMidnight() {
+  const hoyISO = new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
+  return new Date(`${hoyISO}T00:00:00.000Z`).getTime();
+}
+
 // Indicador de facturación/pago de una OC (rediseño de la lista de OC) —
 // solo tiene sentido mientras la OC sigue "abierta" del lado de
 // facturación (Recibida/Recibida con diferencia); una Cerrada ya tiene
@@ -146,20 +158,24 @@ function calcularAlertaFacturacion(oc, saldoPorComprobante) {
 
   const facturasActivas = oc.comprobantes.filter((c) => c.tipo === "Factura" && !c.anulado);
   const ahora = Date.now();
+  const hoyArgentina = hoyArgentinaUTCMidnight();
 
   const vencida = facturasActivas.find((f) => {
     if (!f.fechaVencimiento) return false;
     const saldo = saldoPorComprobante.get(f.id) ?? 0;
-    return saldo > 0 && new Date(f.fechaVencimiento).getTime() < ahora;
+    return saldo > 0 && new Date(f.fechaVencimiento).getTime() < hoyArgentina;
   });
   if (vencida) {
     return {
       tipo: "facturaVencida",
       numero: vencida.numero,
-      dias: Math.floor((ahora - new Date(vencida.fechaVencimiento).getTime()) / MS_POR_DIA),
+      dias: Math.floor((hoyArgentina - new Date(vencida.fechaVencimiento).getTime()) / MS_POR_DIA),
     };
   }
 
+  // fechaRecibida sí es un instante real (`new Date()` al confirmar la
+  // recepción, no "solo día"), así que compararla contra `ahora` es
+  // correcto tal cual — a diferencia de fechaVencimiento arriba.
   if (facturasActivas.length === 0 && oc.fechaRecibida) {
     const dias = Math.floor((ahora - new Date(oc.fechaRecibida).getTime()) / MS_POR_DIA);
     if (dias >= UMBRAL_SIN_COMPROBANTE_DIAS) return { tipo: "sinComprobante", dias };

@@ -17,7 +17,7 @@ import { diasDesde, variantePorAntiguedad, rutaDeMovimiento, esMovimientoDePago 
 import { BADGE_ESTADO } from "../pagos/pagos.constantes";
 import { OrdenPagoDetalleModal } from "../pagos/OrdenPagoDetalleModal";
 import { formatearMonto } from "../../lib/moneda";
-import { formatearFechaSolo } from "../../lib/fechas";
+import { formatearTimestamp, formatearFechaComprobante } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 
@@ -212,7 +212,7 @@ export function ProveedorDetallePage() {
                   className="cursor-pointer border-b border-borde last:border-0 hover:bg-hueso"
                 >
                   <td className="px-3 py-2 font-mono text-xs">{oc.numero}</td>
-                  <td className="px-3 py-2 font-body text-[12.5px]">{formatearFechaSolo(oc.fecha)}</td>
+                  <td className="px-3 py-2 font-body text-[12.5px]">{formatearTimestamp(oc.fecha)}</td>
                   <td className="px-3 py-2 font-body text-[12.5px]">{oc.deposito?.nombre ?? "—"}</td>
                   <td className="px-3 py-2">
                     <Badge variante={VARIANTE_ESTADO_OC[oc.estado] ?? "neutro"}>{oc.estado}</Badge>
@@ -279,7 +279,7 @@ export function ProveedorDetallePage() {
                       onClick={() => (esMovimientoDePago(m) ? setVerOrdenPagoId(m.id) : navigate(rutaDeMovimiento(m)))}
                       className="cursor-pointer border-b border-borde last:border-0 hover:bg-hueso"
                     >
-                      <td className="px-3 py-2 font-body text-[12.5px]">{formatearFechaSolo(m.fecha)}</td>
+                      <td className="px-3 py-2 font-body text-[12.5px]">{formatearFechaComprobante(m.tipo, m.fecha)}</td>
                       <td className="px-3 py-2 font-body text-[12.5px] text-tinta/70">{m.tipo}</td>
                       <td className="px-3 py-2 font-mono text-xs">{m.numero}</td>
                       <td className="px-3 py-2">

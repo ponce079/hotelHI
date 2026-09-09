@@ -7,7 +7,7 @@ import { Toast } from "../../componentes/Toast";
 import { listarDepositos } from "../depositos/depositos.api";
 import { listarMovimientos } from "../movimientos/movimientos.api";
 import { useToast } from "../../lib/useToast";
-import { hoyISO, primerDiaDelMesISO } from "../../lib/fechas";
+import { hoyEnHoraLocal, primerDiaDelMesISO } from "../../lib/fechas";
 
 function agruparConsumo(movimientos) {
   const map = new Map();
@@ -29,7 +29,7 @@ export function ReportePage() {
   const { toast, mostrarToast } = useToast();
   const [depositoId, setDepositoId] = useState("");
   const [desde, setDesde] = useState(primerDiaDelMesISO());
-  const [hasta, setHasta] = useState(hoyISO());
+  const [hasta, setHasta] = useState(hoyEnHoraLocal());
 
   const { data: depositos } = useQuery({ queryKey: ["depositos"], queryFn: listarDepositos });
   const { data: movimientos, isLoading } = useQuery({

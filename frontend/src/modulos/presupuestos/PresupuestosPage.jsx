@@ -20,7 +20,7 @@ import {
   ORIGENES_REQUERIMIENTO,
   TIPOS_REQUERIMIENTO,
 } from "../../lib/constantes";
-import { formatearFechaSolo, diasDesde } from "../../lib/fechas";
+import { formatearTimestamp, diasDesde } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 
@@ -301,7 +301,7 @@ export function PresupuestosPage() {
                       )}
                     </span>
                   </td>
-                  <td className="px-3 py-2 font-body text-[12.5px]">{formatearFechaSolo(r.fecha)}</td>
+                  <td className="px-3 py-2 font-body text-[12.5px]">{formatearTimestamp(r.fecha)}</td>
                   <td className="px-3 py-2 font-body text-[12.5px] font-semibold">{r.deposito?.nombre}</td>
                   <td className="px-3 py-2 text-right font-body text-[12.5px]">{r.cantidadArticulos}</td>
                   <td className="px-3 py-2 text-right font-body text-[12.5px]">

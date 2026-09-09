@@ -14,6 +14,7 @@ import { SinPermiso } from "../../componentes/SinPermiso";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { formatearMonto } from "../../lib/moneda";
+import { formatearFechaComprobante } from "../../lib/fechas";
 import { obtenerResumenCuentaCorriente, obtenerCuentaCorrienteDeProveedor } from "./cuentaCorriente.api";
 import { obtenerProveedor } from "../proveedores/proveedores.api";
 import { TIPOS_MOVIMIENTO, diasDesde, variantePorAntiguedad, rutaDeMovimiento, esMovimientoDePago } from "./cuentaCorriente.constantes";
@@ -224,7 +225,7 @@ export function CuentaCorrientePage() {
                       i % 2 === 1 ? "bg-hueso/50" : ""
                     } ${m.estado && m.estado !== "Pagado" ? "opacity-55" : ""}`}
                   >
-                    <td className="px-2 py-2.5 text-[12.5px]">{new Date(m.fecha).toLocaleDateString("es-AR")}</td>
+                    <td className="px-2 py-2.5 text-[12.5px]">{formatearFechaComprobante(m.tipo, m.fecha)}</td>
                     <td className="px-2 py-2.5">
                       {m.debe > 0 ? (
                         <Badge variante={variantePorAntiguedad(diasDesde(m.fecha))}>

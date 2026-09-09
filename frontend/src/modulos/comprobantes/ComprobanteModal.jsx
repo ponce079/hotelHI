@@ -8,12 +8,13 @@ import { crearComprobante } from './comprobantes.api';
 import { listarProveedoresActivos } from '../proveedores/proveedores.api';
 import { listarOrdenesCompra } from '../ordenes-compra/ordenesCompra.api';
 import { formatearMonto } from '../../lib/moneda';
+import { hoyEnHoraLocal } from '../../lib/fechas';
 
 const VACIO = {
   proveedorId: '',
   tipo: 'Factura',
   numero: '',
-  fecha: new Date().toISOString().slice(0, 10),
+  fecha: hoyEnHoraLocal(),
   importeTotal: '',
   ordenCompraId: '',
 };

@@ -7,6 +7,7 @@ import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { ConfirmDialog } from "../../componentes/ConfirmDialog";
 import { formatearMonto } from "../../lib/moneda";
+import { hoyEnHoraLocal } from "../../lib/fechas";
 import { obtenerOrdenPago, anularOrdenPago, actualizarEstadoCheque } from "./pagos.api";
 import { BADGE_ESTADO, BADGE_ESTADO_CHEQUE } from "./pagos.constantes";
 
@@ -28,7 +29,7 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
   // { id, modo } — modo: "menu" (elegir cobrado/rechazado) | "cobrar" | "rechazar".
   // Un solo medio a la vez puede tener sus acciones abiertas.
   const [medioAccion, setMedioAccion] = useState(null);
-  const [fechaCobro, setFechaCobro] = useState(() => new Date().toISOString().slice(0, 10));
+  const [fechaCobro, setFechaCobro] = useState(hoyEnHoraLocal);
   const [errorCheque, setErrorCheque] = useState("");
 
   const { data: orden, isLoading, isError } = useQuery({
