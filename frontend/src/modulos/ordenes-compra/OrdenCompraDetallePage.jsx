@@ -402,7 +402,7 @@ export function OrdenCompraDetallePage() {
                       </Button>
                     )}
                     {puedeEnviar && (
-                      <Button variante="secundario" onClick={() => setConfirmarAccion("enviar")}>
+                      <Button variante="ok" onClick={() => setConfirmarAccion("enviar")}>
                         Marcar como enviada
                       </Button>
                     )}
