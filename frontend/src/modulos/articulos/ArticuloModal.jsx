@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { Modal } from "../../componentes/Modal";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
@@ -131,20 +131,12 @@ export function ArticuloModal({ articulo, onClose, onExito }) {
   }
 
   return (
-    <div className="fixed inset-0 z-30 flex items-start justify-center overflow-y-auto bg-tinta/45 p-6 py-10" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="w-full max-w-xl rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-start justify-between border-b border-borde px-6 py-5">
-          <div>
-            <h3 className="font-heading text-[20px] font-semibold text-tinta">{editando ? "Editar artículo" : "Nuevo artículo"}</h3>
-            <p className="mt-1 font-mono text-[11px] text-tinta/55">
-              Código: {editando ? articulo.codigo : "(se genera al guardar)"}
-            </p>
-          </div>
-          <button type="button" onClick={onClose} className="cursor-pointer rounded-md p-1 text-piedra hover:text-error">
-            <X size={18} />
-          </button>
-        </div>
-
+    <Modal
+      titulo={editando ? "Editar artículo" : "Nuevo artículo"}
+      subtitulo={`Código: ${editando ? articulo.codigo : "(se genera al guardar)"}`}
+      onClose={onClose}
+      ancho="max-w-xl"
+    >
         <form onSubmit={handleSubmit}>
           <div className="flex flex-col gap-4 px-6 py-5">
             {errores.general && <p className="text-sm text-error">{errores.general}</p>}
@@ -258,7 +250,6 @@ export function ArticuloModal({ articulo, onClose, onExito }) {
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

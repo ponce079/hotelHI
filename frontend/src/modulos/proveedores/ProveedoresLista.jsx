@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
+import { MenuAcciones } from "../../componentes/MenuAcciones";
 import { Select } from "../../componentes/Select";
 import { Pagination } from "../../componentes/Pagination";
 import { Toast } from "../../componentes/Toast";
@@ -175,17 +176,18 @@ export function ProveedoresLista() {
                   <Badge variante={p.activo ? "ok" : "neutro"}>{p.activo ? "Activo" : "Inactivo"}</Badge>
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                    <Button variante="secundario" tamano="fila" onClick={() => setModal({ proveedor: p })}>
-                      Editar
-                    </Button>
-                    <Button
-                      variante={p.activo ? "destructivo" : "alta"}
-                      tamano="fila"
-                      onClick={() => setParaCambiarEstado(p)}
-                    >
-                      {p.activo ? "Dar de baja" : "Reactivar"}
-                    </Button>
+                  <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+                    {/* Auditoría de botones, P3.3 */}
+                    <MenuAcciones
+                      acciones={[
+                        { label: "Editar", onClick: () => setModal({ proveedor: p }) },
+                        {
+                          label: p.activo ? "Dar de baja" : "Reactivar",
+                          variante: p.activo ? "destructivo" : undefined,
+                          onClick: () => setParaCambiarEstado(p),
+                        },
+                      ]}
+                    />
                   </div>
                 </td>
               </tr>

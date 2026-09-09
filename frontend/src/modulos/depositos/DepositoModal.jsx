@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { Modal } from "../../componentes/Modal";
 import { Input } from "../../componentes/Input";
 import { Button } from "../../componentes/Button";
 import { crearDeposito, actualizarDeposito } from "./depositos.api";
@@ -63,22 +63,7 @@ export function DepositoModal({ deposito, onClose, onExito }) {
   }
 
   return (
-    <div
-      className="fixed inset-0 z-30 flex items-start justify-center overflow-y-auto bg-tinta/45 p-6 py-10"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-borde px-6 py-5">
-          <h3 className="font-heading text-[20px] font-semibold text-tinta">
-            {editando ? "Editar depósito" : "Nuevo depósito"}
-          </h3>
-          <button type="button" onClick={onClose} className="cursor-pointer rounded-md p-1 text-piedra hover:text-error">
-            <X size={18} />
-          </button>
-        </div>
-
+    <Modal titulo={editando ? "Editar depósito" : "Nuevo depósito"} onClose={onClose}>
         <form onSubmit={handleSubmit}>
           <div className="flex flex-col gap-4 px-6 py-5">
             {errores.general && <p className="text-sm text-error">{errores.general}</p>}
@@ -136,7 +121,6 @@ export function DepositoModal({ deposito, onClose, onExito }) {
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </Modal>
   );
 }

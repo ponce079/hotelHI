@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
+import { MenuAcciones } from "../../componentes/MenuAcciones";
 import { Cifra } from "../../componentes/Cifra";
 import { Toast } from "../../componentes/Toast";
 import { ConfirmDialog } from "../../componentes/ConfirmDialog";
@@ -217,20 +218,18 @@ export function DepositoDetallePage() {
                   <Badge variante={f.estado.variante}>{f.estado.label}</Badge>
                 </td>
                 <td className="px-3 py-2 text-right">
-                  <div className="flex justify-end gap-1.5">
-                    <Button
-                      variante="kardex"
-                      tamano="fila"
-                      onClick={() => navigate(`/kardex?articuloId=${f.articuloId}&depositoId=${depositoId}`)}
-                    >
-                      Kardex
-                    </Button>
-                    {puede("operar") && (
-                      <Button variante="destructivo" tamano="fila" onClick={() => setParaCambiarEstado(f)}>
-                        Deshabilitar
-                      </Button>
-                    )}
-                  </div>
+                  {/* Auditoría de botones, P3.3 */}
+                  <MenuAcciones
+                    acciones={[
+                      {
+                        label: "Kardex",
+                        onClick: () => navigate(`/kardex?articuloId=${f.articuloId}&depositoId=${depositoId}`),
+                      },
+                      ...(puede("operar")
+                        ? [{ label: "Deshabilitar", variante: "destructivo", onClick: () => setParaCambiarEstado(f) }]
+                        : []),
+                    ]}
+                  />
                 </td>
               </tr>
             );

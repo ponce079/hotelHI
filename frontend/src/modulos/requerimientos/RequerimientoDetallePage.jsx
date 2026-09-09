@@ -343,13 +343,14 @@ export function RequerimientoDetallePage() {
               {tienePresupuestos ? `Presupuestos recibidos · ${req.presupuestos.length}` : "Presupuestos"}
             </h2>
             {tienePresupuestos && (
-              <button
-                type="button"
+              // Auditoría de botones, P3.2
+              <Button
+                variante="fantasma"
                 onClick={() => navigate(`/presupuestos?requerimientoId=${req.id}`)}
-                className="cursor-pointer text-[12.5px] font-semibold text-pino hover:underline print:hidden"
+                className="text-[12.5px] hover:underline print:hidden"
               >
                 Ver presupuesto asociado →
-              </button>
+              </Button>
             )}
           </div>
 

@@ -180,9 +180,12 @@ export function CuentaCorrientePage() {
                   </span>
                 )}
               </div>
+              {/* Auditoría de botones, P3.2: mismo tratamiento que el
+                  resto de los links "ir a X" — fantasma, no un cuarto
+                  color distinto. */}
               <Link
                 to={`/proveedores/${proveedorId}`}
-                className="whitespace-nowrap text-[12.5px] font-semibold text-pino hover:underline"
+                className="whitespace-nowrap text-[12.5px] font-semibold text-piedra hover:text-tinta hover:underline"
               >
                 Ver ficha completa →
               </Link>

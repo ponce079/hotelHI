@@ -262,9 +262,10 @@ export function ProveedorDetallePage() {
               <div className="rounded-lg border border-borde bg-white p-5">
                 <div className="mb-3 flex items-center justify-between">
                   <span className="text-[11px] font-semibold uppercase tracking-wide text-piedra">Últimos movimientos</span>
+                  {/* Auditoría de botones, P3.2 */}
                   <Link
                     to={`/cuenta-corriente?proveedorId=${proveedor.id}`}
-                    className="text-[12.5px] font-semibold text-pino hover:underline"
+                    className="text-[12.5px] font-semibold text-piedra hover:text-tinta hover:underline"
                   >
                     Ver todo con filtros →
                   </Link>

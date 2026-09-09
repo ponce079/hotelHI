@@ -410,7 +410,13 @@ export function RecepcionesPage() {
                         >
                           Marcar como revisado
                         </Button>
-                        <Link to="/requerimientos" className="ml-auto font-body text-[12.5px] text-laton-700 underline">
+                        {/* Auditoría de botones, P3.2: era laton-700, el
+                            único de los cinco links "ir a X" con un color
+                            distinto de los otros cuatro sin motivo. */}
+                        <Link
+                          to="/requerimientos"
+                          className="ml-auto font-body text-[12.5px] text-piedra hover:text-tinta underline"
+                        >
                           Pedir reposición al proveedor →
                         </Link>
                       </div>

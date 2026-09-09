@@ -5,6 +5,7 @@ import { Search } from "lucide-react";
 import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
+import { MenuAcciones } from "../../componentes/MenuAcciones";
 import { Pagination } from "../../componentes/Pagination";
 import { Toast } from "../../componentes/Toast";
 import { ConfirmDialog } from "../../componentes/ConfirmDialog";
@@ -191,17 +192,20 @@ export function ArticulosLista() {
                     <Badge variante={a.activo ? "ok" : "neutro"}>{a.activo ? "Activo" : "Dado de baja"}</Badge>
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <div className="flex justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
-                      <Button variante="secundario" tamano="fila" onClick={() => setModal({ tipo: "form", articulo: a })}>
-                        Editar
-                      </Button>
-                      <Button
-                        variante={a.activo ? "destructivo" : "alta"}
-                        tamano="fila"
-                        onClick={() => setParaCambiarEstado(a)}
-                      >
-                        {a.activo ? "Dar de baja" : "Reactivar"}
-                      </Button>
+                    <div className="flex justify-end" onClick={(e) => e.stopPropagation()}>
+                      {/* Auditoría de botones, P3.3: mismo menú "⋮" que ya
+                          usan Requerimientos/Comprobantes/OC, en vez de dos
+                          botones sueltos por fila. */}
+                      <MenuAcciones
+                        acciones={[
+                          { label: "Editar", onClick: () => setModal({ tipo: "form", articulo: a }) },
+                          {
+                            label: a.activo ? "Dar de baja" : "Reactivar",
+                            variante: a.activo ? "destructivo" : undefined,
+                            onClick: () => setParaCambiarEstado(a),
+                          },
+                        ]}
+                      />
                     </div>
                   </td>
                 </tr>

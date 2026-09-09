@@ -198,7 +198,11 @@ export function ComprobantesPage() {
       </div>
 
       {/* Filtros */}
-      <FilterBar>
+      <FilterBar
+        onClear={() =>
+          setFiltros({ proveedorId: '', estado: '', desde: '', hasta: '', soloSaldo: true, ordenarPor: 'fecha' })
+        }
+      >
         <div className="flex flex-wrap items-center gap-2.5 font-body text-[13px]">
           <div className="flex items-center gap-1.5">
             <span className="text-[11px] uppercase tracking-wide text-piedra">Proveedor</span>
@@ -271,14 +275,6 @@ export function ComprobantesPage() {
           />
           Solo con saldo pendiente
         </label>
-        <button
-          onClick={() =>
-            setFiltros({ proveedorId: '', estado: '', desde: '', hasta: '', soloSaldo: true, ordenarPor: 'fecha' })
-          }
-          className="inline-flex cursor-pointer items-center text-sm font-semibold text-piedra hover:text-error"
-        >
-          Limpiar filtros
-        </button>
       </FilterBar>
 
       {/* Tabla */}
