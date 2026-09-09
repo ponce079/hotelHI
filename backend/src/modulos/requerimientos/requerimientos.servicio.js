@@ -797,6 +797,12 @@ async function listarRequerimientos({
     ocRecibida: presupuestos.some(
       (p) => p.estado === "Adjudicado" && p.ordenCompra && ESTADOS_OC_RECIBIDA.includes(p.ordenCompra.estado)
     ),
+    // A diferencia de ocRecibida (paso 4 del mini-stepper), esto solo
+    // pregunta si la OC ya existe, sin importar en qué estado — es lo que
+    // necesita el badge "OC pendiente de generar" en la lista: un
+    // Aprobado sin ninguna OC generada todavía es un caso distinto de uno
+    // que ya tiene su OC (Pendiente/Enviada/Recibida/lo que sea).
+    tieneOC: presupuestos.some((p) => p.estado === "Adjudicado" && Boolean(p.ordenCompra)),
     // Pantalla de Presupuestos: "hace cuánto espera respuesta de
     // cotización" se cuenta desde que se invitó a los proveedores (todos
     // los invitados de una misma solicitud se crean juntos, en la misma

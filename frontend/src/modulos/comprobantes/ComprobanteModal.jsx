@@ -5,7 +5,7 @@ import { Input } from '../../componentes/Input';
 import { Select } from '../../componentes/Select';
 import { Button } from '../../componentes/Button';
 import { crearComprobante } from './comprobantes.api';
-import { listarProveedoresConSaldo } from '../pagos/pagos.api';
+import { listarProveedoresActivos } from '../proveedores/proveedores.api';
 import { listarOrdenesCompra } from '../ordenes-compra/ordenesCompra.api';
 import { formatearMonto } from '../../lib/moneda';
 
@@ -24,8 +24,8 @@ export function ComprobanteModal({ onClose, onExito }) {
   const queryClient = useQueryClient();
 
   const { data: proveedores } = useQuery({
-    queryKey: ['proveedores'],
-    queryFn: listarProveedoresConSaldo,
+    queryKey: ['proveedores-activos'],
+    queryFn: listarProveedoresActivos,
   });
 
   // El backend (crearComprobante) solo bloquea OCs "Anulada" — acá se

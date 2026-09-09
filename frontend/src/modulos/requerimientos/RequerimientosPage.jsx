@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Search, ClipboardList, Flame, Bot, AlertTriangle, Clock, CheckCircle2 } from "lucide-react";
+import { Search, ClipboardList, Flame, Bot, AlertTriangle, Clock, CheckCircle2, ShoppingCart } from "lucide-react";
 import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
@@ -414,11 +414,30 @@ export function RequerimientosPage() {
                         )}
                       </td>
                       <td className="px-3 py-2.5 align-middle">
-                        {r.anulado ? (
-                          <Badge variante="neutro">Anulado</Badge>
-                        ) : (
-                          <Badge variante={VARIANTE_POR_CATEGORIA[cat] ?? "neutro"}>{r.estado}</Badge>
-                        )}
+                        <div className="flex items-center gap-1.5">
+                          {r.anulado ? (
+                            <Badge variante="neutro">Anulado</Badge>
+                          ) : (
+                            <Badge variante={VARIANTE_POR_CATEGORIA[cat] ?? "neutro"}>{r.estado}</Badge>
+                          )}
+                          {/* Secundario a propósito — un ícono chico con
+                              tooltip, no otro badge, mismo criterio que
+                              alertaFacturacion en OrdenesCompraPage. Solo
+                              tiene sentido para COMPRA: una TRANSFERENCIA
+                              nunca pasa por presupuesto/OC. */}
+                          {!r.anulado &&
+                            r.estado === ESTADOS_REQUERIMIENTO.APROBADO &&
+                            r.tipo === TIPOS_REQUERIMIENTO.COMPRA &&
+                            (r.tieneOC ? (
+                              <span title="Ya tiene una Orden de Compra generada">
+                                <ShoppingCart size={13} className="text-pino/70" />
+                              </span>
+                            ) : (
+                              <span title="Aprobado — todavía no se generó la Orden de Compra">
+                                <Clock size={13} className="text-laton-700" />
+                              </span>
+                            ))}
+                        </div>
                       </td>
                       <td className="px-3 py-2.5 text-right align-middle">
                         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>

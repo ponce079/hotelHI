@@ -23,7 +23,7 @@ import {
   VARIANTE_VENCIMIENTO,
   LABEL_VENCIMIENTO,
 } from './comprobantes.constantes';
-import { listarProveedoresConSaldo } from '../pagos/pagos.api'; // si existe, o crear función propia
+import { listarProveedoresActivos } from '../proveedores/proveedores.api';
 import { ComprobanteModal } from './ComprobanteModal';
 import { NotaModal } from './NotaModal';
 
@@ -51,10 +51,12 @@ export function ComprobantesPage() {
     queryFn: () => listarComprobantes(filtros)
   });
 
-  // Proveedores para el filtro (usar endpoint existente o crear)
+  // Proveedores para el filtro: todos los activos, no solo los que ya
+  // tienen saldo pendiente (si no, un proveedor sin comprobantes cargados
+  // nunca podría filtrarse ni elegirse para cargar su primer comprobante).
   const { data: proveedores } = useQuery({
-    queryKey: ['proveedores-con-saldo'],
-    queryFn: () => listarProveedoresConSaldo() // si existe
+    queryKey: ['proveedores-activos'],
+    queryFn: () => listarProveedoresActivos()
   });
 
   // Mutación para anular
