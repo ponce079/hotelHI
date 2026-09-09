@@ -1,7 +1,13 @@
-// Regla de color por accion (guia visual SGH, seccion 4): cada variante es
-// un color fijo, no una clase suelta. Entrada = pino solido, salida /
-// transferencia = laton, destructivo = rojo suave, secundario = tinte 100
-// del rol. Un ConfirmDialog hereda la variante del boton que lo abrio.
+// Jerarquía de 5 tipos (auditoría de botones, 2026-09): primario relleno
+// solido pino (una sola por pantalla/modal), secundario con borde sin
+// relleno, fantasma sin borde con texto gris (navegacion/bajo compromiso),
+// destructivo con borde/texto en color error (exclusivo de Anular/Rechazar/
+// Eliminar, nunca reusado para otra cosa), e icono (fuera de este
+// componente, ver MenuAcciones). "ok"/"salida"/"transfer"/"kardex"/"alta"
+// siguen existiendo como matices de color dentro de "primario"/"secundario"
+// para acciones con semantica propia (entrada/salida de stock, habilitar) —
+// no son variantes nuevas de la jerarquia, son el mismo rol con otro hue.
+// Un ConfirmDialog hereda la variante del boton que lo abrio.
 const VARIANTES = {
   // Entrada / confirmar / accion primaria — pino solido.
   ok: "border-pino bg-pino text-hueso hover:bg-pino-oscuro",
@@ -13,8 +19,16 @@ const VARIANTES = {
   kardex: "border-laton-300 bg-laton-100 text-laton-700 hover:bg-laton-200",
   // Habilitar / reactivar — pino tinte 100.
   alta: "border-pino-300 bg-pino-100 text-pino-700 hover:bg-pino-200",
-  // Deshabilitar / dar de baja — rojo suave.
-  baja: "border-[#e5c0b7] bg-error-suave text-error-texto hover:bg-[#f0d2c9]",
+  // Destructivo — Anular/Rechazar/Eliminar, nunca para otra cosa. Contorno,
+  // no relleno (antes "baja" era un tinte bg-error-suave): baja el peso
+  // visual para que en una fila con Editar + Anular, Anular no compita en
+  // peso con el primario de la pantalla.
+  destructivo: "border-error bg-transparent text-error-texto hover:bg-error-suave",
+  // Fantasma — navegacion y acciones de bajo compromiso (Ver detalle, Ver
+  // historial, Volver, Limpiar filtros). Sin borde, texto gris; se acerca
+  // al tinta solo en hover, igual que el resto de los "solo texto" ad-hoc
+  // que reemplaza.
+  fantasma: "border-transparent bg-transparent text-piedra hover:bg-hueso hover:text-tinta",
   // Secundario / cancelar — tinte neutro con borde.
   secundario: "border-borde bg-transparent text-tinta hover:bg-hueso",
 };

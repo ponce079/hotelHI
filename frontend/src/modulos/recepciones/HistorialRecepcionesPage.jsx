@@ -48,7 +48,7 @@ export function HistorialRecepcionesPage() {
 
   return (
     <div className="flex flex-col gap-[22px]">
-      <Button variante="secundario" onClick={volver} className="w-fit text-xs">
+      <Button variante="fantasma" onClick={volver} className="w-fit text-xs">
         ← Volver a Recepciones
       </Button>
 

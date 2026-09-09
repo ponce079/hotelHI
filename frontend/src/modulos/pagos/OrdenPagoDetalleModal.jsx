@@ -183,7 +183,7 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
                         </Button>
                         <Button
                           tamano="fila"
-                          variante="baja"
+                          variante="destructivo"
                           className="flex-1 justify-center"
                           onClick={() => setMedioAccion({ id: m.id, modo: "rechazar" })}
                         >
@@ -228,18 +228,18 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
                             orden completa.
                           </p>
                         ) : (
-                          <div className="mt-1.5 flex items-center gap-3">
-                            <button
-                              type="button"
-                              className="cursor-pointer font-semibold underline disabled:cursor-not-allowed disabled:opacity-50"
+                          <div className="mt-1.5 flex items-center gap-2">
+                            <Button
+                              tamano="fila"
+                              variante="destructivo"
                               disabled={mutacionCheque.isPending}
                               onClick={() => mutacionCheque.mutate({ medioId: m.id, estado: "Rechazado" })}
                             >
                               {mutacionCheque.isPending ? "Guardando…" : "Confirmar rechazo"}
-                            </button>
-                            <button type="button" className="cursor-pointer text-tinta/60" onClick={() => setMedioAccion(null)}>
+                            </Button>
+                            <Button tamano="fila" variante="secundario" onClick={() => setMedioAccion(null)}>
                               Cancelar
-                            </button>
+                            </Button>
                           </div>
                         )}
                       </div>
@@ -270,7 +270,7 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
               />
               {errorMotivo && <span className="text-[11.5px] text-error-texto">{errorMotivo}</span>}
               <Button
-                variante="baja"
+                variante="destructivo"
                 disabled={mutacionAnular.isPending}
                 onClick={intentarAnular}
                 className="w-full justify-center"
@@ -292,7 +292,7 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
         titulo="¿Anular de todas formas?"
         mensaje="Esta orden incluye un pago con cheque. Al anularla, el cheque queda libre para reusarse."
         textoConfirmar="Sí, anular"
-        variante="baja"
+        variante="destructivo"
         onCancelar={() => setPidiendoConfirmacionCheque(false)}
         onConfirmar={() => mutacionAnular.mutate(true)}
       />

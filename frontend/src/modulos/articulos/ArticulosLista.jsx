@@ -196,7 +196,7 @@ export function ArticulosLista() {
                         Editar
                       </Button>
                       <Button
-                        variante={a.activo ? "baja" : "alta"}
+                        variante={a.activo ? "destructivo" : "alta"}
                         tamano="fila"
                         onClick={() => setParaCambiarEstado(a)}
                       >
@@ -245,7 +245,7 @@ export function ArticulosLista() {
             : `${paraCambiarEstado?.codigo} — ${paraCambiarEstado?.nombre} volverá a estar disponible para habilitaciones por depósito y movimientos de stock.`
         }
         textoConfirmar={paraCambiarEstado?.activo ? "Sí, dar de baja" : "Sí, reactivar"}
-        variante={paraCambiarEstado?.activo ? "baja" : "alta"}
+        variante={paraCambiarEstado?.activo ? "destructivo" : "alta"}
         onCancelar={() => setParaCambiarEstado(null)}
         onConfirmar={() => mutacionEstado.mutate({ id: paraCambiarEstado.id, activo: !paraCambiarEstado.activo })}
       />

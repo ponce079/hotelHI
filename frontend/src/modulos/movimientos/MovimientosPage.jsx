@@ -60,13 +60,17 @@ export function MovimientosPage() {
 
         {tab === "registro" && puede("operar") && (
           <div className="ml-auto flex flex-wrap gap-2">
+            {/* Un solo primario sólido por pantalla (auditoría de botones,
+                P1.2): "Registrar entrada" es la acción más frecuente del
+                depósito, las otras dos bajan a secundario — dejan de
+                competir en peso, sin dejar de estar igual de accesibles. */}
             <Button variante="ok" onClick={() => setModoForm("E")}>
               <PackagePlus size={16} /> Registrar entrada
             </Button>
-            <Button variante="salida" onClick={() => setModoForm("S")}>
+            <Button variante="secundario" onClick={() => setModoForm("S")}>
               <PackageMinus size={16} /> Registrar salida
             </Button>
-            <Button variante="transfer" onClick={() => setModoForm("transfer")}>
+            <Button variante="secundario" onClick={() => setModoForm("transfer")}>
               <ArrowLeftRight size={16} /> Nueva transferencia
             </Button>
           </div>

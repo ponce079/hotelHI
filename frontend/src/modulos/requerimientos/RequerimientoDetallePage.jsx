@@ -124,7 +124,7 @@ export function RequerimientoDetallePage() {
           >
             {mutacionConfirmarSugerencia.isPending ? "Confirmando…" : "Confirmar"}
           </Button>
-          <Button variante="baja" className="flex-1 justify-center py-3 text-[14px]" onClick={() => setParaAnular(true)}>
+          <Button variante="destructivo" className="flex-1 justify-center py-3 text-[14px]" onClick={() => setParaAnular(true)}>
             Descartar
           </Button>
         </div>
@@ -141,7 +141,7 @@ export function RequerimientoDetallePage() {
               <FileText size={16} /> Solicitar presupuesto
             </Button>
           )}
-          <Button variante="baja" className="flex-1 justify-center py-3 text-[14px]" onClick={() => setParaAnular(true)}>
+          <Button variante="destructivo" className="flex-1 justify-center py-3 text-[14px]" onClick={() => setParaAnular(true)}>
             Anular
           </Button>
         </div>
@@ -152,12 +152,16 @@ export function RequerimientoDetallePage() {
 
   return (
     <div className="flex flex-col gap-4">
-      <button
+      {/* Auditoría de botones, P2.2: "Volver" es navegación de bajo
+          compromiso — mismo componente que el resto de las pantallas de
+          detalle, ya no un <button> aparte con su propio estilo. */}
+      <Button
+        variante="fantasma"
         onClick={() => navigate("/requerimientos")}
-        className="inline-flex w-fit cursor-pointer items-center gap-1 text-sm font-semibold text-piedra hover:text-tinta print:hidden"
+        className="w-fit text-xs print:hidden"
       >
         <ArrowLeft size={15} /> Volver a requerimientos
-      </button>
+      </Button>
 
       {/* Todo el seguimiento de este requerimiento vive en un solo
           contenedor — título, estado, timeline, artículos, acción y
@@ -320,8 +324,12 @@ export function RequerimientoDetallePage() {
         {accionesContextuales()}
 
         {esTerminalNegativo && (
+          // Única acción disponible en este estado (accionesContextuales()
+          // devuelve null) — primario, no secundario (auditoría de
+          // botones, P1.3): sin esto no había ningún botón que orientara
+          // "esto es lo que podés hacer acá".
           <Button
-            variante="secundario"
+            variante="ok"
             className="w-full justify-center gap-2 py-3 text-[14px] print:hidden"
             onClick={() => setDuplicando(true)}
           >

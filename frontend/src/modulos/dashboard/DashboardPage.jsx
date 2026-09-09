@@ -83,15 +83,22 @@ export function DashboardPage() {
   };
 
   const ACCIONES = {
+    // Un solo primario sólido por pantalla (auditoría de botones, P1.2 —
+    // mismo hallazgo que el trío entrada/salida/transferencia, no uno
+    // nuevo): "Nuevo artículo" es el alta más frecuente del catálogo, el
+    // resto baja a secundario.
     admin: [
       { label: "Nuevo artículo", variante: "ok", onClick: () => navigate("/articulos") },
-      { label: "Nuevo depósito", variante: "ok", onClick: () => navigate("/depositos") },
-      { label: "Ver movimientos", variante: "ok", onClick: () => navigate("/movimientos") },
+      { label: "Nuevo depósito", variante: "secundario", onClick: () => navigate("/depositos") },
+      { label: "Ver movimientos", variante: "secundario", onClick: () => navigate("/movimientos") },
     ],
+    // Un solo primario sólido por pantalla (auditoría de botones, P1.2):
+    // mismo criterio que MovimientosPage, "Registrar entrada" es la acción
+    // más frecuente del depósito, el resto baja a secundario.
     deposito: [
       { label: "Registrar entrada", variante: "ok", icon: PackagePlus, onClick: () => navigate("/movimientos", { state: { modoForm: "E" } }) },
-      { label: "Registrar salida", variante: "salida", icon: PackageMinus, onClick: () => navigate("/movimientos", { state: { modoForm: "S" } }) },
-      { label: "Nueva transferencia", variante: "transfer", icon: ArrowLeftRight, onClick: () => navigate("/movimientos", { state: { modoForm: "transfer" } }) },
+      { label: "Registrar salida", variante: "secundario", icon: PackageMinus, onClick: () => navigate("/movimientos", { state: { modoForm: "S" } }) },
+      { label: "Nueva transferencia", variante: "secundario", icon: ArrowLeftRight, onClick: () => navigate("/movimientos", { state: { modoForm: "transfer" } }) },
       { label: "Recepciones", variante: "secundario", icon: PackageCheck, onClick: () => navigate("/recepciones") },
     ],
     compras: [

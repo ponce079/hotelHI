@@ -9,7 +9,7 @@ export function ConfirmDialog({
   titulo,
   mensaje,
   textoConfirmar = "Confirmar",
-  variante = "baja",
+  variante = "destructivo",
   onConfirmar,
   onCancelar,
   children,

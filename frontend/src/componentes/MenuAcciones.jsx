@@ -44,7 +44,7 @@ export function MenuAcciones({ acciones }) {
                 a.onClick();
               }}
               className={`block w-full cursor-pointer whitespace-nowrap px-3 py-1.5 text-left font-body text-[12.5px] transition-colors hover:bg-hueso disabled:cursor-not-allowed disabled:opacity-50 ${
-                a.variante === "baja" ? "text-error-texto" : "text-tinta"
+                a.variante === "destructivo" ? "text-error-texto" : "text-tinta"
               }`}
             >
               {a.label}

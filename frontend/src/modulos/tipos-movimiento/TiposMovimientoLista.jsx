@@ -61,7 +61,7 @@ export function TiposMovimientoLista() {
               {t.contexto === "TRANSFERENCIA" ? (
                 <span className="text-xs text-piedra">No se puede deshabilitar</span>
               ) : (
-                <Button variante="baja" tamano="fila" onClick={() => setParaDeshabilitar(t)}>
+                <Button variante="destructivo" tamano="fila" onClick={() => setParaDeshabilitar(t)}>
                   Deshabilitar
                 </Button>
               )}
@@ -75,7 +75,7 @@ export function TiposMovimientoLista() {
         titulo="¿Deshabilitar tipo de movimiento?"
         mensaje={`"${paraDeshabilitar?.descripcion}" desaparecerá de esta lista y de los movimientos de Entrada/Salida. No se borra: conserva su historial y podés reactivarlo desde la base si hace falta.`}
         textoConfirmar="Sí, deshabilitar"
-        variante="baja"
+        variante="destructivo"
         onCancelar={() => setParaDeshabilitar(null)}
         onConfirmar={() => mutacion.mutate(paraDeshabilitar.id)}
       />

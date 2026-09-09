@@ -245,7 +245,7 @@ export function RequerimientosPage() {
   function accionesSecundarias(r) {
     if (r.anulado) return [];
     if (r.estado === ESTADOS_REQUERIMIENTO.SUGERIDA) {
-      return puede("gestionarSugerencias") ? [{ label: "Descartar", variante: "baja", onClick: () => setParaAnular(r) }] : [];
+      return puede("gestionarSugerencias") ? [{ label: "Descartar", variante: "destructivo", onClick: () => setParaAnular(r) }] : [];
     }
     if (r.estado === ESTADOS_REQUERIMIENTO.PENDIENTE && puede("crearRequerimiento")) {
       const secundarias = [];
@@ -253,7 +253,7 @@ export function RequerimientosPage() {
         secundarias.push({ label: "Compra express", onClick: () => setParaCompraExpress(r) });
       }
       secundarias.push({ label: "Editar", variante: "secundario", onClick: () => setModal({ requerimientoId: r.id }) });
-      secundarias.push({ label: "Anular", variante: "baja", onClick: () => setParaAnular(r) });
+      secundarias.push({ label: "Anular", variante: "destructivo", onClick: () => setParaAnular(r) });
       return secundarias;
     }
     return [];

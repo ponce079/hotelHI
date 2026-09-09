@@ -60,7 +60,7 @@ export function AnularRequerimientoModal({ requerimiento, onClose, onExito }) {
 
         <div className="flex justify-end gap-2.5 border-t border-borde px-6 py-4">
           <Button type="button" variante="secundario" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" variante="baja" disabled={mutacion.isPending}>
+          <Button type="submit" variante="destructivo" disabled={mutacion.isPending}>
             {mutacion.isPending ? "Anulando…" : "Anular requerimiento"}
           </Button>
         </div>

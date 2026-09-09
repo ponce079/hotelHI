@@ -154,7 +154,7 @@ export function MovimientoFormPage({ modo, onVolver, onExito }) {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <Button variante="secundario" onClick={onVolver} className="mb-2 text-xs">
+        <Button variante="fantasma" onClick={onVolver} className="mb-2 text-xs">
           ← Volver
         </Button>
         <h1 className="font-heading text-[34px] font-semibold">{TITULOS[modo]}</h1>

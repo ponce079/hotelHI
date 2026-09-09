@@ -50,7 +50,7 @@ export function ComprobanteDetalle() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Button variante="secundario" onClick={volver} className="mb-2 text-xs">
+      <Button variante="fantasma" onClick={volver} className="mb-2 text-xs">
         ← Volver
       </Button>
 
@@ -63,7 +63,7 @@ export function ComprobanteDetalle() {
         </div>
         <div className="flex gap-2">
           {!comprobante.anulado && !anulando && (
-            <Button variante="baja" onClick={() => setAnulando(true)}>
+            <Button variante="destructivo" onClick={() => setAnulando(true)}>
               Anular
             </Button>
           )}
@@ -97,7 +97,7 @@ export function ComprobanteDetalle() {
             >
               Cancelar
             </Button>
-            <Button variante="baja" disabled={mutacionAnular.isPending} onClick={confirmarAnular}>
+            <Button variante="destructivo" disabled={mutacionAnular.isPending} onClick={confirmarAnular}>
               {mutacionAnular.isPending ? 'Anulando…' : 'Confirmar anulación'}
             </Button>
           </div>

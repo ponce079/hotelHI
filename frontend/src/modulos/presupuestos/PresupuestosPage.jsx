@@ -332,7 +332,11 @@ export function PresupuestosPage() {
                     {necesitaSolicitar && !puedeSolicitar ? (
                       <span className="text-[11.5px] text-piedra">Sin acción</span>
                     ) : (
-                      <Button variante="secundario" tamano="fila">
+                      // Sin onClick propio: la fila entera ya navega (ver
+                      // arriba) — esto es solo el indicador visual, mismo
+                      // criterio que "Ver detalle" (auditoría de botones,
+                      // P2.4).
+                      <Button variante="fantasma" tamano="fila">
                         {necesitaSolicitar ? "Solicitar →" : "Comparar →"}
                       </Button>
                     )}

@@ -151,7 +151,7 @@ export function OrdenesCompraPage() {
       acciones.push({ label: "Registrar recepción", onClick: () => navigate(`/ordenes-compra/${o.id}/recepcion`) });
     }
     if (puede("gestionarOC") && !["Recibida", "Recibida con diferencia", "Anulada", "Cerrada"].includes(o.estado)) {
-      acciones.push({ label: "Anular OC", variante: "baja", onClick: () => anularDesdeLista(o) });
+      acciones.push({ label: "Anular OC", variante: "destructivo", onClick: () => anularDesdeLista(o) });
     }
     return acciones;
   }

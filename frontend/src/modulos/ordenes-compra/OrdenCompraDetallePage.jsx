@@ -149,7 +149,7 @@ export function OrdenCompraDetallePage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <Button variante="secundario" onClick={volver} className="w-fit text-xs print:hidden">
+      <Button variante="fantasma" onClick={volver} className="w-fit text-xs print:hidden">
         ← Volver
       </Button>
 
@@ -385,7 +385,7 @@ export function OrdenCompraDetallePage() {
                     >
                       Cancelar
                     </Button>
-                    <Button variante="baja" disabled={mutacionAnular.isPending} onClick={confirmarAnular}>
+                    <Button variante="destructivo" disabled={mutacionAnular.isPending} onClick={confirmarAnular}>
                       {mutacionAnular.isPending ? "Anulando…" : "Confirmar anulación"}
                     </Button>
                   </div>
@@ -408,7 +408,7 @@ export function OrdenCompraDetallePage() {
                     )}
                   </div>
                   {puedeAnular && (
-                    <Button variante="baja" onClick={() => setAnulando(true)}>
+                    <Button variante="destructivo" onClick={() => setAnulando(true)}>
                       Anular Orden de Compra
                     </Button>
                   )}

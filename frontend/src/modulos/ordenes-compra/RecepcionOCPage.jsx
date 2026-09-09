@@ -84,7 +84,7 @@ export function RecepcionOCPage() {
   if (oc.estado !== "Enviada") {
     return (
       <div className="flex flex-col gap-4">
-        <Button variante="secundario" onClick={() => navigate(`/ordenes-compra/${ocId}`)} className="w-fit text-xs">
+        <Button variante="fantasma" onClick={() => navigate(`/ordenes-compra/${ocId}`)} className="w-fit text-xs">
           ← Volver a la orden
         </Button>
         <div className="rounded-[18.4px] bg-white px-6 py-8 text-center text-sm text-piedra">
@@ -97,7 +97,7 @@ export function RecepcionOCPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Button variante="secundario" onClick={() => navigate(`/ordenes-compra/${ocId}`)} className="w-fit text-xs">
+      <Button variante="fantasma" onClick={() => navigate(`/ordenes-compra/${ocId}`)} className="w-fit text-xs">
         ← Volver a la orden
       </Button>
 

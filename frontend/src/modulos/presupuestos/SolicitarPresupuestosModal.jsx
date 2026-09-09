@@ -285,12 +285,25 @@ export function SolicitarPresupuestosModal({ requerimientoId, onClose, onExito }
               )}
             </div>
 
-            <Button type="submit" className="w-full justify-center gap-2 py-3 text-[14px]" disabled={mutacion.isPending}>
-              <Send size={16} />
-              {mutacion.isPending
-                ? "Enviando…"
-                : `Enviar solicitud a ${seleccionados.length} proveedor${seleccionados.length === 1 ? "" : "es"}`}
-            </Button>
+            {/* Auditoría de botones, P2.5: mismo patrón "Cancelar +
+                Submit" que el resto de los modales de alta — antes se
+                confiaba solo en la X del modal, sin motivo de negocio
+                para que este fuera la excepción. */}
+            <div className="flex gap-2.5">
+              <Button type="button" variante="secundario" onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                className="flex-1 justify-center gap-2 py-3 text-[14px]"
+                disabled={mutacion.isPending}
+              >
+                <Send size={16} />
+                {mutacion.isPending
+                  ? "Enviando…"
+                  : `Enviar solicitud a ${seleccionados.length} proveedor${seleccionados.length === 1 ? "" : "es"}`}
+              </Button>
+            </div>
           </div>
         </form>
       )}

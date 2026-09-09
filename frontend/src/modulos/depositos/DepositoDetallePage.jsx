@@ -108,7 +108,7 @@ export function DepositoDetallePage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <Button variante="secundario" onClick={() => navigate("/depositos")} className="mb-2 text-xs">
+        <Button variante="fantasma" onClick={() => navigate("/depositos")} className="mb-2 text-xs">
           ← Depósitos
         </Button>
         <h1 className="font-heading text-[34px] font-semibold">{deposito.nombre}</h1>
@@ -226,7 +226,7 @@ export function DepositoDetallePage() {
                       Kardex
                     </Button>
                     {puede("operar") && (
-                      <Button variante="baja" tamano="fila" onClick={() => setParaCambiarEstado(f)}>
+                      <Button variante="destructivo" tamano="fila" onClick={() => setParaCambiarEstado(f)}>
                         Deshabilitar
                       </Button>
                     )}
@@ -259,7 +259,7 @@ export function DepositoDetallePage() {
             : `"${paraCambiarEstado?.nombre}" desaparecerá de esta lista y dejará de poder elegirse en nuevos movimientos de este depósito. Podés volver a habilitarlo con "+ Habilitar artículo" cuando quieras.`
         }
         textoConfirmar="Sí, deshabilitar"
-        variante="baja"
+        variante="destructivo"
         onCancelar={() => setParaCambiarEstado(null)}
         onConfirmar={() => mutacionEstado.mutate({ articuloDepositoId: paraCambiarEstado.articuloDepositoId, activo: false })}
       />

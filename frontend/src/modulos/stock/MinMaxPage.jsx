@@ -72,7 +72,7 @@ export function MinMaxPage() {
     <div className="flex flex-col gap-6">
       <div>
         <Button
-          variante="secundario"
+          variante="fantasma"
           onClick={() => navigate(depositoId ? `/depositos/${depositoId}` : "/depositos")}
           className="mb-2 text-xs"
         >
@@ -115,6 +115,14 @@ export function MinMaxPage() {
               const edicion = ediciones[f.articuloDepositoId] ?? { stockMinimo: String(f.stockMinimo), stockMaximo: String(f.stockMaximo ?? "") };
               const invalido =
                 edicion.stockMinimo !== "" && edicion.stockMaximo !== "" && Number(edicion.stockMinimo) >= Number(edicion.stockMaximo);
+              // Auditoría de botones, P2.3: el primario de fila solo aparece
+              // con la fila "dirty" (valor distinto al que trajo el
+              // servidor) — en reposo ninguna fila muestra un primario. Se
+              // reordena solo: al guardar, el refetch de "stock" trae de
+              // vuelta el mismo valor que el usuario tipeó y la fila deja
+              // de estar dirty sin tocar ningún estado extra acá.
+              const dirty =
+                edicion.stockMinimo !== String(f.stockMinimo) || edicion.stockMaximo !== String(f.stockMaximo ?? "");
               return (
                 <tr key={f.articuloDepositoId} className="border-b border-borde last:border-0">
                   <td className="px-3 py-2 font-body text-[13.5px] font-semibold">{f.nombre}</td>
@@ -141,14 +149,16 @@ export function MinMaxPage() {
                     />
                   </td>
                   <td className="px-3 py-2 text-right">
-                    <Button
-                      variante="ok"
-                      tamano="fila"
-                      disabled={invalido || edicion.stockMinimo === "" || edicion.stockMaximo === ""}
-                      onClick={() => guardar(f.articuloDepositoId)}
-                    >
-                      Guardar
-                    </Button>
+                    {dirty && (
+                      <Button
+                        variante="ok"
+                        tamano="fila"
+                        disabled={invalido || edicion.stockMinimo === "" || edicion.stockMaximo === ""}
+                        onClick={() => guardar(f.articuloDepositoId)}
+                      >
+                        Guardar
+                      </Button>
+                    )}
                   </td>
                 </tr>
               );

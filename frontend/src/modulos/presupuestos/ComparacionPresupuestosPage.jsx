@@ -102,7 +102,7 @@ export function ComparacionPresupuestosPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <Button variante="secundario" onClick={volver} className="mb-2 w-fit text-xs">
+        <Button variante="fantasma" onClick={volver} className="mb-2 w-fit text-xs">
           ← Volver
         </Button>
         <h1 className="font-heading text-[34px] font-semibold">Comparación de presupuestos</h1>

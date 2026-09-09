@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams, useNavigate, useSearchParams, Link } from "react-router-dom";
 import { ArrowLeft, Building2, Pencil } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
+import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
 import { SinPermiso } from "../../componentes/SinPermiso";
@@ -104,12 +105,12 @@ export function ProveedorDetallePage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <button
-          onClick={() => navigate("/proveedores")}
-          className="mb-2 inline-flex cursor-pointer items-center gap-1 text-sm font-semibold text-piedra hover:text-tinta"
-        >
+        {/* Auditoría de botones, P2.2: "Volver" es navegación de bajo
+            compromiso — mismo componente que el resto de las pantallas de
+            detalle, ya no un <button> aparte con su propio estilo. */}
+        <Button variante="fantasma" onClick={() => navigate("/proveedores")} className="mb-2 w-fit text-xs">
           <ArrowLeft size={15} /> Volver a proveedores
-        </button>
+        </Button>
         <h1 className="flex flex-wrap items-center gap-2.5 font-heading text-[34px] font-semibold">
           <Building2 size={24} className="text-pino" /> {proveedor.razonSocial}
           <Badge variante={proveedor.activo ? "ok" : "neutro"}>{proveedor.activo ? "Activo" : "Inactivo"}</Badge>

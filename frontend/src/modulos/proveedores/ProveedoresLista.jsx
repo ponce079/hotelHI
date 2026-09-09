@@ -180,7 +180,7 @@ export function ProveedoresLista() {
                       Editar
                     </Button>
                     <Button
-                      variante={p.activo ? "baja" : "alta"}
+                      variante={p.activo ? "destructivo" : "alta"}
                       tamano="fila"
                       onClick={() => setParaCambiarEstado(p)}
                     >
@@ -222,7 +222,7 @@ export function ProveedoresLista() {
             : `${paraCambiarEstado?.razonSocial} volverá a estar disponible para pedirle presupuestos y emitirle órdenes de compra.`
         }
         textoConfirmar={paraCambiarEstado?.activo ? "Sí, dar de baja" : "Sí, reactivar"}
-        variante={paraCambiarEstado?.activo ? "baja" : "alta"}
+        variante={paraCambiarEstado?.activo ? "destructivo" : "alta"}
         onCancelar={() => setParaCambiarEstado(null)}
         onConfirmar={() => mutacionEstado.mutate({ id: paraCambiarEstado.id, activo: !paraCambiarEstado.activo })}
       />

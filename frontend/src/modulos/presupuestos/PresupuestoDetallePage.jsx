@@ -49,7 +49,7 @@ export function PresupuestoDetallePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Button variante="secundario" onClick={volver} className="w-fit text-xs">
+      <Button variante="fantasma" onClick={volver} className="w-fit text-xs">
         ← Volver
       </Button>
 

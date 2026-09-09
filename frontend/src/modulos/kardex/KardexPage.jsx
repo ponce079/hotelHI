@@ -75,7 +75,7 @@ export function KardexPage() {
     <div className="flex flex-col gap-6">
       <div>
         <Button
-          variante="secundario"
+          variante="fantasma"
           onClick={() => navigate(depositoId ? `/depositos/${depositoId}` : "/depositos")}
           className="mb-2 text-xs"
         >

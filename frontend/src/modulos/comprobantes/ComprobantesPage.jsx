@@ -297,7 +297,7 @@ export function ComprobantesPage() {
               const acciones = [
                 { label: 'Ver detalle', onClick: () => navigate(`/comprobantes/${c.id}`) },
                 ...(!c.anulado && c.saldo > 0
-                  ? [{ label: 'Anular', onClick: () => setAnulando(c), variante: 'baja' }]
+                  ? [{ label: 'Anular', onClick: () => setAnulando(c), variante: 'destructivo' }]
                   : []),
               ];
               return (
@@ -371,7 +371,7 @@ export function ComprobantesPage() {
         titulo="¿Anular comprobante?"
         mensaje={`Está por anular el comprobante ${anulando?.numero} de ${anulando?.proveedor?.razonSocial}. Esta acción no se puede deshacer.`}
         textoConfirmar="Sí, anular"
-        variante="baja"
+        variante="destructivo"
         onCancelar={() => setAnulando(null)}
         onConfirmar={() => {
           const motivo = prompt('Motivo de anulación:');
