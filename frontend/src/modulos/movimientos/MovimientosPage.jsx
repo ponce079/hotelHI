@@ -6,11 +6,16 @@ import { MovimientoFormPage } from "./MovimientoFormPage";
 import { TipoMovimientoForm } from "../tipos-movimiento/TipoMovimientoForm";
 import { TiposMovimientoLista } from "../tipos-movimiento/TiposMovimientoLista";
 import { Button } from "../../componentes/Button";
+import { SinPermiso } from "../../componentes/SinPermiso";
 import { useSesion } from "../../lib/sesion";
 
 const TABS = [
   { valor: "registro", label: "Movimientos registrados" },
-  { valor: "tipos", label: "Tipos de movimiento" },
+  // Gestión del catálogo en sí (alta/edición de tipos): exclusiva de admin
+  // (gestionarTiposMovimiento) — depósito opera movimientos con los tipos
+  // ya existentes pero no los administra, aunque comparta el resto de esta
+  // pantalla vía "operar".
+  { valor: "tipos", label: "Tipos de movimiento", accion: "gestionarTiposMovimiento" },
 ];
 
 export function MovimientosPage() {
@@ -18,6 +23,7 @@ export function MovimientosPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const [tab, setTab] = useState("registro");
+  const tabsVisibles = TABS.filter((t) => !t.accion || puede(t.accion));
   // Llega precargado cuando se entra desde el acceso rápido de Inicio
   // (navigate("/movimientos", { state: { modoForm: "E" } })).
   const [modoForm, setModoForm] = useState(() => location.state?.modoForm ?? null); // "E" | "S" | "transfer" | null
@@ -28,6 +34,8 @@ export function MovimientosPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  if (!puede("operar")) return <SinPermiso />;
 
   if (modoForm) {
     return <MovimientoFormPage modo={modoForm} onVolver={() => setModoForm(null)} onExito={() => setModoForm(null)} />;
@@ -44,7 +52,7 @@ export function MovimientosPage() {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="inline-flex overflow-hidden rounded-full border border-borde">
-          {TABS.map((t) => (
+          {tabsVisibles.map((t) => (
             <button
               key={t.valor}
               type="button"
@@ -78,7 +86,7 @@ export function MovimientosPage() {
       </div>
 
       {tab === "registro" && <MovimientosLista />}
-      {tab === "tipos" && (
+      {tab === "tipos" && puede("gestionarTiposMovimiento") && (
         <div className="flex flex-col gap-6">
           <TipoMovimientoForm />
           <TiposMovimientoLista />

@@ -1,7 +1,12 @@
 import { TipoMovimientoForm } from "./TipoMovimientoForm";
 import { TiposMovimientoLista } from "./TiposMovimientoLista";
+import { SinPermiso } from "../../componentes/SinPermiso";
+import { useSesion } from "../../lib/sesion";
 
 export function TiposMovimientoPage() {
+  const { puede } = useSesion();
+  if (!puede("gestionarTiposMovimiento")) return <SinPermiso />;
+
   return (
     <div className="flex flex-col gap-6">
       <div>

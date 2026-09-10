@@ -75,6 +75,11 @@ export function SesionProvider({ children }) {
         if (accion === "abmDeposito") return rol === "admin";
         if (accion === "abmArticulo") return rol === "admin" || rol === "deposito";
         if (accion === "operar") return rol === "admin" || rol === "deposito";
+        // Tipos de Movimiento (HU-10/HU-11): catálogo maestro, exclusivo del
+        // administrador — a diferencia de "operar" (admin+depósito), acá
+        // depósito queda afuera aunque comparta pantalla con "operar" en
+        // /movimientos.
+        if (accion === "gestionarTiposMovimiento") return rol === "admin";
         if (accion === "param") return rol === "admin" || rol === "compras";
         // Recepciones (transferencias + OC, hub unificado): "operar" sigue
         // siendo quien puede CONFIRMAR (admin/depósito, sin cambios). Compras
@@ -119,6 +124,9 @@ export function SesionProvider({ children }) {
         // Confirmar o descartar una sugerencia de reposición automática del
         // central: mismo rol que gestiona el resto del ciclo de compra.
         if (accion === "gestionarSugerencias") return rol === "compras";
+        // Reporte de Consumo (HU-9): solo gerente, mismo criterio que
+        // aprobarPresupuesto/verCuentaCorriente por rol.
+        if (accion === "verReporte") return rol === "gerente";
         return false;
       },
     };

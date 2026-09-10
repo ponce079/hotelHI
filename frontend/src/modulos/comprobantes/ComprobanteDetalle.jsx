@@ -7,7 +7,9 @@ import { ArrowLeft, Ban, X } from 'lucide-react';
 import { Cifra } from '../../componentes/Cifra';
 import { Table } from '../../componentes/Table';
 import { Toast } from '../../componentes/Toast';
+import { SinPermiso } from '../../componentes/SinPermiso';
 import { useToast } from '../../lib/useToast';
+import { useSesion } from '../../lib/sesion';
 import { useVolver } from '../../lib/useVolver';
 import { formatearMonto } from '../../lib/moneda';
 import { obtenerComprobante, anularComprobante } from './comprobantes.api';
@@ -15,12 +17,14 @@ import { VARIANTE_ESTADO_COMPROBANTE } from './comprobantes.constantes';
 
 export function ComprobanteDetalle() {
   const { id } = useParams();
+  const { puede } = useSesion();
   const volver = useVolver('/comprobantes');
   const queryClient = useQueryClient();
   const { toast, mostrarToast } = useToast();
   const { data: comprobante, isLoading, isError } = useQuery({
     queryKey: ['comprobante', id],
-    queryFn: () => obtenerComprobante(id)
+    queryFn: () => obtenerComprobante(id),
+    enabled: puede('registrarComprobante'),
   });
 
   const [anulando, setAnulando] = useState(false);
@@ -46,6 +50,7 @@ export function ComprobanteDetalle() {
     mutacionAnular.mutate();
   }
 
+  if (!puede('registrarComprobante')) return <SinPermiso />;
   if (isLoading) return <p className="text-sm text-piedra">Cargando...</p>;
   if (isError || !comprobante) return <p className="text-sm text-error">No se pudo cargar el comprobante.</p>;
 

@@ -4,9 +4,11 @@ import { BarChart3, Download } from "lucide-react";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
 import { Toast } from "../../componentes/Toast";
+import { SinPermiso } from "../../componentes/SinPermiso";
 import { listarDepositos } from "../depositos/depositos.api";
 import { listarMovimientos } from "../movimientos/movimientos.api";
 import { useToast } from "../../lib/useToast";
+import { useSesion } from "../../lib/sesion";
 import { hoyEnHoraLocal, primerDiaDelMesISO } from "../../lib/fechas";
 
 function agruparConsumo(movimientos) {
@@ -26,16 +28,20 @@ function agruparConsumo(movimientos) {
 }
 
 export function ReportePage() {
+  const { puede } = useSesion();
   const { toast, mostrarToast } = useToast();
   const [depositoId, setDepositoId] = useState("");
   const [desde, setDesde] = useState(primerDiaDelMesISO());
   const [hasta, setHasta] = useState(hoyEnHoraLocal());
 
-  const { data: depositos } = useQuery({ queryKey: ["depositos"], queryFn: listarDepositos });
+  const { data: depositos } = useQuery({ queryKey: ["depositos"], queryFn: listarDepositos, enabled: puede("verReporte") });
   const { data: movimientos, isLoading } = useQuery({
     queryKey: ["movimientos", { tipo: "S", desde, hasta, depositoId: depositoId || undefined }],
     queryFn: () => listarMovimientos({ tipo: "S", desde, hasta, ...(depositoId ? { depositoId } : {}) }),
+    enabled: puede("verReporte"),
   });
+
+  if (!puede("verReporte")) return <SinPermiso />;
 
   const filas = agruparConsumo(movimientos);
   const total = filas.reduce((acc, f) => acc + f.cantidad, 0);

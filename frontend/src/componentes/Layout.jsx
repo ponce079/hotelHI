@@ -14,6 +14,7 @@ import {
   Building2,
   ClipboardList,
   FileText,
+  Tag,
 } from "lucide-react";
 import { useSesion } from "../lib/sesion";
 
@@ -26,33 +27,43 @@ import { useSesion } from "../lib/sesion";
 // Kardex se entra desde una fila del detalle de deposito, y "depositos"
 // ya cubre esa consulta fusionada con stock. Sus rutas siguen andando por
 // URL directa, solo se sacaron del sidebar.
+//
+// Agrupado en 4 secciones temáticas (además de Inicio, suelto). El header
+// de cada grupo solo se pinta si el rol logueado tiene al menos un item
+// visible ahí (ver el filtro de grupo!==anterior más abajo) — por eso un
+// mismo grupo puede mostrar roles heterogéneos sin dejar a nadie con un
+// título sin nada debajo: "Compras y Pagos" por ejemplo le muestra a
+// depósito solo "Órdenes de Compra", y a compras los 6 items completos.
 const ITEMS = [
   { to: "/", label: "Inicio", icon: Home, end: true },
-  { to: "/articulos", label: "Artículos", icon: Package, roles: ["admin", "deposito"] },
-  { to: "/depositos", label: "Depósitos y Stock", icon: Warehouse },
-  { to: "/movimientos", label: "Movimientos de Stock", icon: Truck, roles: ["admin", "deposito"] },
-  { to: "/recepciones", label: "Recepciones", icon: PackageCheck, roles: ["deposito"] },
-  { to: "/stock/minmax", label: "Stock mín. / máx.", icon: SlidersHorizontal, roles: ["compras"] },
-  { to: "/alertas", label: "Alertas de Stock", icon: TriangleAlert, roles: ["compras", "gerente"] },
-  { to: "/reporte", label: "Reporte de Consumo", icon: BarChart3, roles: ["gerente"] },
-  // Sprint 2 — Proveedores, Requerimientos y Presupuestos (HU-18 a 21,
-  // 81 a 84). Mismos roles que declara puede() en lib/sesion.jsx. Quedan
-  // sueltos (no agrupados) porque cada uno lo usa un set de roles distinto
-  // — depósito entra a Requerimientos pero no a Presupuestos, gerente al
-  // revés; agruparlos bajo una sola entrada dejaría a alguno de los dos
-  // sin poder llegar a su pantalla desde el menú.
-  { to: "/proveedores", label: "Proveedores", icon: Building2, roles: ["compras", "admin"] },
-  { to: "/requerimientos", label: "Requerimientos", icon: ClipboardList, roles: ["compras", "deposito"] },
-  { to: "/presupuestos", label: "Presupuestos", icon: FileText, roles: ["compras", "gerente"] },
-  // "Compras y Pagos" (HU-22 a 25, 76 a 80, 85, 86): OC → Comprobantes →
-  // Pagos es un solo flujo secuencial y las 3 pantallas comparten el rol
-  // "compras" (más gerente/depósito puntualmente en OC) — van agrupadas
-  // bajo un mismo encabezado en vez de 3 entradas sueltas al mismo nivel
-  // que el resto del menú. Cuenta Corriente ya no es una entrada propia:
-  // es una pestaña dentro de Pagos a Proveedores (mismo rol exacto).
+
+  // Stock y Depósitos: catálogo y operación diaria de stock.
+  { to: "/articulos", label: "Artículos", icon: Package, roles: ["admin", "deposito"], grupo: "Stock y Depósitos" },
+  { to: "/depositos", label: "Depósitos y Stock", icon: Warehouse, grupo: "Stock y Depósitos" },
+  { to: "/stock/minmax", label: "Stock mín. / máx.", icon: SlidersHorizontal, roles: ["compras"], grupo: "Stock y Depósitos" },
+  { to: "/alertas", label: "Alertas de Stock", icon: TriangleAlert, roles: ["compras", "gerente"], grupo: "Stock y Depósitos" },
+  { to: "/movimientos", label: "Movimientos de Stock", icon: Truck, roles: ["admin", "deposito"], grupo: "Stock y Depósitos" },
+  { to: "/recepciones", label: "Recepciones", icon: PackageCheck, roles: ["deposito"], grupo: "Stock y Depósitos" },
+
+  // Compras y Pagos (HU-18 a 25, 76 a 86): todo el ciclo de compra, de
+  // Proveedores/Requerimientos/Presupuestos a OC → Comprobantes → Pagos.
+  // Cuenta Corriente no es una entrada propia: es una pestaña dentro de
+  // Pagos a Proveedores (mismo rol exacto).
+  { to: "/proveedores", label: "Proveedores", icon: Building2, roles: ["compras", "admin"], grupo: "Compras y Pagos" },
+  { to: "/requerimientos", label: "Requerimientos", icon: ClipboardList, roles: ["compras", "deposito"], grupo: "Compras y Pagos" },
+  { to: "/presupuestos", label: "Presupuestos", icon: FileText, roles: ["compras", "gerente"], grupo: "Compras y Pagos" },
   { to: "/ordenes-compra", label: "Órdenes de Compra", icon: ShoppingCart, roles: ["compras", "gerente", "deposito"], grupo: "Compras y Pagos" },
   { to: "/comprobantes", label: "Comprobantes", icon: FileText, roles: ["compras"], grupo: "Compras y Pagos" },
   { to: "/pagos", label: "Pagos a Proveedores", icon: Wallet, roles: ["compras"], grupo: "Compras y Pagos" },
+
+  // Reportes: un solo item por ahora (HU-9), con lugar para crecer cuando
+  // el Sprint de Reporting y Dashboard sume más pantallas acá.
+  { to: "/reporte", label: "Reporte de Consumo", icon: BarChart3, roles: ["gerente"], grupo: "Reportes" },
+
+  // Administración: catálogos maestros de configuración, exclusivos de
+  // admin (HU-10/HU-11) — a diferencia de "Stock y Depósitos", que es
+  // operación diaria compartida con depósito.
+  { to: "/tipos-movimiento", label: "Tipos de Movimiento", icon: Tag, roles: ["admin"], grupo: "Administración" },
 ];
 
 export function Layout() {
