@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Modal } from "../../componentes/Modal";
 import { Select } from "../../componentes/Select";
+import { Input } from "../../componentes/Input";
 import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
@@ -40,6 +41,7 @@ export function PresupuestoCargaModal({ presupuestoId, onClose, onExito }) {
   const [plazoEntregaDias, setPlazoEntregaDias] = useState("");
   const [plazoEntregaUnidad, setPlazoEntregaUnidad] = useState("HABILES");
   const [costoFlete, setCostoFlete] = useState("");
+  const [fechaLimiteVigencia, setFechaLimiteVigencia] = useState("");
   const [error, setError] = useState("");
   // Punto 5 del rediseño: la validación de "precio > 0" ya existía (ver
   // handleSubmit), pero solo se veía como un mensaje genérico arriba — no
@@ -85,6 +87,7 @@ export function PresupuestoCargaModal({ presupuestoId, onClose, onExito }) {
             ? `${Number(plazoEntregaDias)} ${UNIDADES_PLAZO_ENTREGA[plazoEntregaUnidad]}`
             : null,
         costoFlete: requiereFlete ? Number(costoFlete || 0) : null,
+        fechaLimiteVigencia: fechaLimiteVigencia || null,
       }),
     onSuccess: (guardado) => {
       queryClient.invalidateQueries({ queryKey: ["presupuesto", idKey] });
@@ -207,7 +210,7 @@ export function PresupuestoCargaModal({ presupuestoId, onClose, onExito }) {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
               <div className="flex flex-col gap-1.5 font-body text-sm">
                 <span className="text-[12px] text-tinta/70">Plazo de entrega</span>
                 <div className="flex gap-2">
@@ -241,6 +244,14 @@ export function PresupuestoCargaModal({ presupuestoId, onClose, onExito }) {
                   <p className="mt-1.5 text-[12.5px] text-piedra">Este requerimiento no pidió flete.</p>
                 </div>
               )}
+
+              <Input
+                type="date"
+                label="Oferta válida hasta"
+                min={new Date().toISOString().slice(0, 10)}
+                value={fechaLimiteVigencia}
+                onChange={(e) => setFechaLimiteVigencia(e.target.value)}
+              />
 
               <div className="rounded-lg border border-pino bg-pino-100 p-3">
                 <div className="text-[10px] uppercase tracking-wide text-pino-700">Total</div>
@@ -309,8 +320,8 @@ export function PresupuestoCargaModal({ presupuestoId, onClose, onExito }) {
 
           <div className="flex justify-end gap-2.5 border-t border-borde px-6 py-4">
             <Button type="button" variante="secundario" onClick={onClose} icono={X}>Cancelar</Button>
-            <Button type="submit" disabled={mutacion.isPending} icono={Save}>
-              {mutacion.isPending ? "Guardando…" : "Guardar presupuesto"}
+            <Button type="submit" cargando={mutacion.isPending} icono={Save}>
+              Guardar presupuesto
             </Button>
           </div>
         </form>

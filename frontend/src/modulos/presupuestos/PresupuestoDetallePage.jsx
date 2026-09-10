@@ -10,7 +10,8 @@ import { SinPermiso } from "../../componentes/SinPermiso";
 import { obtenerPresupuesto } from "./presupuestos.api";
 import { ESTADOS_PRESUPUESTO, VARIANTE_ESTADO_PRESUPUESTO } from "../../lib/constantes";
 import { formatearMonto } from "../../lib/moneda";
-import { formatearTimestamp } from "../../lib/fechas";
+import { formatearTimestamp, formatearFechaSinHora, estadoVencimiento } from "../../lib/fechas";
+import { UMBRAL_VENCIMIENTO_DIAS, VARIANTE_VENCIMIENTO, LABEL_VENCIMIENTO } from "../comprobantes/comprobantes.constantes";
 import { useSesion } from "../../lib/sesion";
 import { useVolver } from "../../lib/useVolver";
 
@@ -81,6 +82,24 @@ export function PresupuestoDetallePage() {
         <Dato etiqueta="CUIT" valor={p.proveedor?.cuit} />
         <Dato etiqueta="Condición comercial" valor={p.proveedor?.condicionComercial} />
         <Dato etiqueta="Plazo de entrega" valor={p.plazoEntrega} />
+        <Dato
+          etiqueta="Oferta válida hasta"
+          valor={
+            p.fechaLimiteVigencia ? (
+              <span className="inline-flex items-center gap-1.5">
+                {formatearFechaSinHora(p.fechaLimiteVigencia)}
+                {(() => {
+                  const vencimiento = estadoVencimiento(p.fechaLimiteVigencia, UMBRAL_VENCIMIENTO_DIAS);
+                  return (
+                    vencimiento && (
+                      <Badge variante={VARIANTE_VENCIMIENTO[vencimiento]}>{LABEL_VENCIMIENTO[vencimiento]}</Badge>
+                    )
+                  );
+                })()}
+              </span>
+            ) : null
+          }
+        />
         <Dato etiqueta="Requerimiento" valor={`REQ-${String(p.requerimientoId).padStart(4, "0")}`} />
       </div>
 
