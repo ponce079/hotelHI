@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ShoppingCart, Lock, TriangleAlert, PackageCheck, Clock, Send, Printer, CheckCheck } from "lucide-react";
+import { ShoppingCart, Lock, TriangleAlert, PackageCheck, Clock, Send, Printer, CheckCheck, ArrowLeft, X, Ban } from "lucide-react";
 import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
@@ -149,8 +149,8 @@ export function OrdenCompraDetallePage() {
 
   return (
     <div className="flex flex-col gap-8">
-      <Button variante="fantasma" onClick={volver} className="w-fit text-xs print:hidden">
-        ← Volver
+      <Button variante="fantasma" onClick={volver} className="w-fit text-xs print:hidden" icono={ArrowLeft}>
+        Volver
       </Button>
 
       {isLoading ? (
@@ -218,8 +218,8 @@ export function OrdenCompraDetallePage() {
                     </Pildora>
                   )
                 )}
-                <Button variante="secundario" onClick={() => window.print()}>
-                  <Printer size={15} /> Imprimir OC
+                <Button variante="secundario" onClick={() => window.print()} icono={Printer}>
+                  Imprimir OC
                 </Button>
               </div>
             </div>
@@ -382,10 +382,11 @@ export function OrdenCompraDetallePage() {
                         setMotivo("");
                         setErrorMotivo("");
                       }}
+                      icono={X}
                     >
                       Cancelar
                     </Button>
-                    <Button variante="destructivo" disabled={mutacionAnular.isPending} onClick={confirmarAnular}>
+                    <Button variante="destructivo" disabled={mutacionAnular.isPending} onClick={confirmarAnular} icono={Ban}>
                       {mutacionAnular.isPending ? "Anulando…" : "Confirmar anulación"}
                     </Button>
                   </div>
@@ -397,8 +398,8 @@ export function OrdenCompraDetallePage() {
                 <div className="flex flex-wrap items-center justify-between gap-2.5">
                   <div className="flex flex-wrap gap-2.5">
                     {puedeRecibir && (
-                      <Button variante="ok" onClick={() => navigate(`/ordenes-compra/${oc.id}/recepcion`)}>
-                        <PackageCheck size={16} /> Registrar recepción de mercadería
+                      <Button variante="ok" onClick={() => navigate(`/ordenes-compra/${oc.id}/recepcion`)} icono={PackageCheck}>
+                        Registrar recepción de mercadería
                       </Button>
                     )}
                     {puedeEnviar && (
@@ -408,7 +409,7 @@ export function OrdenCompraDetallePage() {
                     )}
                   </div>
                   {puedeAnular && (
-                    <Button variante="destructivo" onClick={() => setAnulando(true)}>
+                    <Button variante="destructivo" onClick={() => setAnulando(true)} icono={Ban}>
                       Anular Orden de Compra
                     </Button>
                   )}

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { Trash2, ArrowLeft, Plus, X, Check } from "lucide-react";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
@@ -154,8 +154,8 @@ export function MovimientoFormPage({ modo, onVolver, onExito }) {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <Button variante="fantasma" onClick={onVolver} className="mb-2 text-xs">
-          ← Volver
+        <Button variante="fantasma" onClick={onVolver} className="mb-2 text-xs" icono={ArrowLeft}>
+          Volver
         </Button>
         <h1 className="font-heading text-[34px] font-semibold">{TITULOS[modo]}</h1>
         <p className="mt-1.5 font-mono text-[11px] text-tinta/55">HU 10 a 16 — tipos de movimiento, entradas, salidas y transferencias</p>
@@ -327,8 +327,8 @@ export function MovimientoFormPage({ modo, onVolver, onExito }) {
           <div className="flex flex-col gap-2 rounded-[18.4px] bg-white px-6 pb-1.5 pt-[18px]">
             <div className="mb-1.5 flex items-center justify-between">
               <h4 className="m-0 font-heading text-base font-semibold">Detalle del movimiento</h4>
-              <Button variante="secundario" tamano="fila" onClick={agregarItem}>
-                + Agregar artículo
+              <Button variante="secundario" tamano="fila" onClick={agregarItem} icono={Plus}>
+                Agregar artículo
               </Button>
             </div>
             <div className="overflow-x-auto">
@@ -431,10 +431,10 @@ export function MovimientoFormPage({ modo, onVolver, onExito }) {
           )}
 
           <div className="flex justify-end gap-2.5">
-            <Button variante="secundario" onClick={onVolver}>
+            <Button variante="secundario" onClick={onVolver} icono={X}>
               Cancelar
             </Button>
-            <Button variante={VARIANTE_GUARDAR[modo]} disabled={mutacion.isPending} onClick={handleGuardar}>
+            <Button variante={VARIANTE_GUARDAR[modo]} disabled={mutacion.isPending} onClick={handleGuardar} icono={Check}>
               {mutacion.isPending ? "Guardando…" : LABEL_GUARDAR[modo]}
             </Button>
           </div>

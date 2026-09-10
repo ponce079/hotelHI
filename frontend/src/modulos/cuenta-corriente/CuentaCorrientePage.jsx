@@ -110,8 +110,9 @@ export function CuentaCorrientePage() {
         <Button
           variante="secundario"
           onClick={() => mostrarToast("Cuenta corriente exportada (simulado).")}
+          icono={Download}
         >
-          <Download size={16} /> Exportar
+          Exportar
         </Button>
       </div>
 

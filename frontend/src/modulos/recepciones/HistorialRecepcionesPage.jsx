@@ -1,6 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { PackageCheck, Truck, History } from "lucide-react";
+import { PackageCheck, Truck, History, ArrowLeft } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { SinPermiso } from "../../componentes/SinPermiso";
@@ -48,8 +48,8 @@ export function HistorialRecepcionesPage() {
 
   return (
     <div className="flex flex-col gap-[22px]">
-      <Button variante="fantasma" onClick={volver} className="w-fit text-xs">
-        ← Volver a Recepciones
+      <Button variante="fantasma" onClick={volver} className="w-fit text-xs" icono={ArrowLeft}>
+        Volver a Recepciones
       </Button>
 
       <div>

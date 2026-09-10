@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { ShoppingCart, Search, ChevronRight, TriangleAlert, FileClock } from "lucide-react";
+import { ShoppingCart, Search, ChevronRight, TriangleAlert, FileClock, Plus } from "lucide-react";
 import { Select } from "../../componentes/Select";
 import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
@@ -218,6 +218,7 @@ export function OrdenesCompraPage() {
                   <Button
                     disabled={mutacionGenerar.isPending && mutacionGenerar.variables === p.id}
                     onClick={() => mutacionGenerar.mutate(p.id)}
+                    icono={Plus}
                   >
                     {mutacionGenerar.isPending && mutacionGenerar.variables === p.id
                       ? "Generando…"

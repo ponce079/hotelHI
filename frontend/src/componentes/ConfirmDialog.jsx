@@ -10,6 +10,9 @@ export function ConfirmDialog({
   mensaje,
   textoConfirmar = "Confirmar",
   variante = "destructivo",
+  // Icono opcional (componente de lucide-react) para el botón de
+  // confirmar — mismo mecanismo que Button, ver mapeo de íconos.
+  icono,
   onConfirmar,
   onCancelar,
   children,
@@ -27,7 +30,7 @@ export function ConfirmDialog({
         {children && <div className="mt-3">{children}</div>}
         <div className="mt-5 flex justify-end gap-2.5">
           <Button variante="secundario" onClick={onCancelar}>Cancelar</Button>
-          <Button variante={variante} onClick={onConfirmar}>{textoConfirmar}</Button>
+          <Button variante={variante} icono={icono} onClick={onConfirmar}>{textoConfirmar}</Button>
         </div>
       </div>
     </div>

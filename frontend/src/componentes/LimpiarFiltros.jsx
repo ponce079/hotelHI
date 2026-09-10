@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { FilterX } from "lucide-react";
 import { Button } from "./Button";
 
 // Mismo botón en todas las pantallas con filtros (Proveedores,
@@ -8,8 +8,8 @@ import { Button } from "./Button";
 // fantasma; esta es la única ahora.
 export function LimpiarFiltros({ onClick }) {
   return (
-    <Button type="button" variante="fantasma" tamano="fila" onClick={onClick} className="hover:text-error">
-      <X size={14} /> Limpiar filtros
+    <Button type="button" variante="fantasma" tamano="fila" onClick={onClick} className="hover:text-error" icono={FilterX}>
+      Limpiar filtros
     </Button>
   );
 }

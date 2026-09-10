@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { PackageCheck } from "lucide-react";
+import { PackageCheck, ArrowLeft, Check } from "lucide-react";
 import { Button } from "../../componentes/Button";
 import { Badge } from "../../componentes/Badge";
 import { Cifra } from "../../componentes/Cifra";
@@ -84,8 +84,8 @@ export function RecepcionOCPage() {
   if (oc.estado !== "Enviada") {
     return (
       <div className="flex flex-col gap-4">
-        <Button variante="fantasma" onClick={() => navigate(`/ordenes-compra/${ocId}`)} className="w-fit text-xs">
-          ← Volver a la orden
+        <Button variante="fantasma" onClick={() => navigate(`/ordenes-compra/${ocId}`)} className="w-fit text-xs" icono={ArrowLeft}>
+          Volver a la orden
         </Button>
         <div className="rounded-[18.4px] bg-white px-6 py-8 text-center text-sm text-piedra">
           Esta orden está en estado <strong>{oc.estado}</strong> — solo se puede registrar recepción de una orden{" "}
@@ -97,8 +97,8 @@ export function RecepcionOCPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Button variante="fantasma" onClick={() => navigate(`/ordenes-compra/${ocId}`)} className="w-fit text-xs">
-        ← Volver a la orden
+      <Button variante="fantasma" onClick={() => navigate(`/ordenes-compra/${ocId}`)} className="w-fit text-xs" icono={ArrowLeft}>
+        Volver a la orden
       </Button>
 
       <div>
@@ -172,7 +172,7 @@ export function RecepcionOCPage() {
       )}
 
       <div className="flex justify-end">
-        <Button variante="ok" disabled={hayInvalida} onClick={() => setConfirmando(true)}>
+        <Button variante="ok" disabled={hayInvalida} onClick={() => setConfirmando(true)} icono={Check}>
           Confirmar recepción
         </Button>
       </div>
@@ -187,6 +187,7 @@ export function RecepcionOCPage() {
         }
         textoConfirmar={mutacion.isPending ? "Confirmando…" : "Confirmar recepción"}
         variante="ok"
+        icono={Check}
         onCancelar={() => setConfirmando(false)}
         onConfirmar={confirmar}
       />

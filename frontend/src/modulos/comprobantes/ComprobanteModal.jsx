@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { X, Save } from 'lucide-react';
 import { Modal } from '../../componentes/Modal';
 import { Input } from '../../componentes/Input';
 import { Select } from '../../componentes/Select';
@@ -406,10 +407,10 @@ export function ComprobanteModal({ onClose, onExito }) {
         </div>
 
         <div className="flex justify-end gap-2.5 border-t border-borde px-6 py-4">
-          <Button type="button" variante="secundario" onClick={onClose}>
+          <Button type="button" variante="secundario" icono={X} onClick={onClose}>
             Cancelar
           </Button>
-          <Button type="submit" disabled={mutacion.isPending}>
+          <Button type="submit" icono={Save} disabled={mutacion.isPending}>
             {mutacion.isPending ? 'Guardando...' : 'Guardar comprobante'}
           </Button>
         </div>

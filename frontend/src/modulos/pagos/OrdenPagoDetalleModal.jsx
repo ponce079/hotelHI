@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Banknote, ChevronRight, CreditCard, Landmark } from "lucide-react";
+import { Banknote, ChevronRight, CreditCard, Landmark, Check, Ban, X } from "lucide-react";
 import { Modal } from "../../componentes/Modal";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
@@ -178,6 +178,7 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
                           variante="ok"
                           className="flex-1 justify-center"
                           onClick={() => setMedioAccion({ id: m.id, modo: "cobrar" })}
+                          icono={Check}
                         >
                           Marcar Cobrado
                         </Button>
@@ -186,6 +187,7 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
                           variante="destructivo"
                           className="flex-1 justify-center"
                           onClick={() => setMedioAccion({ id: m.id, modo: "rechazar" })}
+                          icono={Ban}
                         >
                           Marcar Rechazado
                         </Button>
@@ -204,7 +206,7 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
                           />
                         </label>
                         <div className="ml-auto flex gap-2">
-                          <Button tamano="fila" variante="secundario" onClick={() => setMedioAccion(null)}>
+                          <Button tamano="fila" variante="secundario" onClick={() => setMedioAccion(null)} icono={X}>
                             Cancelar
                           </Button>
                           <Button
@@ -212,6 +214,7 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
                             variante="ok"
                             disabled={mutacionCheque.isPending || !fechaCobro}
                             onClick={() => mutacionCheque.mutate({ medioId: m.id, estado: "Cobrado", fechaCobro })}
+                            icono={Check}
                           >
                             {mutacionCheque.isPending ? "Guardando…" : "Confirmar cobro"}
                           </Button>
@@ -234,10 +237,11 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
                               variante="destructivo"
                               disabled={mutacionCheque.isPending}
                               onClick={() => mutacionCheque.mutate({ medioId: m.id, estado: "Rechazado" })}
+                              icono={Ban}
                             >
                               {mutacionCheque.isPending ? "Guardando…" : "Confirmar rechazo"}
                             </Button>
-                            <Button tamano="fila" variante="secundario" onClick={() => setMedioAccion(null)}>
+                            <Button tamano="fila" variante="secundario" onClick={() => setMedioAccion(null)} icono={X}>
                               Cancelar
                             </Button>
                           </div>
@@ -274,6 +278,7 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
                 disabled={mutacionAnular.isPending}
                 onClick={intentarAnular}
                 className="w-full justify-center"
+                icono={Ban}
               >
                 {mutacionAnular.isPending ? "Anulando…" : "Anular orden de pago"}
               </Button>
@@ -293,6 +298,7 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
         mensaje="Esta orden incluye un pago con cheque. Al anularla, el cheque queda libre para reusarse."
         textoConfirmar="Sí, anular"
         variante="destructivo"
+        icono={Ban}
         onCancelar={() => setPidiendoConfirmacionCheque(false)}
         onConfirmar={() => mutacionAnular.mutate(true)}
       />

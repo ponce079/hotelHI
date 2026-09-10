@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Modal } from "../../componentes/Modal";
 import { Button } from "../../componentes/Button";
+import { X, Ban } from "lucide-react";
 import { anularRequerimiento } from "./requerimientos.api";
 
 // Baja lógica con motivo obligatorio — mismo criterio que anular una OC
@@ -59,8 +60,8 @@ export function AnularRequerimientoModal({ requerimiento, onClose, onExito }) {
         </div>
 
         <div className="flex justify-end gap-2.5 border-t border-borde px-6 py-4">
-          <Button type="button" variante="secundario" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" variante="destructivo" disabled={mutacion.isPending}>
+          <Button type="button" variante="secundario" onClick={onClose} icono={X}>Cancelar</Button>
+          <Button type="submit" variante="destructivo" disabled={mutacion.isPending} icono={Ban}>
             {mutacion.isPending ? "Anulando…" : "Anular requerimiento"}
           </Button>
         </div>

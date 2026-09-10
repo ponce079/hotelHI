@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { BarChart3 } from "lucide-react";
+import { BarChart3, Download } from "lucide-react";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
 import { Toast } from "../../componentes/Toast";
@@ -84,10 +84,10 @@ export function ReportePage() {
           />
         </label>
         <div className="ml-auto flex gap-2 pb-0.5">
-          <Button variante="secundario" onClick={() => mostrarToast("Reporte exportado a Excel (simulado).")}>
+          <Button variante="secundario" onClick={() => mostrarToast("Reporte exportado a Excel (simulado).")} icono={Download}>
             Exportar Excel
           </Button>
-          <Button variante="secundario" onClick={() => mostrarToast("Reporte exportado a PDF (simulado).")}>
+          <Button variante="secundario" onClick={() => mostrarToast("Reporte exportado a PDF (simulado).")} icono={Download}>
             Exportar PDF
           </Button>
         </div>

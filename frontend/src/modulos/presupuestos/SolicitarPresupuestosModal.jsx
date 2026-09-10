@@ -1,6 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Lock, Info, Send, ArrowRight } from "lucide-react";
+import { Lock, Info, Send, ArrowRight, X } from "lucide-react";
 import { Modal } from "../../componentes/Modal";
 import { Button } from "../../componentes/Button";
 import { obtenerRequerimiento, solicitarPresupuestos } from "../requerimientos/requerimientos.api";
@@ -158,7 +158,7 @@ export function SolicitarPresupuestosModal({ requerimientoId, onClose, onExito }
             está en "{ESTADOS_REQUERIMIENTO.PENDIENTE}" o "{ESTADOS_REQUERIMIENTO.EN_COTIZACION}".
           </p>
           <div className="mt-5 flex justify-end">
-            <Button variante="secundario" onClick={onClose}>Cerrar</Button>
+            <Button variante="secundario" onClick={onClose} icono={X}>Cerrar</Button>
           </div>
         </div>
       ) : (
@@ -290,15 +290,15 @@ export function SolicitarPresupuestosModal({ requerimientoId, onClose, onExito }
                 confiaba solo en la X del modal, sin motivo de negocio
                 para que este fuera la excepción. */}
             <div className="flex gap-2.5">
-              <Button type="button" variante="secundario" onClick={onClose}>
+              <Button type="button" variante="secundario" onClick={onClose} icono={X}>
                 Cancelar
               </Button>
               <Button
                 type="submit"
                 className="flex-1 justify-center gap-2 py-3 text-[14px]"
                 disabled={mutacion.isPending}
+                icono={Send}
               >
-                <Send size={16} />
                 {mutacion.isPending
                   ? "Enviando…"
                   : `Enviar solicitud a ${seleccionados.length} proveedor${seleccionados.length === 1 ? "" : "es"}`}

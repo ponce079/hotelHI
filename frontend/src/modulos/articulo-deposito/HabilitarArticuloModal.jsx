@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { X, Search } from "lucide-react";
+import { X, Search, Save } from "lucide-react";
 import { Button } from "../../componentes/Button";
 import { habilitarArticuloEnDeposito, listarHabilitaciones } from "./articuloDeposito.api";
 import { listarArticulos } from "../articulos/articulos.api";
@@ -153,10 +153,10 @@ export function HabilitarArticuloModal({ depositoId, depositoNombre, onClose, on
               {articuloIds.length} seleccionado{articuloIds.length === 1 ? "" : "s"}
             </span>
             <div className="flex gap-2.5">
-              <Button type="button" variante="secundario" onClick={onClose}>
+              <Button type="button" variante="secundario" icono={X} onClick={onClose}>
                 Cancelar
               </Button>
-              <Button type="submit" disabled={mutacion.isPending}>
+              <Button type="submit" icono={Save} disabled={mutacion.isPending}>
                 {mutacion.isPending ? "Guardando…" : "Guardar"}
               </Button>
             </div>

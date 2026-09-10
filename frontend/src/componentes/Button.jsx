@@ -44,11 +44,22 @@ const TAMANOS = {
   fila: "px-[13px] py-[5px] text-[12.5px]",
 };
 
-export function Button({ variante = "ok", tamano = "normal", className = "", ...props }) {
+// `icono` es opcional (default undefined, no cambia ningun uso existente):
+// un componente de icono de lucide-react (ej. `Save`, no `<Save />`), se
+// renderiza a 16px a la izquierda del texto. Sin color propio — hereda
+// currentColor de la variante, como ya hacen los iconos que algunos
+// botones traian sueltos como children. Las flechas de navegacion
+// (Siguiente →, Volver ←) NO usan esta prop: "→" sigue siendo un child
+// final a mano (convencion ya establecida, ver auditoria de botones) y
+// "←" (Volver) va como `icono` porque ahi si cae al principio.
+export function Button({ variante = "ok", tamano = "normal", icono: Icono, className = "", children, ...props }) {
   return (
     <button
       className={`inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-md border font-heading font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${TAMANOS[tamano]} ${VARIANTES[variante]} ${className}`}
       {...props}
-    />
+    >
+      {Icono && <Icono size={16} className="flex-none" />}
+      {children}
+    </button>
   );
 }

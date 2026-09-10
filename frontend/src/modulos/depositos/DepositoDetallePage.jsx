@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useParams, useSearchParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Search } from "lucide-react";
+import { Search, ArrowLeft, Plus, Trash2 } from "lucide-react";
 import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
@@ -109,8 +109,8 @@ export function DepositoDetallePage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <Button variante="fantasma" onClick={() => navigate("/depositos")} className="mb-2 text-xs">
-          ← Depósitos
+        <Button variante="fantasma" onClick={() => navigate("/depositos")} className="mb-2 text-xs" icono={ArrowLeft}>
+          Depósitos
         </Button>
         <h1 className="font-heading text-[34px] font-semibold">{deposito.nombre}</h1>
         <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
@@ -180,7 +180,7 @@ export function DepositoDetallePage() {
           Sólo críticos
         </button>
         <div className="ml-auto flex gap-2">
-          {puede("operar") && <Button variante="alta" onClick={() => setHabilitarAbierto(true)}>+ Habilitar artículo</Button>}
+          {puede("operar") && <Button variante="alta" onClick={() => setHabilitarAbierto(true)} icono={Plus}>Habilitar artículo</Button>}
           {puede("param") && (
             <Button variante="secundario" onClick={() => navigate(`/stock/minmax?depositoId=${depositoId}`)}>
               Parámetros mín. / máx.
@@ -259,6 +259,7 @@ export function DepositoDetallePage() {
         }
         textoConfirmar="Sí, deshabilitar"
         variante="destructivo"
+        icono={Trash2}
         onCancelar={() => setParaCambiarEstado(null)}
         onConfirmar={() => mutacionEstado.mutate({ articuloDepositoId: paraCambiarEstado.articuloDepositoId, activo: false })}
       />

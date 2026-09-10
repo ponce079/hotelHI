@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Badge } from '../../componentes/Badge';
 import { Button } from '../../componentes/Button';
+import { ArrowLeft, Ban, X } from 'lucide-react';
 import { Cifra } from '../../componentes/Cifra';
 import { Table } from '../../componentes/Table';
 import { Toast } from '../../componentes/Toast';
@@ -50,8 +51,8 @@ export function ComprobanteDetalle() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Button variante="fantasma" onClick={volver} className="mb-2 text-xs">
-        ← Volver
+      <Button variante="fantasma" onClick={volver} className="mb-2 text-xs" icono={ArrowLeft}>
+        Volver
       </Button>
 
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -63,7 +64,7 @@ export function ComprobanteDetalle() {
         </div>
         <div className="flex gap-2">
           {!comprobante.anulado && !anulando && (
-            <Button variante="destructivo" onClick={() => setAnulando(true)}>
+            <Button variante="destructivo" onClick={() => setAnulando(true)} icono={Ban}>
               Anular
             </Button>
           )}
@@ -94,10 +95,11 @@ export function ComprobanteDetalle() {
                 setMotivo('');
                 setErrorMotivo('');
               }}
+              icono={X}
             >
               Cancelar
             </Button>
-            <Button variante="destructivo" disabled={mutacionAnular.isPending} onClick={confirmarAnular}>
+            <Button variante="destructivo" disabled={mutacionAnular.isPending} onClick={confirmarAnular} icono={Ban}>
               {mutacionAnular.isPending ? 'Anulando…' : 'Confirmar anulación'}
             </Button>
           </div>

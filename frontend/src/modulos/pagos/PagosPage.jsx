@@ -96,8 +96,8 @@ export function PagosPage() {
           <h1 className="font-heading text-[34px] font-semibold">Pagos a Proveedores</h1>
           <p className="mt-1.5 font-mono text-[11px] text-tinta/55">HU 76 a 79, 86 — órdenes de pago y su desglose por medio</p>
         </div>
-        <Button variante="ok" onClick={() => setMostrarWizard(true)}>
-          <Plus size={16} /> Generar orden de pago
+        <Button variante="ok" onClick={() => setMostrarWizard(true)} icono={Plus}>
+          Generar orden de pago
         </Button>
       </div>
 

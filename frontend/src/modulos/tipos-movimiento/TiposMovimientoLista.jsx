@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowRightLeft } from "lucide-react";
+import { ArrowRightLeft, Trash2 } from "lucide-react";
 import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
@@ -61,7 +61,7 @@ export function TiposMovimientoLista() {
               {t.contexto === "TRANSFERENCIA" ? (
                 <span className="text-xs text-piedra">No se puede deshabilitar</span>
               ) : (
-                <Button variante="destructivo" tamano="fila" onClick={() => setParaDeshabilitar(t)}>
+                <Button variante="destructivo" tamano="fila" onClick={() => setParaDeshabilitar(t)} icono={Trash2}>
                   Deshabilitar
                 </Button>
               )}
@@ -76,6 +76,7 @@ export function TiposMovimientoLista() {
         mensaje={`"${paraDeshabilitar?.descripcion}" desaparecerá de esta lista y de los movimientos de Entrada/Salida. No se borra: conserva su historial y podés reactivarlo desde la base si hace falta.`}
         textoConfirmar="Sí, deshabilitar"
         variante="destructivo"
+        icono={Trash2}
         onCancelar={() => setParaDeshabilitar(null)}
         onConfirmar={() => mutacion.mutate(paraDeshabilitar.id)}
       />

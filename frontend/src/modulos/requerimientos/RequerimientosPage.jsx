@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Search, ClipboardList, Flame, Bot, AlertTriangle, Clock, CheckCircle2, ShoppingCart } from "lucide-react";
+import { Search, ClipboardList, Flame, Bot, AlertTriangle, Clock, CheckCircle2, ShoppingCart, Plus, Eye, Check, FileText } from "lucide-react";
 import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
@@ -220,11 +220,12 @@ export function RequerimientosPage() {
   // acción propia — reemplaza a los tres bloques de botones sueltos que
   // había antes (uno por cada acción condicional).
   function accionPrincipal(r) {
-    const ver = { label: "Ver", variante: "secundario", onClick: () => navigate(`/requerimientos/${r.id}`) };
+    const ver = { label: "Ver", variante: "secundario", icono: Eye, onClick: () => navigate(`/requerimientos/${r.id}`) };
     if (r.anulado) return ver;
     if (r.estado === ESTADOS_REQUERIMIENTO.SUGERIDA && puede("gestionarSugerencias")) {
       return {
         label: "Confirmar",
+        icono: Check,
         disabled: mutacionConfirmarSugerencia.isPending,
         onClick: () => mutacionConfirmarSugerencia.mutate(r.id),
       };
@@ -234,7 +235,7 @@ export function RequerimientosPage() {
       r.tipo === TIPOS_REQUERIMIENTO.COMPRA &&
       puede("gestionarPresupuestos")
     ) {
-      return { label: "Solicitar presupuesto", onClick: () => navigate(`/presupuestos?solicitarRequerimientoId=${r.id}`) };
+      return { label: "Solicitar presupuesto", icono: FileText, onClick: () => navigate(`/presupuestos?solicitarRequerimientoId=${r.id}`) };
     }
     return ver;
   }
@@ -341,7 +342,7 @@ export function RequerimientosPage() {
             {hayFiltros && <LimpiarFiltros onClick={limpiarFiltros} />}
 
             {puede("crearRequerimiento") && (
-              <Button onClick={() => setModal({ prefill: null })}>+ Nuevo requerimiento</Button>
+              <Button onClick={() => setModal({ prefill: null })} icono={Plus}>Nuevo requerimiento</Button>
             )}
           </div>
 
@@ -441,7 +442,7 @@ export function RequerimientosPage() {
                       </td>
                       <td className="px-3 py-2.5 text-right align-middle">
                         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button variante={principal.variante} tamano="fila" disabled={principal.disabled} onClick={principal.onClick}>
+                          <Button variante={principal.variante} tamano="fila" disabled={principal.disabled} onClick={principal.onClick} icono={principal.icono}>
                             {principal.label}
                           </Button>
                           <MenuAcciones acciones={secundarias} />

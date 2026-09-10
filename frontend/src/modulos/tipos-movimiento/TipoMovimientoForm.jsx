@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Save } from "lucide-react";
 import { Input } from "../../componentes/Input";
 import { Button } from "../../componentes/Button";
 import { Toast } from "../../componentes/Toast";
@@ -101,8 +101,8 @@ export function TipoMovimientoForm() {
         </div>
       </div>
 
-      <Button type="submit" disabled={mutacion.isPending} className="self-start">
-        <Plus size={16} /> {mutacion.isPending ? "Guardando…" : "Guardar"}
+      <Button type="submit" disabled={mutacion.isPending} className="self-start" icono={Save}>
+        {mutacion.isPending ? "Guardando…" : "Guardar"}
       </Button>
 
       <Toast mensaje={toast} />

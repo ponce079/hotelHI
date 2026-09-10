@@ -8,6 +8,7 @@ import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
 import { Cifra } from "../../componentes/Cifra";
 import { Badge } from "../../componentes/Badge";
+import { Plus, Trash2, X, ArrowLeft, ArrowRight, Check } from "lucide-react";
 import { formatearFechaSinHora, estadoVencimiento } from "../../lib/fechas";
 import { formatearMonto } from "../../lib/moneda";
 import { listarProveedoresConSaldo, listarComprobantesPendientes, crearOrdenPago } from "./pagos.api";
@@ -284,8 +285,8 @@ export function OrdenPagoWizard({ onClose, onExito }) {
             <h4 className="m-0 font-heading text-base font-semibold">Medios de pago</h4>
             <div className="flex gap-2">
               {MEDIOS_PAGO.map((tipo) => (
-                <Button key={tipo} variante="alta" tamano="fila" onClick={() => agregarMedio(tipo)}>
-                  + {tipo}
+                <Button key={tipo} variante="alta" tamano="fila" onClick={() => agregarMedio(tipo)} icono={Plus}>
+                  {tipo}
                 </Button>
               ))}
             </div>
@@ -321,7 +322,7 @@ export function OrdenPagoWizard({ onClose, onExito }) {
                       onChange={(valor) => actualizarMedio(m.key, "importe", valor)}
                     />
                   </div>
-                  <Button variante="secundario" tamano="fila" onClick={() => quitarMedio(m.key)} className="ml-auto">
+                  <Button variante="secundario" tamano="fila" onClick={() => quitarMedio(m.key)} className="ml-auto" icono={Trash2}>
                     Quitar
                   </Button>
                 </div>
@@ -388,21 +389,21 @@ export function OrdenPagoWizard({ onClose, onExito }) {
               : "Todavía no coincide con el total a pagar."}
         </p>
         <div className="flex gap-2.5">
-          <Button variante="secundario" onClick={onClose}>
+          <Button variante="secundario" onClick={onClose} icono={X}>
             Cancelar
           </Button>
           {form.paso > 1 && (
-            <Button variante="secundario" onClick={() => irA(form.paso - 1)}>
-              ← Atrás
+            <Button variante="secundario" onClick={() => irA(form.paso - 1)} icono={ArrowLeft}>
+              Atrás
             </Button>
           )}
           {form.paso < 2 && (
             <Button variante="ok" disabled={!puedeAvanzarPaso1} onClick={() => irA(form.paso + 1)}>
-              Siguiente →
+              Siguiente <ArrowRight size={16} className="flex-none" />
             </Button>
           )}
           {form.paso === 2 && (
-            <Button variante="ok" disabled={!cuadra || mutacion.isPending} onClick={confirmar}>
+            <Button variante="ok" disabled={!cuadra || mutacion.isPending} onClick={confirmar} icono={Check}>
               {mutacion.isPending ? "Confirmando…" : "Confirmar orden de pago"}
             </Button>
           )}

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { PackageCheck, Truck, History } from "lucide-react";
+import { PackageCheck, Truck, History, Check } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Select } from "../../componentes/Select";
@@ -407,6 +407,7 @@ export function RecepcionesPage() {
                           variante="secundario"
                           disabled={!motivoPorOC[oc.id] || mutacionRevisarOC.isPending}
                           onClick={() => mutacionRevisarOC.mutate({ id: oc.id, motivoResolucion: motivoPorOC[oc.id], numero: oc.numero })}
+                          icono={Check}
                         >
                           Marcar como revisado
                         </Button>
@@ -531,7 +532,7 @@ export function RecepcionesPage() {
                     <Button variante="secundario" onClick={() => recibirTodo(mov)}>
                       Recibí todo
                     </Button>
-                    <Button variante="ok" onClick={() => setParaConfirmar(mov)}>
+                    <Button variante="ok" onClick={() => setParaConfirmar(mov)} icono={Check}>
                       Confirmar recepción
                     </Button>
                   </div>
@@ -598,6 +599,7 @@ export function RecepcionesPage() {
                     variante="secundario"
                     disabled={!motivoPorMov[mov.id] || mutacionRevisar.isPending}
                     onClick={() => mutacionRevisar.mutate({ id: mov.id, motivoResolucion: motivoPorMov[mov.id] })}
+                    icono={Check}
                   >
                     Marcar como revisado
                   </Button>
@@ -633,6 +635,7 @@ export function RecepcionesPage() {
         }
         textoConfirmar="Confirmar recepción"
         variante="ok"
+        icono={Check}
         onCancelar={() => setParaConfirmar(null)}
         onConfirmar={confirmar}
       />

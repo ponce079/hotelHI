@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import { Plus, FileText, FileMinus, FilePlus } from 'lucide-react';
+import { FileText, FileMinus, FilePlus, Ban } from 'lucide-react';
 import { Table } from '../../componentes/Table';
 import { Badge } from '../../componentes/Badge';
 import { Button } from '../../componentes/Button';
@@ -158,11 +158,11 @@ export function ComprobantesPage() {
           </p>
         </div>
         <div className="flex gap-2.5">
-          <Button variante="secundario" onClick={() => setModalAbierto('nota')}>
+          <Button variante="secundario" onClick={() => setModalAbierto('nota')} icono={FilePlus}>
             Nueva nota
           </Button>
-          <Button onClick={() => setModalAbierto('comprobante')}>
-            <Plus size={16} /> Cargar factura
+          <Button onClick={() => setModalAbierto('comprobante')} icono={FilePlus}>
+            Cargar factura
           </Button>
         </div>
       </div>
@@ -368,6 +368,7 @@ export function ComprobantesPage() {
         mensaje={`Está por anular el comprobante ${anulando?.numero} de ${anulando?.proveedor?.razonSocial}. Esta acción no se puede deshacer.`}
         textoConfirmar="Sí, anular"
         variante="destructivo"
+        icono={Ban}
         onCancelar={() => setAnulando(null)}
         onConfirmar={() => {
           const motivo = prompt('Motivo de anulación:');

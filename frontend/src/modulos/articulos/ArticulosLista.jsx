@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams } from "react-router-dom";
-import { Search } from "lucide-react";
+import { Search, Plus, Trash2, RotateCw } from "lucide-react";
 import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
@@ -163,7 +163,7 @@ export function ArticulosLista() {
           </span>
         )}
 
-        <Button onClick={() => setModal({ tipo: "form", articulo: null })}>+ Nuevo artículo</Button>
+        <Button onClick={() => setModal({ tipo: "form", articulo: null })} icono={Plus}>Nuevo artículo</Button>
       </div>
 
       {isLoading && <p className="text-sm text-piedra">Cargando artículos…</p>}
@@ -250,6 +250,7 @@ export function ArticulosLista() {
         }
         textoConfirmar={paraCambiarEstado?.activo ? "Sí, dar de baja" : "Sí, reactivar"}
         variante={paraCambiarEstado?.activo ? "destructivo" : "alta"}
+        icono={paraCambiarEstado?.activo ? Trash2 : RotateCw}
         onCancelar={() => setParaCambiarEstado(null)}
         onConfirmar={() => mutacionEstado.mutate({ id: paraCambiarEstado.id, activo: !paraCambiarEstado.activo })}
       />

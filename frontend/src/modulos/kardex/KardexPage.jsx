@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { History } from "lucide-react";
+import { History, ArrowLeft } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -78,8 +78,9 @@ export function KardexPage() {
           variante="fantasma"
           onClick={() => navigate(depositoId ? `/depositos/${depositoId}` : "/depositos")}
           className="mb-2 text-xs"
+          icono={ArrowLeft}
         >
-          ← Volver
+          Volver
         </Button>
         <h1 className="flex items-center gap-2 font-heading text-[34px] font-semibold">
           <History size={22} className="text-pino" /> Kardex del artículo

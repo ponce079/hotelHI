@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal, ArrowLeft, Save } from "lucide-react";
 import { Table } from "../../componentes/Table";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -75,8 +75,9 @@ export function MinMaxPage() {
           variante="fantasma"
           onClick={() => navigate(depositoId ? `/depositos/${depositoId}` : "/depositos")}
           className="mb-2 text-xs"
+          icono={ArrowLeft}
         >
-          ← Volver
+          Volver
         </Button>
         <h1 className="flex items-center gap-2 font-heading text-[34px] font-semibold">
           <SlidersHorizontal size={22} className="text-pino" /> Stock mín. / máx.
@@ -155,6 +156,7 @@ export function MinMaxPage() {
                         tamano="fila"
                         disabled={invalido || edicion.stockMinimo === "" || edicion.stockMaximo === ""}
                         onClick={() => guardar(f.articuloDepositoId)}
+                        icono={Save}
                       >
                         Guardar
                       </Button>

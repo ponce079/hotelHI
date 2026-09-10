@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
-import { ArrowLeft, Flame, Bot, FileText, ChevronRight, Printer, Copy, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Flame, Bot, FileText, ChevronRight, Printer, Copy, AlertTriangle, Check, Ban, ArrowRight } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
@@ -121,10 +121,11 @@ export function RequerimientoDetallePage() {
             className="flex-1 justify-center py-3 text-[14px]"
             disabled={mutacionConfirmarSugerencia.isPending}
             onClick={() => mutacionConfirmarSugerencia.mutate()}
+            icono={Check}
           >
             {mutacionConfirmarSugerencia.isPending ? "Confirmando…" : "Confirmar"}
           </Button>
-          <Button variante="destructivo" className="flex-1 justify-center py-3 text-[14px]" onClick={() => setParaAnular(true)}>
+          <Button variante="destructivo" className="flex-1 justify-center py-3 text-[14px]" onClick={() => setParaAnular(true)} icono={Ban}>
             Descartar
           </Button>
         </div>
@@ -137,11 +138,12 @@ export function RequerimientoDetallePage() {
             <Button
               className="flex-1 justify-center gap-2 py-3 text-[14px]"
               onClick={() => navigate(`/presupuestos?solicitarRequerimientoId=${req.id}`)}
+              icono={FileText}
             >
-              <FileText size={16} /> Solicitar presupuesto
+              Solicitar presupuesto
             </Button>
           )}
-          <Button variante="destructivo" className="flex-1 justify-center py-3 text-[14px]" onClick={() => setParaAnular(true)}>
+          <Button variante="destructivo" className="flex-1 justify-center py-3 text-[14px]" onClick={() => setParaAnular(true)} icono={Ban}>
             Anular
           </Button>
         </div>
@@ -159,8 +161,9 @@ export function RequerimientoDetallePage() {
         variante="fantasma"
         onClick={() => navigate("/requerimientos")}
         className="w-fit text-xs print:hidden"
+        icono={ArrowLeft}
       >
-        <ArrowLeft size={15} /> Volver a requerimientos
+        Volver a requerimientos
       </Button>
 
       {/* Todo el seguimiento de este requerimiento vive en un solo
@@ -208,8 +211,9 @@ export function RequerimientoDetallePage() {
             variante="secundario"
             className="print:hidden"
             onClick={() => window.print()}
+            icono={Printer}
           >
-            <Printer size={15} /> Imprimir
+            Imprimir
           </Button>
         </div>
 
@@ -332,8 +336,9 @@ export function RequerimientoDetallePage() {
             variante="ok"
             className="w-full justify-center gap-2 py-3 text-[14px] print:hidden"
             onClick={() => setDuplicando(true)}
+            icono={Copy}
           >
-            <Copy size={15} /> Duplicar como nueva solicitud
+            Duplicar como nueva solicitud
           </Button>
         )}
 
@@ -349,7 +354,7 @@ export function RequerimientoDetallePage() {
                 onClick={() => navigate(`/presupuestos?requerimientoId=${req.id}`)}
                 className="text-[12.5px] hover:underline print:hidden"
               >
-                Ver presupuesto asociado →
+                Ver presupuesto asociado <ArrowRight size={16} className="flex-none" />
               </Button>
             )}
           </div>

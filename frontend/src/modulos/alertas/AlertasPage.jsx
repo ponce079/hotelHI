@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { TriangleAlert } from "lucide-react";
+import { TriangleAlert, Plus, Eye } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { consultarStock } from "../stock/stock.api";
@@ -103,11 +103,11 @@ export function AlertasPage() {
               </div>
               <div className="ml-auto flex items-center gap-1.5 self-center">
                 {puede("crearRequerimiento") && (
-                  <Button tamano="fila" onClick={() => generarRequerimiento(a)}>
+                  <Button tamano="fila" onClick={() => generarRequerimiento(a)} icono={Plus}>
                     Generar requerimiento
                   </Button>
                 )}
-                <Button variante="secundario" tamano="fila" onClick={() => irADeposito(a.depositoId)}>
+                <Button variante="secundario" tamano="fila" onClick={() => irADeposito(a.depositoId)} icono={Eye}>
                   Ver depósito
                 </Button>
               </div>

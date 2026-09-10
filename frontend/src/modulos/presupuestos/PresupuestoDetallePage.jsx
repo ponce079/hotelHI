@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useParams, useNavigate } from "react-router-dom";
-import { FileText } from "lucide-react";
+import { FileText, ArrowLeft, Eye } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
@@ -49,8 +49,8 @@ export function PresupuestoDetallePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Button variante="fantasma" onClick={volver} className="w-fit text-xs">
-        ← Volver
+      <Button variante="fantasma" onClick={volver} className="w-fit text-xs" icono={ArrowLeft}>
+        Volver
       </Button>
 
       <div>
@@ -72,7 +72,7 @@ export function PresupuestoDetallePage() {
       )}
 
       <div className="flex justify-end">
-        <Button variante="secundario" onClick={() => navigate(`/presupuestos?requerimientoId=${p.requerimientoId}`)}>
+        <Button variante="secundario" onClick={() => navigate(`/presupuestos?requerimientoId=${p.requerimientoId}`)} icono={Eye}>
           Ver comparación
         </Button>
       </div>

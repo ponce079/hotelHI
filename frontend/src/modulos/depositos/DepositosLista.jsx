@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Search, Warehouse } from "lucide-react";
+import { Search, Warehouse, Plus, Eye, Pencil } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -68,7 +68,7 @@ export function DepositosLista({ onEditar, onNuevo }) {
         <span className="mr-auto text-xs text-piedra">
           {filtrados.length} de {todos.length} depósitos
         </span>
-        {puede("abmDeposito") && <Button onClick={onNuevo}>+ Nuevo depósito</Button>}
+        {puede("abmDeposito") && <Button onClick={onNuevo} icono={Plus}>Nuevo depósito</Button>}
       </div>
 
       {todos.length === 0 && (
@@ -131,9 +131,9 @@ export function DepositosLista({ onEditar, onNuevo }) {
             </div>
 
             <div className="flex gap-2">
-              <Button onClick={() => navigate(`/depositos/${d.id}`)}>Ver stock del depósito</Button>
+              <Button onClick={() => navigate(`/depositos/${d.id}`)} icono={Eye}>Ver stock del depósito</Button>
               {puede("abmDeposito") && (
-                <Button variante="secundario" onClick={() => onEditar(d)}>
+                <Button variante="secundario" onClick={() => onEditar(d)} icono={Pencil}>
                   Editar datos
                 </Button>
               )}

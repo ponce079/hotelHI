@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { Search } from "lucide-react";
+import { Search, Plus, Trash2, RotateCw } from "lucide-react";
 import { Table } from "../../componentes/Table";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
@@ -118,7 +118,7 @@ export function ProveedoresLista() {
 
         {hayFiltros && <LimpiarFiltros onClick={limpiarFiltros} />}
 
-        <Button onClick={() => setModal({ proveedor: null })}>+ Nuevo proveedor</Button>
+        <Button onClick={() => setModal({ proveedor: null })} icono={Plus}>Nuevo proveedor</Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-[7px]">
@@ -225,6 +225,7 @@ export function ProveedoresLista() {
         }
         textoConfirmar={paraCambiarEstado?.activo ? "Sí, dar de baja" : "Sí, reactivar"}
         variante={paraCambiarEstado?.activo ? "destructivo" : "alta"}
+        icono={paraCambiarEstado?.activo ? Trash2 : RotateCw}
         onCancelar={() => setParaCambiarEstado(null)}
         onConfirmar={() => mutacionEstado.mutate({ id: paraCambiarEstado.id, activo: !paraCambiarEstado.activo })}
       />

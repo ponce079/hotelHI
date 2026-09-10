@@ -108,8 +108,8 @@ export function ProveedorDetallePage() {
         {/* Auditoría de botones, P2.2: "Volver" es navegación de bajo
             compromiso — mismo componente que el resto de las pantallas de
             detalle, ya no un <button> aparte con su propio estilo. */}
-        <Button variante="fantasma" onClick={() => navigate("/proveedores")} className="mb-2 w-fit text-xs">
-          <ArrowLeft size={15} /> Volver a proveedores
+        <Button variante="fantasma" onClick={() => navigate("/proveedores")} className="mb-2 w-fit text-xs" icono={ArrowLeft}>
+          Volver a proveedores
         </Button>
         <h1 className="flex flex-wrap items-center gap-2.5 font-heading text-[34px] font-semibold">
           <Building2 size={24} className="text-pino" /> {proveedor.razonSocial}

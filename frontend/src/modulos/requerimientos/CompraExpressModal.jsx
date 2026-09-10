@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Zap } from "lucide-react";
+import { Zap, X, Check } from "lucide-react";
 import { Modal } from "../../componentes/Modal";
 import { Button } from "../../componentes/Button";
 import { Select } from "../../componentes/Select";
@@ -173,10 +173,10 @@ export function CompraExpressModal({ requerimientoId, onClose, onExito }) {
           </div>
 
           <div className="flex justify-end gap-2.5 border-t border-borde px-6 py-4">
-            <Button type="button" variante="secundario" onClick={onClose}>
+            <Button type="button" variante="secundario" onClick={onClose} icono={X}>
               Cancelar
             </Button>
-            <Button type="submit" disabled={mutacion.isPending}>
+            <Button type="submit" disabled={mutacion.isPending} icono={Check}>
               {mutacion.isPending ? "Adjudicando…" : "Adjudicar y aprobar"}
             </Button>
           </div>

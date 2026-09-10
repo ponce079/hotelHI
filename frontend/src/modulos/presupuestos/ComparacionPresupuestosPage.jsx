@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, useNavigate } from "react-router-dom";
-import { ArrowRight, TrendingDown, Clock, Paperclip } from "lucide-react";
+import { ArrowRight, TrendingDown, Clock, Paperclip, ArrowLeft, Plus, Check } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -66,7 +66,7 @@ export function ComparacionPresupuestosPage() {
           Esta pantalla compara los presupuestos de un requerimiento. Entrá desde la ficha del requerimiento.
         </p>
         <Button className="mt-3" variante="secundario" onClick={() => navigate("/requerimientos")}>
-          Ir a requerimientos
+          Ir a requerimientos <ArrowRight size={16} className="flex-none" />
         </Button>
       </div>
     );
@@ -102,8 +102,8 @@ export function ComparacionPresupuestosPage() {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <Button variante="fantasma" onClick={volver} className="mb-2 w-fit text-xs">
-          ← Volver
+        <Button variante="fantasma" onClick={volver} className="mb-2 w-fit text-xs" icono={ArrowLeft}>
+          Volver
         </Button>
         <h1 className="font-heading text-[34px] font-semibold">Comparación de presupuestos</h1>
         <p className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 text-[11px] text-tinta/55">
@@ -127,8 +127,8 @@ export function ComparacionPresupuestosPage() {
               comparación sigue abierta (En cotización) — una vez adjudicado
               ya no hay nada que comparar. */}
           {req?.estado === ESTADOS_REQUERIMIENTO.EN_COTIZACION && puede("gestionarPresupuestos") && (
-            <Button variante="secundario" tamano="fila" onClick={() => setSolicitandoMas(true)}>
-              + Solicitar a otro proveedor
+            <Button variante="secundario" tamano="fila" onClick={() => setSolicitandoMas(true)} icono={Plus}>
+              Solicitar a otro proveedor
             </Button>
           )}
         </div>
@@ -281,7 +281,7 @@ export function ComparacionPresupuestosPage() {
                       {puede("aprobarPresupuesto") &&
                         p.estado === ESTADOS_PRESUPUESTO.PENDIENTE_APROBACION &&
                         !yaAdjudicado && (
-                          <Button className="mt-3 w-full justify-center" onClick={() => setParaAprobar(p)}>
+                          <Button className="mt-3 w-full justify-center" onClick={() => setParaAprobar(p)} icono={Check}>
                             Aprobar este presupuesto
                           </Button>
                         )}
@@ -342,6 +342,7 @@ export function ComparacionPresupuestosPage() {
         }
         textoConfirmar="Sí, adjudicar"
         variante="ok"
+        icono={Check}
         onCancelar={() => {
           setParaAprobar(null);
           setComentarioAdjudicacion("");

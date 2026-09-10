@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { X } from "lucide-react";
+import { X, Pencil } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { consultarStock } from "../stock/stock.api";
@@ -68,7 +68,7 @@ export function ArticuloDetalleModal({ articulo, onClose, onEditar }) {
         <div className="flex items-center justify-between gap-3 border-t border-borde px-6 py-4">
           <span className="text-xs text-piedra">El stock solo cambia con Movimientos de Stock.</span>
           {/* Única acción del footer (auditoría de botones, P2.1) — primario. */}
-          <Button variante="ok" onClick={onEditar}>Editar artículo</Button>
+          <Button variante="ok" onClick={onEditar} icono={Pencil}>Editar artículo</Button>
         </div>
       </div>
     </div>

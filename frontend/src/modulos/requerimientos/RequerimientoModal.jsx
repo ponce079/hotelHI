@@ -1,7 +1,7 @@
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2, Zap, History } from "lucide-react";
+import { Trash2, Zap, History, Plus, X, Save } from "lucide-react";
 import { Modal } from "../../componentes/Modal";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
@@ -616,7 +616,7 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
                     })}
                 </Select>
               </div>
-              <Button type="button" variante="secundario" onClick={agregarArticulo} disabled={!articuloAAgregar}>
+              <Button type="button" variante="secundario" icono={Plus} onClick={agregarArticulo} disabled={!articuloAAgregar}>
                 Agregar
               </Button>
             </div>
@@ -781,8 +781,8 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
         </div>
 
         <div className="flex justify-end gap-2.5 border-t border-borde px-6 py-4">
-          <Button type="button" variante="secundario" onClick={onClose}>Cancelar</Button>
-          <Button type="submit" disabled={mutacion.isPending}>
+          <Button type="button" variante="secundario" icono={X} onClick={onClose}>Cancelar</Button>
+          <Button type="submit" icono={Save} disabled={mutacion.isPending}>
             {mutacion.isPending ? "Guardando…" : editando ? "Guardar cambios" : "Crear requerimiento"}
           </Button>
         </div>

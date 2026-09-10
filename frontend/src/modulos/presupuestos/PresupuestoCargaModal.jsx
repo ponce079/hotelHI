@@ -8,7 +8,7 @@ import { Cifra } from "../../componentes/Cifra";
 import { CodigoClave } from "../../componentes/CodigoClave";
 import { NombreClave } from "../../componentes/NombreClave";
 import { MoneyInput } from "../../componentes/MoneyInput";
-import { Paperclip, Trash2 } from "lucide-react";
+import { Paperclip, Trash2, X, Save } from "lucide-react";
 import {
   obtenerPresupuesto,
   cargarPresupuesto,
@@ -145,7 +145,7 @@ export function PresupuestoCargaModal({ presupuestoId, onClose, onExito }) {
             sola vez, mientras está en "{ESTADOS_PRESUPUESTO.SOLICITADO}".
           </p>
           <div className="mt-5 flex justify-end">
-            <Button variante="secundario" onClick={onClose}>Cerrar</Button>
+            <Button variante="secundario" onClick={onClose} icono={X}>Cerrar</Button>
           </div>
         </div>
       ) : (
@@ -308,8 +308,8 @@ export function PresupuestoCargaModal({ presupuestoId, onClose, onExito }) {
           </div>
 
           <div className="flex justify-end gap-2.5 border-t border-borde px-6 py-4">
-            <Button type="button" variante="secundario" onClick={onClose}>Cancelar</Button>
-            <Button type="submit" disabled={mutacion.isPending}>
+            <Button type="button" variante="secundario" onClick={onClose} icono={X}>Cancelar</Button>
+            <Button type="submit" disabled={mutacion.isPending} icono={Save}>
               {mutacion.isPending ? "Guardando…" : "Guardar presupuesto"}
             </Button>
           </div>
