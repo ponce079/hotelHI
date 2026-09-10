@@ -68,6 +68,19 @@ async function crearRequerimiento({ depositoId, origen, solicitante, detalle, ti
     throw new ErrorDeNegocio("Hay artículos repetidos en el detalle: cargá una sola línea por artículo", 400);
   }
 
+  // Cantidades: solo enteros positivos — no tiene sentido pedir "3.5
+  // unidades" de un artículo, y el motor de transferencia (más abajo)
+  // hace comparaciones y decrementos de stock que asumen enteros.
+  const conCantidadInvalida = detalle.find(
+    (d) => !Number.isInteger(Number(d.cantidadSolicitada)) || Number(d.cantidadSolicitada) <= 0
+  );
+  if (conCantidadInvalida) {
+    throw new ErrorDeNegocio(
+      `La cantidad del artículo ${conCantidadInvalida.articuloId} debe ser un número entero positivo.`,
+      400
+    );
+  }
+
   const articulos = await prisma.articulo.findMany({ where: { id: { in: ids } } });
   if (articulos.length !== ids.length) {
     throw new ErrorDeNegocio("Alguno de los artículos indicados no existe", 404);
@@ -870,6 +883,15 @@ async function actualizarRequerimiento(id, { depositoId, detalle }) {
   const ids = detalle.map((d) => d.articuloId);
   if (new Set(ids).size !== ids.length) {
     throw new ErrorDeNegocio("Hay artículos repetidos en el detalle: cargá una sola línea por artículo", 400);
+  }
+  const conCantidadInvalida = detalle.find(
+    (d) => !Number.isInteger(Number(d.cantidadSolicitada)) || Number(d.cantidadSolicitada) <= 0
+  );
+  if (conCantidadInvalida) {
+    throw new ErrorDeNegocio(
+      `La cantidad del artículo ${conCantidadInvalida.articuloId} debe ser un número entero positivo.`,
+      400
+    );
   }
   const articulos = await prisma.articulo.findMany({ where: { id: { in: ids } } });
   if (articulos.length !== ids.length) {

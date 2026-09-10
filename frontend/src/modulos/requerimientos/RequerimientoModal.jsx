@@ -157,7 +157,7 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
       }));
     }
     const articuloId = Number(prefill?.articuloId);
-    const cantidad = Number(prefill?.cantidad);
+    const cantidad = Math.round(Number(prefill?.cantidad));
     if (!Number.isInteger(articuloId) || articuloId <= 0) return [];
     return [{ articuloId, cantidadSolicitada: cantidad > 0 ? String(cantidad) : "" }];
   });
@@ -275,8 +275,9 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
   }
 
   function cambiarCantidad(articuloId, valor) {
+    const soloEnteros = valor.replace(/[^\d]/g, "");
     setLineas((prev) =>
-      prev.map((l) => (l.articuloId === articuloId ? { ...l, cantidadSolicitada: valor } : l))
+      prev.map((l) => (l.articuloId === articuloId ? { ...l, cantidadSolicitada: soloEnteros } : l))
     );
   }
 
@@ -470,9 +471,9 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
     setErrorDepositoCentralId(null);
     if (!depositoId) return setError("Elegí el depósito que necesita la reposición.");
     if (lineas.length === 0) return setError("Agregá al menos un artículo al requerimiento.");
-    const sinCantidad = lineas.find((l) => !(Number(l.cantidadSolicitada) > 0));
+    const sinCantidad = lineas.find((l) => !Number.isInteger(Number(l.cantidadSolicitada)) || Number(l.cantidadSolicitada) <= 0);
     if (sinCantidad) {
-      return setError("Todas las líneas necesitan una cantidad mayor a 0.");
+      return setError("Todas las líneas necesitan una cantidad entera mayor a 0 (sin decimales).");
     }
     mutacion.mutate();
   }
@@ -755,8 +756,9 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
                       <td className="px-3 py-2">
                         <input
                           type="number"
-                          min="0.01"
-                          step="0.01"
+                          min="1"
+                          step="1"
+                          inputMode="numeric"
                           value={l.cantidadSolicitada}
                           onChange={(e) => cambiarCantidad(l.articuloId, e.target.value)}
                           className="w-28 rounded-md border border-borde bg-white px-2 py-1 text-right text-[13px] focus:outline-none focus:ring-2 focus:ring-pino/40"
