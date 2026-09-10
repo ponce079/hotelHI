@@ -62,7 +62,7 @@ export function RecepcionOCPage() {
   function estadoDeLinea(d) {
     const valor = valorDe(d);
     const n = Number(valor);
-    if (valor === "" || !Number.isFinite(n) || n < 0) return "invalida";
+    if (valor === "" || !Number.isInteger(n) || n < 0) return "invalida";
     if (n > Number(d.cantidad)) return "invalida";
     if (n < Number(d.cantidad)) return "diferencia";
     return "completa";
@@ -135,8 +135,10 @@ export function RecepcionOCPage() {
                         type="number"
                         min="0"
                         max={Number(d.cantidad)}
+                        step="1"
+                        inputMode="numeric"
                         value={valorDe(d)}
-                        onChange={(e) => setValor(d.articuloId, e.target.value)}
+                        onChange={(e) => setValor(d.articuloId, e.target.value.replace(/[^\d]/g, ""))}
                         className={`w-24 rounded-md border px-2 py-1 text-sm ${estado === "invalida" ? "border-error" : "border-borde"}`}
                       />
                     </td>
@@ -185,9 +187,10 @@ export function RecepcionOCPage() {
             ? `Se registrará la entrada en ${oc.deposito?.nombre} por la cantidad recibida y la orden quedará marcada Recibida con diferencia.`
             : `Se registrará la entrada completa en ${oc.deposito?.nombre} y la orden quedará marcada Recibida.`
         }
-        textoConfirmar={mutacion.isPending ? "Confirmando…" : "Confirmar recepción"}
+        textoConfirmar="Confirmar recepción"
         variante="ok"
         icono={Check}
+        cargando={mutacion.isPending}
         onCancelar={() => setConfirmando(false)}
         onConfirmar={confirmar}
       />
