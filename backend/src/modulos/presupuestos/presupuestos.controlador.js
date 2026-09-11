@@ -52,7 +52,7 @@ async function putCargarPresupuesto(req, res) {
   const id = Number(req.params.id);
   if (!Number.isInteger(id)) return res.status(400).json({ error: "id inválido" });
 
-  const { precios, plazoEntrega, costoFlete } = req.body ?? {};
+  const { precios, plazoEntrega, costoFlete, fechaLimiteVigencia } = req.body ?? {};
   if (!Array.isArray(precios) || precios.length === 0) {
     return res.status(400).json({ error: "Cargá el precio unitario de cada artículo" });
   }
@@ -83,6 +83,7 @@ async function putCargarPresupuesto(req, res) {
       precios: lineas,
       plazoEntrega,
       costoFlete: flete,
+      fechaLimiteVigencia,
     });
     return res.json(presupuesto);
   } catch (err) {

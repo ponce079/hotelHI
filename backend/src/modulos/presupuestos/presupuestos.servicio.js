@@ -191,7 +191,7 @@ async function solicitarPresupuestos(requerimientoId, { proveedorIds, requiereFl
 // HU-83 — cargar lo que cotizó el proveedor. Es un reemplazo completo del
 // detalle: se borran los precios anteriores y se escriben los nuevos, para
 // que una segunda carga no deje mezclados precios de dos cotizaciones.
-async function cargarPresupuesto(id, { precios, plazoEntrega, costoFlete }) {
+async function cargarPresupuesto(id, { precios, plazoEntrega, costoFlete, fechaLimiteVigencia }) {
   const presupuesto = await prisma.presupuesto.findUnique({
     where: { id },
     omit: OMIT_ARCHIVO,
@@ -231,6 +231,27 @@ async function cargarPresupuesto(id, { precios, plazoEntrega, costoFlete }) {
   // sección 3): si no, queda null y la pantalla ni lo muestra.
   const fleteAGuardar = presupuesto.requerimiento.requiereFlete ? (costoFlete ?? 0) : null;
 
+  // Fecha de vigencia: opcional, pero si viene tiene que ser una fecha
+  // real y no puede ser anterior a hoy — cargar una oferta "vencida antes
+  // de cargarla" no tiene sentido y probablemente sea un error de tipeo.
+  // NOTA para revisión de equipo: hoy es puramente informativa, no
+  // bloquea adjudicar el presupuesto aunque ya haya vencido — si se
+  // decide que sí debería bloquear, el chequeo va en aprobarPresupuesto,
+  // no acá.
+  let fechaVigenciaAGuardar = null;
+  if (fechaLimiteVigencia) {
+    const parsed = new Date(fechaLimiteVigencia);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new ErrorDeNegocio("La fecha límite de vigencia no es una fecha válida", 400);
+    }
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    if (parsed < hoy) {
+      throw new ErrorDeNegocio("La fecha límite de vigencia no puede ser anterior a hoy", 400);
+    }
+    fechaVigenciaAGuardar = parsed;
+  }
+
   await prisma.$transaction(async (tx) => {
     await tx.presupuestoDetalle.deleteMany({ where: { presupuestoId: id } });
     await tx.presupuestoDetalle.createMany({
@@ -246,6 +267,7 @@ async function cargarPresupuesto(id, { precios, plazoEntrega, costoFlete }) {
         estado: ESTADOS_PRESUPUESTO.PENDIENTE_APROBACION,
         plazoEntrega: plazoEntrega?.trim() || null,
         costoFlete: fleteAGuardar,
+        fechaLimiteVigencia: fechaVigenciaAGuardar,
       },
     });
   }, OPCIONES_TRANSACCION);
