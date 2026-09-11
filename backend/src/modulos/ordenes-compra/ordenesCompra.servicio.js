@@ -435,8 +435,8 @@ async function registrarRecepcion(id, detalleRecibido, usuario) {
       throw new ErrorDeNegocio(`El artículo ${linea.articuloId} no pertenece a esta orden de compra.`);
     }
     const cantidadRecibida = Number(linea.cantidadRecibida);
-    if (!Number.isFinite(cantidadRecibida) || cantidadRecibida < 0) {
-      throw new ErrorDeNegocio(`Cantidad inválida para el artículo ${linea.articuloId}.`);
+    if (!Number.isInteger(cantidadRecibida) || cantidadRecibida < 0) {
+      throw new ErrorDeNegocio(`La cantidad del artículo ${linea.articuloId} debe ser un número entero positivo.`);
     }
     if (cantidadRecibida > Number(original.cantidad)) {
       throw new ErrorDeNegocio(`La cantidad recibida del artículo ${linea.articuloId} supera lo solicitado.`);
