@@ -1,3 +1,5 @@
+import { Loader2 } from "lucide-react";
+
 // Jerarquía de 5 tipos (auditoría de botones, 2026-09): primario relleno
 // solido pino (una sola por pantalla/modal), secundario con borde sin
 // relleno, fantasma sin borde con texto gris (navegacion/bajo compromiso),
@@ -52,13 +54,25 @@ const TAMANOS = {
 // (Siguiente →, Volver ←) NO usan esta prop: "→" sigue siendo un child
 // final a mano (convencion ya establecida, ver auditoria de botones) y
 // "←" (Volver) va como `icono` porque ahi si cae al principio.
-export function Button({ variante = "ok", tamano = "normal", icono: Icono, className = "", children, ...props }) {
+//
+// `cargando` (default false, no rompe ningun uso existente): mientras es
+// true, deshabilita el boton solo (no hace falta pasar disabled a mano)
+// y reemplaza el icono por un spinner girando — pensado para el momento
+// entre el click y que la mutacion resuelva, asi no se puede volver a
+// clickear ni queda ambiguo si el click "prendio". El texto (children) lo
+// sigue eligiendo cada pantalla (ej. "Guardando…"), este prop no lo toca.
+export function Button({ variante = "ok", tamano = "normal", icono: Icono, cargando = false, className = "", children, disabled, ...props }) {
   return (
     <button
+      disabled={disabled || cargando}
       className={`inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-md border font-heading font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${TAMANOS[tamano]} ${VARIANTES[variante]} ${className}`}
       {...props}
     >
-      {Icono && <Icono size={16} className="flex-none" />}
+      {cargando ? (
+        <Loader2 size={16} className="flex-none animate-spin" />
+      ) : (
+        Icono && <Icono size={16} className="flex-none" />
+      )}
       {children}
     </button>
   );

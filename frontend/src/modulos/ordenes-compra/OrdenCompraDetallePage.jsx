@@ -386,8 +386,8 @@ export function OrdenCompraDetallePage() {
                     >
                       Cancelar
                     </Button>
-                    <Button variante="destructivo" disabled={mutacionAnular.isPending} onClick={confirmarAnular} icono={Ban}>
-                      {mutacionAnular.isPending ? "Anulando…" : "Confirmar anulación"}
+                    <Button variante="destructivo" cargando={mutacionAnular.isPending} onClick={confirmarAnular} icono={Ban}>
+                      Confirmar anulación
                     </Button>
                   </div>
                 </div>
@@ -458,6 +458,7 @@ export function OrdenCompraDetallePage() {
         mensaje={`Se marcará ${oc?.numero} como Enviada al proveedor. Después de esto solo se puede registrar la recepción o anular.`}
         textoConfirmar="Marcar enviada"
         variante="ok"
+        cargando={mutacionEnviar.isPending}
         onCancelar={() => setConfirmarAccion(null)}
         onConfirmar={() => mutacionEnviar.mutate()}
       />
