@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSesion, ROLES } from "../../lib/sesion";
+import { Button } from "../../componentes/Button";
 
 const ORDEN_ROLES = ["admin", "deposito", "compras", "gerente"];
 // Sprint 2 sumó Compras y Gastos como pilares del sistema, no solo
@@ -142,12 +143,9 @@ export function LoginPage() {
             </div>
           )}
 
-          <button
-            type="submit"
-            className="h-[46px] w-full cursor-pointer rounded-md bg-pino text-sm font-semibold text-hueso hover:bg-pino-oscuro"
-          >
+          <Button type="submit" variante="ok" className="h-[46px] w-full justify-center">
             Ingresar
-          </button>
+          </Button>
           <p className="mt-3.5 text-[11px] leading-relaxed text-piedra">
             El bloqueo por intentos fallidos y la gestión de roles son parte del Sprint 3; acá el
             login sólo deriva al panel del perfil.

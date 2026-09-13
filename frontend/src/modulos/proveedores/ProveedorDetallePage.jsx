@@ -16,23 +16,12 @@ import { diasDesde, variantePorAntiguedad, rutaDeMovimiento, esMovimientoDePago 
 // pago (ver comentario en CuentaCorrientePage.jsx) — un "Pago" en esta
 // mini-tabla tiene que verse igual que en las otras dos pantallas.
 import { BADGE_ESTADO } from "../pagos/pagos.constantes";
+import { BADGE_ESTADO_OC } from "../ordenes-compra/ordenesCompra.constantes";
 import { OrdenPagoDetalleModal } from "../pagos/OrdenPagoDetalleModal";
 import { formatearMonto } from "../../lib/moneda";
 import { formatearTimestamp, formatearFechaComprobante } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
-
-// Estados de OrdenCompra — los define el módulo de Órdenes de Compra
-// (Gimena/Ricardo). Acá solo se pintan, no se transicionan.
-const VARIANTE_ESTADO_OC = {
-  Pendiente: "alerta",
-  Aprobada: "alerta",
-  Enviada: "alerta",
-  Recibida: "ok",
-  "Recibida con diferencia": "error",
-  Cerrada: "ok",
-  Anulada: "neutro",
-};
 
 // Mismo fondo sólido que ya usa el KPI de "Saldo total adeudado" en
 // CuentaCorrientePage, pero coloreado según la antigüedad del comprobante
@@ -127,7 +116,7 @@ export function ProveedorDetallePage() {
             type="button"
             onClick={() => cambiarTab(t.clave)}
             className={`cursor-pointer border-b-2 px-4 py-2 font-body text-[13px] font-semibold transition-colors ${
-              tab === t.clave ? "border-pino text-tinta" : "border-transparent text-tinta/55 hover:text-tinta"
+              tab === t.clave ? "border-pino text-pino" : "border-transparent text-tinta/55 hover:text-tinta"
             }`}
           >
             {t.label}
@@ -216,7 +205,7 @@ export function ProveedorDetallePage() {
                   <td className="px-3 py-2 font-body text-[12.5px]">{formatearTimestamp(oc.fecha)}</td>
                   <td className="px-3 py-2 font-body text-[12.5px]">{oc.deposito?.nombre ?? "—"}</td>
                   <td className="px-3 py-2">
-                    <Badge variante={VARIANTE_ESTADO_OC[oc.estado] ?? "neutro"}>{oc.estado}</Badge>
+                    <Badge variante={BADGE_ESTADO_OC[oc.estado] ?? "neutro"}>{oc.estado}</Badge>
                   </td>
                   <td className="px-3 py-2 text-right font-heading text-[14px]">
                     $ {formatearMonto(Number(oc.montoTotal) + Number(oc.flete ?? 0))}
