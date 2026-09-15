@@ -129,7 +129,7 @@ export function DepositoDetallePage() {
         </div>
         <div
           className={`flex flex-col items-center gap-0.5 rounded-[18.4px] px-5 py-4 text-center ${
-            totalCriticos > 0 ? "bg-error-suave" : "bg-[#ece6d9]"
+            totalCriticos > 0 ? "bg-error-suave" : "bg-inactivo-suave"
           }`}
         >
           <div className={`font-body text-[10px] uppercase tracking-[0.1em] ${totalCriticos > 0 ? "text-error-texto" : "text-tinta/60"}`}>

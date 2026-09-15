@@ -66,6 +66,11 @@
   --color-info-suave: #e4edf2;
   --color-info-texto: #2c4a5e;
 
+  /* "inactivo" — gris de la guia visual SGH (seccion 5: "Dado de baja" =
+     gris), antes hardcodeado en 3 listados distintos. */
+  --color-inactivo: #867d68;
+  --color-inactivo-suave: #ece6d9;
+
   --font-heading: "Fraunces", ui-serif, Georgia, serif;
   --font-body: "Sora", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -93,6 +98,16 @@ h1, h2, h3, h4, h5, h6 {
 
 p {
   line-height: 1.55;
+}
+
+/* Scroll interno del menu del sidebar (Layout.jsx): sigue siendo
+   scrolleable con rueda/touch, solo se oculta la barra visual. */
+.scrollbar-hide {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
 }
 
 :focus-visible {

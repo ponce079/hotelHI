@@ -22,7 +22,7 @@ const PAGE_SIZE = 10;
 const ESTADOS = [
   { valor: "todos", label: "Todos", activo: "border-tinta bg-tinta text-hueso" },
   { valor: "activo", label: "Activo", activo: "border-pino bg-pino text-hueso" },
-  { valor: "inactivo", label: "Inactivo", activo: "border-[#867d68] bg-[#867d68] text-hueso" },
+  { valor: "inactivo", label: "Inactivo", activo: "border-inactivo bg-inactivo text-hueso" },
 ];
 
 export function ProveedoresLista() {

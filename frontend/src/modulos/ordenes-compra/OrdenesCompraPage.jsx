@@ -33,7 +33,7 @@ const PAGE_SIZE = 10;
 const PILL_ACTIVO_POR_VARIANTE = {
   alerta: "border-laton bg-laton text-hueso",
   ok: "border-pino bg-pino text-hueso",
-  neutro: "border-[#867d68] bg-[#867d68] text-hueso",
+  neutro: "border-inactivo bg-inactivo text-hueso",
   error: "border-error bg-error text-hueso",
   info: "border-info bg-info text-hueso",
   cerrado: "border-neutro-700 bg-neutro-700 text-hueso",
