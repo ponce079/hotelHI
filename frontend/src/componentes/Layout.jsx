@@ -4,22 +4,17 @@ import { LogOut, Hotel, ChevronDown } from "lucide-react";
 import { useSesion } from "../lib/sesion";
 import { MENU_ITEM_SUELTO, MENU_GRUPOS } from "./menuConfig";
 
-const PILL_ACTIVO = "-mr-8 rounded-full bg-hueso pr-8 text-laton-700";
-// Mismo molde que el activo (rounded-full + fuga -mr-8/pr-8) para que el
-// hover se sienta "el mismo gesto" que el estado seleccionado — solo
-// cambia el color (translucido en vez de bg-hueso solido) para marcarlo
-// como estado "de paso". Al ser una clase aparte de PILL_ACTIVO, el item
-// activo nunca hereda este hover (no tiene "hover:" en su propia clase).
-const PILL_INACTIVO = "mr-0 rounded-full pr-3 text-hueso/75 hover:-mr-8 hover:bg-white/10 hover:pr-8";
+const PILL_ACTIVO = "rounded-full bg-hueso text-laton-700";
+const PILL_INACTIVO = "rounded-full text-hueso/75 hover:bg-white/10";
 
 function ItemMenu({ to, end, icon: Icon, label }) {
   return (
-    <div className="w-52">
+    <div className="w-60">
       <NavLink
         to={to}
         end={end}
         className={({ isActive }) =>
-          `flex items-center gap-2.5 py-2 pl-3 font-body text-[13px] font-semibold transition-all ${
+          `flex items-center gap-2.5 py-2.5 pl-3 pr-8 font-body text-[14px] font-semibold transition-colors ${
             isActive ? PILL_ACTIVO : PILL_INACTIVO
           }`
         }
@@ -59,19 +54,12 @@ export function Layout() {
   return (
     <div className="flex min-h-screen bg-hueso print:block print:min-h-0 print:bg-white">
       <aside className="sticky top-0 mr-4 h-screen w-[236px] flex-none relative print:hidden">
-        {/* Capa de fondo, separada de la de contenido: es la unica con
-            overflow-hidden, asi es la unica responsable de recortar el
-            degradado a las esquinas redondeadas. El aside queda pegado al
-            borde izquierdo y ocupa el alto completo del viewport, asi que
-            solo las dos esquinas derechas (las que no tocan el borde de la
-            ventana) llevan curva — las izquierdas van a angulo recto
-            (rounded-r-lg, no rounded-lg). La capa de contenido (mas abajo)
-            no puede tener overflow-hidden porque el pill activo necesita
-            escaparse 18px por el borde derecho — si el recorte viviera en
-            el mismo elemento que el contenido, se comian una cosa a la
-            otra (o se ve el pill cortado, o las esquinas quedan en angulo
-            recto). */}
-        <div aria-hidden="true" className="absolute inset-0 rounded-r-lg overflow-hidden bg-gradient-to-br from-pino-900 to-pino-700" />
+        {/* Capa de fondo, separada de la de contenido: la capa de contenido
+            (mas abajo) no puede tener overflow-hidden porque el pill de
+            cada item (en los 3 estados, no solo el activo) escapa 18px
+            por el borde derecho — si el recorte viviera en el mismo
+            elemento que el contenido, se veria el pill cortado. */}
+        <div aria-hidden="true" className="absolute inset-0 overflow-hidden bg-gradient-to-br from-pino-900 to-pino-700" />
         <div className="relative flex h-full flex-col gap-3.5 px-3.5 py-3">
           <div className="flex shrink-0 flex-col items-center gap-1 px-2.5">
             <div className="flex h-11 w-11 flex-none items-center justify-center rounded-full bg-white/15">
@@ -84,20 +72,16 @@ export function Layout() {
             </div>
           </div>
 
-          {/* w-60 (240px, arranca en el mismo x que antes): el nav mismo
-              queda tan ancho como el maximo alcance del pill activo (borde
-              del aside + 18px de fuga), asi el overflow-y-auto de abajo no
-              le recorta el eje horizontal a nadie que escape hasta ese
-              limite. Los hijos que NO deben estirarse a ese ancho extra (el
-              label y cada item) se fijan explicitamente en 208px (w-52) —
-              el ancho "de columna" original. El contenedor de cada grupo
-              colapsable repite el mismo truco con su propio w-60: su div
-              interno de overflow-hidden (necesario para que la animacion de
-              alto colapse a 0 de verdad, ver mas abajo) tambien necesita
-              ser tan ancho como el escape del pill, o le recortaria la fuga
-              a cualquier item activo dentro de un grupo. */}
+          {/* w-60 (240px): ancho unico para nav, headers de grupo y cada
+              item. Con pr-8 fijo en los 3 estados (activo/inactivo/hover,
+              ver PILL_ACTIVO/PILL_INACTIVO), el pill de cada item ocupa
+              siempre el mismo ancho y llega hasta el borde del aside sin
+              depender de un margen negativo condicional — por eso ya no
+              hace falta una columna angosta (w-52) separada para lo que
+              no debia alcanzar el borde. El overflow-y-auto de abajo no
+              recorta nada porque nav ya declara el ancho final. */}
           <nav className="scrollbar-hide flex min-h-0 w-60 flex-1 flex-col gap-0.5 overflow-y-auto">
-            <div className="w-52 px-2.5 pb-0.5 font-body text-[9.5px] font-semibold tracking-widest text-hueso/50 uppercase">
+            <div className="w-60 px-2.5 pb-0.5 font-body text-[9.5px] font-semibold tracking-widest text-hueso/50 uppercase">
               Menú del perfil
             </div>
 
@@ -110,7 +94,7 @@ export function Layout() {
                   <button
                     type="button"
                     onClick={() => toggleGrupo(grupo.grupo)}
-                    className="flex w-52 cursor-pointer items-center justify-between border-t border-hueso/15 px-2.5 pt-2 pb-1 font-body text-[9.5px] font-semibold tracking-widest text-hueso/40 uppercase transition-colors hover:text-hueso/70"
+                    className="flex w-60 cursor-pointer items-center justify-between border-t border-hueso/15 px-2.5 pt-2 pb-1 font-body text-[9.5px] font-semibold tracking-widest text-hueso/40 uppercase transition-colors hover:text-hueso/70"
                   >
                     {grupo.grupo}
                     <ChevronDown size={12} className={`transition-transform duration-200 ${abierto ? "rotate-180" : ""}`} />
@@ -153,20 +137,10 @@ export function Layout() {
             <button
               type="button"
               onClick={cerrarSesion}
-              className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-hueso/20 px-3 py-1.5 font-body text-xs font-semibold text-hueso/60 hover:bg-white/10 hover:text-hueso"
+              className="flex w-full cursor-pointer items-center justify-center gap-1.5 rounded-md border border-hueso/20 px-3 py-1.5 font-body text-xs font-semibold text-hueso/60 transition-colors duration-200 hover:bg-red-500/10 hover:text-red-400"
             >
               <LogOut size={14} /> Cerrar sesión
             </button>
-          </div>
-
-          {/* Sello decorativo: monograma calcado del sistema de marca (Fraunces
-              + iniciales SGH), en baja opacidad para no competir con el menú. */}
-          <div className="flex shrink-0 justify-center">
-            <div className="flex h-9 w-9 items-center justify-center rounded-full border border-hueso/15">
-              <div className="flex h-6 w-6 items-center justify-center rounded-full border border-hueso/10">
-                <span className="font-heading text-[8px] font-semibold tracking-[0.03em] text-hueso/30">SGH</span>
-              </div>
-            </div>
           </div>
         </div>
       </aside>
