@@ -18,6 +18,8 @@ export function Table({
   columnasDerecha = [],
   encabezadoDestacado = false,
   columnasOcultarImprimir = [],
+  className = "",
+  anchosColumnas = [],
 }) {
   if (!filas || filas.length === 0) {
     return <p className="py-8 text-center text-sm text-piedra">{vacio}</p>;
@@ -25,7 +27,14 @@ export function Table({
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className={`w-full text-sm ${className}`}>
+        {anchosColumnas.length > 0 && (
+          <colgroup>
+            {columnas.map((columna, indice) => (
+              <col key={`${columna}-${indice}`} style={{ width: anchosColumnas[indice] }} />
+            ))}
+          </colgroup>
+        )}
         <thead>
           <tr className={encabezadoDestacado ? "bg-hueso" : ""}>
             {columnas.map((col) => (
