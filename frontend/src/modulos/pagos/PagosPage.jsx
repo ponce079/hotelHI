@@ -25,7 +25,8 @@ const PAGE_SIZE = 10;
 
 export function PagosPage() {
   const { puede } = useSesion();
-  const tienePermiso = puede("registrarPago");
+  const tienePermiso = puede("verPagos");
+  const puedeRegistrar = puede("registrarPago");
   const navigate = useNavigate();
   const { toast, mostrarToast } = useToast();
   const [mostrarWizard, setMostrarWizard] = useState(false);
@@ -63,7 +64,9 @@ export function PagosPage() {
 
   // Backend no valida rol todavia (Sprint 3) — este chequeo + <SinPermiso />
   // + el enabled:tienePermiso de arriba es lo único que impide entrar
-  // por URL directa sin ser "compras".
+  // por URL directa sin ser "compras" o "gerente" (HU-78, solo lectura
+  // para gerente). El botón de generar orden y las acciones del modal de
+  // detalle siguen exclusivas de compras (puedeRegistrar).
   if (!tienePermiso) return <SinPermiso />;
 
   const hayFiltros = filtros.proveedorId || filtros.medio || filtros.desde || filtros.hasta;
@@ -96,9 +99,11 @@ export function PagosPage() {
           <h1 className="font-heading text-[34px] font-semibold">Pagos a Proveedores</h1>
           <p className="mt-1.5 font-mono text-[11px] text-tinta/55">HU 76 a 79, 86 — órdenes de pago y su desglose por medio</p>
         </div>
-        <Button variante="ok" onClick={() => setMostrarWizard(true)} icono={Plus}>
-          Generar orden de pago
-        </Button>
+        {puedeRegistrar && (
+          <Button variante="ok" onClick={() => setMostrarWizard(true)} icono={Plus}>
+            Generar orden de pago
+          </Button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-4">

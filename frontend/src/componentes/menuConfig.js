@@ -47,7 +47,9 @@ export const MENU_GRUPOS = [
     // Compras y Pagos (HU-18 a 25, 76 a 86): todo el ciclo de compra, de
     // Proveedores/Requerimientos/Presupuestos a OC → Comprobantes → Pagos.
     // Cuenta Corriente no es una entrada propia: es una pestaña dentro de
-    // Pagos a Proveedores (mismo rol exacto).
+    // Pagos a Proveedores (mismo rol). Gerente entra a ambas de solo
+    // lectura (HU-78/HU-80, corregido en la re-auditoria de Sprint 2 del
+    // 2026-09-16) — ver verPagos/verCuentaCorriente en sesion.jsx.
     grupo: "Compras y Pagos",
     items: [
       { to: "/proveedores", label: "Proveedores", icon: Building2, roles: ["compras", "admin"] },
@@ -55,7 +57,7 @@ export const MENU_GRUPOS = [
       { to: "/presupuestos", label: "Presupuestos", icon: FileText, roles: ["compras", "gerente"] },
       { to: "/ordenes-compra", label: "Órdenes de Compra", icon: ShoppingCart, roles: ["compras", "gerente", "deposito"] },
       { to: "/comprobantes", label: "Comprobantes", icon: FileText, roles: ["compras"] },
-      { to: "/pagos", label: "Pagos a Proveedores", icon: Wallet, roles: ["compras"] },
+      { to: "/pagos", label: "Pagos a Proveedores", icon: Wallet, roles: ["compras", "gerente"] },
     ],
   },
   {

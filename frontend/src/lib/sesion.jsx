@@ -91,10 +91,18 @@ export function SesionProvider({ children }) {
         // Sprint 2 — Pagos a Proveedores (HU-76 a 79, 86): backend no
         // valida rol todavia (ver sesion.jsx arriba), asi que esta
         // pantalla depende de este chequeo + <SinPermiso />.
+        // verPagos (HU-78, corregido en la re-auditoria de Sprint 2 del
+        // 2026-09-16): gerente necesita consultar el listado de pagos, de
+        // solo lectura — separado de registrarPago (generar orden de
+        // pago, anular, cambiar estado de cheque), que sigue siendo
+        // exclusivo de compras.
+        if (accion === "verPagos") return rol === "compras" || rol === "gerente";
         if (accion === "registrarPago") return rol === "compras";
         // Sprint 2 — Cuenta Corriente de Proveedores (HU-80): de solo
-        // lectura, mismo rol que Pagos.
-        if (accion === "verCuentaCorriente") return rol === "compras";
+        // lectura. Corregido en la re-auditoria del 2026-09-16 — la
+        // historia pide explicitamente acceso de gerente y el gate
+        // original lo dejaba afuera (mismo patron de brecha que HU-78).
+        if (accion === "verCuentaCorriente") return rol === "compras" || rol === "gerente";
         if (accion === "registrarComprobante") return rol === "compras";
         // Sprint 2 — Proveedores (HU-18 a 21): el padrón lo administra
         // compras; admin entra porque es catálogo maestro, igual que
