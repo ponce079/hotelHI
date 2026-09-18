@@ -7,28 +7,30 @@ datasource db {
 }
 
 model Articulo {
-  id                    Int                      @id @default(autoincrement())
-  codigo                String?                  @unique
-  nombre                String                   @unique(map: "articulos_descripcion_key")
-  unidadMedida          String
-  categoria             String
-  activo                Boolean                  @default(true)
+  id                        Int                        @id @default(autoincrement())
+  codigo                    String?                    @unique
+  nombre                    String                     @unique(map: "articulos_descripcion_key")
+  unidadMedida              String
+  categoria                 String
+  activo                    Boolean                    @default(true)
   // A qué depósito central pertenece este artículo (Sprint 3 — Transferencia
   // a Central). Sin asignar, el artículo no puede pedirse por TRANSFERENCIA:
   // el sistema no tendría a quién dirigirla sin preguntarle al usuario.
-  depositoCentralId     Int?
+  depositoCentralId         Int?
   // "SUGERIDA" | "AUTOMATICA" — controla si la reposición del central
   // disparada por punto de reorden o por una transferencia bloqueada por
   // falta de stock entra directo al tablero de Compras (Pendiente, igual
   // que el origen ALERTA de hoy) o queda en una bandeja de sugerencias que
   // alguien debe confirmar antes.
-  modoReposicion        String                   @default("SUGERIDA")
-  depositoCentral       Deposito?                @relation("ArticuloDepositoCentral", fields: [depositoCentralId], references: [id])
-  articuloDepositos     ArticuloDeposito[]
-  detalleMovimientos    MovimientoStockDetalle[]
-  detalleOC             OrdenCompraDetalle[]
-  detalleRequerimientos RequerimientoDetalle[]
-  detallePresupuestos   PresupuestoDetalle[]
+  modoReposicion            String                     @default("SUGERIDA")
+  depositoCentral           Deposito?                  @relation("ArticuloDepositoCentral", fields: [depositoCentralId], references: [id])
+  articuloDepositos         ArticuloDeposito[]
+  detalleMovimientos        MovimientoStockDetalle[]
+  detalleOC                 OrdenCompraDetalle[]
+  detalleRequerimientos     RequerimientoDetalle[]
+  detallePresupuestos       PresupuestoDetalle[]
+  // Sprint 3 — consumo de servicios adicionales (Minibar) que descuenta stock de este artículo.
+  consumosServicioAdicional ConsumoServicioAdicional[]
 
   @@index([depositoCentralId], map: "articulos_depositoCentralId_fkey")
   @@map("articulos")
@@ -486,4 +488,204 @@ model OrdenPagoMedio {
   @@index([banco, numeroCheque], map: "ordenes_pago_medio_banco_numeroCheque_idx")
   @@index([ordenPagoId], map: "ordenes_pago_medio_ordenPagoId_fkey")
   @@map("ordenes_pago_medio")
+}
+
+// ────────────────────────────────────────────────────────────
+// Sprint 3 — Habitaciones, Reservas, Check-in/Check-out,
+// Servicios Adicionales y Facturación y Pagos del Huésped
+// Ver Modelo_de_Datos_Sprint3_Holiday_Inn.docx para el detalle
+// de columnas y relaciones que sustenta este bloque.
+// ────────────────────────────────────────────────────────────
+
+model Habitacion {
+  id             Int     @id @default(autoincrement())
+  numero         String  @unique
+  tipo           String
+  capacidad      Int
+  piso           Int
+  // Texto libre o JSON con el detalle de equipamiento.
+  equipamiento   String? @db.Text
+  // libre | ocupada | mantenimiento | bloqueada | en limpieza
+  estado         String  @default("libre")
+  // Precio por noche propio de la habitación (no una tarifa fija por tipo).
+  tarifaPorNoche Decimal @db.Decimal(12, 2)
+  activo         Boolean @default(true)
+
+  ordenesMantenimiento      OrdenMantenimiento[]
+  reservaHabitaciones       ReservaHabitacion[]
+  consumosServicioAdicional ConsumoServicioAdicional[]
+  notificaciones            Notificacion[]
+
+  @@map("habitaciones")
+}
+
+model OrdenMantenimiento {
+  id             Int            @id @default(autoincrement())
+  habitacionId   Int
+  // Correctivo | Preventivo
+  tipoTarea      String
+  responsable    String
+  fecha          DateTime       @default(now())
+  habitacion     Habitacion     @relation(fields: [habitacionId], references: [id])
+  notificaciones Notificacion[]
+
+  @@index([habitacionId], map: "ordenes_mantenimiento_habitacionId_fkey")
+  @@map("ordenes_mantenimiento")
+}
+
+model Reserva {
+  id                 Int      @id @default(autoincrement())
+  huespedId          Int
+  fechaDesde         DateTime
+  fechaHasta         DateTime
+  // Confirmada | En curso (tras check-in) | Cerrada (tras check-out) | Cancelada
+  estado             String   @default("Confirmada")
+  motivoCancelacion  String?
+  codigoConfirmacion String   @unique
+  huesped            Huesped  @relation(fields: [huespedId], references: [id])
+
+  reservaHabitaciones        ReservaHabitacion[]
+  consumosServicioAdicional  ConsumoServicioAdicional[]
+  cargosVerificacionCheckout CargoVerificacionCheckout[]
+  pagosEstadia               PagoEstadia[]
+  comprobantesEstadia        ComprobanteEstadia[]
+  notificaciones             Notificacion[]
+
+  @@index([huespedId], map: "reservas_huespedId_fkey")
+  @@map("reservas")
+}
+
+model ReservaHabitacion {
+  id           Int        @id @default(autoincrement())
+  reservaId    Int
+  habitacionId Int
+  reserva      Reserva    @relation(fields: [reservaId], references: [id])
+  habitacion   Habitacion @relation(fields: [habitacionId], references: [id])
+
+  @@unique([reservaId, habitacionId])
+  @@index([habitacionId], map: "reservas_habitaciones_habitacionId_fkey")
+  @@map("reservas_habitaciones")
+}
+
+model Huesped {
+  id              Int       @id @default(autoincrement())
+  nombre          String
+  tipoDocumento   String
+  numeroDocumento String
+  contacto        String?
+  preferencias    String?   @db.Text
+  reservas        Reserva[]
+
+  @@map("huespedes")
+}
+
+model ConsumoServicioAdicional {
+  id            Int        @id @default(autoincrement())
+  reservaId     Int
+  habitacionId  Int
+  // Restaurante | Spa | Lavandería | Minibar
+  tipoServicio  String
+  // Solo seteado cuando tipoServicio = Minibar, para descontar stock real.
+  articuloId    Int?
+  cantidad      Decimal?   @db.Decimal(12, 2)
+  monto         Decimal    @db.Decimal(12, 2)
+  fechaHora     DateTime   @default(now())
+  registradoPor String
+  reserva       Reserva    @relation(fields: [reservaId], references: [id])
+  habitacion    Habitacion @relation(fields: [habitacionId], references: [id])
+  articulo      Articulo?  @relation(fields: [articuloId], references: [id])
+
+  @@index([reservaId], map: "consumos_servicio_adicional_reservaId_fkey")
+  @@index([habitacionId], map: "consumos_servicio_adicional_habitacionId_fkey")
+  @@index([articuloId], map: "consumos_servicio_adicional_articuloId_fkey")
+  @@map("consumos_servicio_adicional")
+}
+
+model PagoEstadia {
+  id              Int                @id @default(autoincrement())
+  reservaId       Int
+  fecha           DateTime           @default(now())
+  // Pagado | Parcial
+  estado          String             @default("Pagado")
+  anulado         Boolean            @default(false)
+  motivoAnulacion String?
+  reserva         Reserva            @relation(fields: [reservaId], references: [id])
+  medios          PagoEstadiaMedio[]
+
+  @@index([reservaId], map: "pagos_estadia_reservaId_fkey")
+  @@map("pagos_estadia")
+}
+
+model PagoEstadiaMedio {
+  id            Int         @id @default(autoincrement())
+  pagoEstadiaId Int
+  // Efectivo | Tarjeta crédito | Tarjeta débito | Transferencia | Online
+  medioPago     String
+  importe       Decimal     @db.Decimal(12, 2)
+  pagoEstadia   PagoEstadia @relation(fields: [pagoEstadiaId], references: [id])
+
+  @@index([pagoEstadiaId], map: "pagos_estadia_medio_pagoEstadiaId_fkey")
+  @@map("pagos_estadia_medio")
+}
+
+model ComprobanteEstadia {
+  id                       Int                  @id @default(autoincrement())
+  reservaId                Int
+  // Comprobante | Nota de Crédito (mismo patrón que ComprobanteProveedor)
+  tipo                     String
+  // Correlativo interno, sin validez fiscal
+  numero                   String               @unique
+  importeNeto              Decimal              @db.Decimal(12, 2)
+  alicuotaIVA              Decimal              @db.Decimal(5, 2)
+  importeIVA               Decimal              @db.Decimal(12, 2)
+  importeTotal             Decimal              @db.Decimal(12, 2)
+  comprobanteRelacionadoId Int?
+  // Facturación corporativa (HU-55)
+  razonSocialTercero       String?
+  cuitTercero              String?
+  anulado                  Boolean              @default(false)
+  reserva                  Reserva              @relation(fields: [reservaId], references: [id])
+  comprobanteRelacionado   ComprobanteEstadia?  @relation("AjustesComprobanteEstadia", fields: [comprobanteRelacionadoId], references: [id])
+  ajustes                  ComprobanteEstadia[] @relation("AjustesComprobanteEstadia")
+
+  @@index([reservaId], map: "comprobantes_estadia_reservaId_fkey")
+  @@index([comprobanteRelacionadoId], map: "comprobantes_estadia_comprobanteRelacionadoId_fkey")
+  @@map("comprobantes_estadia")
+}
+
+model Notificacion {
+  id                   Int                 @id @default(autoincrement())
+  // Mantenimiento | Reserva | Housekeeping
+  tipo                 String
+  habitacionId         Int?
+  ordenMantenimientoId Int?
+  reservaId            Int?
+  destinatarioArea     String
+  // Interno | Email | SMS
+  canal                String
+  mensaje              String?             @db.Text
+  fechaEnvio           DateTime            @default(now())
+  habitacion           Habitacion?         @relation(fields: [habitacionId], references: [id])
+  ordenMantenimiento   OrdenMantenimiento? @relation(fields: [ordenMantenimientoId], references: [id])
+  reserva              Reserva?            @relation(fields: [reservaId], references: [id])
+
+  @@index([habitacionId], map: "notificaciones_habitacionId_fkey")
+  @@index([ordenMantenimientoId], map: "notificaciones_ordenMantenimientoId_fkey")
+  @@index([reservaId], map: "notificaciones_reservaId_fkey")
+  @@map("notificaciones")
+}
+
+model CargoVerificacionCheckout {
+  id            Int      @id @default(autoincrement())
+  reservaId     Int
+  // Daño | Faltante | ConsumoNoRegistrado
+  tipo          String
+  descripcion   String   @db.Text
+  monto         Decimal  @db.Decimal(12, 2)
+  registradoPor String
+  fechaHora     DateTime @default(now())
+  reserva       Reserva  @relation(fields: [reservaId], references: [id])
+
+  @@index([reservaId], map: "cargos_verificacion_checkout_reservaId_fkey")
+  @@map("cargos_verificacion_checkout")
 }
