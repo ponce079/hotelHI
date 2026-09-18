@@ -6,6 +6,7 @@ import { Modal } from "../../componentes/Modal";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { ConfirmDialog } from "../../componentes/ConfirmDialog";
+import { useSesion } from "../../lib/sesion";
 import { formatearMonto } from "../../lib/moneda";
 import { hoyEnHoraLocal } from "../../lib/fechas";
 import { obtenerOrdenPago, anularOrdenPago, actualizarEstadoCheque } from "./pagos.api";
@@ -22,6 +23,12 @@ const ICONO_MEDIO = { Efectivo: Banknote, Transferencia: Landmark, Cheque: Credi
 // exportar todavía.
 export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
   const queryClient = useQueryClient();
+  // Este modal se abre desde Pagos (HU-78) y desde Cuenta Corriente
+  // (HU-80), ambas ahora también accesibles a gerente en modo lectura —
+  // sin este chequeo, gerente vería igual los botones de anular/cambiar
+  // estado de cheque, que siguen siendo exclusivos de compras.
+  const { puede } = useSesion();
+  const puedeRegistrar = puede("registrarPago");
 
   const [motivo, setMotivo] = useState("");
   const [errorMotivo, setErrorMotivo] = useState("");
@@ -140,7 +147,7 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
             <div className="mt-2 flex flex-col gap-2">
               {orden.medios.map((m) => {
                 const Icono = ICONO_MEDIO[m.medioPago] ?? Banknote;
-                const puedeAccionar = vigente && m.medioPago === "Cheque" && m.estadoCheque === "Emitido";
+                const puedeAccionar = puedeRegistrar && vigente && m.medioPago === "Cheque" && m.estadoCheque === "Emitido";
                 const accionAbierta = medioAccion?.id === m.id ? medioAccion.modo : null;
                 return (
                   <div
@@ -255,7 +262,7 @@ export function OrdenPagoDetalleModal({ ordenId, onClose, onExito }) {
             {errorCheque && <p className="mt-2 text-[11.5px] text-error-texto">{errorCheque}</p>}
           </div>
 
-          {vigente && (
+          {vigente && puedeRegistrar && (
             <div className="flex flex-col gap-2 border-t border-borde pt-5">
               <span className="text-[11px] font-semibold tracking-wide text-piedra uppercase">
                 Anulación · motivo obligatorio
