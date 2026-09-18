@@ -27,6 +27,18 @@ export const ROLES = {
     label: "Gerente",
     descripcion: "Aprobación de presupuestos, cuenta corriente y reportes de consumo",
   },
+  recepcionista: {
+    label: "Recepcionista",
+    descripcion: "Consulta de disponibilidad y estado operativo de las habitaciones",
+  },
+  mantenimiento: {
+    label: "Personal de Mantenimiento",
+    descripcion: "Órdenes correctivas, preventivas e incidentes urgentes de habitaciones",
+  },
+  housekeeping: {
+    label: "Housekeeping",
+    descripcion: "Estado de limpieza y liberación de habitaciones para recepción",
+  },
 };
 
 const CLAVE_STORAGE = "sgh_sesion";
@@ -140,6 +152,14 @@ export function SesionProvider({ children }) {
         // de rol (accesible por cualquier usuario autenticado). Cerrado en
         // la re-auditoría de Sprint 1 del 2026-09-18.
         if (accion === "verKardex") return rol === "deposito" || rol === "gerente";
+        // Sprint 3 académico — Habitaciones (HU-31 a HU-35). Los roles son
+        // una restricción de UI hasta que exista autenticación real en backend.
+        if (accion === "verHabitaciones") {
+          return ["admin", "recepcionista", "mantenimiento", "housekeeping"].includes(rol);
+        }
+        if (accion === "gestionarHabitaciones") return rol === "admin";
+        if (accion === "gestionarMantenimiento") return rol === "mantenimiento";
+        if (accion === "actualizarEstadoHabitacion") return rol === "admin" || rol === "housekeeping";
         return false;
       },
     };
