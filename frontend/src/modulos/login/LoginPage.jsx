@@ -3,11 +3,11 @@ import { useNavigate } from "react-router-dom";
 import { useSesion, ROLES } from "../../lib/sesion";
 import { Button } from "../../componentes/Button";
 
-const ORDEN_ROLES = ["admin", "deposito", "compras", "gerente"];
+const ORDEN_ROLES = ["admin", "recepcionista", "mantenimiento", "housekeeping", "deposito", "compras", "gerente"];
 // Sprint 2 sumó Compras y Gastos como pilares del sistema, no solo
 // Depósito y Stock (Sprint 1) — el chip destacado (el último) pasa a ser
 // el más nuevo, igual que "Recepciones" lo era en el diseño de Sprint 1.
-const CHIPS = ["Artículos", "Depósitos y Stock", "Compras", "Gastos"];
+const CHIPS = ["Habitaciones", "Mantenimiento", "Housekeeping", "Stock", "Compras"];
 
 export function LoginPage() {
   const navigate = useNavigate();
@@ -49,11 +49,11 @@ export function LoginPage() {
 
         <div className="max-w-[540px]">
           <h1 className="mb-4 font-heading text-[38px] leading-[1.04] md:text-[54px]">
-            Depósito, compras y gastos, bajo control.
+            La operación del hotel, bajo control.
           </h1>
           <p className="max-w-[440px] text-base leading-relaxed text-hueso/80">
-            Catálogo de artículos y stock por depósito, más el circuito completo de compras a
-            proveedores: requerimientos, presupuestos, órdenes de compra, comprobantes y pagos.
+            Habitaciones, mantenimiento y housekeeping integrados al circuito de depósitos,
+            compras, comprobantes y pagos del hotel.
           </p>
           <div className="mt-[26px] flex flex-wrap gap-2">
             {CHIPS.map((chip, i) => {
