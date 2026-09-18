@@ -13,6 +13,7 @@ import {
   ClipboardList,
   FileText,
   Tag,
+  BedDouble,
 } from "lucide-react";
 
 // Menu por rol, calcado de MENUS del prototipo (y de lo que dice cada
@@ -32,6 +33,17 @@ import {
 export const MENU_ITEM_SUELTO = { to: "/", label: "Inicio", icon: Home, end: true };
 
 export const MENU_GRUPOS = [
+  {
+    grupo: "Operación Hotelera",
+    items: [
+      {
+        to: "/habitaciones",
+        label: "Habitaciones",
+        icon: BedDouble,
+        roles: ["admin", "recepcionista", "mantenimiento", "housekeeping"],
+      },
+    ],
+  },
   {
     grupo: "Stock y Depósitos",
     items: [
