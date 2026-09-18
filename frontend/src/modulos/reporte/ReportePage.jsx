@@ -5,24 +5,31 @@ import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
 import { Toast } from "../../componentes/Toast";
 import { SinPermiso } from "../../componentes/SinPermiso";
+import { listarArticulos } from "../articulos/articulos.api";
 import { listarDepositos } from "../depositos/depositos.api";
 import { listarMovimientos } from "../movimientos/movimientos.api";
 import { useToast } from "../../lib/useToast";
 import { useSesion } from "../../lib/sesion";
 import { hoyEnHoraLocal, primerDiaDelMesISO } from "../../lib/fechas";
 
-function agruparConsumo(movimientos) {
+function agruparConsumo(movimientos, articuloId) {
   const map = new Map();
   (movimientos ?? []).forEach((m) => {
-    m.detalleMovimientos.forEach((l) => {
-      const key = m.depositoId + "|" + l.articuloId;
-      if (!map.has(key)) {
-        map.set(key, { deposito: m.deposito.nombre, articulo: l.articulo.nombre, unidadMedida: l.articulo.unidadMedida, cantidad: 0, movs: 0 });
-      }
-      const fila = map.get(key);
-      fila.cantidad += Number(l.cantidad);
-      fila.movs += 1;
-    });
+    // El filtro de articuloId en listarMovimientos trae movimientos que
+    // TIENEN esa línea (where.detalleMovimientos.some), pero un mismo
+    // movimiento puede traer otras líneas de otros artículos — sin este
+    // filtro, quedaban mezclados en la tabla igual con el artículo elegido.
+    m.detalleMovimientos
+      .filter((l) => !articuloId || l.articuloId === Number(articuloId))
+      .forEach((l) => {
+        const key = m.depositoId + "|" + l.articuloId;
+        if (!map.has(key)) {
+          map.set(key, { deposito: m.deposito.nombre, articulo: l.articulo.nombre, unidadMedida: l.articulo.unidadMedida, cantidad: 0, movs: 0 });
+        }
+        const fila = map.get(key);
+        fila.cantidad += Number(l.cantidad);
+        fila.movs += 1;
+      });
   });
   return [...map.values()].sort((a, b) => b.cantidad - a.cantidad);
 }
@@ -31,19 +38,32 @@ export function ReportePage() {
   const { puede } = useSesion();
   const { toast, mostrarToast } = useToast();
   const [depositoId, setDepositoId] = useState("");
+  const [articuloId, setArticuloId] = useState("");
   const [desde, setDesde] = useState(primerDiaDelMesISO());
   const [hasta, setHasta] = useState(hoyEnHoraLocal());
 
   const { data: depositos } = useQuery({ queryKey: ["depositos"], queryFn: listarDepositos, enabled: puede("verReporte") });
+  const { data: articulos } = useQuery({
+    queryKey: ["articulos", { estado: "todos", pageSize: 500 }],
+    queryFn: () => listarArticulos({ estado: "todos", pageSize: 500 }),
+    enabled: puede("verReporte"),
+  });
   const { data: movimientos, isLoading } = useQuery({
-    queryKey: ["movimientos", { tipo: "S", desde, hasta, depositoId: depositoId || undefined }],
-    queryFn: () => listarMovimientos({ tipo: "S", desde, hasta, ...(depositoId ? { depositoId } : {}) }),
+    queryKey: ["movimientos", { tipo: "S", desde, hasta, depositoId: depositoId || undefined, articuloId: articuloId || undefined }],
+    queryFn: () =>
+      listarMovimientos({
+        tipo: "S",
+        desde,
+        hasta,
+        ...(depositoId ? { depositoId } : {}),
+        ...(articuloId ? { articuloId } : {}),
+      }),
     enabled: puede("verReporte"),
   });
 
   if (!puede("verReporte")) return <SinPermiso />;
 
-  const filas = agruparConsumo(movimientos);
+  const filas = agruparConsumo(movimientos, articuloId);
   const total = filas.reduce((acc, f) => acc + f.cantidad, 0);
 
   return (
@@ -67,6 +87,21 @@ export function ReportePage() {
             {depositos?.map((d) => (
               <option key={d.id} value={d.id}>
                 {d.nombre}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="flex min-w-[220px] flex-col gap-1.5 text-sm">
+          <span className="text-[12px] text-tinta/70">Artículo</span>
+          <select
+            value={articuloId}
+            onChange={(e) => setArticuloId(e.target.value)}
+            className="cursor-pointer rounded-md border border-borde px-3 py-2 text-sm"
+          >
+            <option value="">Todos los artículos</option>
+            {articulos?.items?.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.codigo} · {a.nombre}
               </option>
             ))}
           </select>
