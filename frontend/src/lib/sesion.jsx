@@ -135,6 +135,11 @@ export function SesionProvider({ children }) {
         // Reporte de Consumo (HU-9): solo gerente, mismo criterio que
         // aprobarPresupuesto/verCuentaCorriente por rol.
         if (accion === "verReporte") return rol === "gerente";
+        // Kardex (HU-16): la propia historia dice "Como encargado de
+        // depósito / gerente" — antes esta pantalla no tenía ningún gate
+        // de rol (accesible por cualquier usuario autenticado). Cerrado en
+        // la re-auditoría de Sprint 1 del 2026-09-18.
+        if (accion === "verKardex") return rol === "deposito" || rol === "gerente";
         return false;
       },
     };

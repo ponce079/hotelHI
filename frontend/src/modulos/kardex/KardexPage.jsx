@@ -4,6 +4,8 @@ import { History, ArrowLeft } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
+import { SinPermiso } from "../../componentes/SinPermiso";
+import { useSesion } from "../../lib/sesion";
 import { listarArticulos } from "../articulos/articulos.api";
 import { listarDepositos } from "../depositos/depositos.api";
 import { listarMovimientos } from "../movimientos/movimientos.api";
@@ -36,27 +38,62 @@ function vinculadoDe(f) {
   return "—";
 }
 
+// Filtro de fecha solo de DISPLAY sobre las filas ya calculadas: el saldo
+// corriente de cada fila (calcularKardex) necesita el historial COMPLETO
+// del artículo/depósito para reconstruirse bien desde el stock actual —
+// si filtráramos los movimientos antes de calcular el kardex, "saldo
+// inicial" quedaría mal si hay movimientos posteriores a "hasta" que el
+// stock actual sí incluye.
+//
+// MovimientoStock.fecha es un timestamp real (no una fecha-solo-día), y
+// esta pantalla lo muestra en hora argentina (toLocaleDateString("es-AR"),
+// igual que formatearTimestamp de lib/fechas.js) — así que "Desde"/"Hasta"
+// tienen que interpretarse como día calendario en Argentina (UTC-3, sin
+// horario de verano desde 2009), no como medianoche UTC: si no, un
+// movimiento que la tabla muestra como "8/9" podía quedar afuera de un
+// filtro "Desde 9/9" (o adentro de uno que no debía), porque
+// new Date("2026-09-09") sin offset es medianoche UTC = 8/9 21hs ART.
+const OFFSET_ARGENTINA = "-03:00";
+
+function dentroDeRango(fechaISO, desde, hasta) {
+  if (!desde && !hasta) return true;
+  const fecha = new Date(fechaISO);
+  if (desde && fecha < new Date(`${desde}T00:00:00${OFFSET_ARGENTINA}`)) return false;
+  if (hasta) {
+    const inicioHasta = new Date(`${hasta}T00:00:00${OFFSET_ARGENTINA}`);
+    const siguienteDia = new Date(inicioHasta.getTime() + 24 * 60 * 60 * 1000);
+    if (fecha >= siguienteDia) return false;
+  }
+  return true;
+}
+
 export function KardexPage() {
+  const { puede } = useSesion();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const articuloId = searchParams.get("articuloId") ?? "";
   const depositoId = searchParams.get("depositoId") ?? "";
+  const desde = searchParams.get("desde") ?? "";
+  const hasta = searchParams.get("hasta") ?? "";
 
   const { data: articulos } = useQuery({
     queryKey: ["articulos", { estado: "todos", pageSize: 500 }],
     queryFn: () => listarArticulos({ estado: "todos", pageSize: 500 }),
+    enabled: puede("verKardex"),
   });
-  const { data: depositos } = useQuery({ queryKey: ["depositos"], queryFn: listarDepositos });
+  const { data: depositos } = useQuery({ queryKey: ["depositos"], queryFn: listarDepositos, enabled: puede("verKardex") });
   const { data: movimientos, isLoading } = useQuery({
     queryKey: ["movimientos", { articuloId, depositoId }],
     queryFn: () => listarMovimientos({ articuloId, depositoId }),
-    enabled: Boolean(articuloId && depositoId),
+    enabled: puede("verKardex") && Boolean(articuloId && depositoId),
   });
   const { data: stockFilas } = useQuery({
     queryKey: ["stock", { articuloId, depositoId, incluirInactivos: true }],
     queryFn: () => consultarStock({ articuloId, depositoId, incluirInactivos: true }),
-    enabled: Boolean(articuloId && depositoId),
+    enabled: puede("verKardex") && Boolean(articuloId && depositoId),
   });
+
+  if (!puede("verKardex")) return <SinPermiso />;
 
   function actualizarFiltro(clave, valor) {
     const params = new URLSearchParams(searchParams);
@@ -68,6 +105,7 @@ export function KardexPage() {
   const stockActual = stockFilas?.[0]?.stockActual ?? 0;
   const unidadMedida = stockFilas?.[0]?.unidadMedida ?? "";
   const kardex = articuloId && depositoId ? calcularKardex(movimientos, Number(articuloId), stockActual) : null;
+  const filasVisibles = kardex ? kardex.filas.filter((f) => dentroDeRango(f.fecha, desde, hasta)) : [];
   const articuloSel = articulos?.items?.find((a) => String(a.id) === articuloId);
   const depositoSel = depositos?.find((d) => String(d.id) === depositoId);
 
@@ -121,6 +159,24 @@ export function KardexPage() {
             ))}
           </select>
         </label>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="text-[12px] text-tinta/70">Desde</span>
+          <input
+            type="date"
+            value={desde}
+            onChange={(e) => actualizarFiltro("desde", e.target.value)}
+            className="rounded-md border border-borde px-3 py-2 text-sm"
+          />
+        </label>
+        <label className="flex flex-col gap-1.5 text-sm">
+          <span className="text-[12px] text-tinta/70">Hasta</span>
+          <input
+            type="date"
+            value={hasta}
+            onChange={(e) => actualizarFiltro("hasta", e.target.value)}
+            className="rounded-md border border-borde px-3 py-2 text-sm"
+          />
+        </label>
       </div>
 
       {!articuloId || !depositoId ? (
@@ -151,6 +207,8 @@ export function KardexPage() {
           <div className="rounded-lg border border-borde bg-white p-5">
             {kardex.filas.length === 0 ? (
               <p className="text-sm text-piedra">Este artículo no tiene movimientos registrados en ese depósito.</p>
+            ) : filasVisibles.length === 0 ? (
+              <p className="text-sm text-piedra">Ningún movimiento coincide con el rango de fechas elegido.</p>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -167,7 +225,7 @@ export function KardexPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {kardex.filas.map((f) => (
+                    {filasVisibles.map((f) => (
                       <tr key={f.id} className="border-t border-borde">
                         <td className="py-2 font-body text-[12.5px]">{new Date(f.fecha).toLocaleDateString("es-AR")}</td>
                         <td className="py-2 font-mono text-xs">MOV-{String(f.id).padStart(4, "0")}</td>
