@@ -28,6 +28,7 @@ import { PresupuestosPage } from "./modulos/presupuestos/PresupuestosPage";
 import { PresupuestoDetallePage } from "./modulos/presupuestos/PresupuestoDetallePage";
 import { ComprobantesPage } from "./modulos/comprobantes/ComprobantesPage";
 import { ComprobanteDetalle } from "./modulos/comprobantes/ComprobanteDetalle";
+import { HabitacionesPage } from "./modulos/habitaciones/HabitacionesPage";
 
 // Gatekeeper de rutas: sin sesion (sin rol elegido en el login), redirige
 // a /login. No es autenticacion real contra el backend — ver lib/sesion.jsx.
@@ -75,6 +76,8 @@ export default function App() {
               nota son modales sobre ComprobantesPage, no rutas propias. */}
           <Route path="/comprobantes" element={<ComprobantesPage />} />
           <Route path="/comprobantes/:id" element={<ComprobanteDetalle />} />
+          {/* Sprint 3 académico — Administración de Habitaciones (HU-31 a HU-35). */}
+          <Route path="/habitaciones" element={<HabitacionesPage />} />
         </Route>
       </Route>
     </Routes>
