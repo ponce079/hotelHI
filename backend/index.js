@@ -53,6 +53,7 @@ app.use("/api/requerimientos", require("./src/modulos/requerimientos/requerimien
 app.use("/api/presupuestos", require("./src/modulos/presupuestos/presupuestos.routes"));
 app.use("/api/comprobantes", require("./src/modulos/comprobantes/comprobantes.routes"));
 app.use("/api/ordenes-compra", require("./src/modulos/ordenes-compra/ordenesCompra.routes"));
+app.use("/api/habitaciones", require("./src/modulos/habitaciones/habitaciones.routes"));
 
 app.get("/", (req, res) => {
   res.json({ status: "ok", proyecto: "Sistema de Gestión Hotelera - Holiday Inn" });
@@ -77,6 +78,12 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
+
+// Red de seguridad de la reposición automática de centrales — ver
+// src/lib/jobsStockMinimo.js. Se arranca después de levantar el server,
+// no antes: no tiene que bloquear ni condicionar que el servidor escuche.
+require("./src/lib/jobsStockMinimo").iniciarBarridoStockMinimoCentral();
+
 
 // Red de seguridad de la reposición automática de centrales — ver
 // src/lib/jobsStockMinimo.js. Se arranca después de levantar el server,
