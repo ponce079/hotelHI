@@ -29,7 +29,7 @@ export const ROLES = {
   },
   recepcionista: {
     label: "Recepcionista",
-    descripcion: "Consulta de disponibilidad y estado operativo de las habitaciones",
+    descripcion: "Reservas de huéspedes, disponibilidad y estado operativo de las habitaciones",
   },
   mantenimiento: {
     label: "Personal de Mantenimiento",
@@ -160,6 +160,13 @@ export function SesionProvider({ children }) {
         if (accion === "gestionarHabitaciones") return rol === "admin";
         if (accion === "gestionarMantenimiento") return rol === "mantenimiento";
         if (accion === "actualizarEstadoHabitacion") return rol === "admin" || rol === "housekeeping";
+        // Sprint 3 académico — Reservas (HU-36 a HU-42). La historia dice
+        // "Como recepcionista" en el alta, la modificación y la
+        // cancelación; admin entra por ser quien administra la operación
+        // completa. Las pantallas de HU-38 y HU-40 son del rol "Huésped" y
+        // no pasan por acá: viven fuera de <RequireSesion>, sin sesión.
+        if (accion === "verReservas") return rol === "admin" || rol === "recepcionista";
+        if (accion === "gestionarReservas") return rol === "admin" || rol === "recepcionista";
         return false;
       },
     };

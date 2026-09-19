@@ -1,0 +1,777 @@
+// Reservas (HU-36 a HU-42) — alta individual/grupal, modificación,
+// cancelación, disponibilidad en tiempo real, ficha del huésped,
+// confirmación automática y código único.
+//
+// Lógica de negocio pura: no conoce HTTP y mantiene las escrituras
+// relacionadas dentro de una misma transacción de Prisma (misma
+// convención que habitaciones/comprobantes/pagos).
+//
+// Límite de responsabilidad con los otros módulos del Sprint 3:
+//   - NO toca `Habitacion.estado`. Una reserva es un compromiso sobre un
+//     rango de fechas futuro; "ocupada" es el estado físico de HOY y lo
+//     setea el check-in (HU-47, Integrante 3). Una habitación en
+//     mantenimiento esta semana puede estar perfectamente reservable para
+//     el mes que viene, así que la disponibilidad de HU-38 se calcula solo
+//     contra fechas, nunca contra `estado`.
+//   - `marcarEnCurso` / `marcarCerrada` son los únicos puntos por donde
+//     Check-in (HU-47) y Check-out (HU-48 a 52) mueven `Reserva.estado`:
+//     reciben el `tx` de una transacción ya abierta por quien llama, mismo
+//     patrón que ordenesCompraServicio.verificarCierrePorPagos(tx, id).
+
+const crypto = require("crypto");
+const { Prisma } = require("@prisma/client");
+const prisma = require("../../lib/prisma");
+const {
+  ESTADO_RESERVA,
+  ESTADOS_RESERVA,
+  ESTADOS_QUE_OCUPAN,
+  TIPOS_DOCUMENTO,
+  CANALES_CONFIRMACION,
+  CANAL_INTERNO,
+  DESTINATARIO_HUESPED,
+  DESTINATARIO_RECEPCION,
+  TIPO_NOTIFICACION_RESERVA,
+  LIMITES_RESERVA,
+  MAX_INTENTOS_CODIGO,
+  LONGITUD_CODIGO_BYTES,
+  ZONA_ARGENTINA,
+} = require("./reservas.constantes");
+
+class ErrorDeNegocio extends Error {
+  constructor(mensaje, statusCode = 400) {
+    super(mensaje);
+    this.statusCode = statusCode;
+  }
+}
+
+const MILISEGUNDOS_POR_DIA = 24 * 60 * 60 * 1000;
+const PATRON_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+
+// --------------------------------------------------------------
+// Helpers de validación
+// --------------------------------------------------------------
+
+function textoObligatorio(valor, campo, maximo) {
+  const texto = typeof valor === "string" ? valor.trim() : "";
+  if (!texto) throw new ErrorDeNegocio(`${campo} es obligatorio.`);
+  if (texto.length > maximo) throw new ErrorDeNegocio(`${campo} no puede superar los ${maximo} caracteres.`);
+  return texto;
+}
+
+function textoOpcional(valor, campo, maximo) {
+  const texto = typeof valor === "string" ? valor.trim() : "";
+  if (!texto) return null;
+  if (texto.length > maximo) throw new ErrorDeNegocio(`${campo} no puede superar los ${maximo} caracteres.`);
+  return texto;
+}
+
+function enteroPositivo(valor, campo) {
+  const numero = Number(valor);
+  if (!Number.isInteger(numero) || numero < 1) throw new ErrorDeNegocio(`${campo} debe ser un número entero mayor a 0.`);
+  return numero;
+}
+
+// `fechaDesde`/`fechaHasta` son fechas-sin-hora elegidas por el usuario en
+// un <input type="date"> — se guardan como medianoche UTC del día elegido
+// (mismo criterio que ComprobanteProveedor.fecha cuando es Factura). NUNCA
+// new Date(valorSuelto): eso interpreta un string sin zona en la hora local
+// del proceso y en Argentina (UTC-3) corre la reserva un día.
+function parsearFechaSinHora(valor, campo) {
+  const texto = valor instanceof Date ? valor.toISOString() : typeof valor === "string" ? valor.trim() : "";
+  const soloFecha = texto.slice(0, 10);
+  if (!PATRON_FECHA.test(soloFecha)) {
+    throw new ErrorDeNegocio(`${campo} es obligatoria y debe tener formato AAAA-MM-DD.`);
+  }
+  const fecha = new Date(`${soloFecha}T00:00:00.000Z`);
+  // Date "corrige" solo un 2026-02-31 al 3 de marzo en vez de fallar, así
+  // que la única forma de detectar un día inexistente es comparar la
+  // vuelta con lo que entró.
+  if (Number.isNaN(fecha.getTime()) || fecha.toISOString().slice(0, 10) !== soloFecha) {
+    throw new ErrorDeNegocio(`${campo} no es una fecha válida del calendario.`);
+  }
+  return fecha;
+}
+
+// "Hoy" a medianoche UTC, anclado en hora argentina — misma lógica que
+// hoyEnHoraLocal() en frontend/src/lib/fechas.js, para que el backend y la
+// pantalla coincidan en qué día es "hoy" después de las 21hs ART.
+function hoyComoFechaUTC() {
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: ZONA_ARGENTINA });
+  return new Date(`${hoy}T00:00:00.000Z`);
+}
+
+function mismaFecha(a, b) {
+  return a instanceof Date && b instanceof Date && a.getTime() === b.getTime();
+}
+
+function formatearFechaMensaje(fecha) {
+  return new Date(fecha).toLocaleDateString("es-AR", { timeZone: "UTC" });
+}
+
+function calcularNoches(fechaDesde, fechaHasta) {
+  return Math.round((fechaHasta.getTime() - fechaDesde.getTime()) / MILISEGUNDOS_POR_DIA);
+}
+
+// Valida el rango de la estadía. `fechaDesdeActual` (opcional) es la fecha
+// que la reserva ya tenía guardada: si no cambia, se acepta aunque sea
+// pasada — si no, una reserva que arranca hoy dejaría de poder editarse
+// (ej. agregarle una habitación) por una regla pensada para el alta.
+function validarRango(fechaDesde, fechaHasta, fechaDesdeActual = null) {
+  if (fechaHasta.getTime() <= fechaDesde.getTime()) {
+    throw new ErrorDeNegocio("La fecha de salida tiene que ser posterior a la de entrada (mínimo una noche).");
+  }
+  const noches = calcularNoches(fechaDesde, fechaHasta);
+  if (noches > LIMITES_RESERVA.nochesPorReserva) {
+    throw new ErrorDeNegocio(`La estadía no puede superar las ${LIMITES_RESERVA.nochesPorReserva} noches.`);
+  }
+  const hoy = hoyComoFechaUTC();
+  const arranqueSinCambios = fechaDesdeActual && mismaFecha(fechaDesde, fechaDesdeActual);
+  if (fechaDesde.getTime() < hoy.getTime() && !arranqueSinCambios) {
+    throw new ErrorDeNegocio("La fecha de entrada no puede ser anterior a hoy.");
+  }
+  return noches;
+}
+
+function normalizarIdsHabitacion(valor) {
+  const lista = Array.isArray(valor) ? valor : [];
+  if (lista.length === 0) throw new ErrorDeNegocio("Hay que elegir al menos una habitación para la reserva.");
+  const ids = lista.map((id) => enteroPositivo(id, "habitacionId"));
+  const unicos = [...new Set(ids)];
+  if (unicos.length !== ids.length) {
+    throw new ErrorDeNegocio("Una misma habitación no puede repetirse dentro de la reserva.");
+  }
+  if (unicos.length > LIMITES_RESERVA.habitacionesPorReserva) {
+    throw new ErrorDeNegocio(`Una reserva no puede tener más de ${LIMITES_RESERVA.habitacionesPorReserva} habitaciones.`);
+  }
+  return unicos;
+}
+
+// HU-39: los campos obligatorios de la ficha del huésped se validan antes
+// de confirmar la reserva, no después.
+function normalizarHuesped(data) {
+  if (!data || typeof data !== "object") {
+    throw new ErrorDeNegocio("Faltan los datos del huésped.");
+  }
+  const tipoDocumento = typeof data.tipoDocumento === "string" ? data.tipoDocumento.trim() : "";
+  if (!TIPOS_DOCUMENTO.includes(tipoDocumento)) {
+    throw new ErrorDeNegocio(`tipoDocumento debe ser uno de: ${TIPOS_DOCUMENTO.join(", ")}.`);
+  }
+  return {
+    nombre: textoObligatorio(data.nombre, "El nombre del huésped", LIMITES_RESERVA.nombre),
+    tipoDocumento,
+    numeroDocumento: textoObligatorio(data.numeroDocumento, "El número de documento", LIMITES_RESERVA.numeroDocumento),
+    contacto: textoOpcional(data.contacto, "El contacto del huésped", LIMITES_RESERVA.contacto),
+    preferencias: textoOpcional(data.preferencias, "Las preferencias del huésped", LIMITES_RESERVA.preferencias),
+  };
+}
+
+function validarCanal(valor) {
+  if (valor === undefined || valor === null || valor === "") return CANALES_CONFIRMACION[0];
+  const canal = String(valor).trim();
+  if (!CANALES_CONFIRMACION.includes(canal)) {
+    throw new ErrorDeNegocio(`canalConfirmacion debe ser uno de: ${CANALES_CONFIRMACION.join(", ")}.`);
+  }
+  return canal;
+}
+
+// --------------------------------------------------------------
+// Forma de salida — contrato con Check-in (Integrante 3) y
+// Check-out/Facturación (Integrante 4)
+// --------------------------------------------------------------
+
+// Toda lectura de una reserva sale por acá, para que la ficha, el listado
+// y lo que consuman los otros módulos no puedan divergir de forma.
+// `noches` y `totalEstimado` se calculan al vuelo, nunca se persisten —
+// mismo criterio que el total de un Presupuesto en Sprint 2: si mañana
+// cambia la tarifa de la habitación, una reserva vieja no tiene que
+// arrastrar un número congelado que ya nadie sabe de dónde salió.
+function formatearReserva(reserva) {
+  if (!reserva) return null;
+
+  const habitaciones = (reserva.reservaHabitaciones ?? [])
+    .map((rh) => rh.habitacion)
+    .filter(Boolean)
+    .map((h) => ({
+      id: h.id,
+      numero: h.numero,
+      tipo: h.tipo,
+      capacidad: h.capacidad,
+      piso: h.piso,
+      estado: h.estado,
+      tarifaPorNoche: Number(h.tarifaPorNoche),
+    }));
+
+  const noches = calcularNoches(new Date(reserva.fechaDesde), new Date(reserva.fechaHasta));
+  const tarifaTotalPorNoche = habitaciones.reduce((acc, h) => acc + h.tarifaPorNoche, 0);
+
+  return {
+    id: reserva.id,
+    codigoConfirmacion: reserva.codigoConfirmacion,
+    fechaDesde: reserva.fechaDesde,
+    fechaHasta: reserva.fechaHasta,
+    estado: reserva.estado,
+    motivoCancelacion: reserva.motivoCancelacion ?? null,
+    huespedId: reserva.huespedId,
+    huesped: reserva.huesped
+      ? {
+          id: reserva.huesped.id,
+          nombre: reserva.huesped.nombre,
+          tipoDocumento: reserva.huesped.tipoDocumento,
+          numeroDocumento: reserva.huesped.numeroDocumento,
+          contacto: reserva.huesped.contacto,
+          preferencias: reserva.huesped.preferencias,
+        }
+      : null,
+    habitaciones,
+    // Datos derivados (no columnas): sirven para la ficha, y a Integrante 4
+    // le ahorran recalcular el alojamiento al consolidar cargos (HU-48).
+    noches,
+    cantidadHabitaciones: habitaciones.length,
+    tarifaTotalPorNoche,
+    totalEstimadoAlojamiento: Number((tarifaTotalPorNoche * noches).toFixed(2)),
+    notificaciones: (reserva.notificaciones ?? []).map((n) => ({
+      id: n.id,
+      canal: n.canal,
+      mensaje: n.mensaje,
+      destinatarioArea: n.destinatarioArea,
+      fechaEnvio: n.fechaEnvio,
+    })),
+  };
+}
+
+const INCLUDE_RESERVA = {
+  huesped: true,
+  reservaHabitaciones: { include: { habitacion: true } },
+  notificaciones: { orderBy: { fechaEnvio: "desc" } },
+};
+
+// --------------------------------------------------------------
+// Disponibilidad (HU-38) — también es la validación de HU-36/37
+// --------------------------------------------------------------
+
+// Dos rangos se pisan si `desdeA < hastaB && desdeB < hastaA`. El intervalo
+// es semiabierto [entrada, salida): una salida el día 5 y una entrada el
+// mismo día 5 NO se solapan — es el día de rotación normal de un hotel, y
+// tratarlo como conflicto perdería una noche vendible por habitación.
+function condicionSolapamiento(fechaDesde, fechaHasta, excluirReservaId = null) {
+  return {
+    estado: { in: ESTADOS_QUE_OCUPAN },
+    fechaDesde: { lt: fechaHasta },
+    fechaHasta: { gt: fechaDesde },
+    ...(excluirReservaId ? { id: { not: excluirReservaId } } : {}),
+  };
+}
+
+async function buscarConflictos(cliente, { habitacionIds, fechaDesde, fechaHasta, excluirReservaId }) {
+  return cliente.reservaHabitacion.findMany({
+    where: {
+      habitacionId: { in: habitacionIds },
+      reserva: condicionSolapamiento(fechaDesde, fechaHasta, excluirReservaId),
+    },
+    include: {
+      habitacion: { select: { id: true, numero: true } },
+      reserva: { select: { id: true, codigoConfirmacion: true, fechaDesde: true, fechaHasta: true, estado: true } },
+    },
+  });
+}
+
+function errorPorConflictos(conflictos) {
+  const detalle = conflictos
+    .map(
+      (c) =>
+        `${c.habitacion.numero} (reserva ${c.reserva.codigoConfirmacion}, ${formatearFechaMensaje(
+          c.reserva.fechaDesde
+        )} al ${formatearFechaMensaje(c.reserva.fechaHasta)})`
+    )
+    .join("; ");
+  return new ErrorDeNegocio(
+    `No hay disponibilidad para el período elegido en: ${detalle}. Elegí otras fechas u otras habitaciones.`,
+    409
+  );
+}
+
+// HU-38 — consulta pública de disponibilidad. No filtra por
+// `Habitacion.estado` a propósito (ver la nota de arriba del archivo):
+// la disponibilidad de un rango futuro es una pregunta sobre fechas.
+// `excluirReservaId` deja fuera del cálculo a una reserva puntual: es lo
+// que necesita la edición (HU-37) para poder mostrar como disponibles las
+// habitaciones que esa misma reserva ya tiene tomadas — si no, editarle la
+// fecha de salida a una reserva haría desaparecer su propia habitación de
+// la lista.
+async function consultarDisponibilidad({ fechaDesde, fechaHasta, tipo, capacidadMinima, excluirReservaId } = {}) {
+  const desde = parsearFechaSinHora(fechaDesde, "La fecha de entrada");
+  const hasta = parsearFechaSinHora(fechaHasta, "La fecha de salida");
+  const noches = validarRango(desde, hasta);
+
+  const capacidad = capacidadMinima ? enteroPositivo(capacidadMinima, "capacidadMinima") : null;
+  const tipoBuscado = typeof tipo === "string" && tipo.trim() ? tipo.trim() : null;
+  const excluida = excluirReservaId ? enteroPositivo(excluirReservaId, "excluirReservaId") : null;
+
+  const habitaciones = await prisma.habitacion.findMany({
+    where: {
+      activo: true,
+      ...(tipoBuscado ? { tipo: tipoBuscado } : {}),
+      ...(capacidad ? { capacidad: { gte: capacidad } } : {}),
+    },
+    orderBy: [{ piso: "asc" }, { numero: "asc" }],
+  });
+
+  const ocupadas = await prisma.reservaHabitacion.findMany({
+    where: {
+      habitacionId: { in: habitaciones.map((h) => h.id) },
+      reserva: condicionSolapamiento(desde, hasta, excluida),
+    },
+    select: { habitacionId: true },
+  });
+  const idsOcupadas = new Set(ocupadas.map((o) => o.habitacionId));
+
+  const disponibles = habitaciones
+    .filter((h) => !idsOcupadas.has(h.id))
+    .map((h) => ({
+      id: h.id,
+      numero: h.numero,
+      tipo: h.tipo,
+      capacidad: h.capacidad,
+      piso: h.piso,
+      equipamiento: h.equipamiento,
+      estado: h.estado,
+      tarifaPorNoche: Number(h.tarifaPorNoche),
+      totalEstadia: Number((Number(h.tarifaPorNoche) * noches).toFixed(2)),
+    }));
+
+  // Resumen por tipo sobre el universo consultado (no solo lo disponible):
+  // "Doble: 2 de 6 libres" es la lectura que pide HU-38, y con solo la
+  // lista de libres no se puede saber el denominador.
+  const resumenPorTipo = [...new Set(habitaciones.map((h) => h.tipo))].sort().map((nombreTipo) => {
+    const delTipo = habitaciones.filter((h) => h.tipo === nombreTipo);
+    const libres = delTipo.filter((h) => !idsOcupadas.has(h.id));
+    return {
+      tipo: nombreTipo,
+      total: delTipo.length,
+      disponibles: libres.length,
+      tarifaDesde: libres.length ? Math.min(...libres.map((h) => Number(h.tarifaPorNoche))) : null,
+      capacidadMaxima: delTipo.length ? Math.max(...delTipo.map((h) => h.capacidad)) : null,
+    };
+  });
+
+  return { fechaDesde: desde, fechaHasta: hasta, noches, habitaciones: disponibles, resumenPorTipo };
+}
+
+// --------------------------------------------------------------
+// Alta (HU-36, HU-39, HU-41, HU-42)
+// --------------------------------------------------------------
+
+function generarCodigoConfirmacion() {
+  return crypto.randomBytes(LONGITUD_CODIGO_BYTES).toString("hex").toUpperCase();
+}
+
+// HU-42. `numeracion.js` (crearConNumeroSecuencial) NO sirve acá: genera
+// correlativos tipo OP-00001 derivados del id, y el criterio de aceptación
+// pide un código alfanumérico no adivinable.
+async function reservarCodigoLibre(tx) {
+  for (let intento = 0; intento < MAX_INTENTOS_CODIGO; intento += 1) {
+    const candidato = generarCodigoConfirmacion();
+    const tomado = await tx.reserva.findUnique({ where: { codigoConfirmacion: candidato }, select: { id: true } });
+    if (!tomado) return candidato;
+  }
+  throw new ErrorDeNegocio("No se pudo generar un código de confirmación único, intentá de nuevo.", 503);
+}
+
+// La ficha del huésped es una tabla aparte de Reserva a propósito (deja
+// lugar a la épica "Gestión de Huéspedes" con historial cross-reserva), así
+// que el mismo documento no se duplica: si ya existe, se reutiliza la fila
+// y se completan los datos que hayan cambiado. El par (tipoDocumento,
+// numeroDocumento) no tiene @@unique en la base — el schema está congelado
+// y nadie lo toca sin avisar al grupo — así que la búsqueda es por findFirst
+// y la unicidad es best-effort, no una garantía del motor.
+async function resolverHuesped(tx, datos) {
+  const existente = await tx.huesped.findFirst({
+    where: { tipoDocumento: datos.tipoDocumento, numeroDocumento: datos.numeroDocumento },
+  });
+  if (!existente) return tx.huesped.create({ data: datos });
+
+  // Solo se pisan los campos con valor nuevo: un alta que no repite el
+  // contacto no tiene que borrar el que ya estaba cargado.
+  return tx.huesped.update({
+    where: { id: existente.id },
+    data: {
+      nombre: datos.nombre,
+      contacto: datos.contacto ?? existente.contacto,
+      preferencias: datos.preferencias ?? existente.preferencias,
+    },
+  });
+}
+
+// HU-41. No hay proveedor de email/SMS configurado en el proyecto (misma
+// "limitación conocida" que la validación de pago mockeada de HU-46), así
+// que el envío se modela como el registro en Notificacion que pide el
+// criterio de aceptación ("queda un registro del envío"), sin integración
+// real. Sin datos de contacto cargados no se puede fingir un envío: queda
+// como aviso interno para el mostrador.
+function armarNotificacionConfirmacion({ reserva, huesped, habitaciones, canalPedido, origen }) {
+  const hayContacto = Boolean(huesped.contacto);
+  const canal = hayContacto ? canalPedido : CANAL_INTERNO;
+  const numeros = habitaciones.map((h) => h.numero).join(", ");
+  const periodo = `${formatearFechaMensaje(reserva.fechaDesde)} al ${formatearFechaMensaje(reserva.fechaHasta)}`;
+  const base =
+    `Reserva ${reserva.codigoConfirmacion} confirmada para ${huesped.nombre}: ` +
+    `habitación/es ${numeros}, del ${periodo}` +
+    (origen === "WEB" ? " (reserva web autogestionada)." : ".");
+
+  return {
+    tipo: TIPO_NOTIFICACION_RESERVA,
+    reservaId: reserva.id,
+    canal,
+    destinatarioArea: hayContacto ? DESTINATARIO_HUESPED : DESTINATARIO_RECEPCION,
+    mensaje: hayContacto
+      ? `${base} Enviada a ${huesped.contacto}.`
+      : `${base} El huésped no dejó datos de contacto: confirmar por mostrador.`,
+  };
+}
+
+function normalizarAltaReserva(data) {
+  const fechaDesde = parsearFechaSinHora(data?.fechaDesde, "La fecha de entrada");
+  const fechaHasta = parsearFechaSinHora(data?.fechaHasta, "La fecha de salida");
+  validarRango(fechaDesde, fechaHasta);
+  return {
+    fechaDesde,
+    fechaHasta,
+    habitacionIds: normalizarIdsHabitacion(data?.habitacionIds),
+    huesped: normalizarHuesped(data?.huesped),
+    canalConfirmacion: validarCanal(data?.canalConfirmacion),
+    // HU-40: el canal web reutiliza este mismo alta sin duplicar lógica.
+    // No hay columna para el origen (el schema está congelado), así que
+    // solo matiza el texto de la notificación.
+    origen: data?.origen === "WEB" ? "WEB" : "RECEPCION",
+  };
+}
+
+// Núcleo transaccional del alta. Público aparte de `crearReserva` para que
+// Check-in (HU-44, walk-in) pueda crear la reserva DENTRO de su propia
+// transacción, en vez de tener que reimplementar esta lógica.
+async function crearReservaEnTransaccion(tx, datos) {
+  const { fechaDesde, fechaHasta, habitacionIds, huesped, canalConfirmacion, origen } = datos;
+
+  const habitaciones = await tx.habitacion.findMany({ where: { id: { in: habitacionIds } } });
+  if (habitaciones.length !== habitacionIds.length) {
+    throw new ErrorDeNegocio("Alguna de las habitaciones elegidas no existe.", 404);
+  }
+  const dadasDeBaja = habitaciones.filter((h) => !h.activo);
+  if (dadasDeBaja.length > 0) {
+    throw new ErrorDeNegocio(
+      `No se puede reservar una habitación dada de baja: ${dadasDeBaja.map((h) => h.numero).join(", ")}.`
+    );
+  }
+
+  // Re-chequeo protegido contra carreras: sin esto, dos altas simultáneas
+  // sobre la misma habitación leen las dos "está libre" y se cuelan las
+  // dos. La fila que habría que bloquear todavía no existe, así que un
+  // SELECT normal no alcanza — FOR UPDATE sobre el índice de habitacionId
+  // toma gap locks bajo REPEATABLE READ (default de InnoDB) y hace que la
+  // segunda transacción espere a que ésta commitee. Mismo razonamiento que
+  // el lock de cheques en pagos.servicio.js.
+  await tx.$queryRaw(
+    Prisma.sql`SELECT id FROM reservas_habitaciones WHERE habitacionId IN (${Prisma.join(habitacionIds)}) FOR UPDATE`
+  );
+
+  const conflictos = await buscarConflictos(tx, { habitacionIds, fechaDesde, fechaHasta });
+  if (conflictos.length > 0) throw errorPorConflictos(conflictos);
+
+  const huespedGuardado = await resolverHuesped(tx, huesped);
+  const codigoConfirmacion = await reservarCodigoLibre(tx);
+
+  const reserva = await tx.reserva.create({
+    data: {
+      huespedId: huespedGuardado.id,
+      fechaDesde,
+      fechaHasta,
+      estado: ESTADO_RESERVA.CONFIRMADA,
+      codigoConfirmacion,
+      reservaHabitaciones: { create: habitacionIds.map((habitacionId) => ({ habitacionId })) },
+    },
+  });
+
+  await tx.notificacion.create({
+    data: armarNotificacionConfirmacion({
+      reserva,
+      huesped: huespedGuardado,
+      habitaciones,
+      canalPedido: canalConfirmacion,
+      origen,
+    }),
+  });
+
+  return tx.reserva.findUnique({ where: { id: reserva.id }, include: INCLUDE_RESERVA });
+}
+
+// HU-36 — alta individual o grupal (una fila ReservaHabitacion por
+// habitación asociada). Es el mismo camino para la carga del recepcionista
+// y para el autoservicio web de HU-40.
+async function crearReserva(data) {
+  const datos = normalizarAltaReserva(data);
+
+  // Chequeo rápido antes de abrir la transacción: buena UX (responde sin
+  // tomar locks si el pedido ya está mal), no es lo que protege contra la
+  // carrera — eso pasa de nuevo, con las filas bloqueadas, adentro.
+  const conflictosPrevios = await buscarConflictos(prisma, {
+    habitacionIds: datos.habitacionIds,
+    fechaDesde: datos.fechaDesde,
+    fechaHasta: datos.fechaHasta,
+  });
+  if (conflictosPrevios.length > 0) throw errorPorConflictos(conflictosPrevios);
+
+  // Reintento del alta completa ante una colisión de `codigoConfirmacion`:
+  // la transacción ya queda abortada cuando Prisma tira P2002, así que no
+  // alcanza con generar otro código adentro — hay que rehacerla entera.
+  // En la práctica no debería entrar nunca al segundo intento.
+  let ultimoError;
+  for (let intento = 0; intento < MAX_INTENTOS_CODIGO; intento += 1) {
+    try {
+      const reserva = await prisma.$transaction((tx) => crearReservaEnTransaccion(tx, datos), {
+        timeout: 15000,
+        maxWait: 10000,
+      });
+      return formatearReserva(reserva);
+    } catch (err) {
+      const esCodigoDuplicado =
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002" &&
+        String(err.meta?.target ?? "").includes("codigoConfirmacion");
+      if (!esCodigoDuplicado) throw err;
+      ultimoError = err;
+    }
+  }
+  console.error("[reservas] Colisión repetida de codigoConfirmacion:", ultimoError);
+  throw new ErrorDeNegocio("No se pudo generar un código de confirmación único, intentá de nuevo.", 503);
+}
+
+// --------------------------------------------------------------
+// Lectura (contrato con Integrantes 3 y 4)
+// --------------------------------------------------------------
+
+async function obtenerReserva(id) {
+  const reservaId = enteroPositivo(id, "id");
+  const reserva = await prisma.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
+  if (!reserva) throw new ErrorDeNegocio("La reserva no existe.", 404);
+  return formatearReserva(reserva);
+}
+
+// Check-in (HU-43) busca por el código que trae el huésped, no por id.
+async function obtenerPorCodigoConfirmacion(codigo) {
+  const buscado = typeof codigo === "string" ? codigo.trim().toUpperCase() : "";
+  if (!buscado) throw new ErrorDeNegocio("El código de confirmación es obligatorio.");
+  const reserva = await prisma.reserva.findUnique({
+    where: { codigoConfirmacion: buscado },
+    include: INCLUDE_RESERVA,
+  });
+  if (!reserva) throw new ErrorDeNegocio(`No existe una reserva con el código ${buscado}.`, 404);
+  return formatearReserva(reserva);
+}
+
+async function listarReservas({ q, estado, desde, hasta, habitacionId } = {}) {
+  if (estado && !ESTADOS_RESERVA.includes(estado)) {
+    throw new ErrorDeNegocio(`estado debe ser uno de: ${ESTADOS_RESERVA.join(", ")}.`);
+  }
+  const texto = typeof q === "string" ? q.trim() : "";
+  // Filtro por período: trae las reservas que se pisan con el rango
+  // pedido, no solo las que empiezan adentro — si no, una estadía larga
+  // desaparece de la vista del día en que está en curso.
+  const fechaDesdeFiltro = desde ? parsearFechaSinHora(desde, "El filtro de fecha desde") : null;
+  const fechaHastaFiltro = hasta ? parsearFechaSinHora(hasta, "El filtro de fecha hasta") : null;
+
+  const reservas = await prisma.reserva.findMany({
+    where: {
+      ...(estado ? { estado } : {}),
+      ...(fechaHastaFiltro ? { fechaDesde: { lte: fechaHastaFiltro } } : {}),
+      ...(fechaDesdeFiltro ? { fechaHasta: { gte: fechaDesdeFiltro } } : {}),
+      ...(habitacionId
+        ? { reservaHabitaciones: { some: { habitacionId: enteroPositivo(habitacionId, "habitacionId") } } }
+        : {}),
+      ...(texto
+        ? {
+            OR: [
+              { codigoConfirmacion: { contains: texto } },
+              { huesped: { nombre: { contains: texto } } },
+              { huesped: { numeroDocumento: { contains: texto } } },
+              { reservaHabitaciones: { some: { habitacion: { numero: { contains: texto } } } } },
+            ],
+          }
+        : {}),
+    },
+    include: INCLUDE_RESERVA,
+    orderBy: [{ fechaDesde: "desc" }, { id: "desc" }],
+  });
+
+  return reservas.map(formatearReserva);
+}
+
+// --------------------------------------------------------------
+// Modificación y cancelación (HU-37)
+// --------------------------------------------------------------
+
+// Solo se toca una reserva que todavía no arrancó: con el huésped ya
+// alojado (En curso) los cambios son check-out/facturación, y una Cerrada
+// o Cancelada es historia.
+function exigirModificable(reserva) {
+  if (reserva.estado !== ESTADO_RESERVA.CONFIRMADA) {
+    throw new ErrorDeNegocio(
+      `Solo se puede modificar una reserva en estado "${ESTADO_RESERVA.CONFIRMADA}" (ésta está "${reserva.estado}").`
+    );
+  }
+}
+
+async function modificarReserva(id, data) {
+  const reservaId = enteroPositivo(id, "id");
+  const actual = await prisma.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
+  if (!actual) throw new ErrorDeNegocio("La reserva no existe.", 404);
+  exigirModificable(actual);
+
+  const fechaDesde =
+    data?.fechaDesde === undefined ? new Date(actual.fechaDesde) : parsearFechaSinHora(data.fechaDesde, "La fecha de entrada");
+  const fechaHasta =
+    data?.fechaHasta === undefined ? new Date(actual.fechaHasta) : parsearFechaSinHora(data.fechaHasta, "La fecha de salida");
+  validarRango(fechaDesde, fechaHasta, new Date(actual.fechaDesde));
+
+  const habitacionIds =
+    data?.habitacionIds === undefined
+      ? actual.reservaHabitaciones.map((rh) => rh.habitacionId)
+      : normalizarIdsHabitacion(data.habitacionIds);
+
+  // El huésped solo se toca si vino en el payload. Si cambia el documento,
+  // la reserva pasa a apuntar a otra ficha (un documento distinto es otra
+  // persona) en vez de renombrar la del huésped original, que puede tener
+  // otras reservas colgando.
+  const huesped = data?.huesped === undefined ? null : normalizarHuesped(data.huesped);
+
+  const reserva = await prisma.$transaction(
+    async (tx) => {
+      const habitaciones = await tx.habitacion.findMany({ where: { id: { in: habitacionIds } } });
+      if (habitaciones.length !== habitacionIds.length) {
+        throw new ErrorDeNegocio("Alguna de las habitaciones elegidas no existe.", 404);
+      }
+      const dadasDeBaja = habitaciones.filter((h) => !h.activo);
+      if (dadasDeBaja.length > 0) {
+        throw new ErrorDeNegocio(
+          `No se puede reservar una habitación dada de baja: ${dadasDeBaja.map((h) => h.numero).join(", ")}.`
+        );
+      }
+
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM reservas_habitaciones WHERE habitacionId IN (${Prisma.join(habitacionIds)}) FOR UPDATE`
+      );
+
+      const conflictos = await buscarConflictos(tx, {
+        habitacionIds,
+        fechaDesde,
+        fechaHasta,
+        excluirReservaId: reservaId,
+      });
+      if (conflictos.length > 0) throw errorPorConflictos(conflictos);
+
+      const huespedGuardado = huesped ? await resolverHuesped(tx, huesped) : null;
+
+      // Las habitaciones se reemplazan por completo (borrar + crear) en vez
+      // de hacer un diff: la tabla puente no tiene datos propios que se
+      // pierdan, y así la reserva queda exactamente con lo que mandó la
+      // pantalla, sin estados intermedios raros.
+      await tx.reservaHabitacion.deleteMany({ where: { reservaId } });
+      await tx.reserva.update({
+        where: { id: reservaId },
+        data: {
+          fechaDesde,
+          fechaHasta,
+          ...(huespedGuardado ? { huespedId: huespedGuardado.id } : {}),
+          reservaHabitaciones: { create: habitacionIds.map((habitacionId) => ({ habitacionId })) },
+        },
+      });
+
+      return tx.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
+    },
+    { timeout: 15000, maxWait: 10000 }
+  );
+
+  return formatearReserva(reserva);
+}
+
+// HU-37 — al cancelar, el período vuelve a estar disponible (lo hace solo:
+// ESTADOS_QUE_OCUPAN deja afuera a "Cancelada", así que la próxima consulta
+// de disponibilidad ya no la cuenta). El motivo es obligatorio.
+async function cancelarReserva(id, data) {
+  const reservaId = enteroPositivo(id, "id");
+  const motivoCancelacion = textoObligatorio(
+    data?.motivoCancelacion,
+    "El motivo de cancelación",
+    LIMITES_RESERVA.motivoCancelacion
+  );
+
+  const actual = await prisma.reserva.findUnique({ where: { id: reservaId } });
+  if (!actual) throw new ErrorDeNegocio("La reserva no existe.", 404);
+  if (actual.estado === ESTADO_RESERVA.CANCELADA) {
+    throw new ErrorDeNegocio("La reserva ya está cancelada.");
+  }
+  if (actual.estado !== ESTADO_RESERVA.CONFIRMADA) {
+    throw new ErrorDeNegocio(
+      `No se puede cancelar una reserva en estado "${actual.estado}": con el huésped ya alojado corresponde el check-out.`
+    );
+  }
+
+  const reserva = await prisma.reserva.update({
+    where: { id: reservaId },
+    data: { estado: ESTADO_RESERVA.CANCELADA, motivoCancelacion },
+    include: INCLUDE_RESERVA,
+  });
+  return formatearReserva(reserva);
+}
+
+// --------------------------------------------------------------
+// Transiciones de estado para Check-in e Check-out
+// --------------------------------------------------------------
+
+// `cliente` es el `tx` de una transacción ya abierta por quien llama (o el
+// prisma suelto si se usa aislado). Toda la validación de la transición
+// vive acá, en un solo lugar, para que Check-in y Check-out no la
+// reimplementen cada uno a su manera.
+async function cambiarEstado(reservaId, estadoDestino, estadosOrigenValidos, cliente = prisma) {
+  const id = enteroPositivo(reservaId, "reservaId");
+  const reserva = await cliente.reserva.findUnique({ where: { id } });
+  if (!reserva) throw new ErrorDeNegocio("La reserva no existe.", 404);
+  if (!estadosOrigenValidos.includes(reserva.estado)) {
+    throw new ErrorDeNegocio(
+      `No se puede pasar la reserva de "${reserva.estado}" a "${estadoDestino}" ` +
+        `(estados válidos de origen: ${estadosOrigenValidos.join(", ")}).`
+    );
+  }
+  return cliente.reserva.update({ where: { id }, data: { estado: estadoDestino } });
+}
+
+// HU-47 (Integrante 3): confirmar el check-in. Se llama dentro de la misma
+// transacción en la que se pone Habitacion.estado = "ocupada".
+function marcarEnCurso(reservaId, cliente = prisma) {
+  return cambiarEstado(reservaId, ESTADO_RESERVA.EN_CURSO, [ESTADO_RESERVA.CONFIRMADA], cliente);
+}
+
+// HU-48 a 52 (Integrante 4): confirmar el check-out.
+function marcarCerrada(reservaId, cliente = prisma) {
+  return cambiarEstado(reservaId, ESTADO_RESERVA.CERRADA, [ESTADO_RESERVA.EN_CURSO], cliente);
+}
+
+module.exports = {
+  // Alta y edición
+  crearReserva,
+  crearReservaEnTransaccion,
+  normalizarAltaReserva,
+  modificarReserva,
+  cancelarReserva,
+  // Lectura
+  listarReservas,
+  obtenerReserva,
+  obtenerPorCodigoConfirmacion,
+  consultarDisponibilidad,
+  // Transiciones para Check-in / Check-out
+  marcarEnCurso,
+  marcarCerrada,
+  // Utilidades expuestas para pruebas y para otros módulos
+  formatearReserva,
+  generarCodigoConfirmacion,
+  ErrorDeNegocio,
+};
