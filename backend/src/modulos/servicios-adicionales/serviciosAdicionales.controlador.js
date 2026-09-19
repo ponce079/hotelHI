@@ -39,4 +39,16 @@ async function getResumen(req, res) {
   }
 }
 
-module.exports = { postConsumo, getConsumos, getResumen };
+// GET /api/consumos-servicios/hotel/resumen?desde=&hasta=&tipoServicio=
+// Ajuste de flujo (Sprint 3): consulta de todo el hotel por período, para
+// el ítem de menú que ahora es de solo lectura (ver serviciosAdicionales.servicio.js).
+async function getResumenHotel(req, res) {
+  try {
+    const { desde, hasta, tipoServicio } = req.query;
+    return res.json(await serviciosAdicionalesServicio.resumenConsumosHotel({ desde, hasta, tipoServicio }));
+  } catch (err) {
+    return responderError(res, err, "Error al calcular el resumen del hotel:", "No se pudo calcular el resumen.");
+  }
+}
+
+module.exports = { postConsumo, getConsumos, getResumen, getResumenHotel };

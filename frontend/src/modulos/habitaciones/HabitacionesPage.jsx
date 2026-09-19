@@ -18,6 +18,7 @@ import { HabitacionModal } from "./HabitacionModal";
 import { EstadoHabitacionModal } from "./EstadoHabitacionModal";
 import { MantenimientoModal } from "./MantenimientoModal";
 import { HistorialMantenimientoModal } from "./HistorialMantenimientoModal";
+import { ConsumoPorHabitacion } from "../servicios-adicionales/ConsumoPorHabitacion";
 import {
   cambiarActivoHabitacion,
   listarHabitaciones,
@@ -112,6 +113,12 @@ export function HabitacionesPage() {
           {puedeAdministrar && <Button icono={Plus} onClick={() => setModal({ tipo: "form", habitacion: null })}>Nueva habitación</Button>}
         </div>
       </div>
+
+      {/* Ajuste de flujo (Sprint 3) — atajo por número de habitación para
+          la tarea más frecuente del sprint (un pedido espontáneo de un
+          huésped alojado): se resuelve solo para Recepcionista/admin, ver
+          ConsumoPorHabitacion.jsx. */}
+      <ConsumoPorHabitacion />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {ESTADOS_HABITACION.map((valor) => {

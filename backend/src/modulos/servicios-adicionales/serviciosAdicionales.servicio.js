@@ -234,9 +234,74 @@ async function resumenPorReserva(reservaId) {
   };
 }
 
+// --------------------------------------------------------------
+// Ajuste de flujo (Sprint 3): el ítem de menú "Servicios Adicionales" deja
+// de ser un lugar donde se busca una reserva y se carga un consumo — eso
+// ahora vive únicamente en la ficha de la reserva (ver
+// ReservaDetallePage.jsx). El menú pasa a ser una consulta de solo lectura
+// de TODO el hotel por período, útil para cambio de turno o control de
+// minibar. No filtra por reservaId (a diferencia de listarPorReserva de
+// arriba, que sigue igual y la sigue usando la ficha de reserva) — filtra
+// por rango de fechas, mismo criterio de "hasta" exclusivo (medianoche del
+// día siguiente) que reservas.servicio.js/movimientosStock.servicio.js.
+// --------------------------------------------------------------
+
+async function listarConsumosHotel({ desde, hasta, tipoServicio } = {}) {
+  if (tipoServicio) normalizarTipoServicio(tipoServicio);
+
+  const fechaHora = {};
+  if (desde) fechaHora.gte = new Date(desde);
+  if (hasta) {
+    const siguienteDia = new Date(hasta);
+    siguienteDia.setUTCDate(siguienteDia.getUTCDate() + 1);
+    fechaHora.lt = siguienteDia;
+  }
+
+  const consumos = await prisma.consumoServicioAdicional.findMany({
+    where: {
+      ...(tipoServicio ? { tipoServicio } : {}),
+      ...(Object.keys(fechaHora).length ? { fechaHora } : {}),
+    },
+    include: {
+      articulo: true,
+      habitacion: true,
+      // Solo lo que hace falta mostrar en una vista de todo el hotel (a
+      // qué huésped/reserva corresponde cada fila) — no trae la reserva
+      // completa, esto no reemplaza a listarPorReserva.
+      reserva: { select: { codigoConfirmacion: true, huesped: { select: { nombre: true } } } },
+    },
+    orderBy: { fechaHora: "desc" },
+  });
+
+  return consumos.map((c) => ({
+    ...formatearConsumo(c),
+    reservaCodigoConfirmacion: c.reserva?.codigoConfirmacion ?? null,
+    huespedNombre: c.reserva?.huesped?.nombre ?? null,
+  }));
+}
+
+async function resumenConsumosHotel(filtros = {}) {
+  const items = await listarConsumosHotel(filtros);
+  const totalPorTipo = TIPOS_SERVICIO.map((tipo) => {
+    const delTipo = items.filter((i) => i.tipoServicio === tipo);
+    return {
+      tipoServicio: tipo,
+      cantidad: delTipo.length,
+      total: delTipo.reduce((acc, i) => acc + i.monto, 0),
+    };
+  });
+  return {
+    items,
+    totalPorTipo,
+    totalGeneral: items.reduce((acc, i) => acc + i.monto, 0),
+  };
+}
+
 module.exports = {
   registrarConsumo,
   listarPorReserva,
   resumenPorReserva,
+  listarConsumosHotel,
+  resumenConsumosHotel,
   ErrorDeNegocio,
 };

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { CheckCircle2, DoorOpen, Search, User } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ArrowRight, CheckCircle2, DoorOpen, Search, User } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { CodigoClave } from "../../componentes/CodigoClave";
@@ -19,6 +20,7 @@ const FORM_VACIO = { documento: "", garantiaConfirmada: false, medioGarantia: ME
 // búsqueda por código es el mismo dato que HU-42 le dio al huésped al
 // confirmar la reserva.
 export function CheckInConReserva() {
+  const navigate = useNavigate();
   const [codigo, setCodigo] = useState("");
   const [resultado, setResultado] = useState(null);
   const [form, setForm] = useState(FORM_VACIO);
@@ -161,9 +163,24 @@ export function CheckInConReserva() {
       )}
 
       {confirmar.isSuccess && !reserva && (
-        <p className="flex items-center gap-2 rounded-md border border-pino-300 bg-pino-100 px-4 py-2.5 text-[13px] text-pino-700">
-          <CheckCircle2 size={16} /> Check-in confirmado.
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-pino-300 bg-pino-100 px-4 py-2.5 text-[13px] text-pino-700">
+          <span className="flex items-center gap-2">
+            <CheckCircle2 size={16} /> Check-in confirmado.
+          </span>
+          {/* Ajuste de flujo (Sprint 3): si el huésped pide algo apenas
+              llega, el mismo botón "Agregar consumo" está a un clic, en la
+              ficha de la reserva — no es un paso más de este wizard. */}
+          {confirmar.data && (
+            <Button
+              variante="secundario"
+              tamano="fila"
+              icono={ArrowRight}
+              onClick={() => navigate(`/reservas/${confirmar.data.id}`)}
+            >
+              Ir a la ficha de la reserva
+            </Button>
+          )}
+        </div>
       )}
 
       <Toast mensaje={toast} />

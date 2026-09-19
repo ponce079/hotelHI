@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, BedDouble, Check, Sparkles, Users } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { ArrowLeft, ArrowRight, BedDouble, Check, CheckCircle2, Sparkles, Users } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -42,6 +43,7 @@ const VACIO = {
 const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
 export function CheckInWalkIn() {
+  const navigate = useNavigate();
   const [form, setForm] = useState(VACIO);
   const [errorGeneral, setErrorGeneral] = useState("");
   const { toast, mostrarToast } = useToast();
@@ -93,6 +95,7 @@ export function CheckInWalkIn() {
 
   function actualizar(cambios) {
     setErrorGeneral("");
+    mutacion.reset();
     setForm((f) => ({ ...f, ...cambios }));
   }
 
@@ -311,6 +314,25 @@ export function CheckInWalkIn() {
             medioGarantia={form.medioGarantia}
             onCambiar={actualizar}
           />
+        </div>
+      )}
+
+      {mutacion.isSuccess && form.paso === 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-pino-300 bg-pino-100 px-4 py-2.5 text-[13px] text-pino-700">
+          <span className="flex items-center gap-2">
+            <CheckCircle2 size={16} /> Check-in walk-in confirmado — reserva {mutacion.data.codigoConfirmacion}.
+          </span>
+          {/* Ajuste de flujo (Sprint 3): si el huésped pide algo apenas
+              llega, el mismo botón "Agregar consumo" está a un clic, en la
+              ficha de la reserva — no es un paso más de este wizard. */}
+          <Button
+            variante="secundario"
+            tamano="fila"
+            icono={ArrowRight}
+            onClick={() => navigate(`/reservas/${mutacion.data.id}`)}
+          >
+            Ir a la ficha de la reserva
+          </Button>
         </div>
       )}
 
