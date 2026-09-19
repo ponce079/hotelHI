@@ -61,6 +61,10 @@ function formatearConsumo(c) {
     monto: Number(c.monto),
     fechaHora: c.fechaHora,
     registradoPor: c.registradoPor,
+    // Solo seteado para Minibar (ver registrarConsumo) — la referencia real
+    // al MovimientoStock que descontó el stock, para poder saber de qué
+    // depósito salió sin parsear texto libre.
+    movimientoStockId: c.movimientoStockId ?? null,
   };
 }
 
@@ -124,22 +128,36 @@ async function registrarConsumo(data) {
     return prisma.$transaction(
       async (tx) => {
         const tipoMovStockId = await resolverTipoMovimientoMinibar(tx);
-        const consumo = await tx.consumoServicioAdicional.create({
-          data: { reservaId, habitacionId, tipoServicio, articuloId, cantidad, monto, registradoPor },
-          include: { articulo: true, habitacion: true },
-        });
         // No reimplementa el descuento de stock: reusa el mismo servicio
         // que ya usa el resto del sistema para una Salida (HU-13), dentro
         // de esta misma transacción — si el artículo no está habilitado en
         // ese depósito o no hay stock suficiente, todo se revierte y el
         // consumo tampoco queda registrado (no tiene sentido cobrar un
-        // minibar que no se pudo descontar del stock real).
-        await movimientoSalidaServicio.registrarSalidaEnTransaccion(tx, {
+        // minibar que no se pudo descontar del stock real). Se crea PRIMERO
+        // para poder guardar su id en el consumo (movimientoStockId): un
+        // mismo artículo puede estar habilitado en más de un depósito a la
+        // vez (encontrado auditando a mano), así que sin esta referencia no
+        // hay forma de saber con certeza de qué depósito salió un consumo
+        // puntual sin parsear el texto libre de `detalle`.
+        const movimiento = await movimientoSalidaServicio.registrarSalidaEnTransaccion(tx, {
           depositoId,
           tipoMovStockId,
           detalle: `Consumo Minibar - Habitación ${habitacion?.numero ?? habitacionId} - Reserva ${reservaId}`,
           usuario: registradoPor,
           items: [{ articuloId, cantidad }],
+        });
+        const consumo = await tx.consumoServicioAdicional.create({
+          data: {
+            reservaId,
+            habitacionId,
+            tipoServicio,
+            articuloId,
+            cantidad,
+            monto,
+            registradoPor,
+            movimientoStockId: movimiento.id,
+          },
+          include: { articulo: true, habitacion: true },
         });
         return formatearConsumo(consumo);
       },

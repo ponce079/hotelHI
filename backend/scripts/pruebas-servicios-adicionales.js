@@ -261,6 +261,58 @@ async function main() {
     const stock = base._datos.articuloDepositoStock.find((s) => s.articuloDepositoId === 1);
     assert.equal(stock.stockActual, 8, "el stock real tiene que bajar de 10 a 8");
     assert.equal(base._datos.movimientoStock.length, 1, "tiene que quedar un MovimientoStock de Salida real");
+    assert.ok(consumo.movimientoStockId, "el consumo tiene que quedar asociado al MovimientoStock que generó");
+    assert.equal(consumo.movimientoStockId, base._datos.movimientoStock[0].id);
+  });
+
+  await prueba("un consumo que no es Minibar no queda asociado a ningún MovimientoStock", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101" });
+    const reserva = await reservaEnCurso();
+    const consumo = await serviciosAdicionalesServicio.registrarConsumo({
+      reservaId: reserva.id,
+      habitacionId: 1,
+      tipoServicio: "Restaurante",
+      monto: 1000,
+      registradoPor: "X",
+    });
+    assert.equal(consumo.movimientoStockId, null);
+  });
+
+  await prueba("el movimientoStockId identifica el depósito real, aunque el artículo esté habilitado en más de uno a la vez (el bug encontrado auditando a mano)", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101" });
+    const bar = base._sembrarDeposito({ nombre: "Bar" });
+    const cocina = base._sembrarDeposito({ nombre: "Cocina" });
+    base._sembrarTipoMovimiento();
+    const articulo = base._sembrarArticulo({ nombre: "Vino Malbec" });
+    // Mismo artículo habilitado en DOS depósitos distintos a la vez — la
+    // situación real que hizo imposible saber, sin este campo, de cuál de
+    // los dos salió el descuento de un consumo puntual.
+    base._habilitarConStock({ articuloId: articulo.id, depositoId: cocina.id, stockActual: 5 });
+    base._habilitarConStock({ articuloId: articulo.id, depositoId: bar.id, stockActual: 10 });
+    const reserva = await reservaEnCurso();
+
+    const consumo = await serviciosAdicionalesServicio.registrarConsumo({
+      reservaId: reserva.id,
+      habitacionId: 1,
+      tipoServicio: "Minibar",
+      articuloId: articulo.id,
+      cantidad: 2,
+      depositoId: bar.id,
+      monto: 6000,
+      registradoPor: "X",
+    });
+
+    const movimiento = base._datos.movimientoStock.find((m) => m.id === consumo.movimientoStockId);
+    assert.ok(movimiento, "el consumo tiene que apuntar a un MovimientoStock real");
+    assert.equal(movimiento.depositoId, bar.id, "tiene que ser el depósito que se eligió (Bar), no Cocina");
+    // Y el stock de Cocina, que también tenía el mismo artículo habilitado,
+    // no se tiene que haber tocado — la ambigüedad que causaba el bug.
+    const stockCocina = base._datos.articuloDepositoStock.find((s) => s.articuloDepositoId === 1);
+    assert.equal(stockCocina.stockActual, 5, "el stock de Cocina no debe cambiar");
+    const stockBar = base._datos.articuloDepositoStock.find((s) => s.articuloDepositoId === 2);
+    assert.equal(stockBar.stockActual, 8, "el stock de Bar sí baja de 10 a 8");
   });
 
   await prueba("usa el tipo de movimiento 'Salida por Consumo Interno' sin que el usuario tenga que elegirlo", async () => {
