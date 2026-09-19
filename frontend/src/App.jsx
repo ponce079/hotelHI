@@ -29,6 +29,10 @@ import { PresupuestoDetallePage } from "./modulos/presupuestos/PresupuestoDetall
 import { ComprobantesPage } from "./modulos/comprobantes/ComprobantesPage";
 import { ComprobanteDetalle } from "./modulos/comprobantes/ComprobanteDetalle";
 import { HabitacionesPage } from "./modulos/habitaciones/HabitacionesPage";
+import { ReservasPage } from "./modulos/reservas/ReservasPage";
+import { ReservaDetallePage } from "./modulos/reservas/ReservaDetallePage";
+import { DisponibilidadPublicaPage } from "./modulos/reservas/DisponibilidadPublicaPage";
+import { ReservaWebPage } from "./modulos/reservas/ReservaWebPage";
 
 // Gatekeeper de rutas: sin sesion (sin rol elegido en el login), redirige
 // a /login. No es autenticacion real contra el backend — ver lib/sesion.jsx.
@@ -42,6 +46,12 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      {/* Sprint 3 académico — pantallas del rol "Huésped" (HU-38 y HU-40):
+          autoservicio sin sesión de staff, así que van fuera de
+          <RequireSesion> igual que /login. Traen su propio envoltorio
+          (LayoutPublico), no el menú lateral de <Layout>. */}
+      <Route path="/disponibilidad" element={<DisponibilidadPublicaPage />} />
+      <Route path="/reservar" element={<ReservaWebPage />} />
       <Route element={<RequireSesion />}>
         <Route element={<Layout />}>
           <Route index element={<DashboardPage />} />
@@ -78,6 +88,9 @@ export default function App() {
           <Route path="/comprobantes/:id" element={<ComprobanteDetalle />} />
           {/* Sprint 3 académico — Administración de Habitaciones (HU-31 a HU-35). */}
           <Route path="/habitaciones" element={<HabitacionesPage />} />
+          {/* Sprint 3 académico — Reservas (HU-36 a HU-42). */}
+          <Route path="/reservas" element={<ReservasPage />} />
+          <Route path="/reservas/:id" element={<ReservaDetallePage />} />
         </Route>
       </Route>
     </Routes>

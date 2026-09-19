@@ -14,6 +14,7 @@ import {
   FileText,
   Tag,
   BedDouble,
+  CalendarCheck,
 } from "lucide-react";
 
 // Menu por rol, calcado de MENUS del prototipo (y de lo que dice cada
@@ -41,6 +42,15 @@ export const MENU_GRUPOS = [
         label: "Habitaciones",
         icon: BedDouble,
         roles: ["admin", "recepcionista", "mantenimiento", "housekeeping"],
+      },
+      // Sprint 3 académico — Reservas (HU-36 a 42). Las pantallas públicas
+      // (/disponibilidad y /reservar) no entran al menú: son del rol
+      // "Huésped" y viven fuera de la sesión de staff.
+      {
+        to: "/reservas",
+        label: "Reservas",
+        icon: CalendarCheck,
+        roles: ["admin", "recepcionista"],
       },
     ],
   },
