@@ -17,6 +17,7 @@ const movimientoSalidaServicio = require("../movimientos-salida/movimientoSalida
 const {
   TIPOS_SERVICIO,
   DESCRIPCION_TIPO_MOVIMIENTO_MINIBAR,
+  DEPOSITO_MINIBAR_NOMBRE,
   LIMITES_SERVICIOS_ADICIONALES,
 } = require("./serviciosAdicionales.constantes");
 
@@ -92,6 +93,26 @@ async function resolverTipoMovimientoMinibar(cliente) {
   return cualquiera.id;
 }
 
+// Sprint 3 — decisión de negocio: a diferencia del resto de Salidas de
+// Stock, acá NO se le pide a quien carga el consumo que elija de qué
+// depósito sale (evita repetir el bug ya encontrado una vez de descontar
+// del depósito equivocado cuando el mismo artículo está habilitado en más
+// de uno). Siempre es el depósito fijo "Minibar" — a diferencia de
+// resolverTipoMovimientoMinibar, acá no hay un fallback razonable a
+// "cualquier otro depósito" si no existe: sin él no hay de dónde descontar.
+async function resolverDepositoMinibar(cliente) {
+  const deposito = await cliente.deposito.findFirst({
+    where: { nombre: DEPOSITO_MINIBAR_NOMBRE, activo: true },
+  });
+  if (!deposito) {
+    throw new ErrorDeNegocio(
+      `No existe el depósito "${DEPOSITO_MINIBAR_NOMBRE}" (o está inactivo) — pedile a un administrador que lo cree antes de registrar consumos de Minibar.`,
+      409
+    );
+  }
+  return deposito.id;
+}
+
 // --------------------------------------------------------------
 // HU-61/62 — registrar consumo
 // --------------------------------------------------------------
@@ -121,24 +142,27 @@ async function registrarConsumo(data) {
     const articuloId = enteroPositivo(data?.articuloId, "articuloId");
     const cantidad = Number(data?.cantidad);
     if (!(cantidad > 0)) throw new ErrorDeNegocio("cantidad debe ser un número mayor a 0 para Minibar.");
-    const depositoId = enteroPositivo(data?.depositoId, "depositoId (de qué depósito sale el artículo del minibar)");
 
     const habitacion = await prisma.habitacion.findUnique({ where: { id: habitacionId } });
 
     return prisma.$transaction(
       async (tx) => {
         const tipoMovStockId = await resolverTipoMovimientoMinibar(tx);
+        // Sprint 3 — decisión de negocio: el depósito no se recibe del
+        // caller ni se pide en el formulario, se resuelve acá siempre al
+        // mismo depósito fijo (ver resolverDepositoMinibar arriba).
+        const depositoId = await resolverDepositoMinibar(tx);
         // No reimplementa el descuento de stock: reusa el mismo servicio
         // que ya usa el resto del sistema para una Salida (HU-13), dentro
-        // de esta misma transacción — si el artículo no está habilitado en
-        // ese depósito o no hay stock suficiente, todo se revierte y el
-        // consumo tampoco queda registrado (no tiene sentido cobrar un
-        // minibar que no se pudo descontar del stock real). Se crea PRIMERO
-        // para poder guardar su id en el consumo (movimientoStockId): un
-        // mismo artículo puede estar habilitado en más de un depósito a la
-        // vez (encontrado auditando a mano), así que sin esta referencia no
-        // hay forma de saber con certeza de qué depósito salió un consumo
-        // puntual sin parsear el texto libre de `detalle`.
+        // de esta misma transacción — si no hay stock suficiente, todo se
+        // revierte y el consumo tampoco queda registrado (no tiene sentido
+        // cobrar un minibar que no se pudo descontar del stock real). Se
+        // crea PRIMERO para poder guardar su id en el consumo
+        // (movimientoStockId): un mismo artículo puede estar habilitado en
+        // más de un depósito a la vez (encontrado auditando a mano), así que
+        // sin esta referencia no hay forma de saber con certeza de qué
+        // depósito salió un consumo puntual sin parsear el texto libre de
+        // `detalle`.
         const movimiento = await movimientoSalidaServicio.registrarSalidaEnTransaccion(tx, {
           depositoId,
           tipoMovStockId,

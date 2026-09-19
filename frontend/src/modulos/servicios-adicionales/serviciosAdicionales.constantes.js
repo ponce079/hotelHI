@@ -14,3 +14,10 @@ export const TIPO_SERVICIO_BADGE = {
 export const LIMITES_SERVICIOS_ADICIONALES = {
   registradoPor: 100,
 };
+
+// Mismo valor que backend/src/modulos/servicios-adicionales/serviciosAdicionales.constantes.js
+// (duplicado a mano, misma convención). El consumo de Minibar SIEMPRE
+// descuenta de este depósito fijo — no se le pide a quien carga el consumo
+// que elija de dónde sale, solo se usa acá para mostrarle el stock
+// disponible real de ese depósito puntual.
+export const DEPOSITO_MINIBAR_NOMBRE = "Minibar";

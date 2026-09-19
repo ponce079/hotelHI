@@ -13,8 +13,21 @@ const TIPOS_SERVICIO = ["Restaurante", "Spa", "Lavandería", "Minibar"];
 // por un dato de catálogo que un admin todavía no cargó.
 const DESCRIPCION_TIPO_MOVIMIENTO_MINIBAR = "Salida por Consumo Interno";
 
+// Sprint 3 — decisión de negocio: el descuento de stock de un consumo de
+// Minibar SIEMPRE sale de este depósito fijo, nunca de uno que elija quien
+// carga el consumo (a diferencia del resto de Salidas de Stock de Sprint 1,
+// donde el depósito sí se elige a mano). Se resuelve por nombre en
+// resolverDepositoMinibar (serviciosAdicionales.servicio.js), mismo criterio
+// que DESCRIPCION_TIPO_MOVIMIENTO_MINIBAR de arriba.
+const DEPOSITO_MINIBAR_NOMBRE = "Minibar";
+
 const LIMITES_SERVICIOS_ADICIONALES = {
   registradoPor: 100,
 };
 
-module.exports = { TIPOS_SERVICIO, DESCRIPCION_TIPO_MOVIMIENTO_MINIBAR, LIMITES_SERVICIOS_ADICIONALES };
+module.exports = {
+  TIPOS_SERVICIO,
+  DESCRIPCION_TIPO_MOVIMIENTO_MINIBAR,
+  DEPOSITO_MINIBAR_NOMBRE,
+  LIMITES_SERVICIOS_ADICIONALES,
+};

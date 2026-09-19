@@ -9,22 +9,29 @@ import { Button } from "../../componentes/Button";
 import { listarDepositos } from "../depositos/depositos.api";
 import { consultarStock } from "../stock/stock.api";
 import { registrarConsumo } from "./serviciosAdicionales.api";
-import { TIPOS_SERVICIO, LIMITES_SERVICIOS_ADICIONALES } from "./serviciosAdicionales.constantes";
+import { TIPOS_SERVICIO, LIMITES_SERVICIOS_ADICIONALES, DEPOSITO_MINIBAR_NOMBRE } from "./serviciosAdicionales.constantes";
 
 const VACIO = {
   habitacionId: "",
   tipoServicio: TIPOS_SERVICIO[0],
   monto: "",
   registradoPor: "",
-  depositoId: "",
   articuloId: "",
   cantidad: "1",
 };
 
 // HU-61 a 64 — alta de consumo. Cuando tipoServicio = Minibar, HU-64 pide
 // reusar el mismo módulo de Stock de Sprint 1 (no un catálogo propio): el
-// selector de artículo sale de GET /api/stock filtrado por el depósito
-// elegido — mismos datos que ya usa StockLista, no un endpoint nuevo.
+// selector de artículo sale de GET /api/stock filtrado por el depósito fijo
+// "Minibar" — mismos datos que ya usa StockLista, no un endpoint nuevo.
+//
+// Sprint 3 — decisión de negocio: NO se le pide a quien carga el consumo
+// que elija de qué depósito sale (evita repetir el bug ya encontrado una
+// vez de descontar del depósito equivocado cuando el mismo artículo está
+// habilitado en más de uno). El depósito "Minibar" se resuelve solo, acá
+// nada más para saber qué stock mostrarle — el backend lo vuelve a resolver
+// por su cuenta y es la fuente de verdad real (ver resolverDepositoMinibar
+// en serviciosAdicionales.servicio.js); no se manda en el payload.
 export function ConsumoModal({ reserva, onClose, onExito }) {
   const habitacionInicial = reserva.habitaciones.length === 1 ? String(reserva.habitaciones[0].id) : "";
   const [form, setForm] = useState({ ...VACIO, habitacionId: habitacionInicial });
@@ -33,10 +40,11 @@ export function ConsumoModal({ reserva, onClose, onExito }) {
   const esMinibar = form.tipoServicio === "Minibar";
 
   const depositosQuery = useQuery({ queryKey: ["depositos"], queryFn: listarDepositos, enabled: esMinibar });
+  const depositoMinibar = (depositosQuery.data ?? []).find((d) => d.nombre === DEPOSITO_MINIBAR_NOMBRE && d.activo);
   const stockQuery = useQuery({
-    queryKey: ["stock", "minibar", form.depositoId],
-    queryFn: () => consultarStock({ depositoId: form.depositoId }),
-    enabled: esMinibar && Boolean(form.depositoId),
+    queryKey: ["stock", "minibar", depositoMinibar?.id],
+    queryFn: () => consultarStock({ depositoId: depositoMinibar.id }),
+    enabled: esMinibar && Boolean(depositoMinibar),
   });
 
   const articuloElegido = (stockQuery.data ?? []).find((a) => String(a.articuloId) === form.articuloId);
@@ -53,7 +61,6 @@ export function ConsumoModal({ reserva, onClose, onExito }) {
       if (esMinibar) {
         payload.articuloId = Number(form.articuloId);
         payload.cantidad = Number(form.cantidad);
-        payload.depositoId = Number(form.depositoId);
       }
       return registrarConsumo(payload);
     },
@@ -69,12 +76,7 @@ export function ConsumoModal({ reserva, onClose, onExito }) {
     setErrores({});
     setForm((f) => {
       const siguiente = { ...f, [campo]: valor };
-      // Cambiar el depósito invalida el artículo ya elegido (puede no estar
-      // habilitado en el nuevo) — mismo criterio que ReservaWizard al
-      // cambiar de fechas invalida la habitación elegida.
-      if (campo === "depositoId") siguiente.articuloId = "";
       if (campo === "tipoServicio" && valor !== "Minibar") {
-        siguiente.depositoId = "";
         siguiente.articuloId = "";
         siguiente.cantidad = "1";
       }
@@ -89,7 +91,9 @@ export function ConsumoModal({ reserva, onClose, onExito }) {
     if (!(Number(form.monto) > 0)) nuevos.monto = "Ingresá un monto mayor a 0.";
     if (!form.registradoPor.trim()) nuevos.registradoPor = "Indicá quién registra el consumo.";
     if (esMinibar) {
-      if (!form.depositoId) nuevos.depositoId = "Elegí de qué depósito sale el artículo.";
+      if (depositosQuery.isSuccess && !depositoMinibar) {
+        nuevos.general = `No existe el depósito "${DEPOSITO_MINIBAR_NOMBRE}" — pedile a un administrador que lo cree antes de registrar consumos de Minibar.`;
+      }
       if (!form.articuloId) nuevos.articuloId = "Elegí el artículo consumido.";
       if (!(Number(form.cantidad) > 0)) nuevos.cantidad = "Ingresá una cantidad mayor a 0.";
       if (articuloElegido && Number(form.cantidad) > Number(articuloElegido.stockActual)) {
@@ -134,27 +138,17 @@ export function ConsumoModal({ reserva, onClose, onExito }) {
           {esMinibar && (
             <>
               <Select
-                label="Depósito de origen *"
-                value={form.depositoId}
-                onChange={(e) => cambiar("depositoId", e.target.value)}
-                error={errores.depositoId}
-              >
-                <option value="">Elegí el depósito</option>
-                {(depositosQuery.data ?? []).filter((d) => d.activo).map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.nombre}
-                  </option>
-                ))}
-              </Select>
-
-              <Select
                 label="Artículo *"
                 value={form.articuloId}
                 onChange={(e) => cambiar("articuloId", e.target.value)}
                 error={errores.articuloId}
-                disabled={!form.depositoId}
+                disabled={!depositoMinibar}
               >
-                <option value="">{form.depositoId ? "Elegí el artículo" : "Elegí primero el depósito"}</option>
+                <option value="">
+                  {depositosQuery.isSuccess && !depositoMinibar
+                    ? `No existe el depósito "${DEPOSITO_MINIBAR_NOMBRE}"`
+                    : "Elegí el artículo"}
+                </option>
                 {(stockQuery.data ?? [])
                   .filter((a) => a.activo && a.stockActual > 0)
                   .map((a) => (
