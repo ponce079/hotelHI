@@ -1,0 +1,203 @@
+import { useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Save, X } from "lucide-react";
+import { Modal } from "../../componentes/Modal";
+import { Input } from "../../componentes/Input";
+import { Select } from "../../componentes/Select";
+import { MoneyInput } from "../../componentes/MoneyInput";
+import { Button } from "../../componentes/Button";
+import { listarDepositos } from "../depositos/depositos.api";
+import { consultarStock } from "../stock/stock.api";
+import { registrarConsumo } from "./serviciosAdicionales.api";
+import { TIPOS_SERVICIO, LIMITES_SERVICIOS_ADICIONALES } from "./serviciosAdicionales.constantes";
+
+const VACIO = {
+  habitacionId: "",
+  tipoServicio: TIPOS_SERVICIO[0],
+  monto: "",
+  registradoPor: "",
+  depositoId: "",
+  articuloId: "",
+  cantidad: "1",
+};
+
+// HU-61 a 64 — alta de consumo. Cuando tipoServicio = Minibar, HU-64 pide
+// reusar el mismo módulo de Stock de Sprint 1 (no un catálogo propio): el
+// selector de artículo sale de GET /api/stock filtrado por el depósito
+// elegido — mismos datos que ya usa StockLista, no un endpoint nuevo.
+export function ConsumoModal({ reserva, onClose, onExito }) {
+  const habitacionInicial = reserva.habitaciones.length === 1 ? String(reserva.habitaciones[0].id) : "";
+  const [form, setForm] = useState({ ...VACIO, habitacionId: habitacionInicial });
+  const [errores, setErrores] = useState({});
+  const queryClient = useQueryClient();
+  const esMinibar = form.tipoServicio === "Minibar";
+
+  const depositosQuery = useQuery({ queryKey: ["depositos"], queryFn: listarDepositos, enabled: esMinibar });
+  const stockQuery = useQuery({
+    queryKey: ["stock", "minibar", form.depositoId],
+    queryFn: () => consultarStock({ depositoId: form.depositoId }),
+    enabled: esMinibar && Boolean(form.depositoId),
+  });
+
+  const articuloElegido = (stockQuery.data ?? []).find((a) => String(a.articuloId) === form.articuloId);
+
+  const mutacion = useMutation({
+    mutationFn: () => {
+      const payload = {
+        reservaId: reserva.id,
+        habitacionId: Number(form.habitacionId),
+        tipoServicio: form.tipoServicio,
+        monto: Number(form.monto),
+        registradoPor: form.registradoPor.trim(),
+      };
+      if (esMinibar) {
+        payload.articuloId = Number(form.articuloId);
+        payload.cantidad = Number(form.cantidad);
+        payload.depositoId = Number(form.depositoId);
+      }
+      return registrarConsumo(payload);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["consumos-servicios"] });
+      if (esMinibar) queryClient.invalidateQueries({ queryKey: ["stock"] });
+      onExito(`Consumo de ${form.tipoServicio} registrado.`);
+    },
+    onError: (error) => setErrores({ general: error?.response?.data?.error ?? "No se pudo registrar el consumo." }),
+  });
+
+  function cambiar(campo, valor) {
+    setErrores({});
+    setForm((f) => {
+      const siguiente = { ...f, [campo]: valor };
+      // Cambiar el depósito invalida el artículo ya elegido (puede no estar
+      // habilitado en el nuevo) — mismo criterio que ReservaWizard al
+      // cambiar de fechas invalida la habitación elegida.
+      if (campo === "depositoId") siguiente.articuloId = "";
+      if (campo === "tipoServicio" && valor !== "Minibar") {
+        siguiente.depositoId = "";
+        siguiente.articuloId = "";
+        siguiente.cantidad = "1";
+      }
+      return siguiente;
+    });
+  }
+
+  function handleSubmit(evento) {
+    evento.preventDefault();
+    const nuevos = {};
+    if (!form.habitacionId) nuevos.habitacionId = "Elegí la habitación.";
+    if (!(Number(form.monto) > 0)) nuevos.monto = "Ingresá un monto mayor a 0.";
+    if (!form.registradoPor.trim()) nuevos.registradoPor = "Indicá quién registra el consumo.";
+    if (esMinibar) {
+      if (!form.depositoId) nuevos.depositoId = "Elegí de qué depósito sale el artículo.";
+      if (!form.articuloId) nuevos.articuloId = "Elegí el artículo consumido.";
+      if (!(Number(form.cantidad) > 0)) nuevos.cantidad = "Ingresá una cantidad mayor a 0.";
+      if (articuloElegido && Number(form.cantidad) > Number(articuloElegido.stockActual)) {
+        nuevos.cantidad = `Stock disponible: ${articuloElegido.stockActual}.`;
+      }
+    }
+    if (Object.keys(nuevos).length) {
+      setErrores(nuevos);
+      return;
+    }
+    mutacion.mutate();
+  }
+
+  return (
+    <Modal titulo="Registrar consumo" subtitulo={`Reserva ${reserva.codigoConfirmacion}`} onClose={onClose} ancho="max-w-xl">
+      <form onSubmit={handleSubmit}>
+        <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2">
+          {errores.general && <p className="sm:col-span-2 text-sm text-error-texto">{errores.general}</p>}
+
+          <Select
+            label="Habitación *"
+            value={form.habitacionId}
+            onChange={(e) => cambiar("habitacionId", e.target.value)}
+            error={errores.habitacionId}
+          >
+            <option value="">Elegí una habitación</option>
+            {reserva.habitaciones.map((h) => (
+              <option key={h.id} value={h.id}>
+                {h.numero} ({h.tipo})
+              </option>
+            ))}
+          </Select>
+
+          <Select label="Tipo de servicio *" value={form.tipoServicio} onChange={(e) => cambiar("tipoServicio", e.target.value)}>
+            {TIPOS_SERVICIO.map((tipo) => (
+              <option key={tipo} value={tipo}>
+                {tipo}
+              </option>
+            ))}
+          </Select>
+
+          {esMinibar && (
+            <>
+              <Select
+                label="Depósito de origen *"
+                value={form.depositoId}
+                onChange={(e) => cambiar("depositoId", e.target.value)}
+                error={errores.depositoId}
+              >
+                <option value="">Elegí el depósito</option>
+                {(depositosQuery.data ?? []).filter((d) => d.activo).map((d) => (
+                  <option key={d.id} value={d.id}>
+                    {d.nombre}
+                  </option>
+                ))}
+              </Select>
+
+              <Select
+                label="Artículo *"
+                value={form.articuloId}
+                onChange={(e) => cambiar("articuloId", e.target.value)}
+                error={errores.articuloId}
+                disabled={!form.depositoId}
+              >
+                <option value="">{form.depositoId ? "Elegí el artículo" : "Elegí primero el depósito"}</option>
+                {(stockQuery.data ?? [])
+                  .filter((a) => a.activo && a.stockActual > 0)
+                  .map((a) => (
+                    <option key={a.articuloId} value={a.articuloId}>
+                      {a.nombre} (stock: {a.stockActual})
+                    </option>
+                  ))}
+              </Select>
+
+              <Input
+                label="Cantidad *"
+                type="number"
+                min="1"
+                step="1"
+                value={form.cantidad}
+                onChange={(e) => cambiar("cantidad", e.target.value)}
+                error={errores.cantidad}
+              />
+            </>
+          )}
+
+          <MoneyInput label="Monto *" value={form.monto} onChange={(v) => cambiar("monto", v)} error={errores.monto} />
+
+          <div className={esMinibar ? "" : "sm:col-span-2"}>
+            <Input
+              label="Registrado por *"
+              value={form.registradoPor}
+              onChange={(e) => cambiar("registradoPor", e.target.value)}
+              maxLength={LIMITES_SERVICIOS_ADICIONALES.registradoPor}
+              placeholder="Tu nombre"
+              error={errores.registradoPor}
+            />
+          </div>
+        </div>
+        <div className="flex justify-end gap-2.5 border-t border-borde px-6 py-4">
+          <Button type="button" variante="secundario" icono={X} disabled={mutacion.isPending} onClick={onClose}>
+            Cancelar
+          </Button>
+          <Button type="submit" icono={Save} cargando={mutacion.isPending}>
+            Registrar
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}

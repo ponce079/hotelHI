@@ -20,7 +20,15 @@ class ErrorDeNegocio extends Error {
   }
 }
 
-async function registrarSalida({ depositoId, tipoMovStockId, detalle, usuario, items }) {
+// Núcleo real de HU-13, parametrizado por `cliente` (el `prisma` global o el
+// `tx` de una transacción ya abierta por quien llama). Se separó de
+// `registrarSalida` en Sprint 3 (Servicios Adicionales, HU-61: el consumo de
+// Minibar necesita crear su propio registro Y descontar stock en una única
+// transacción atómica) — mismo criterio que `crearReservaEnTransaccion` en
+// `reservas.servicio.js`. Las validaciones de "existe y está habilitado" se
+// hacen contra `cliente` para que, si se llama dentro de una transacción
+// ajena, lean el mismo snapshot consistente que después van a escribir.
+async function registrarSalidaConCliente(cliente, { depositoId, tipoMovStockId, detalle, usuario, items }) {
   // --- Validaciones básicas de payload ---
   if (!depositoId || !tipoMovStockId) {
     throw new ErrorDeNegocio("depositoId y tipoMovStockId son obligatorios.");
@@ -45,7 +53,7 @@ async function registrarSalida({ depositoId, tipoMovStockId, detalle, usuario, i
   }
 
   // --- Validar tipo de movimiento (debe ser de Salida) ---
-  const tipoMov = await prisma.tipoMovimientoStock.findUnique({ where: { id: Number(tipoMovStockId) } });
+  const tipoMov = await cliente.tipoMovimientoStock.findUnique({ where: { id: Number(tipoMovStockId) } });
   if (!tipoMov || !tipoMov.activo) {
     throw new ErrorDeNegocio("El tipo de movimiento indicado no existe o está inactivo.");
   }
@@ -59,13 +67,13 @@ async function registrarSalida({ depositoId, tipoMovStockId, detalle, usuario, i
   }
 
   // --- Validar depósito ---
-  const deposito = await prisma.deposito.findUnique({ where: { id: Number(depositoId) } });
+  const deposito = await cliente.deposito.findUnique({ where: { id: Number(depositoId) } });
   if (!deposito || !deposito.activo) {
     throw new ErrorDeNegocio("El depósito indicado no existe o está inactivo.");
   }
 
   // --- Validar habilitación Artículo-Depósito (HU-4) ---
-  const habilitaciones = await prisma.articuloDeposito.findMany({
+  const habilitaciones = await cliente.articuloDeposito.findMany({
     where: { depositoId: Number(depositoId), articuloId: { in: articuloIds }, activo: true },
     include: { articulo: true },
   });
@@ -86,62 +94,78 @@ async function registrarSalida({ depositoId, tipoMovStockId, detalle, usuario, i
 
   const habilitacionPorArticulo = Object.fromEntries(habilitaciones.map((h) => [h.articuloId, h]));
 
-  // --- Transacción atómica: alta del movimiento + detalle + stock ---
-  const movimientoCreado = await prisma.$transaction(
-    async (tx) => {
-      const movimiento = await tx.movimientoStock.create({
-        data: {
-          depositoId: Number(depositoId),
-          tipoMovStockId: Number(tipoMovStockId),
-          detalle: detalle || null,
-          usuario: usuario || null,
-        },
+  // --- Alta del movimiento + detalle + stock, todo contra el mismo `cliente` ---
+  async function escribir(tx) {
+    const movimiento = await tx.movimientoStock.create({
+      data: {
+        depositoId: Number(depositoId),
+        tipoMovStockId: Number(tipoMovStockId),
+        detalle: detalle || null,
+        usuario: usuario || null,
+      },
+    });
+
+    for (const item of items) {
+      const cantidad = Number(item.cantidad);
+      const articuloDepositoId = habilitacionPorArticulo[item.articuloId].id;
+
+      await tx.movimientoStockDetalle.create({
+        data: { movStockId: movimiento.id, articuloId: item.articuloId, cantidad },
       });
 
-      for (const item of items) {
-        const cantidad = Number(item.cantidad);
-        const articuloDepositoId = habilitacionPorArticulo[item.articuloId].id;
-
-        await tx.movimientoStockDetalle.create({
-          data: { movStockId: movimiento.id, articuloId: item.articuloId, cantidad },
-        });
-
-        // updateMany con el chequeo de stock en el WHERE hace el
-        // "verificar y descontar" atómico en una sola sentencia SQL — dos
-        // salidas simultáneas sobre el mismo artículo ya no pueden pasar
-        // ambas la validación con el mismo stock leído (evita quedar en
-        // negativo). Si count===0, no había stock suficiente.
-        const resultado = await tx.articuloDepositoStock.updateMany({
-          where: { articuloDepositoId, stockActual: { gte: cantidad } },
-          data: { stockActual: { decrement: cantidad } },
-        });
-        if (resultado.count === 0) {
-          const stock = await tx.articuloDepositoStock.findUnique({ where: { articuloDepositoId } });
-          const stockActual = stock ? Number(stock.stockActual) : 0;
-          throw new ErrorDeNegocio(
-            `Stock insuficiente para el artículo ${item.articuloId}. Actual: ${stockActual}, Solicitado: ${cantidad}.`
-          );
-        }
-
-        // Sprint 3 — Transferencia a Central: si este depósito es central
-        // y la salida lo dejó bajo el mínimo, dispara (o acumula sobre)
-        // su reposición. No hace nada si el depósito no es central.
-        await verificarStockMinimoCentral(tx, articuloDepositoId);
+      // updateMany con el chequeo de stock en el WHERE hace el
+      // "verificar y descontar" atómico en una sola sentencia SQL — dos
+      // salidas simultáneas sobre el mismo artículo ya no pueden pasar
+      // ambas la validación con el mismo stock leído (evita quedar en
+      // negativo). Si count===0, no había stock suficiente.
+      const resultado = await tx.articuloDepositoStock.updateMany({
+        where: { articuloDepositoId, stockActual: { gte: cantidad } },
+        data: { stockActual: { decrement: cantidad } },
+      });
+      if (resultado.count === 0) {
+        const stock = await tx.articuloDepositoStock.findUnique({ where: { articuloDepositoId } });
+        const stockActual = stock ? Number(stock.stockActual) : 0;
+        throw new ErrorDeNegocio(
+          `Stock insuficiente para el artículo ${item.articuloId}. Actual: ${stockActual}, Solicitado: ${cantidad}.`
+        );
       }
 
-      return tx.movimientoStock.findUnique({
-        where: { id: movimiento.id },
-        include: {
-          deposito: true,
-          tipoMovStock: true,
-          detalleMovimientos: { include: { articulo: true } },
-        },
-      });
-    },
-    { timeout: 15000, maxWait: 10000 }
-  );
+      // Sprint 3 — Transferencia a Central: si este depósito es central
+      // y la salida lo dejó bajo el mínimo, dispara (o acumula sobre)
+      // su reposición. No hace nada si el depósito no es central.
+      await verificarStockMinimoCentral(tx, articuloDepositoId);
+    }
 
-  return movimientoCreado;
+    return tx.movimientoStock.findUnique({
+      where: { id: movimiento.id },
+      include: {
+        deposito: true,
+        tipoMovStock: true,
+        detalleMovimientos: { include: { articulo: true } },
+      },
+    });
+  }
+
+  // Si `cliente` ya es un `tx` (tiene modelos pero no `$transaction`), las
+  // escrituras van directo contra él, dentro de la transacción de quien
+  // llama. Si es el `prisma` global, abrimos una transacción propia — este
+  // es el único caso en el que `registrarSalida` (sin cliente externo)
+  // sigue comportándose exactamente igual que antes de este refactor.
+  if (typeof cliente.$transaction === "function") {
+    return cliente.$transaction((tx) => escribir(tx), { timeout: 15000, maxWait: 10000 });
+  }
+  return escribir(cliente);
 }
 
-module.exports = { registrarSalida, ErrorDeNegocio };
+async function registrarSalida(data) {
+  return registrarSalidaConCliente(prisma, data);
+}
+
+// Variante reusable desde una transacción ya abierta por otro módulo (ver
+// comentario arriba) — mismo contrato que `registrarSalida`, solo que
+// recibe el `tx` como primer argumento en vez de abrir el suyo.
+async function registrarSalidaEnTransaccion(tx, data) {
+  return registrarSalidaConCliente(tx, data);
+}
+
+module.exports = { registrarSalida, registrarSalidaEnTransaccion, ErrorDeNegocio };

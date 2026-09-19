@@ -15,6 +15,8 @@ import {
   Tag,
   BedDouble,
   CalendarCheck,
+  DoorOpen,
+  Utensils,
 } from "lucide-react";
 
 // Menu por rol, calcado de MENUS del prototipo (y de lo que dice cada
@@ -51,6 +53,22 @@ export const MENU_GRUPOS = [
         label: "Reservas",
         icon: CalendarCheck,
         roles: ["admin", "recepcionista"],
+      },
+      // Sprint 3 académico — Check-in (HU-43 a 47).
+      {
+        to: "/check-in",
+        label: "Check-in",
+        icon: DoorOpen,
+        roles: ["admin", "recepcionista"],
+      },
+      // Sprint 3 académico — Servicios Adicionales (HU-61 a 64). Recepción
+      // también entra para consultar los cargos acumulados (HU-63); quien
+      // registra el consumo es "servicios" (HU-61).
+      {
+        to: "/servicios-adicionales",
+        label: "Servicios Adicionales",
+        icon: Utensils,
+        roles: ["admin", "recepcionista", "servicios"],
       },
     ],
   },

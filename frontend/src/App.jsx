@@ -33,6 +33,8 @@ import { ReservasPage } from "./modulos/reservas/ReservasPage";
 import { ReservaDetallePage } from "./modulos/reservas/ReservaDetallePage";
 import { DisponibilidadPublicaPage } from "./modulos/reservas/DisponibilidadPublicaPage";
 import { ReservaWebPage } from "./modulos/reservas/ReservaWebPage";
+import { CheckInPage } from "./modulos/check-in/CheckInPage";
+import { ServiciosAdicionalesPage } from "./modulos/servicios-adicionales/ServiciosAdicionalesPage";
 
 // Gatekeeper de rutas: sin sesion (sin rol elegido en el login), redirige
 // a /login. No es autenticacion real contra el backend — ver lib/sesion.jsx.
@@ -91,6 +93,10 @@ export default function App() {
           {/* Sprint 3 académico — Reservas (HU-36 a HU-42). */}
           <Route path="/reservas" element={<ReservasPage />} />
           <Route path="/reservas/:id" element={<ReservaDetallePage />} />
+          {/* Sprint 3 académico — Check-in (HU-43 a HU-47). */}
+          <Route path="/check-in" element={<CheckInPage />} />
+          {/* Sprint 3 académico — Servicios Adicionales (HU-61 a HU-64). */}
+          <Route path="/servicios-adicionales" element={<ServiciosAdicionalesPage />} />
         </Route>
       </Route>
     </Routes>
