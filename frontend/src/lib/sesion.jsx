@@ -39,10 +39,6 @@ export const ROLES = {
     label: "Housekeeping",
     descripcion: "Estado de limpieza y liberación de habitaciones para recepción",
   },
-  servicios: {
-    label: "Personal de Servicios",
-    descripcion: "Consumo de servicios adicionales del huésped: restaurante, spa, lavandería y minibar",
-  },
 };
 
 const CLAVE_STORAGE = "sgh_sesion";
@@ -175,14 +171,14 @@ export function SesionProvider({ children }) {
         // "Recepcionista" para las 5 historias, sin matices de rol por
         // acción (a diferencia de Habitaciones) — un solo permiso alcanza.
         if (accion === "gestionarCheckIn") return rol === "admin" || rol === "recepcionista";
-        // Sprint 3 académico — Servicios Adicionales (HU-61 a HU-64).
-        // registrarConsumo es del rol "servicios" (HU-61: "Personal de
-        // servicios (alta)"), exclusivo — mismo criterio que
-        // gestionarMantenimiento en Habitaciones (admin no entra a cargar,
-        // solo a mirar). verConsumos es de HU-63 ("Recepcionista"), y
-        // "servicios" también necesita ver lo que ya cargó.
-        if (accion === "registrarConsumoServicio") return rol === "servicios";
-        if (accion === "verConsumosServicio") return rol === "admin" || rol === "recepcionista" || rol === "servicios";
+        // Sprint 3 académico — Servicios Adicionales (HU-61 a HU-64). El rol
+        // "Personal de Servicios" se eliminó del sistema: Recepcionista
+        // absorbe todo el módulo (alta HU-61 y consulta HU-63), mismo
+        // criterio de permisos que ya tiene con Reservas
+        // (gestionarReservas) y Check-in (gestionarCheckIn) — admin +
+        // recepcionista, sin matices de rol por acción.
+        if (accion === "registrarConsumoServicio") return rol === "admin" || rol === "recepcionista";
+        if (accion === "verConsumosServicio") return rol === "admin" || rol === "recepcionista";
         return false;
       },
     };

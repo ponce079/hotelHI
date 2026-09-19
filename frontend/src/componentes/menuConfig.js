@@ -61,14 +61,15 @@ export const MENU_GRUPOS = [
         icon: DoorOpen,
         roles: ["admin", "recepcionista"],
       },
-      // Sprint 3 académico — Servicios Adicionales (HU-61 a 64). Recepción
-      // también entra para consultar los cargos acumulados (HU-63); quien
-      // registra el consumo es "servicios" (HU-61).
+      // Sprint 3 académico — Servicios Adicionales (HU-61 a 64). El rol
+      // "Personal de Servicios" se eliminó del sistema: Recepcionista
+      // registra el consumo (HU-61) y consulta los cargos acumulados
+      // (HU-63), mismo criterio que ya tiene con Reservas y Check-in.
       {
         to: "/servicios-adicionales",
         label: "Servicios Adicionales",
         icon: Utensils,
-        roles: ["admin", "recepcionista", "servicios"],
+        roles: ["admin", "recepcionista"],
       },
     ],
   },
