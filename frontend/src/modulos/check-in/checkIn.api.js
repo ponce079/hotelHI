@@ -10,11 +10,6 @@ export async function listarHabitacionesLibresAhora(params) {
   return data;
 }
 
-export async function sugerirHabitacion(params) {
-  const { data } = await api.get("/check-in/sugerir-habitacion", { params });
-  return data;
-}
-
 export async function confirmarCheckInConReserva(reservaId, payload) {
   const { data } = await api.post(`/check-in/${reservaId}/confirmar`, payload);
   return data;

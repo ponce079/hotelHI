@@ -1,6 +1,7 @@
 import { ShieldCheck } from "lucide-react";
 import { Select } from "../../componentes/Select";
 import { MEDIOS_GARANTIA } from "./checkIn.constantes";
+import { TituloSeccion } from "./TituloSeccion";
 
 // HU-46 — validación de pago/garantía. Común a check-in con reserva previa
 // (CheckInConReserva) y walk-in (CheckInWalkIn): mismo bloqueo, mismos
@@ -10,10 +11,9 @@ import { MEDIOS_GARANTIA } from "./checkIn.constantes";
 export function GarantiaFieldset({ garantiaConfirmada, medioGarantia, onCambiar }) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-borde bg-hueso px-5 py-4">
-      <div className="flex items-center gap-2 text-[13px] font-semibold text-tinta">
-        <ShieldCheck size={16} className="text-pino" />
+      <TituloSeccion icono={ShieldCheck} tono="laton">
         Validación de pago / garantía
-      </div>
+      </TituloSeccion>
       <Select
         label="Medio de garantía *"
         value={medioGarantia}

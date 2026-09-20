@@ -12,9 +12,9 @@ export function CheckInPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
+      <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
         <h1 className="font-heading text-[34px] font-semibold">Check-in</h1>
-        <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
+        <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
           HU 43 a 47 — con reserva previa o walk-in, asignación de habitación y validación de garantía
         </p>
       </div>

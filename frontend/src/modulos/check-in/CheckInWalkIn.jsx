@@ -1,19 +1,31 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, BedDouble, Check, CheckCircle2, Sparkles, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, BedDouble, Check, CheckCircle2, User, Users } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
-import { Cifra } from "../../componentes/Cifra";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
-import { Table } from "../../componentes/Table";
 import { hoyEnHoraLocal } from "../../lib/fechas";
 import { useToast } from "../../lib/useToast";
 import { Toast } from "../../componentes/Toast";
 import { GarantiaFieldset } from "./GarantiaFieldset";
-import { sugerirHabitacion, registrarCheckInWalkIn } from "./checkIn.api";
+import { TituloSeccion } from "./TituloSeccion";
+import { listarHabitacionesLibresAhora, registrarCheckInWalkIn } from "./checkIn.api";
 import { MEDIOS_GARANTIA } from "./checkIn.constantes";
+import { validarHuesped } from "./validarHuesped";
+
+// El "tipo" de habitación es texto libre (lo define cada hotel en el
+// catálogo), no un enum fijo — así que el chip de color por tipo se asigna
+// por hash del string en vez de una tabla hardcodeada de nombres. Mismos 3
+// tonos semánticos que ya usa Badge en el resto de la app (ok/alerta/info),
+// nada nuevo fuera de la paleta.
+const VARIANTES_TIPO = ["ok", "alerta", "info"];
+function variantePorTipo(tipo) {
+  let hash = 0;
+  for (let i = 0; i < tipo.length; i++) hash = (hash * 31 + tipo.charCodeAt(i)) >>> 0;
+  return VARIANTES_TIPO[hash % VARIANTES_TIPO.length];
+}
 
 // Mismo espíritu que ReservaWizard.jsx (array PASOS, un único estado `form`,
 // botón final que cambia según el paso) — acá con un paso más (Garantía,
@@ -33,7 +45,6 @@ const VACIO = {
   fechaHasta: manana(),
   tipo: "",
   capacidadMinima: "",
-  preferencias: "",
   habitacionIds: [],
   huesped: { nombre: "", tipoDocumento: TIPOS_DOCUMENTO[0], numeroDocumento: "", contacto: "" },
   garantiaConfirmada: false,
@@ -42,22 +53,38 @@ const VACIO = {
 
 const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
+const HUESPED_TOCADO_VACIO = { nombre: false, numeroDocumento: false, contacto: false };
+
 export function CheckInWalkIn() {
   const navigate = useNavigate();
   const [form, setForm] = useState(VACIO);
   const [errorGeneral, setErrorGeneral] = useState("");
+  const [huespedTocado, setHuespedTocado] = useState(HUESPED_TOCADO_VACIO);
+  const [intentoAvanzarHuesped, setIntentoAvanzarHuesped] = useState(false);
   const { toast, mostrarToast } = useToast();
   const queryClient = useQueryClient();
 
+  // Errores en vivo, pero solo se muestran una vez que el usuario tocó el
+  // campo (onBlur) o intentó avanzar con el paso 3 incompleto — así no
+  // arranca la pantalla en rojo apenas se abre, vacía.
+  const erroresHuesped = validarHuesped(form.huesped);
+  const huespedValido = Object.keys(erroresHuesped).length === 0;
+  function errorHuesped(campo) {
+    return huespedTocado[campo] || intentoAvanzarHuesped ? erroresHuesped[campo] : undefined;
+  }
+  function tocarHuesped(campo) {
+    setHuespedTocado((t) => ({ ...t, [campo]: true }));
+  }
+
   const rangoValido = Boolean(form.fechaHasta && form.fechaHasta > hoyEnHoraLocal());
 
-  // HU-45 — sugerencia automática + lista completa para elección manual, ya
-  // filtradas por "libre ahora mismo" (no solo "sin reserva encimada", ver
-  // checkIn.servicio.js: listarHabitacionesLibresAhora).
-  const sugerenciaQuery = useQuery({
-    queryKey: ["check-in", "sugerir-habitacion", form.fechaHasta, form.tipo, form.capacidadMinima],
+  // HU-45 — selección manual: lista de habitaciones libres "ahora mismo"
+  // (no solo "sin reserva encimada", ver checkIn.servicio.js:
+  // listarHabitacionesLibresAhora), sin ninguna sugerencia automática.
+  const habitacionesQuery = useQuery({
+    queryKey: ["check-in", "habitaciones-libres", form.fechaHasta, form.tipo, form.capacidadMinima],
     queryFn: () =>
-      sugerirHabitacion({
+      listarHabitacionesLibresAhora({
         fechaHasta: form.fechaHasta,
         tipo: form.tipo || undefined,
         capacidadMinima: form.capacidadMinima || undefined,
@@ -65,7 +92,7 @@ export function CheckInWalkIn() {
     enabled: rangoValido && form.paso >= 2,
   });
 
-  const habitaciones = sugerenciaQuery.data?.habitaciones ?? [];
+  const habitaciones = habitacionesQuery.data?.habitaciones ?? [];
   const elegidas = useMemo(() => habitaciones.filter((h) => form.habitacionIds.includes(h.id)), [habitaciones, form.habitacionIds]);
   const capacidadTotal = elegidas.reduce((acc, h) => acc + h.capacidad, 0);
 
@@ -89,6 +116,8 @@ export function CheckInWalkIn() {
         `Check-in walk-in confirmado — reserva ${reserva.codigoConfirmacion}, habitación${reserva.habitaciones.length > 1 ? "es" : ""} ${reserva.habitaciones.map((h) => h.numero).join(", ")}.`
       );
       setForm(VACIO);
+      setHuespedTocado(HUESPED_TOCADO_VACIO);
+      setIntentoAvanzarHuesped(false);
     },
     onError: (error) => setErrorGeneral(error?.response?.data?.error ?? "No se pudo registrar el check-in."),
   });
@@ -117,21 +146,23 @@ export function CheckInWalkIn() {
     }));
   }
 
-  function usarSugerida() {
-    if (sugerenciaQuery.data?.sugerida) actualizar({ habitacionIds: [sugerenciaQuery.data.sugerida.id] });
-  }
-
   function confirmar() {
-    const { nombre, numeroDocumento } = form.huesped;
-    if (!nombre.trim() || !numeroDocumento.trim()) {
-      setErrorGeneral("El nombre y el número de documento del huésped son obligatorios.");
-      return;
-    }
+    // La validación de nombre/documento/contacto ya la garantiza el botón
+    // (disabled={!huespedValido}) y el paso 3 al avanzar — acá solo queda
+    // el chequeo que ese gate no cubre.
     if (!form.garantiaConfirmada) {
       setErrorGeneral("Confirmá la garantía antes de completar el check-in.");
       return;
     }
     mutacion.mutate();
+  }
+
+  function avanzarDesdeHuesped() {
+    if (!huespedValido) {
+      setIntentoAvanzarHuesped(true);
+      return;
+    }
+    irA(4);
   }
 
   const puedeAvanzarPaso1 = rangoValido;
@@ -173,84 +204,66 @@ export function CheckInWalkIn() {
             />
             <Select label="Tipo deseado" value={form.tipo} onChange={(e) => actualizar({ tipo: e.target.value, habitacionIds: [] })}>
               <option value="">Cualquiera</option>
-              {(sugerenciaQuery.data?.resumenPorTipo ?? []).map((r) => (
+              {(habitacionesQuery.data?.resumenPorTipo ?? []).map((r) => (
                 <option key={r.tipo} value={r.tipo}>
                   {r.tipo}
                 </option>
               ))}
             </Select>
           </div>
-          <label className="flex flex-col gap-1.5 font-body text-sm">
-            <span className="text-[12px] text-tinta/70">Preferencias del huésped (opcional)</span>
-            <textarea
-              rows={2}
-              value={form.preferencias}
-              onChange={(e) => actualizar({ preferencias: e.target.value })}
-              placeholder="Piso alto, cerca del ascensor, silenciosa…"
-              className="rounded-md border border-borde bg-white px-3 py-2 text-[13.5px] text-tinta placeholder:text-tinta/45 focus:outline-none focus:ring-2 focus:ring-pino/40"
-            />
-          </label>
         </div>
       )}
 
-      {/* Paso 2 — asignación de habitación, manual o automática (HU-45) */}
+      {/* Paso 2 — asignación manual de habitación (HU-45) */}
       {form.paso === 2 && (
         <div className="flex flex-col gap-4 rounded-lg border border-borde bg-white px-6 py-5">
-          {sugerenciaQuery.isLoading && <p className="text-sm text-piedra">Buscando habitaciones libres…</p>}
-          {sugerenciaQuery.isError && (
+          <TituloSeccion icono={BedDouble} tono="pino">
+            Asignación de habitación
+          </TituloSeccion>
+
+          {habitacionesQuery.isLoading && <p className="text-sm text-piedra">Buscando habitaciones libres…</p>}
+          {habitacionesQuery.isError && (
             <p className="text-[13px] text-error-texto">No se pudo consultar la disponibilidad.</p>
           )}
 
-          {sugerenciaQuery.data?.sugerida && (
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-pino-300 bg-pino-100 px-5 py-4">
-              <div className="flex items-center gap-2 text-[13px] text-pino-700">
-                <Sparkles size={16} />
-                Sugerida automáticamente: <span className="font-mono font-semibold">{sugerenciaQuery.data.sugerida.numero}</span> (
-                {sugerenciaQuery.data.sugerida.tipo})
-              </div>
-              <Button variante="alta" tamano="fila" onClick={usarSugerida}>
-                Usar esta
-              </Button>
-            </div>
+          {!habitacionesQuery.isLoading && !habitacionesQuery.isError && habitaciones.length === 0 && (
+            <p className="text-sm text-piedra">No hay habitaciones libres ahora mismo con esos filtros.</p>
           )}
 
-          <Table
-            columnas={["", "Habitación", "Tipo", "Capacidad", "Piso", "Tarifa/noche"]}
-            filas={habitaciones}
-            columnasDerecha={["Capacidad", "Piso", "Tarifa/noche"]}
-            vacio="No hay habitaciones libres ahora mismo con esos filtros."
-            renderFila={(h) => {
-              const elegida = form.habitacionIds.includes(h.id);
-              return (
-                <tr
-                  key={h.id}
-                  onClick={() => alternarHabitacion(h.id)}
-                  className={`h-14 cursor-pointer border-b border-borde last:border-0 hover:bg-hueso ${elegida ? "bg-pino-100/60" : ""}`}
-                >
-                  <td className="w-10 px-3 py-2.5">
-                    <input
-                      type="checkbox"
-                      checked={elegida}
-                      onChange={() => alternarHabitacion(h.id)}
-                      onClick={(e) => e.stopPropagation()}
-                      aria-label={`Elegir habitación ${h.numero}`}
-                      className="h-4 w-4 cursor-pointer accent-pino"
-                    />
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex items-center gap-2 font-mono text-[13px] font-medium">
-                      <BedDouble size={16} className="text-pino" />
-                      {h.numero}
+          {habitaciones.length > 0 && (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {habitaciones.map((h) => {
+                const elegida = form.habitacionIds.includes(h.id);
+                return (
+                  <button
+                    key={h.id}
+                    type="button"
+                    onClick={() => alternarHabitacion(h.id)}
+                    aria-pressed={elegida}
+                    className={`flex cursor-pointer flex-col gap-2.5 rounded-[12px] border p-[14px] text-left transition-colors ${
+                      elegida ? "border-pino bg-pino text-hueso" : "border-borde bg-white hover:bg-hueso"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 font-mono text-[14px] font-semibold">
+                        <BedDouble size={16} className={elegida ? "text-hueso" : "text-pino"} />
+                        {h.numero}
+                      </div>
+                      {elegida && <Check size={16} className="flex-none text-hueso" />}
                     </div>
-                  </td>
-                  <td className="px-3 py-2.5 text-[13px]">{h.tipo}</td>
-                  <td className="px-3 py-2.5 text-right font-mono text-xs">{h.capacidad}</td>
-                  <td className="px-3 py-2.5 text-right font-mono text-xs">{h.piso}</td>
-                  <td className="px-3 py-2.5 text-right font-mono text-xs">{FORMATO_MONEDA.format(h.tarifaPorNoche)}</td>
-                </tr>
-              );
-            }}
-          />
+                    <div>
+                      <Badge variante={variantePorTipo(h.tipo)}>{h.tipo}</Badge>
+                    </div>
+                    <div className={`flex flex-wrap gap-x-3 gap-y-0.5 font-mono text-[12px] ${elegida ? "text-hueso/80" : "text-piedra"}`}>
+                      <span>{h.capacidad} pers.</span>
+                      <span>Piso {h.piso}</span>
+                      <span>{FORMATO_MONEDA.format(h.tarifaPorNoche)}/noche</span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {elegidas.length > 0 && (
             <div className="flex items-center gap-2 rounded-lg border border-borde bg-hueso px-5 py-3 text-[13px]">
@@ -266,11 +279,16 @@ export function CheckInWalkIn() {
       {/* Paso 3 — datos del huésped (HU-39, mismos campos que Reservas) */}
       {form.paso === 3 && (
         <div className="flex flex-col gap-4 rounded-lg border border-borde bg-white px-6 py-5">
+          <TituloSeccion icono={User} tono="laton">
+            Datos del huésped
+          </TituloSeccion>
           <div className="grid gap-3 sm:grid-cols-2">
             <Input
               label="Nombre y apellido *"
               value={form.huesped.nombre}
               onChange={(e) => actualizarHuesped("nombre", e.target.value)}
+              onBlur={() => tocarHuesped("nombre")}
+              error={errorHuesped("nombre")}
               placeholder="Ana Pérez"
             />
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3">
@@ -285,13 +303,17 @@ export function CheckInWalkIn() {
                 label="Número *"
                 value={form.huesped.numeroDocumento}
                 onChange={(e) => actualizarHuesped("numeroDocumento", e.target.value)}
+                onBlur={() => tocarHuesped("numeroDocumento")}
+                error={errorHuesped("numeroDocumento")}
                 placeholder="30111222"
               />
             </div>
             <Input
-              label="Contacto (email o teléfono)"
+              label="Contacto (email o teléfono) *"
               value={form.huesped.contacto}
               onChange={(e) => actualizarHuesped("contacto", e.target.value)}
+              onBlur={() => tocarHuesped("contacto")}
+              error={errorHuesped("contacto")}
               placeholder="ana@mail.com"
             />
           </div>
@@ -354,12 +376,12 @@ export function CheckInWalkIn() {
             </Button>
           )}
           {form.paso === 3 && (
-            <Button variante="ok" onClick={() => irA(4)}>
+            <Button variante="ok" onClick={avanzarDesdeHuesped}>
               Siguiente <ArrowRight size={16} className="flex-none" />
             </Button>
           )}
           {form.paso === 4 && (
-            <Button variante="ok" icono={Check} cargando={mutacion.isPending} onClick={confirmar}>
+            <Button variante="ok" icono={Check} cargando={mutacion.isPending} disabled={!huespedValido} onClick={confirmar}>
               Confirmar check-in
             </Button>
           )}
