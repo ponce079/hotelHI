@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
   Ban,
@@ -66,6 +66,7 @@ export function CheckOutReservaPage() {
   const { puede } = useSesion();
   const puedeGestionar = puede("gestionarCheckOut");
   const volver = useVolver("/check-out");
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { toast, mostrarToast } = useToast();
 
@@ -219,7 +220,7 @@ export function CheckOutReservaPage() {
           <ul className="flex flex-col gap-1 text-[13px] text-pino-700">
             {resultado.habitaciones.map((h) => (
               <li key={h.habitacionId}>
-                Habitación {h.numero}: quedó <strong>{h.estado}</strong>.
+                Habitación {h.numero}: {h.observacion ?? <>quedó <strong>{h.estado}</strong>.</>}
               </li>
             ))}
           </ul>
@@ -390,7 +391,12 @@ export function CheckOutReservaPage() {
               <tr key={p.id} className="border-b border-borde last:border-0">
                 <td className="px-3 py-2.5 text-[12.5px]">{formatearTimestamp(p.fecha)}</td>
                 <td className="px-3 py-2.5 text-[12.5px]">
-                  {p.medios.map((m) => `${m.medioPago} ${moneda(m.importe)}`).join(" · ")}
+                  {p.medios.map((m) => (
+                    <div key={m.id}>
+                      {m.medioPago} {moneda(m.importe)}
+                      {m.referencia && <span className="block text-[11.5px] text-piedra">{m.referencia}</span>}
+                    </div>
+                  ))}
                 </td>
                 <td className="px-3 py-2.5 text-right font-mono text-xs">
                   {moneda(p.medios.reduce((acc, m) => acc + Number(m.importe), 0))}
@@ -424,8 +430,9 @@ export function CheckOutReservaPage() {
         <div className="flex flex-col gap-3">
           <p className="text-[13px] text-piedra">
             Al confirmar, la reserva pasa a <strong className="text-tinta">Cerrada</strong>, cada habitación queda{" "}
-            <strong className="text-tinta">en limpieza</strong> y se registra un aviso a Housekeeping. Solo se puede cerrar
-            con la cuenta saldada.
+            <strong className="text-tinta">en limpieza</strong> y se registra un aviso a Housekeeping. Si una habitación
+            tiene una orden de mantenimiento abierta, sigue en mantenimiento y no se pisa. Solo se puede cerrar con la cuenta
+            saldada.
           </p>
           {errorCierre && (
             <div className="rounded-md bg-error-suave px-4 py-3">
@@ -455,9 +462,16 @@ export function CheckOutReservaPage() {
               <Badge variante="ok">Emitido</Badge>
               <CodigoClave>{comprobanteVigente.numero}</CodigoClave>
               <span className="font-mono text-[13px]">{moneda(comprobanteVigente.importeTotal)}</span>
-              {comprobanteVigente.razonSocialTercero && (
-                <span className="text-[12.5px] text-piedra">a nombre de {comprobanteVigente.razonSocialTercero}</span>
-              )}
+              <span className="text-[12.5px] text-piedra">
+                a nombre de {comprobanteVigente.razonSocialTercero ?? cuenta.huesped?.nombre ?? "el huésped"}
+              </span>
+              <Button
+                variante="secundario"
+                tamano="fila"
+                onClick={() => navigate(`/comprobantes-estadia/${comprobanteVigente.id}`)}
+              >
+                Ver e imprimir
+              </Button>
             </div>
           ) : (
             <div className="flex flex-col items-start gap-3">

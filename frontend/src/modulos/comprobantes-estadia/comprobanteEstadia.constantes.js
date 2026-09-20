@@ -7,6 +7,11 @@ export const ALICUOTA_IVA_DEFAULT = 21;
 export const CUIT_REGEX = /^\d{2}-\d{8}-\d$/;
 export const RAZON_SOCIAL_MAX_LENGTH = 150;
 
+// Mismo límite que la columna (VARCHAR(191)) y que valida el backend.
+export const MOTIVO_NOTA_CREDITO_MAX_LENGTH = 191;
+
+export const TIPOS_COMPROBANTE_ESTADIA = ["Comprobante", "Nota de Crédito"];
+
 // Escribe el CUIT con los guiones puestos mientras se tipea: el usuario
 // solo carga los 11 dígitos y el campo los ubica solo (00-00000000-0).
 export function formatearCuit(valor) {

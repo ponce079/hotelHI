@@ -1,13 +1,15 @@
 import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Check, Plus, Trash2, X } from "lucide-react";
+import { Check, CreditCard, Plus, Trash2, X } from "lucide-react";
+import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
 import { Modal } from "../../componentes/Modal";
 import { MoneyInput } from "../../componentes/MoneyInput";
 import { formatearMonto } from "../../lib/moneda";
 import { registrarPagoEstadia } from "./pagoEstadia.api";
-import { MEDIOS_PAGO_ESTADIA } from "./pagoEstadia.constantes";
+import { MEDIOS_CON_TARJETA, MEDIOS_PAGO_ESTADIA } from "./pagoEstadia.constantes";
+import { TarjetaSimuladaPanel } from "./TarjetaSimuladaPanel";
 
 // Comparar en centavos (enteros), no floats — mismo criterio que el
 // backend, para que el botón de confirmar no quede en un estado distinto
@@ -26,6 +28,11 @@ function nuevaClave() {
 // cuenta consolidada). El pago puede ser parcial — el backend lo registra
 // como "Parcial" — pero el check-out solo se cierra con el saldo en cero.
 //
+// Los medios con tarjeta se cobran pasando por la terminal SIMULADA
+// (TarjetaSimuladaPanel): hasta que no queda "Autorizada" no se puede
+// confirmar el pago. Al confirmar viaja solo la `referencia` de la
+// autorización, nunca los datos de la tarjeta.
+//
 // `saldo` es lo que falta cobrar según la cuenta consolidada.
 export function PagoEstadiaWizard({ reservaId, saldo, onClose, onExito }) {
   const queryClient = useQueryClient();
@@ -36,13 +43,19 @@ export function PagoEstadiaWizard({ reservaId, saldo, onClose, onExito }) {
   const restante = (centavos(saldo) - centavos(totalMedios)) / 100;
   const excede = centavos(totalMedios) > centavos(saldo);
   const hayImporteInvalido = medios.some((m) => !(Number(m.importe) > 0));
-  const puedeConfirmar = medios.length > 0 && !hayImporteInvalido && !excede && centavos(totalMedios) > 0;
+  const hayTarjetaSinAutorizar = medios.some((m) => MEDIOS_CON_TARJETA.includes(m.tipo) && !m.autorizada);
+  const puedeConfirmar =
+    medios.length > 0 && !hayImporteInvalido && !excede && !hayTarjetaSinAutorizar && centavos(totalMedios) > 0;
 
   const mutacion = useMutation({
     mutationFn: () =>
       registrarPagoEstadia({
         reservaId: Number(reservaId),
-        medios: medios.map((m) => ({ tipo: m.tipo, importe: Number(m.importe) })),
+        medios: medios.map((m) => ({
+          tipo: m.tipo,
+          importe: Number(m.importe),
+          referencia: m.referencia ?? undefined,
+        })),
       }),
     onSuccess: (pago) => {
       queryClient.invalidateQueries({ queryKey: ["check-out"] });
@@ -61,10 +74,20 @@ export function PagoEstadiaWizard({ reservaId, saldo, onClose, onExito }) {
   // más común (un solo medio) alcanza con elegirlo y confirmar.
   function agregarMedio(tipo) {
     const faltante = Math.max(0, restante);
-    setMedios((lista) => [...lista, { key: nuevaClave(), tipo, importe: faltante > 0 ? String(faltante) : "" }]);
+    setMedios((lista) => [
+      ...lista,
+      {
+        key: nuevaClave(),
+        tipo,
+        importe: faltante > 0 ? String(faltante) : "",
+        autorizada: false,
+        referencia: null,
+        panelAbierto: false,
+      },
+    ]);
   }
-  function actualizarImporte(key, importe) {
-    setMedios((lista) => lista.map((m) => (m.key === key ? { ...m, importe } : m)));
+  function actualizar(key, cambios) {
+    setMedios((lista) => lista.map((m) => (m.key === key ? { ...m, ...cambios } : m)));
   }
   function quitarMedio(key) {
     setMedios((lista) => lista.filter((m) => m.key !== key));
@@ -75,7 +98,9 @@ export function PagoEstadiaWizard({ reservaId, saldo, onClose, onExito }) {
       setError(
         excede
           ? "El total de los medios supera el saldo pendiente de la cuenta."
-          : "Agregá al menos un medio de pago y completá su importe."
+          : hayTarjetaSinAutorizar
+            ? "Autorizá los pagos con tarjeta antes de confirmar."
+            : "Agregá al menos un medio de pago y completá su importe."
       );
       return;
     }
@@ -108,22 +133,62 @@ export function PagoEstadiaWizard({ reservaId, saldo, onClose, onExito }) {
           </p>
         )}
 
-        {medios.map((m) => (
-          <div key={m.key} className="flex flex-wrap items-end gap-3 rounded-[14px] border border-borde px-4 py-3.5">
-            <div className="flex w-40 flex-col gap-1.5">
-              <span className="font-body text-[12px] text-tinta/70">Medio</span>
-              <p className="rounded-md border border-borde bg-white px-3 py-2 text-[13.5px] font-medium text-tinta">
-                {m.tipo}
-              </p>
+        {medios.map((m) => {
+          const conTarjeta = MEDIOS_CON_TARJETA.includes(m.tipo);
+          return (
+            <div key={m.key} className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-end gap-3 rounded-[14px] border border-borde px-4 py-3.5">
+                <div className="flex w-40 flex-col gap-1.5">
+                  <span className="font-body text-[12px] text-tinta/70">Medio</span>
+                  <p className="rounded-md border border-borde bg-white px-3 py-2 text-[13.5px] font-medium text-tinta">
+                    {m.tipo}
+                  </p>
+                </div>
+
+                {conTarjeta && m.autorizada ? (
+                  <div className="flex min-w-50 flex-1 flex-col gap-1.5">
+                    <span className="font-body text-[12px] text-tinta/70">Importe autorizado</span>
+                    <div className="flex flex-wrap items-center gap-2.5 py-1.5">
+                      <span className="font-mono text-[14px] font-semibold text-tinta">$ {formatearMonto(m.importe)}</span>
+                      <Badge variante="ok">Autorizada</Badge>
+                      <span className="text-[12px] text-piedra">{m.referencia}</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="w-47.5">
+                    <MoneyInput label="Importe" value={m.importe} onChange={(valor) => actualizar(m.key, { importe: valor })} />
+                  </div>
+                )}
+
+                <div className="ml-auto flex items-center gap-2">
+                  {conTarjeta && !m.autorizada && (
+                    <Button
+                      variante="ok"
+                      tamano="fila"
+                      icono={CreditCard}
+                      disabled={!(Number(m.importe) > 0) || m.panelAbierto}
+                      onClick={() => actualizar(m.key, { panelAbierto: true })}
+                    >
+                      Cobrar con tarjeta
+                    </Button>
+                  )}
+                  <Button variante="secundario" tamano="fila" icono={Trash2} onClick={() => quitarMedio(m.key)}>
+                    Quitar
+                  </Button>
+                </div>
+              </div>
+
+              {conTarjeta && !m.autorizada && m.panelAbierto && (
+                <TarjetaSimuladaPanel
+                  tipo={m.tipo}
+                  importe={Number(m.importe)}
+                  onCancelar={() => actualizar(m.key, { panelAbierto: false })}
+                  onAutorizada={(referencia) => actualizar(m.key, { autorizada: true, referencia, panelAbierto: false })}
+                />
+              )}
             </div>
-            <div className="w-47.5">
-              <MoneyInput label="Importe" value={m.importe} onChange={(valor) => actualizarImporte(m.key, valor)} />
-            </div>
-            <Button variante="secundario" tamano="fila" icono={Trash2} className="ml-auto" onClick={() => quitarMedio(m.key)}>
-              Quitar
-            </Button>
-          </div>
-        ))}
+          );
+        })}
 
         {error && (
           <div className="rounded-md bg-error-suave px-4 py-3">
@@ -148,9 +213,11 @@ export function PagoEstadiaWizard({ reservaId, saldo, onClose, onExito }) {
               ? "El total supera el saldo pendiente."
               : totalMedios === 0
                 ? "Todavía no hay importes cargados."
-                : centavos(restante) === 0
-                  ? "✓ Los medios cubren exactamente el saldo: la cuenta queda saldada."
-                  : `Queda un saldo de $ ${formatearMonto(restante)} después de este pago (pago parcial).`}
+                : hayTarjetaSinAutorizar
+                  ? "Falta autorizar el cobro con tarjeta."
+                  : centavos(restante) === 0
+                    ? "✓ Los medios cubren exactamente el saldo: la cuenta queda saldada."
+                    : `Queda un saldo de $ ${formatearMonto(restante)} después de este pago (pago parcial).`}
           </p>
         </div>
 

@@ -38,6 +38,9 @@ import { CheckInPage } from "./modulos/check-in/CheckInPage";
 import { ServiciosAdicionalesPage } from "./modulos/servicios-adicionales/ServiciosAdicionalesPage";
 import { CheckOutPage } from "./modulos/check-out/CheckOutPage";
 import { CheckOutReservaPage } from "./modulos/check-out/CheckOutReservaPage";
+import { ComprobantesEstadiaPage } from "./modulos/comprobantes-estadia/ComprobantesEstadiaPage";
+import { ComprobanteEstadiaDetallePage } from "./modulos/comprobantes-estadia/ComprobanteEstadiaDetallePage";
+import { ReporteCajaDiariaPage } from "./modulos/comprobantes-estadia/ReporteCajaDiariaPage";
 // Gatekeeper de rutas: sin sesion (sin rol elegido en el login), redirige
 // a /login. No es autenticacion real contra el backend — ver lib/sesion.jsx.
 function RequireSesion() {
@@ -103,6 +106,9 @@ export default function App() {
           {/* Sprint 3 académico — Check-out y facturación (HU-48 a HU-56, 87). */}
           <Route path="/check-out" element={<CheckOutPage />} />
           <Route path="/check-out/:reservaId" element={<CheckOutReservaPage />} />
+          <Route path="/comprobantes-estadia" element={<ComprobantesEstadiaPage />} />
+          <Route path="/comprobantes-estadia/:id" element={<ComprobanteEstadiaDetallePage />} />
+          <Route path="/reporte-caja-diaria" element={<ReporteCajaDiariaPage />} />
         </Route>
       </Route>
     </Routes>

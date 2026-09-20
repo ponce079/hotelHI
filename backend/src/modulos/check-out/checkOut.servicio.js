@@ -217,9 +217,10 @@ async function listarVerificaciones(reservaId) {
 //   1. lock de la reserva y re-consolidación fresca de la cuenta
 //   2. la cuenta tiene que estar saldada (saldo = 0)
 //   3. Reserva.estado -> 'Cerrada'            (reservasServicio.marcarCerrada)
-//   4. Habitacion.estado -> 'en limpieza'      (HU-51, misma transacción)
-//   5. una Notificacion 'Housekeeping' por habitación (HU-52; es el
-//      registro del envío)
+//   4. cada habitación 'ocupada' -> 'en limpieza' (HU-51, misma transacción).
+//      Una habitación que NO está 'ocupada' no se pisa (ver abajo).
+//   5. una Notificacion 'Housekeeping' por habitación que cambió o que
+//      quedó con una orden abierta (HU-52; es el registro del envío)
 // Si cualquier paso falla, no queda nada a medias.
 //
 // HU-49: la confirmación explícita del huésped llega como
@@ -257,28 +258,74 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
         throw envolverErrorReservas(err);
       }
 
-      // updateMany directo (no cambiarEstadoHabitacion): esa función
-      // rechaza habitaciones dadas de baja, y una habitación desactivada a
-      // mitad de la estadía no puede impedir que el huésped haga check-out.
-      await tx.habitacion.updateMany({
-        where: { id: { in: cuenta.habitaciones.map((h) => h.habitacionId) } },
-        data: { estado: ESTADO_HABITACION_POST_CHECKOUT },
-      });
+      // Estado de las habitaciones al salir el huésped.
+      //
+      // NO se hace un updateMany a ciegas: si a mitad de la estadía se cargó
+      // una orden de mantenimiento (ej. se rompió el aire), la habitación
+      // está en 'mantenimiento' con estadoAnterior = 'ocupada'. Pisarla con
+      // 'en limpieza' dejaría la orden huérfana; y dejarla tal cual tiene un
+      // problema peor: al resolverse la orden, resolverOrdenMantenimiento la
+      // restauraría a 'ocupada' — con el huésped ya afuera, y desde
+      // 'ocupada' no hay transición manual de salida, así que quedaría
+      // trabada. Por eso:
+      //   - 'ocupada'      -> 'en limpieza'
+      //   - 'mantenimiento'-> se queda así (la orden sigue abierta) y se
+      //                       reescribe estadoAnterior a 'en limpieza', para
+      //                       que al resolverse pase a limpieza y no a ocupada
+      //   - cualquier otro -> no se toca (no es una habitación ocupada)
+      // El check-out NO se bloquea por la orden: el huésped ya pagó y se va;
+      // que la habitación tenga un arreglo pendiente no depende de él.
+      //
+      // Se bloquean las filas antes de leerlas para que el estado que se ve
+      // sea el mismo que se va a escribir.
+      const habitacionIds = cuenta.habitaciones.map((h) => h.habitacionId);
+      for (const habitacionId of habitacionIds) {
+        await tx.$queryRaw`SELECT id FROM habitaciones WHERE id = ${habitacionId} FOR UPDATE`;
+      }
+      const actuales = await tx.habitacion.findMany({ where: { id: { in: habitacionIds } } });
+      const actualPorId = new Map(actuales.map((h) => [h.id, h]));
 
+      const habitaciones = [];
       const notificaciones = [];
       for (const h of cuenta.habitaciones) {
-        notificaciones.push(
-          await tx.notificacion.create({
-            data: {
-              tipo: TIPO_NOTIFICACION_HOUSEKEEPING,
-              habitacionId: h.habitacionId,
-              reservaId: id,
-              destinatarioArea: AREA_HOUSEKEEPING,
-              canal: CANAL_INTERNO,
-              mensaje: `Check-out completado: la habitación ${h.numero} (${h.tipo}) quedó pendiente de limpieza.`,
-            },
-          })
-        );
+        const actual = actualPorId.get(h.habitacionId);
+        let estadoFinal = actual.estado;
+        let observacion = null;
+
+        if (actual.estado === 'ocupada') {
+          await tx.habitacion.update({ where: { id: h.habitacionId }, data: { estado: ESTADO_HABITACION_POST_CHECKOUT } });
+          estadoFinal = ESTADO_HABITACION_POST_CHECKOUT;
+          observacion = `quedó ${ESTADO_HABITACION_POST_CHECKOUT}.`;
+        } else if (actual.estado === 'mantenimiento') {
+          if (!actual.estadoAnterior || actual.estadoAnterior === 'ocupada') {
+            await tx.habitacion.update({
+              where: { id: h.habitacionId },
+              data: { estadoAnterior: ESTADO_HABITACION_POST_CHECKOUT },
+            });
+          }
+          observacion = `sigue en mantenimiento (orden sin resolver). Al resolverla pasa a ${ESTADO_HABITACION_POST_CHECKOUT}.`;
+        }
+
+        habitaciones.push({ habitacionId: h.habitacionId, numero: h.numero, estado: estadoFinal, observacion });
+
+        if (observacion) {
+          const mensaje =
+            actual.estado === 'mantenimiento'
+              ? `Check-out completado: la habitación ${h.numero} (${h.tipo}) sigue en mantenimiento por una orden sin resolver. Cuando se resuelva, pasa a ${ESTADO_HABITACION_POST_CHECKOUT}.`
+              : `Check-out completado: la habitación ${h.numero} (${h.tipo}) quedó pendiente de limpieza.`;
+          notificaciones.push(
+            await tx.notificacion.create({
+              data: {
+                tipo: TIPO_NOTIFICACION_HOUSEKEEPING,
+                habitacionId: h.habitacionId,
+                reservaId: id,
+                destinatarioArea: AREA_HOUSEKEEPING,
+                canal: CANAL_INTERNO,
+                mensaje,
+              },
+            })
+          );
+        }
       }
 
       return {
@@ -286,11 +333,7 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
         estadoReserva: 'Cerrada',
         totalAdeudado: cuenta.totalAdeudado,
         totalPagado: cuenta.totalPagado,
-        habitaciones: cuenta.habitaciones.map((h) => ({
-          habitacionId: h.habitacionId,
-          numero: h.numero,
-          estado: ESTADO_HABITACION_POST_CHECKOUT,
-        })),
+        habitaciones,
         notificaciones,
       };
     },

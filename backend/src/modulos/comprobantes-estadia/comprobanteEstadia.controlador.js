@@ -14,14 +14,10 @@ async function postComprobante(req, res) {
   }
 }
 
-// GET /api/comprobantes-estadia?reservaId=
+// GET /api/comprobantes-estadia?reservaId=&tipo=&desde=&hasta=&q=  (todos opcionales)
 async function getComprobantes(req, res) {
   try {
-    const { reservaId } = req.query;
-    if (!reservaId) {
-      return res.status(400).json({ error: 'reservaId es obligatorio para listar comprobantes.' });
-    }
-    const comprobantes = await comprobanteEstadiaServicio.listarPorReserva(reservaId);
+    const comprobantes = await comprobanteEstadiaServicio.listarComprobantes(req.query);
     return res.json(comprobantes);
   } catch (err) {
     if (err instanceof comprobanteEstadiaServicio.ErrorDeNegocio) {

@@ -54,6 +54,15 @@ function validarReservaCobrable(estado) {
 // --------------------------------------------------------------
 // Registrar un pago (HU-50) — medios combinables, sin cheque.
 // --------------------------------------------------------------
+// Referencia opcional del cobro (por ejemplo, el resultado de la tarjeta
+// simulada: marca, últimos 4 dígitos, código de autorización y cuotas). Es
+// solo un texto para auditar el pago: NUNCA se guarda el número completo de
+// la tarjeta ni el código de seguridad.
+const REFERENCIA_MAX_LENGTH = 191;
+function referenciaDe(medio) {
+  return typeof medio.referencia === 'string' ? medio.referencia.trim() : '';
+}
+
 async function crearPago({ reservaId, medios }) {
   if (!reservaId) throw new ErrorDeNegocio('reservaId es obligatorio.');
   if (!Array.isArray(medios) || medios.length === 0) {
@@ -68,6 +77,9 @@ async function crearPago({ reservaId, medios }) {
     const importe = Number(m.importe);
     if (!(importe > 0)) {
       throw new ErrorDeNegocio('Cada medio de pago necesita un importe mayor a cero.');
+    }
+    if (referenciaDe(m).length > REFERENCIA_MAX_LENGTH) {
+      throw new ErrorDeNegocio(`La referencia del pago no puede superar los ${REFERENCIA_MAX_LENGTH} caracteres.`);
     }
     totalMedios += importe;
   }
@@ -104,7 +116,11 @@ async function crearPago({ reservaId, medios }) {
           reservaId: Number(reservaId),
           estado,
           medios: {
-            create: medios.map((m) => ({ medioPago: m.tipo, importe: Number(m.importe) })),
+            create: medios.map((m) => ({
+              medioPago: m.tipo,
+              importe: Number(m.importe),
+              ...(referenciaDe(m) ? { referencia: referenciaDe(m) } : {}),
+            })),
           },
         },
         include: { medios: true, reserva: true },

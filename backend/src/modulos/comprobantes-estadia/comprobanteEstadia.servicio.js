@@ -17,6 +17,36 @@ function centavos(n) {
   return Math.round(Number(n) * 100);
 }
 
+// Valida el importe y la alícuota y separa neto / IVA / total. El importe
+// se puede mandar de DOS formas (una sola de las dos):
+//   - importeNeto: el IVA se suma encima (importeTotal = neto + IVA).
+//   - importeTotal: precio final con IVA incluido; el neto y el IVA se
+//     derivan hacia atrás y suman exactamente ese total (sin centavos de
+//     diferencia). Es la que usan el check-out y las notas de crédito: la
+//     cuenta del huésped es un precio final, no un neto.
+const viene = (v) => v !== undefined && v !== null;
+
+function resolverImportes({ importeNeto, importeTotal, alicuotaIVA }) {
+  if (viene(importeNeto) === viene(importeTotal)) {
+    throw new ErrorDeNegocio('Mandá importeNeto o importeTotal (uno solo de los dos).');
+  }
+  const campo = viene(importeNeto) ? 'importeNeto' : 'importeTotal';
+  const base = viene(importeNeto) ? importeNeto : importeTotal;
+  if (typeof base !== 'number' || !(base > 0)) {
+    throw new ErrorDeNegocio(`${campo} debe ser un número mayor a 0.`);
+  }
+  if (typeof alicuotaIVA !== 'number' || alicuotaIVA < 0 || alicuotaIVA > 100) {
+    throw new ErrorDeNegocio('alicuotaIVA debe ser un número entre 0 y 100.');
+  }
+  if (viene(importeNeto)) {
+    const iva = redondear(importeNeto * (alicuotaIVA / 100));
+    return { neto: importeNeto, iva, total: redondear(importeNeto + iva) };
+  }
+  const total = redondear(importeTotal);
+  const neto = redondear(total / (1 + alicuotaIVA / 100));
+  return { neto, iva: redondear(total - neto), total };
+}
+
 // --------------------------------------------------------------
 // Alta de comprobante (HU-53, HU-55)
 //
@@ -26,28 +56,11 @@ function centavos(n) {
 // genera el sistema, no lo tipea nadie) y sin matching de 3 vías / OC
 // (eso es exclusivo de Compras).
 // --------------------------------------------------------------
-//
-// El importe se puede mandar de DOS formas (una sola de las dos):
-//   - importeNeto: el IVA se suma encima (importeTotal = neto + IVA).
-//   - importeTotal: precio final con IVA incluido; el neto y el IVA se
-//     derivan hacia atrás y suman exactamente ese total (sin centavos de
-//     diferencia). Es la que usa el check-out: la cuenta del huésped es un
-//     precio final, no un neto.
 async function crearComprobante(data) {
-  const { reservaId, importeNeto, importeTotal: totalFinal, alicuotaIVA, razonSocialTercero, cuitTercero } = data;
+  const { reservaId, alicuotaIVA, razonSocialTercero, cuitTercero } = data;
 
   if (!reservaId) throw new ErrorDeNegocio('reservaId es obligatorio.');
-  const viene = (v) => v !== undefined && v !== null;
-  if (viene(importeNeto) === viene(totalFinal)) {
-    throw new ErrorDeNegocio('Mandá importeNeto o importeTotal (uno solo de los dos).');
-  }
-  const importeBase = viene(importeNeto) ? importeNeto : totalFinal;
-  if (typeof importeBase !== 'number' || !(importeBase > 0)) {
-    throw new ErrorDeNegocio(`${viene(importeNeto) ? 'importeNeto' : 'importeTotal'} debe ser un número mayor a 0.`);
-  }
-  if (typeof alicuotaIVA !== 'number' || alicuotaIVA < 0 || alicuotaIVA > 100) {
-    throw new ErrorDeNegocio('alicuotaIVA debe ser un número entre 0 y 100.');
-  }
+  const importes = resolverImportes(data);
   // HU-55: si se carga uno de los dos datos del tercero, hace falta el otro
   // — un comprobante "a medias" a nombre de tercero no sirve para nada.
   const esATerceroRazon = (razonSocialTercero || '').trim();
@@ -85,18 +98,7 @@ async function crearComprobante(data) {
   // Cálculo de IVA — una sola vez acá al crear, nunca en el frontend ni
   // recalculado en cada lectura (mismo criterio que fechaVencimiento en
   // crearComprobante de Sprint 2).
-  let netoFinal;
-  let importeIVA;
-  let importeTotal;
-  if (viene(importeNeto)) {
-    netoFinal = importeNeto;
-    importeIVA = redondear(netoFinal * (alicuotaIVA / 100));
-    importeTotal = redondear(netoFinal + importeIVA);
-  } else {
-    importeTotal = redondear(totalFinal);
-    netoFinal = redondear(importeTotal / (1 + alicuotaIVA / 100));
-    importeIVA = redondear(importeTotal - netoFinal);
-  }
+  const { neto: netoFinal, iva: importeIVA, total: importeTotal } = importes;
 
   let comprobante;
   try {
@@ -141,15 +143,12 @@ async function crearComprobante(data) {
 // ver sección 5 de la guía).
 // --------------------------------------------------------------
 async function crearNotaCredito(comprobanteId, data) {
-  const { importeNeto, alicuotaIVA, motivo } = data;
+  const { motivo } = data;
 
-  if (typeof importeNeto !== 'number' || importeNeto <= 0) {
-    throw new ErrorDeNegocio('importeNeto debe ser un número mayor a 0.');
-  }
-  if (typeof alicuotaIVA !== 'number' || alicuotaIVA < 0 || alicuotaIVA > 100) {
-    throw new ErrorDeNegocio('alicuotaIVA debe ser un número entre 0 y 100.');
-  }
+  const { neto: importeNeto, iva: importeIVA, total: importeTotal } = resolverImportes(data);
+  const alicuotaIVA = data.alicuotaIVA;
   if (!motivo || !motivo.trim()) throw new ErrorDeNegocio('El motivo es obligatorio.');
+  if (motivo.trim().length > 191) throw new ErrorDeNegocio('El motivo no puede superar los 191 caracteres.');
 
   const original = await prisma.comprobanteEstadia.findUnique({ where: { id: Number(comprobanteId) } });
   if (!original) throw new ErrorDeNegocio('El comprobante original no existe.', 404);
@@ -157,9 +156,6 @@ async function crearNotaCredito(comprobanteId, data) {
   if (original.tipo !== 'Comprobante') {
     throw new ErrorDeNegocio('Solo se pueden crear notas de crédito sobre comprobantes de tipo "Comprobante".');
   }
-
-  const importeIVA = redondear(importeNeto * (alicuotaIVA / 100));
-  const importeTotal = redondear(importeNeto + importeIVA);
 
   // Las notas de crédito (sumadas) no pueden acreditar más de lo que
   // facturó el comprobante original — si no, el reporte de caja (HU-54)
@@ -187,6 +183,7 @@ async function crearNotaCredito(comprobanteId, data) {
           importeIVA,
           importeTotal,
           comprobanteRelacionadoId: original.id,
+          motivo: motivo.trim(),
         },
         include: { comprobanteRelacionado: true },
       }),
@@ -203,7 +200,7 @@ async function obtenerComprobante(id) {
   const comprobante = await prisma.comprobanteEstadia.findUnique({
     where: { id: Number(id) },
     include: {
-      reserva: true,
+      reserva: { include: { huesped: true } },
       comprobanteRelacionado: true,
       // Notas de crédito que apuntan a este comprobante (si es el
       // original) — mismo nombre de relación auto-referenciada que
@@ -220,6 +217,53 @@ async function listarPorReserva(reservaId) {
     where: { reservaId: Number(reservaId) },
     orderBy: { id: 'desc' },
     include: { ajustes: true },
+  });
+}
+
+// Listado general (pantalla de Comprobantes de Huésped). Todos los filtros
+// son opcionales: reservaId, tipo, desde / hasta (YYYY-MM-DD, sobre la
+// fecha de emisión, día completo en hora argentina) y q (texto libre sobre
+// número, código de reserva, huésped o razón social del tercero).
+async function listarComprobantes(filtros = {}) {
+  const { reservaId, tipo, desde, hasta, q } = filtros;
+  const where = {};
+
+  if (reservaId) where.reservaId = Number(reservaId);
+  if (tipo) {
+    if (!TIPOS_COMPROBANTE_ESTADIA.includes(tipo)) {
+      throw new ErrorDeNegocio(`tipo inválido. Valores permitidos: ${TIPOS_COMPROBANTE_ESTADIA.join(', ')}`);
+    }
+    where.tipo = tipo;
+  }
+
+  const rangoFecha = {};
+  if (desde) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(desde)) throw new ErrorDeNegocio('desde inválido (formato YYYY-MM-DD).');
+    rangoFecha.gte = new Date(`${desde}T00:00:00.000-03:00`);
+  }
+  if (hasta) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(hasta)) throw new ErrorDeNegocio('hasta inválido (formato YYYY-MM-DD).');
+    rangoFecha.lte = new Date(`${hasta}T23:59:59.999-03:00`);
+  }
+  if (rangoFecha.gte || rangoFecha.lte) where.fecha = rangoFecha;
+
+  const texto = (q || '').trim();
+  if (texto) {
+    where.OR = [
+      { numero: { contains: texto } },
+      { razonSocialTercero: { contains: texto } },
+      { reserva: { codigoConfirmacion: { contains: texto } } },
+      { reserva: { huesped: { nombre: { contains: texto } } } },
+    ];
+  }
+
+  return prisma.comprobanteEstadia.findMany({
+    where,
+    orderBy: { id: 'desc' },
+    include: {
+      ajustes: true,
+      reserva: { select: { id: true, codigoConfirmacion: true, huesped: { select: { id: true, nombre: true } } } },
+    },
   });
 }
 
@@ -316,6 +360,7 @@ module.exports = {
   crearNotaCredito,
   obtenerComprobante,
   listarPorReserva,
+  listarComprobantes,
   anularComprobante,
   reporteCajaDiaria,
   ErrorDeNegocio,
