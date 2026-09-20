@@ -57,7 +57,9 @@ app.use("/api/habitaciones", require("./src/modulos/habitaciones/habitaciones.ro
 app.use("/api/reservas", require("./src/modulos/reservas/reservas.routes"));
 app.use("/api/check-in", require("./src/modulos/check-in/checkIn.routes"));
 app.use("/api/consumos-servicios", require("./src/modulos/servicios-adicionales/serviciosAdicionales.routes"));
-
+app.use("/api/comprobantes-estadia", require("./src/modulos/comprobantes-estadia/comprobanteEstadia.routes"));
+app.use("/api/pagos-estadia", require("./src/modulos/pagos-estadia/pagoEstadia.routes"));
+app.use("/api/check-out", require("./src/modulos/check-out/checkOut.routes"));
 app.get("/", (req, res) => {
   res.json({ status: "ok", proyecto: "Sistema de Gestión Hotelera - Holiday Inn" });
 });
