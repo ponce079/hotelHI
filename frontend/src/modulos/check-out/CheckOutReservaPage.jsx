@@ -1,7 +1,19 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
-import { ArrowLeft, Bell, BedDouble, CheckCircle2, ClipboardCheck, DoorClosed, Plus, TriangleAlert, Wallet } from "lucide-react";
+import {
+  ArrowLeft,
+  Ban,
+  Bell,
+  BedDouble,
+  CheckCircle2,
+  ClipboardCheck,
+  DoorClosed,
+  Plus,
+  Receipt,
+  TriangleAlert,
+  Wallet,
+} from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -17,7 +29,9 @@ import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { useVolver } from "../../lib/useVolver";
 import { ESTADO_RESERVA, ESTADO_RESERVA_BADGE } from "../reservas/reservas.constantes";
-import { listarPagosEstadia } from "../pagos-estadia/pagoEstadia.api";
+import { listarComprobantesReserva } from "../comprobantes-estadia/comprobanteEstadia.api";
+import { EmitirComprobanteModal } from "../comprobantes-estadia/EmitirComprobanteModal";
+import { anularPagoEstadia, listarPagosEstadia } from "../pagos-estadia/pagoEstadia.api";
 import { ESTADO_PAGO_BADGE } from "../pagos-estadia/pagoEstadia.constantes";
 import { PagoEstadiaWizard } from "../pagos-estadia/PagoEstadiaWizard";
 import { CargoVerificacionCheckoutModal } from "./CargoVerificacionCheckoutModal";
@@ -66,6 +80,10 @@ export function CheckOutReservaPage() {
   const [confirmando, setConfirmando] = useState(false);
   const [errorCierre, setErrorCierre] = useState("");
   const [resultado, setResultado] = useState(null);
+  const [aAnular, setAAnular] = useState(null);
+  const [errorPago, setErrorPago] = useState("");
+  const [motivoAnulacion, setMotivoAnulacion] = useState("");
+  const [modalComprobante, setModalComprobante] = useState(false);
 
   const cuentaQuery = useQuery({
     queryKey: ["check-out", "cuenta", reservaId],
@@ -76,6 +94,30 @@ export function CheckOutReservaPage() {
     queryKey: ["check-out", "pagos", reservaId],
     queryFn: () => listarPagosEstadia(reservaId),
     enabled: puedeGestionar,
+  });
+
+  // El comprobante se emite una vez cerrada la estadía: recién ahí se sabe
+  // el total final. `estadoCerrado` se calcula antes de los returns
+  // tempranos porque el hook de la query no puede ir después de ellos.
+  const estadoCerrado = cuentaQuery.data?.estadoReserva === ESTADO_RESERVA.CERRADA || Boolean(resultado);
+  const comprobantesQuery = useQuery({
+    queryKey: ["check-out", "comprobantes", reservaId],
+    queryFn: () => listarComprobantesReserva(reservaId),
+    enabled: puedeGestionar && estadoCerrado,
+  });
+
+  const mutacionAnular = useMutation({
+    mutationFn: () => anularPagoEstadia(aAnular.id, motivoAnulacion.trim()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["check-out"] });
+      setAAnular(null);
+      setMotivoAnulacion("");
+      mostrarToast("Pago anulado.");
+    },
+    onError: (err) => {
+      setAAnular(null);
+      setErrorPago(err?.response?.data?.error ?? "No se pudo anular el pago.");
+    },
   });
 
   const mutacionCierre = useMutation({
@@ -116,6 +158,7 @@ export function CheckOutReservaPage() {
   const saldado = Math.round(cuenta.saldo * 100) === 0;
   const verificacionCompleta = verificacionMarcada || cuenta.verificaciones.length > 0;
   const consumosMinibar = cuenta.consumos.filter((c) => c.tipoServicio === "Minibar");
+  const comprobanteVigente = (comprobantesQuery.data ?? []).find((c) => c.tipo === "Comprobante" && !c.anulado);
 
   // PasoAPaso: 0 verificación · 1 confirmación · 2 pago · 3 cierre · 4 cerrado.
   const pasoActual = cerrada ? PASOS_CHECKOUT.length : !verificacionCompleta ? 0 : !cargosValidados ? 1 : !saldado ? 2 : 3;
@@ -251,7 +294,7 @@ export function CheckOutReservaPage() {
           )}
 
           <div className="flex flex-wrap items-end justify-between gap-6 border-t border-borde pt-4">
-            <div className="flex min-w-[260px] flex-col gap-1.5">
+            <div className="flex min-w-65 flex-col gap-1.5">
               <Fila etiqueta="Alojamiento" valor={moneda(cuenta.subtotales.alojamiento)} />
               <Fila etiqueta="Servicios adicionales" valor={moneda(cuenta.subtotales.serviciosAdicionales)} />
               <Fila etiqueta="Verificación" valor={moneda(cuenta.subtotales.verificacion)} />
@@ -333,8 +376,13 @@ export function CheckOutReservaPage() {
               <span className="text-[12px] text-piedra">Se habilita cuando el huésped confirma los cargos.</span>
             )}
           </div>
+          {errorPago && (
+            <div className="rounded-md bg-error-suave px-4 py-3">
+              <p className="text-[12.5px] text-error-texto">{errorPago}</p>
+            </div>
+          )}
           <Table
-            columnas={["Fecha", "Medios", "Total", "Estado"]}
+            columnas={["Fecha", "Medios", "Total", "Estado", ""]}
             columnasDerecha={["Total"]}
             filas={pagos}
             vacio="Todavía no se registró ningún pago."
@@ -349,6 +397,22 @@ export function CheckOutReservaPage() {
                 </td>
                 <td className="px-3 py-2.5">
                   {p.anulado ? <Badge variante="neutro">Anulado</Badge> : <Badge variante={ESTADO_PAGO_BADGE[p.estado]}>{p.estado}</Badge>}
+                </td>
+                <td className="px-3 py-2.5 text-right">
+                  {enCurso && !p.anulado && (
+                    <Button
+                      variante="destructivo"
+                      tamano="fila"
+                      icono={Ban}
+                      onClick={() => {
+                        setMotivoAnulacion("");
+                        setErrorPago("");
+                        setAAnular(p);
+                      }}
+                    >
+                      Anular
+                    </Button>
+                  )}
                 </td>
               </tr>
             )}
@@ -368,13 +432,43 @@ export function CheckOutReservaPage() {
               <p className="text-[12.5px] text-error-texto">{errorCierre}</p>
             </div>
           )}
-          <div>
-            <Button variante="ok" icono={DoorClosed} disabled={!puedeCerrar} onClick={() => setConfirmando(true)}>
-              Confirmar check-out
-            </Button>
-          </div>
+          {cerrada ? (
+            <p className="flex items-center gap-2 text-[13px] font-medium text-pino">
+              <CheckCircle2 size={16} /> Check-out confirmado.
+            </p>
+          ) : (
+            <div>
+              <Button variante="ok" icono={DoorClosed} disabled={!puedeCerrar} onClick={() => setConfirmando(true)}>
+                Confirmar check-out
+              </Button>
+            </div>
+          )}
         </div>
       </Tarjeta>
+
+      {cerrada && (
+        <Tarjeta icono={Receipt} titulo="5. Comprobante" hu="HU 53 y 55 — comprobante de la estadía">
+          {comprobantesQuery.isLoading ? (
+            <p className="text-sm text-piedra">Buscando comprobantes…</p>
+          ) : comprobanteVigente ? (
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge variante="ok">Emitido</Badge>
+              <CodigoClave>{comprobanteVigente.numero}</CodigoClave>
+              <span className="font-mono text-[13px]">{moneda(comprobanteVigente.importeTotal)}</span>
+              {comprobanteVigente.razonSocialTercero && (
+                <span className="text-[12.5px] text-piedra">a nombre de {comprobanteVigente.razonSocialTercero}</span>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col items-start gap-3">
+              <p className="text-[13px] text-piedra">La estadía todavía no tiene comprobante emitido.</p>
+              <Button variante="ok" icono={Receipt} onClick={() => setModalComprobante(true)}>
+                Emitir comprobante
+              </Button>
+            </div>
+          )}
+        </Tarjeta>
+      )}
 
       {modalCargo && (
         <CargoVerificacionCheckoutModal
@@ -396,6 +490,50 @@ export function CheckOutReservaPage() {
           }}
         />
       )}
+
+      {modalComprobante && (
+        <EmitirComprobanteModal
+          reservaId={reservaId}
+          total={cuenta.totalAdeudado}
+          huesped={cuenta.huesped?.nombre}
+          onClose={() => setModalComprobante(false)}
+          onExito={(comprobante) => {
+            setModalComprobante(false);
+            mostrarToast(`Comprobante ${comprobante.numero} emitido.`);
+          }}
+        />
+      )}
+
+      <ConfirmDialog
+        abierto={aAnular !== null}
+        titulo="¿Anular el pago?"
+        mensaje="El pago deja de contar para la cuenta y el saldo vuelve a subir. Queda registrado como anulado, con su motivo."
+        textoConfirmar="Sí, anular pago"
+        variante="destructivo"
+        icono={Ban}
+        cargando={mutacionAnular.isPending}
+        onCancelar={() => {
+          setAAnular(null);
+          setMotivoAnulacion("");
+        }}
+        onConfirmar={() => {
+          if (!motivoAnulacion.trim()) return;
+          mutacionAnular.mutate();
+        }}
+      >
+        <label className="flex flex-col gap-1.5 font-body text-sm">
+          <span className="text-[12px] text-tinta/70">Motivo de la anulación *</span>
+          <textarea
+            rows={3}
+            value={motivoAnulacion}
+            maxLength={300}
+            onChange={(e) => setMotivoAnulacion(e.target.value)}
+            placeholder="Se cargó un importe o un medio equivocado, etc."
+            className="rounded-md border border-borde bg-white px-3 py-2 text-[13.5px] text-tinta placeholder:text-tinta/45 focus:outline-none focus:ring-2 focus:ring-pino/40"
+          />
+          {!motivoAnulacion.trim() && <span className="text-[11.5px] text-piedra">Sin motivo no se puede confirmar.</span>}
+        </label>
+      </ConfirmDialog>
 
       <ConfirmDialog
         abierto={confirmando}

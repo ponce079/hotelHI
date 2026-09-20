@@ -95,7 +95,7 @@ export function CargoVerificacionCheckoutModal({ reservaId, consumosMinibar = []
           />
         </label>
 
-        <div className="w-[220px]">
+        <div className="w-55">
           <MoneyInput label="Monto a cargar *" value={form.monto} onChange={(monto) => setForm({ ...form, monto })} />
         </div>
 

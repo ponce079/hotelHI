@@ -3,6 +3,7 @@ const prisma = require('../../lib/prisma');
 const { redondear } = require('../../lib/comprobantes');
 const { crearConNumeroSecuencial } = require('../../lib/numeracion');
 const { TIPOS_COMPROBANTE_ESTADIA } = require('./comprobanteEstadia.constantes');
+const { CUIT_REGEX, normalizarCuit } = require('../proveedores/proveedores.constantes');
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -25,12 +26,24 @@ function centavos(n) {
 // genera el sistema, no lo tipea nadie) y sin matching de 3 vías / OC
 // (eso es exclusivo de Compras).
 // --------------------------------------------------------------
+//
+// El importe se puede mandar de DOS formas (una sola de las dos):
+//   - importeNeto: el IVA se suma encima (importeTotal = neto + IVA).
+//   - importeTotal: precio final con IVA incluido; el neto y el IVA se
+//     derivan hacia atrás y suman exactamente ese total (sin centavos de
+//     diferencia). Es la que usa el check-out: la cuenta del huésped es un
+//     precio final, no un neto.
 async function crearComprobante(data) {
-  const { reservaId, importeNeto, alicuotaIVA, razonSocialTercero, cuitTercero } = data;
+  const { reservaId, importeNeto, importeTotal: totalFinal, alicuotaIVA, razonSocialTercero, cuitTercero } = data;
 
   if (!reservaId) throw new ErrorDeNegocio('reservaId es obligatorio.');
-  if (typeof importeNeto !== 'number' || importeNeto <= 0) {
-    throw new ErrorDeNegocio('importeNeto debe ser un número mayor a 0.');
+  const viene = (v) => v !== undefined && v !== null;
+  if (viene(importeNeto) === viene(totalFinal)) {
+    throw new ErrorDeNegocio('Mandá importeNeto o importeTotal (uno solo de los dos).');
+  }
+  const importeBase = viene(importeNeto) ? importeNeto : totalFinal;
+  if (typeof importeBase !== 'number' || !(importeBase > 0)) {
+    throw new ErrorDeNegocio(`${viene(importeNeto) ? 'importeNeto' : 'importeTotal'} debe ser un número mayor a 0.`);
   }
   if (typeof alicuotaIVA !== 'number' || alicuotaIVA < 0 || alicuotaIVA > 100) {
     throw new ErrorDeNegocio('alicuotaIVA debe ser un número entre 0 y 100.');
@@ -38,9 +51,12 @@ async function crearComprobante(data) {
   // HU-55: si se carga uno de los dos datos del tercero, hace falta el otro
   // — un comprobante "a medias" a nombre de tercero no sirve para nada.
   const esATerceroRazon = (razonSocialTercero || '').trim();
-  const esATerceroCuit = (cuitTercero || '').trim();
+  const esATerceroCuit = normalizarCuit((cuitTercero || '').trim());
   if ((esATerceroRazon && !esATerceroCuit) || (!esATerceroRazon && esATerceroCuit)) {
     throw new ErrorDeNegocio('Para facturar a nombre de un tercero hacen falta razón social y CUIT, los dos.');
+  }
+  if (esATerceroCuit && !CUIT_REGEX.test(esATerceroCuit)) {
+    throw new ErrorDeNegocio('El CUIT del tercero debe tener el formato 00-00000000-0 (11 dígitos).');
   }
 
   // La tabla Reserva ya existe desde el día 1 (la creó Gimena junto con
@@ -49,12 +65,38 @@ async function crearComprobante(data) {
   // sección 0 de la guía.
   const reserva = await prisma.reserva.findUnique({ where: { id: Number(reservaId) } });
   if (!reserva) throw new ErrorDeNegocio('La reserva no existe.', 404);
+  // Se factura una estadía que está pasando o ya pasó, no una reserva que
+  // todavía no arrancó ni una cancelada.
+  if (!['En curso', 'Cerrada'].includes(reserva.estado)) {
+    throw new ErrorDeNegocio(`No se puede emitir un comprobante de una reserva "${reserva.estado}".`, 409);
+  }
+  // Una estadía, un comprobante vigente: para corregirlo se anula o se
+  // emite una nota de crédito (HU-56), no un segundo comprobante encima.
+  const vigente = await prisma.comprobanteEstadia.findFirst({
+    where: { reservaId: Number(reservaId), tipo: 'Comprobante', anulado: false },
+  });
+  if (vigente) {
+    throw new ErrorDeNegocio(
+      `La reserva ya tiene un comprobante vigente (${vigente.numero}). Anulalo o emití una nota de crédito.`,
+      409
+    );
+  }
 
   // Cálculo de IVA — una sola vez acá al crear, nunca en el frontend ni
   // recalculado en cada lectura (mismo criterio que fechaVencimiento en
   // crearComprobante de Sprint 2).
-  const importeIVA = redondear(importeNeto * (alicuotaIVA / 100));
-  const importeTotal = redondear(importeNeto + importeIVA);
+  let netoFinal;
+  let importeIVA;
+  let importeTotal;
+  if (viene(importeNeto)) {
+    netoFinal = importeNeto;
+    importeIVA = redondear(netoFinal * (alicuotaIVA / 100));
+    importeTotal = redondear(netoFinal + importeIVA);
+  } else {
+    importeTotal = redondear(totalFinal);
+    netoFinal = redondear(importeTotal / (1 + alicuotaIVA / 100));
+    importeIVA = redondear(importeTotal - netoFinal);
+  }
 
   let comprobante;
   try {
@@ -65,7 +107,7 @@ async function crearComprobante(data) {
           data: {
             reservaId: Number(reservaId),
             tipo: 'Comprobante',
-            importeNeto,
+            importeNeto: netoFinal,
             alicuotaIVA,
             importeIVA,
             importeTotal,

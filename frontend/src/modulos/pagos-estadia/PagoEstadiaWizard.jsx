@@ -110,13 +110,13 @@ export function PagoEstadiaWizard({ reservaId, saldo, onClose, onExito }) {
 
         {medios.map((m) => (
           <div key={m.key} className="flex flex-wrap items-end gap-3 rounded-[14px] border border-borde px-4 py-3.5">
-            <div className="flex w-[160px] flex-col gap-1.5">
+            <div className="flex w-40 flex-col gap-1.5">
               <span className="font-body text-[12px] text-tinta/70">Medio</span>
               <p className="rounded-md border border-borde bg-white px-3 py-2 text-[13.5px] font-medium text-tinta">
                 {m.tipo}
               </p>
             </div>
-            <div className="w-[190px]">
+            <div className="w-47.5">
               <MoneyInput label="Importe" value={m.importe} onChange={(valor) => actualizarImporte(m.key, valor)} />
             </div>
             <Button variante="secundario" tamano="fila" icono={Trash2} className="ml-auto" onClick={() => quitarMedio(m.key)}>
@@ -143,7 +143,7 @@ export function PagoEstadiaWizard({ reservaId, saldo, onClose, onExito }) {
               $ {formatearMonto(totalMedios)}
             </Cifra>
           </div>
-          <p className="m-0 min-w-[200px] flex-1 text-[12.5px] text-tinta/60">
+          <p className="m-0 min-w-50 flex-1 text-[12.5px] text-tinta/60">
             {excede
               ? "El total supera el saldo pendiente."
               : totalMedios === 0
