@@ -71,6 +71,12 @@ export const MENU_GRUPOS = [
         icon: Utensils,
         roles: ["admin", "recepcionista"],
       },
+      { 
+        to: "/check-out", 
+        label: "Check-out", 
+        icon: DoorClosed, 
+        roles: ["admin", "recepcionista"] 
+      },
     ],
   },
   {
