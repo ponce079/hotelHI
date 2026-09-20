@@ -10,6 +10,7 @@ import { Table } from "../../componentes/Table";
 import { hoyEnHoraLocal } from "../../lib/fechas";
 import { consultarDisponibilidad, crearReserva, modificarReserva } from "./reservas.api";
 import { CANALES_CONFIRMACION, LIMITES_RESERVA, TIPOS_DOCUMENTO } from "./reservas.constantes";
+import { validarHuesped } from "./validarHuesped";
 
 // Alta de reserva (HU-36) y edición de una existente (HU-37) en el mismo
 // wizard: los tres pasos son idénticos, solo cambia con qué datos arranca
@@ -72,7 +73,22 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   const esEdicion = Boolean(reserva);
   const [form, setForm] = useState(() => estadoInicial(reserva, valoresIniciales));
   const [errorGeneral, setErrorGeneral] = useState("");
+  const [huespedTocado, setHuespedTocado] = useState({ nombre: false, numeroDocumento: false });
+  const [intentoConfirmarHuesped, setIntentoConfirmarHuesped] = useState(false);
   const queryClient = useQueryClient();
+
+  // Errores en vivo, pero solo se muestran una vez que el usuario tocó el
+  // campo (onBlur) o intentó confirmar con el paso incompleto — mismo
+  // criterio que CheckInWalkIn.jsx, para no arrancar el paso 3 en rojo
+  // apenas se muestra vacío.
+  const erroresHuesped = validarHuesped(form.huesped);
+  const huespedValido = Object.keys(erroresHuesped).length === 0;
+  function errorHuesped(campo) {
+    return huespedTocado[campo] || intentoConfirmarHuesped ? erroresHuesped[campo] : undefined;
+  }
+  function tocarHuesped(campo) {
+    setHuespedTocado((t) => ({ ...t, [campo]: true }));
+  }
 
   const hoy = hoyEnHoraLocal();
   const rangoCompleto = Boolean(form.fechaDesde && form.fechaHasta && form.fechaHasta > form.fechaDesde);
@@ -173,9 +189,8 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   }
 
   function confirmar() {
-    const { nombre, numeroDocumento } = form.huesped;
-    if (!nombre.trim() || !numeroDocumento.trim()) {
-      setErrorGeneral("El nombre y el número de documento del huésped son obligatorios.");
+    if (!huespedValido) {
+      setIntentoConfirmarHuesped(true);
       return;
     }
     setErrorGeneral("");
@@ -377,6 +392,8 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
               value={form.huesped.nombre}
               maxLength={LIMITES_RESERVA.nombre}
               onChange={(e) => actualizarHuesped("nombre", e.target.value)}
+              onBlur={() => tocarHuesped("nombre")}
+              error={errorHuesped("nombre")}
               placeholder="Ana Pérez"
             />
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3">
@@ -396,6 +413,8 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
                 value={form.huesped.numeroDocumento}
                 maxLength={LIMITES_RESERVA.numeroDocumento}
                 onChange={(e) => actualizarHuesped("numeroDocumento", e.target.value)}
+                onBlur={() => tocarHuesped("numeroDocumento")}
+                error={errorHuesped("numeroDocumento")}
                 placeholder="30111222"
               />
             </div>
