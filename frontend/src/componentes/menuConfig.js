@@ -17,6 +17,7 @@ import {
   CalendarCheck,
   DoorOpen,
   Utensils,
+  DoorClosed,
 } from "lucide-react";
 
 // Menu por rol, calcado de MENUS del prototipo (y de lo que dice cada
