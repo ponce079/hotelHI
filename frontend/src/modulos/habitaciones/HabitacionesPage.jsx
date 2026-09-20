@@ -1,11 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
-import { BedDouble, History, Plus, Search, Trash2, RotateCw } from "lucide-react";
+import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { BedDouble, History, Plus, Search } from "lucide-react";
 import { Button } from "../../componentes/Button";
-import { ConfirmDialog } from "../../componentes/ConfirmDialog";
 import { FilterBar } from "../../componentes/FilterBar";
-import { MenuAcciones } from "../../componentes/MenuAcciones";
 import { Select } from "../../componentes/Select";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { Toast } from "../../componentes/Toast";
@@ -14,16 +12,9 @@ import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { hoyEnHoraLocal } from "../../lib/fechas";
 import { HabitacionModal } from "./HabitacionModal";
-import { EstadoHabitacionModal } from "./EstadoHabitacionModal";
-import { MantenimientoModal } from "./MantenimientoModal";
 import { HistorialMantenimientoModal } from "./HistorialMantenimientoModal";
 import { ConsumoModal } from "../servicios-adicionales/ConsumoModal";
-import {
-  cambiarActivoHabitacion,
-  listarHabitaciones,
-  listarOrdenesMantenimiento,
-  listarTiposHabitacion,
-} from "./habitaciones.api";
+import { listarHabitaciones, listarOrdenesMantenimiento, listarTiposHabitacion } from "./habitaciones.api";
 import { listarReservas } from "../reservas/reservas.api";
 import { ESTADO_RESERVA } from "../reservas/reservas.constantes";
 import {
@@ -67,17 +58,14 @@ function reservasEnCursoDe(reservasEnCurso, numeroHabitacion) {
 }
 
 export function HabitacionesPage() {
-  const { rol, puede } = useSesion();
+  const { puede } = useSesion();
   const puedeVer = puede("verHabitaciones");
   const puedeAdministrar = puede("gestionarHabitaciones");
-  const puedeMantenimiento = puede("gestionarMantenimiento");
-  const puedeEstado = puede("actualizarEstadoHabitacion");
   const puedeRegistrarConsumo = puede("registrarConsumoServicio");
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [modal, setModal] = useState(null);
-  const [cambioActivo, setCambioActivo] = useState(null);
   const { toast, mostrarToast } = useToast();
-  const queryClient = useQueryClient();
   // Solo para refrescar el texto "Actualizado hace Ns" cada segundo — el
   // dato en sí ya lo refresca refetchInterval, esto no dispara ningún fetch.
   const [ahora, setAhora] = useState(() => Date.now());
@@ -118,39 +106,21 @@ export function HabitacionesPage() {
     refetchInterval: 10000,
   });
   // Motivo de las tarjetas "mantenimiento": la última orden cargada para esa
-  // habitación (tipo de tarea + responsable). No hay un campo de "motivo"
-  // propio para "bloqueada" en el modelo — esas tarjetas no muestran línea.
+  // habitación (tipo de tarea + responsable).
   const ordenesQuery = useQuery({
     queryKey: ["habitaciones", "mantenimiento", "ultimas"],
     queryFn: () => listarOrdenesMantenimiento(),
     enabled: puedeVer,
   });
 
-  const mutacionActivo = useMutation({
-    mutationFn: ({ id, valor }) => cambiarActivoHabitacion(id, valor),
-    onSuccess: (habitacion) => {
-      queryClient.invalidateQueries({ queryKey: ["habitaciones"] });
-      queryClient.invalidateQueries({ queryKey: ["tipos-habitacion"] });
-      mostrarToast(`Habitación ${habitacion.numero} ${habitacion.activo ? "reactivada" : "dada de baja"}.`);
-      setCambioActivo(null);
-    },
-    onError: (error) => {
-      mostrarToast(error?.response?.data?.error ?? "No se pudo cambiar la vigencia de la habitación.");
-      setCambioActivo(null);
-    },
-  });
-
   const reservasEnCurso = enCursoQuery.data ?? [];
 
-  const ultimaOrdenPorHabitacion = useMemo(() => {
-    const mapa = new Map();
-    // listarOrdenesMantenimiento ya viene ordenado por fecha desc: la
-    // primera que aparece para cada habitacionId es la más reciente.
-    for (const orden of ordenesQuery.data ?? []) {
-      if (!mapa.has(orden.habitacionId)) mapa.set(orden.habitacionId, orden);
-    }
-    return mapa;
-  }, [ordenesQuery.data]);
+  const ultimaOrdenPorHabitacion = new Map();
+  // listarOrdenesMantenimiento ya viene ordenado por fecha desc: la primera
+  // que aparece para cada habitacionId es la más reciente.
+  for (const orden of ordenesQuery.data ?? []) {
+    if (!ultimaOrdenPorHabitacion.has(orden.habitacionId)) ultimaOrdenPorHabitacion.set(orden.habitacionId, orden);
+  }
 
   function actualizarFiltro(clave, valor) {
     const params = new URLSearchParams(searchParams);
@@ -274,7 +244,7 @@ export function HabitacionesPage() {
               Limpiar filtros
             </button>
           )}
-          {puedeAdministrar && <Button icono={Plus} onClick={() => setModal({ tipo: "form", habitacion: null })}>Nueva habitación</Button>}
+          {puedeAdministrar && <Button icono={Plus} onClick={() => setModal({ tipo: "form" })}>Nueva habitación</Button>}
         </div>
       </FilterBar>
 
@@ -303,14 +273,8 @@ export function HabitacionesPage() {
                       habitacion={habitacion}
                       huesped={reservaEnCurso ? { nombre: reservaEnCurso.huesped?.nombre, fechaHasta: reservaEnCurso.fechaHasta } : null}
                       ordenMantenimiento={ultimaOrdenPorHabitacion.get(habitacion.id)}
-                      puedeAdministrar={puedeAdministrar}
-                      puedeEstado={puedeEstado}
-                      puedeMantenimiento={puedeMantenimiento}
                       puedeRegistrarConsumo={puedeRegistrarConsumo}
-                      onEditar={() => setModal({ tipo: "form", habitacion })}
-                      onCambiarEstado={() => setModal({ tipo: "estado", habitacion })}
-                      onCrearMantenimiento={() => setModal({ tipo: "mantenimiento", habitacion })}
-                      onCambiarActivo={() => setCambioActivo(habitacion)}
+                      onAbrir={() => navigate(`/habitaciones/${habitacion.id}`)}
                       onAgregarConsumo={() => manejarAgregarConsumo(habitacion)}
                     />
                   );
@@ -321,78 +285,38 @@ export function HabitacionesPage() {
         </div>
       )}
 
-      {modal?.tipo === "form" && <HabitacionModal habitacion={modal.habitacion} onClose={() => setModal(null)} onExito={cerrarConExito} />}
-      {modal?.tipo === "estado" && (
-        <EstadoHabitacionModal
-          habitacion={modal.habitacion}
-          soloHousekeeping={rol === "housekeeping"}
-          onClose={() => setModal(null)}
-          onExito={cerrarConExito}
-        />
-      )}
-      {modal?.tipo === "mantenimiento" && <MantenimientoModal habitacion={modal.habitacion} onClose={() => setModal(null)} onExito={cerrarConExito} />}
+      {modal?.tipo === "form" && <HabitacionModal habitacion={null} onClose={() => setModal(null)} onExito={cerrarConExito} />}
       {modal?.tipo === "historial" && <HistorialMantenimientoModal onClose={() => setModal(null)} />}
       {modal?.tipo === "consumo" && <ConsumoModal reserva={modal.reserva} onClose={() => setModal(null)} onExito={cerrarConExito} />}
-
-      <ConfirmDialog
-        abierto={Boolean(cambioActivo)}
-        titulo={cambioActivo?.activo ? "¿Dar de baja la habitación?" : "¿Reactivar la habitación?"}
-        mensaje={
-          cambioActivo?.activo
-            ? `La habitación ${cambioActivo?.numero} dejará de estar disponible para nuevas operaciones, pero conservará todo su historial.`
-            : `La habitación ${cambioActivo?.numero} volverá a estar disponible en el inventario.`
-        }
-        textoConfirmar={cambioActivo?.activo ? "Sí, dar de baja" : "Sí, reactivar"}
-        variante={cambioActivo?.activo ? "destructivo" : "alta"}
-        icono={cambioActivo?.activo ? Trash2 : RotateCw}
-        cargando={mutacionActivo.isPending}
-        onCancelar={() => setCambioActivo(null)}
-        onConfirmar={() => mutacionActivo.mutate({ id: cambioActivo.id, valor: !cambioActivo.activo })}
-      />
 
       <Toast mensaje={toast} />
     </div>
   );
 }
 
-function TarjetaHabitacion({
-  habitacion,
-  huesped,
-  ordenMantenimiento,
-  puedeAdministrar,
-  puedeEstado,
-  puedeMantenimiento,
-  puedeRegistrarConsumo,
-  onEditar,
-  onCambiarEstado,
-  onCrearMantenimiento,
-  onCambiarActivo,
-  onAgregarConsumo,
-}) {
+function TarjetaHabitacion({ habitacion, huesped, ordenMantenimiento, puedeRegistrarConsumo, onAbrir, onAgregarConsumo }) {
   const color = ESTADO_HABITACION_COLOR[habitacion.estado] ?? ESTADO_HABITACION_COLOR.libre;
   const saleHoy = habitacion.estado === "ocupada" && esHoy(huesped?.fechaHasta);
 
-  const acciones = [];
-  if (puedeAdministrar) acciones.push({ label: "Editar inventario", onClick: onEditar });
-  if (puedeEstado) acciones.push({ label: "Cambiar estado", onClick: onCambiarEstado });
-  if (puedeMantenimiento) acciones.push({ label: "Crear orden de mantenimiento", onClick: onCrearMantenimiento });
-  if (puedeAdministrar) {
-    acciones.push({ label: habitacion.activo ? "Dar de baja" : "Reactivar", variante: habitacion.activo ? "destructivo" : undefined, onClick: onCambiarActivo });
-  }
-
   return (
     <div
+      role="button"
+      tabIndex={0}
+      onClick={onAbrir}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onAbrir();
+        }
+      }}
       style={{ backgroundColor: color.fondo, color: color.texto, borderColor: color.borde }}
-      className="flex flex-col gap-2 rounded-lg border p-4"
+      className="flex cursor-pointer flex-col gap-2 rounded-lg border p-4 transition-shadow hover:shadow-sm"
     >
       <div className="flex items-start justify-between gap-2">
         <Cifra tamano={26} className="flex items-center gap-1.5">
           <BedDouble size={18} className="inline -mt-0.5" /> {habitacion.numero}
         </Cifra>
-        <div className="flex items-center gap-1">
-          <span className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.03em]">{ESTADO_HABITACION_LABEL[habitacion.estado]}</span>
-          {acciones.length > 0 && <MenuAcciones acciones={acciones} />}
-        </div>
+        <span className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.03em]">{ESTADO_HABITACION_LABEL[habitacion.estado]}</span>
       </div>
 
       <p className="text-[12.5px]">
@@ -420,7 +344,10 @@ function TarjetaHabitacion({
           {puedeRegistrarConsumo && (
             <button
               type="button"
-              onClick={onAgregarConsumo}
+              onClick={(e) => {
+                e.stopPropagation();
+                onAgregarConsumo();
+              }}
               className="w-fit cursor-pointer text-[12.5px] font-semibold underline-offset-2 hover:underline"
             >
               → Agregar consumo
@@ -433,9 +360,14 @@ function TarjetaHabitacion({
         <p className="text-[12.5px]">{ordenMantenimiento.tipoTarea} · {ordenMantenimiento.responsable}</p>
       )}
 
+      {habitacion.estado === "bloqueada" && habitacion.motivoBloqueo && (
+        <p className="text-[12.5px]">{habitacion.motivoBloqueo}</p>
+      )}
+
       {habitacion.estado === "libre" && (
         <Link
           to={`/check-in?habitacion=${encodeURIComponent(habitacion.numero)}`}
+          onClick={(e) => e.stopPropagation()}
           className="mt-1 text-[12.5px] font-semibold underline-offset-2 hover:underline"
         >
           → Iniciar check-in

@@ -51,7 +51,9 @@ async function putHabitacion(req, res) {
 
 async function patchEstado(req, res) {
   try {
-    return res.json(await habitacionesServicio.cambiarEstadoHabitacion(req.params.id, req.body?.estado));
+    return res.json(
+      await habitacionesServicio.cambiarEstadoHabitacion(req.params.id, req.body?.estado, req.body?.motivoBloqueo)
+    );
   } catch (err) {
     return responderError(res, err, "Error al cambiar el estado de la habitación:", "No se pudo cambiar el estado de la habitación.");
   }

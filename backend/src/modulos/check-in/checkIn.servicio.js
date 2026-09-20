@@ -144,7 +144,7 @@ async function ocuparHabitacion(tx, habitacionId) {
       `La habitación ${habitacion.numero} no está libre (estado actual: "${habitacion.estado}") — no se puede completar el check-in.`
     );
   }
-  await habitacionesServicio.cambiarEstadoHabitacion(habitacionId, "ocupada", tx);
+  await habitacionesServicio.cambiarEstadoHabitacion(habitacionId, "ocupada", null, tx);
 }
 
 // --------------------------------------------------------------

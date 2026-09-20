@@ -508,6 +508,10 @@ model Habitacion {
   equipamiento   String? @db.Text
   // libre | ocupada | mantenimiento | bloqueada | en limpieza
   estado         String  @default("libre")
+  // Obligatorio solo cuando estado = "bloqueada" (ver cambiarEstadoHabitacion
+  // en habitaciones.servicio.js) — no aplica a los demás estados, por eso
+  // nullable, mismo criterio que OrdenCompra.motivoAnulacion.
+  motivoBloqueo  String? @db.Text
   // Precio por noche propio de la habitación (no una tarifa fija por tipo).
   tarifaPorNoche Decimal @db.Decimal(12, 2)
   activo         Boolean @default(true)

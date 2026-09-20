@@ -25,8 +25,8 @@ export async function actualizarHabitacion(id, payload) {
   return data;
 }
 
-export async function actualizarEstadoHabitacion(id, estado) {
-  const { data } = await api.patch(`/habitaciones/${id}/estado`, { estado });
+export async function actualizarEstadoHabitacion(id, estado, motivoBloqueo) {
+  const { data } = await api.patch(`/habitaciones/${id}/estado`, { estado, motivoBloqueo });
   return data;
 }
 

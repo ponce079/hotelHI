@@ -151,13 +151,22 @@ async function actualizarHabitacion(id, data) {
   }
 }
 
-async function cambiarEstadoHabitacion(id, estado, cliente = prisma) {
+async function cambiarEstadoHabitacion(id, estado, motivoBloqueo, cliente = prisma) {
   const habitacionId = enteroPositivo(id, "id");
   const estadoValidado = validarEstado(estado);
   const actual = await cliente.habitacion.findUnique({ where: { id: habitacionId } });
   if (!actual) throw new ErrorDeNegocio("Habitación no encontrada.", 404);
   if (!actual.activo) throw new ErrorDeNegocio("No se puede cambiar el estado de una habitación dada de baja.");
-  return cliente.habitacion.update({ where: { id: habitacionId }, data: { estado: estadoValidado } });
+
+  const data = { estado: estadoValidado };
+  // Obligatorio solo para "bloqueada" — para las demás transiciones no se
+  // toca la columna (queda con lo que tenía, sin efecto: solo se lee/
+  // muestra cuando estado = "bloqueada", así que un valor viejo no importa
+  // y se pisa solo la próxima vez que se vuelva a bloquear la habitación).
+  if (estadoValidado === "bloqueada") {
+    data.motivoBloqueo = textoObligatorio(motivoBloqueo, "El motivo de bloqueo", LIMITES_HABITACION.motivoBloqueo);
+  }
+  return cliente.habitacion.update({ where: { id: habitacionId }, data });
 }
 
 async function cambiarActivoHabitacion(id, activo) {
@@ -206,7 +215,7 @@ async function crearOrdenMantenimiento(habitacionIdEntrada, data) {
         data: { habitacionId, tipoTarea, responsable },
       });
 
-      await cambiarEstadoHabitacion(habitacionId, "mantenimiento", tx);
+      await cambiarEstadoHabitacion(habitacionId, "mantenimiento", null, tx);
 
       let notificacion = null;
       if (urgente) {

@@ -5,17 +5,21 @@ import { Modal } from "../../componentes/Modal";
 import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
 import { actualizarEstadoHabitacion } from "./habitaciones.api";
-import { ESTADOS_HABITACION, ESTADO_HABITACION_LABEL } from "./habitaciones.constantes";
+import { ESTADOS_HABITACION, ESTADO_HABITACION_LABEL, LIMITES_HABITACION } from "./habitaciones.constantes";
 
 export function EstadoHabitacionModal({ habitacion, soloHousekeeping, onClose, onExito }) {
   const opciones = soloHousekeeping ? ["en limpieza", "libre"] : ESTADOS_HABITACION;
   const estadoInicial = opciones.includes(habitacion.estado) ? habitacion.estado : opciones[0];
   const [estado, setEstado] = useState(estadoInicial);
+  // Motivo obligatorio solo al bloquear (mismo patrón que el motivo de
+  // cancelación de una reserva) — ninguna otra transición lo pide.
+  const [motivoBloqueo, setMotivoBloqueo] = useState("");
   const [error, setError] = useState("");
   const queryClient = useQueryClient();
+  const bloqueando = estado === "bloqueada";
 
   const mutacion = useMutation({
-    mutationFn: () => actualizarEstadoHabitacion(habitacion.id, estado),
+    mutationFn: () => actualizarEstadoHabitacion(habitacion.id, estado, bloqueando ? motivoBloqueo.trim() : undefined),
     onSuccess: (actualizada) => {
       queryClient.invalidateQueries({ queryKey: ["habitaciones"] });
       onExito(`Habitación ${actualizada.numero}: estado actualizado a ${ESTADO_HABITACION_LABEL[actualizada.estado].toLowerCase()}.`);
@@ -36,10 +40,31 @@ export function EstadoHabitacionModal({ habitacion, soloHousekeeping, onClose, o
               Housekeeping puede marcar la habitación en limpieza o liberarla al terminar.
             </p>
           )}
+          {bloqueando && (
+            <label className="flex flex-col gap-1.5 font-body text-sm">
+              <span className="text-[12px] text-tinta/70">Motivo del bloqueo *</span>
+              <textarea
+                rows={3}
+                value={motivoBloqueo}
+                onChange={(e) => setMotivoBloqueo(e.target.value)}
+                maxLength={LIMITES_HABITACION.motivoBloqueo}
+                placeholder="Reforma de baño, aire acondicionado roto, etc."
+                className="rounded-md border border-borde bg-white px-3 py-2 text-[13.5px] text-tinta placeholder:text-tinta/45 focus:outline-none focus:ring-2 focus:ring-pino/40"
+              />
+              {!motivoBloqueo.trim() && <span className="text-[11.5px] text-piedra">Sin motivo no se puede bloquear la habitación.</span>}
+            </label>
+          )}
         </div>
         <div className="flex justify-end gap-2.5 border-t border-borde px-6 py-4">
           <Button type="button" variante="secundario" icono={X} disabled={mutacion.isPending} onClick={onClose}>Cancelar</Button>
-          <Button type="submit" icono={Check} cargando={mutacion.isPending} disabled={estado === habitacion.estado}>Confirmar estado</Button>
+          <Button
+            type="submit"
+            icono={Check}
+            cargando={mutacion.isPending}
+            disabled={estado === habitacion.estado || (bloqueando && !motivoBloqueo.trim())}
+          >
+            Confirmar estado
+          </Button>
         </div>
       </form>
     </Modal>

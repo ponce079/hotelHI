@@ -9,6 +9,8 @@ const LIMITES_HABITACION = {
   responsable: 100,
   areaDestino: 100,
   mensaje: 2000,
+  // Mismo límite que Reserva.motivoCancelacion (reservas.constantes.js).
+  motivoBloqueo: 300,
 };
 
 module.exports = {

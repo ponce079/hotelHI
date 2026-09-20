@@ -42,4 +42,6 @@ export const LIMITES_HABITACION = {
   equipamiento: 2000,
   responsable: 100,
   mensaje: 2000,
+  // Mismo límite que Reserva.motivoCancelacion (reservas.constantes.js).
+  motivoBloqueo: 300,
 };
