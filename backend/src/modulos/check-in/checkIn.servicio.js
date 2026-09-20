@@ -8,12 +8,19 @@
 //
 // Reuso de otros módulos, no reimplementación (ver Sprint3_..._CheckIn...md,
 // sección 0): `reservasServicio.obtenerReserva/crearReservaEnTransaccion/
-// marcarEnCurso` y `habitacionesServicio.cambiarEstadoHabitacion` son los
-// mismos que ya usan y prueban Reservas y Habitaciones.
+// marcarEnCurso` son los mismos que ya usan y prueban Reservas.
+//
+// `Habitacion.estado: 'libre' → 'ocupada'` (HU-47, en ocuparHabitacion más
+// abajo) se hace con un update directo, NO con
+// `habitacionesServicio.cambiarEstadoHabitacion` — corrección posterior:
+// esa función ahora valida una matriz de transiciones MANUALES (el
+// "Cambiar estado" del staff) que bloquea a propósito cualquier salto a
+// "ocupada" por esa vía, porque la única transición legítima es esta, la
+// del check-in real. Mismo criterio que ya usan crearOrdenMantenimiento y
+// checkOut.servicio.js para sus propias transiciones de negocio.
 
 const prisma = require("../../lib/prisma");
 const reservasServicio = require("../reservas/reservas.servicio");
-const habitacionesServicio = require("../habitaciones/habitaciones.servicio");
 const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
 const { MEDIOS_GARANTIA } = require("./checkIn.constantes");
 
@@ -144,7 +151,9 @@ async function ocuparHabitacion(tx, habitacionId) {
       `La habitación ${habitacion.numero} no está libre (estado actual: "${habitacion.estado}") — no se puede completar el check-in.`
     );
   }
-  await habitacionesServicio.cambiarEstadoHabitacion(habitacionId, "ocupada", null, tx);
+  // Update directo, no `cambiarEstadoHabitacion` — ver el comentario del
+  // encabezado de este archivo.
+  await tx.habitacion.update({ where: { id: habitacionId }, data: { estado: "ocupada" } });
 }
 
 // --------------------------------------------------------------

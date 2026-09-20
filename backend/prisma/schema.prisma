@@ -512,6 +512,11 @@ model Habitacion {
   // en habitaciones.servicio.js) — no aplica a los demás estados, por eso
   // nullable, mismo criterio que OrdenCompra.motivoAnulacion.
   motivoBloqueo  String? @db.Text
+  // Estado justo antes de entrar en "mantenimiento" (ver crearOrdenMantenimiento
+  // en habitaciones.servicio.js) — permite devolverla a ese estado (no siempre
+  // "libre") cuando la orden se marca "Resuelta", en vez de liberar por error
+  // una habitación que seguía ocupada. Se limpia (vuelve a null) al resolver.
+  estadoAnterior String?
   // Precio por noche propio de la habitación (no una tarifa fija por tipo).
   tarifaPorNoche Decimal @db.Decimal(12, 2)
   activo         Boolean @default(true)
@@ -531,6 +536,15 @@ model OrdenMantenimiento {
   tipoTarea      String
   responsable    String
   fecha          DateTime       @default(now())
+  // Prioridad real (ya no dispara ningún aviso — ver Notificacion, retirado
+  // de este flujo): solo sirve para destacar/filtrar en el historial.
+  urgente        Boolean        @default(false)
+  // Pendiente | Resuelta
+  estado         String         @default("Pendiente")
+  resueltaEn     DateTime?
+  // Nombre de quien confirma la resolución (no hay usuario real logueado
+  // detrás de ningún rol todavía, igual que el resto del módulo).
+  resueltaPor    String?
   habitacion     Habitacion     @relation(fields: [habitacionId], references: [id])
   notificaciones Notificacion[]
 

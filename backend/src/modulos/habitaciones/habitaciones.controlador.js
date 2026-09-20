@@ -83,11 +83,11 @@ async function getOrdenesMantenimiento(req, res) {
   }
 }
 
-async function getNotificaciones(req, res) {
+async function patchResolverOrdenMantenimiento(req, res) {
   try {
-    return res.json(await habitacionesServicio.listarNotificaciones(req.query));
+    return res.json(await habitacionesServicio.resolverOrdenMantenimiento(req.params.ordenId, req.body?.resueltaPor));
   } catch (err) {
-    return responderError(res, err, "Error al listar notificaciones:", "No se pudieron listar las notificaciones.");
+    return responderError(res, err, "Error al resolver la orden de mantenimiento:", "No se pudo resolver la orden de mantenimiento.");
   }
 }
 
@@ -101,5 +101,5 @@ module.exports = {
   patchActivo,
   postOrdenMantenimiento,
   getOrdenesMantenimiento,
-  getNotificaciones,
+  patchResolverOrdenMantenimiento,
 };

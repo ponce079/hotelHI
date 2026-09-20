@@ -30,6 +30,7 @@ import { ComprobantesPage } from "./modulos/comprobantes/ComprobantesPage";
 import { ComprobanteDetalle } from "./modulos/comprobantes/ComprobanteDetalle";
 import { HabitacionesPage } from "./modulos/habitaciones/HabitacionesPage";
 import { HabitacionDetallePage } from "./modulos/habitaciones/HabitacionDetallePage";
+import { HistorialMantenimientoPage } from "./modulos/habitaciones/HistorialMantenimientoPage";
 import { ReservasPage } from "./modulos/reservas/ReservasPage";
 import { ReservaDetallePage } from "./modulos/reservas/ReservaDetallePage";
 import { DisponibilidadPublicaPage } from "./modulos/reservas/DisponibilidadPublicaPage";
@@ -96,6 +97,7 @@ export default function App() {
           {/* Sprint 3 académico — Administración de Habitaciones (HU-31 a HU-35). */}
           <Route path="/habitaciones" element={<HabitacionesPage />} />
           <Route path="/habitaciones/:id" element={<HabitacionDetallePage />} />
+          <Route path="/historial-mantenimiento" element={<HistorialMantenimientoPage />} />
           {/* Sprint 3 académico — Reservas (HU-36 a HU-42). */}
           <Route path="/reservas" element={<ReservasPage />} />
           <Route path="/reservas/:id" element={<ReservaDetallePage />} />

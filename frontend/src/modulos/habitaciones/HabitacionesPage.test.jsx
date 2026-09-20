@@ -78,4 +78,16 @@ describe("HabitacionesPage — tarjeta clickeable", () => {
 
     expect(screen.queryByText(/Detalle de la habitación/)).not.toBeInTheDocument();
   });
+
+  it('el botón "Más acciones" (⋮) abre el menú y no navega al detalle', async () => {
+    const usuario = userEvent.setup();
+    renderPanel();
+
+    const menu = await screen.findByRole("button", { name: /Más acciones/ });
+    await usuario.click(menu);
+
+    expect(await screen.findByRole("button", { name: "Cambiar estado" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dar de baja" })).toBeInTheDocument();
+    expect(screen.queryByText(/Detalle de la habitación/)).not.toBeInTheDocument();
+  });
 });

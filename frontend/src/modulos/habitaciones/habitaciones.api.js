@@ -45,7 +45,7 @@ export async function listarOrdenesMantenimiento(params = {}) {
   return data;
 }
 
-export async function listarNotificacionesMantenimiento(params = {}) {
-  const { data } = await api.get("/habitaciones/notificaciones", { params });
+export async function resolverOrdenMantenimiento(ordenId, resueltaPor) {
+  const { data } = await api.patch(`/habitaciones/mantenimiento/${ordenId}/resolver`, { resueltaPor });
   return data;
 }

@@ -19,6 +19,7 @@ import {
   Utensils,
   DoorClosed,
   Receipt,
+  Wrench,
 } from "lucide-react";
 
 // Menu por rol, calcado de MENUS del prototipo (y de lo que dice cada
@@ -45,7 +46,18 @@ export const MENU_GRUPOS = [
         to: "/habitaciones",
         label: "Habitaciones",
         icon: BedDouble,
-        roles: ["admin", "recepcionista", "mantenimiento", "housekeeping"],
+        roles: ["admin", "recepcionista", "housekeeping"],
+      },
+      // HU-33/34 (corrección): antes era el botón "Historial" en el header
+      // del Panel de Habitaciones, abría un modal — ahora es su propia
+      // pantalla y entrada de menú. Mismos roles que "Habitaciones"
+      // (verHabitaciones): admin de solo lectura, Housekeeping y
+      // Recepcionista reportan/resuelven desde ahí.
+      {
+        to: "/historial-mantenimiento",
+        label: "Historial de Mantenimiento",
+        icon: Wrench,
+        roles: ["admin", "recepcionista", "housekeeping"],
       },
       // Sprint 3 académico — Reservas (HU-36 a 42). Las pantallas públicas
       // (/disponibilidad y /reservar) no entran al menú: son del rol
