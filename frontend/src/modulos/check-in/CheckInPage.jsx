@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { useSesion } from "../../lib/sesion";
 import { CheckInConReserva } from "./CheckInConReserva";
@@ -6,7 +7,13 @@ import { CheckInWalkIn } from "./CheckInWalkIn";
 
 export function CheckInPage() {
   const { puede } = useSesion();
-  const [modo, setModo] = useState("reserva");
+  const [searchParams] = useSearchParams();
+  // Panel de Habitaciones (HabitacionesPage.jsx) linkea acá con
+  // ?habitacion=<numero> desde el "→ Iniciar check-in" de una tarjeta
+  // libre: entra directo al modo walk-in con esa habitación preseleccionada
+  // (ver CheckInWalkIn), en vez de arrancar en el modo "con reserva".
+  const habitacionPreseleccionada = searchParams.get("habitacion") ?? "";
+  const [modo, setModo] = useState(habitacionPreseleccionada ? "walkin" : "reserva");
 
   if (!puede("gestionarCheckIn")) return <SinPermiso />;
 
@@ -40,7 +47,7 @@ export function CheckInPage() {
         </button>
       </div>
 
-      {modo === "reserva" ? <CheckInConReserva /> : <CheckInWalkIn />}
+      {modo === "reserva" ? <CheckInConReserva /> : <CheckInWalkIn habitacionPreseleccionada={habitacionPreseleccionada} />}
     </div>
   );
 }

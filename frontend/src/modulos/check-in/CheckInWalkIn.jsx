@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight, BedDouble, Check, CheckCircle2, User, Users } from "lucide-react";
@@ -55,14 +55,19 @@ const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", curre
 
 const HUESPED_TOCADO_VACIO = { nombre: false, numeroDocumento: false, contacto: false };
 
-export function CheckInWalkIn() {
+export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
   const navigate = useNavigate();
-  const [form, setForm] = useState(VACIO);
+  // Viene del "→ Iniciar check-in" de una tarjeta libre en el Panel de
+  // Habitaciones: arranca directo en el paso de asignación (HU-45) en vez
+  // del paso de estadía, ya que la fecha de salida por defecto (mañana) ya
+  // alcanza para listar habitaciones libres.
+  const [form, setForm] = useState(() => (habitacionPreseleccionada ? { ...VACIO, paso: 2 } : VACIO));
   const [errorGeneral, setErrorGeneral] = useState("");
   const [huespedTocado, setHuespedTocado] = useState(HUESPED_TOCADO_VACIO);
   const [intentoAvanzarHuesped, setIntentoAvanzarHuesped] = useState(false);
   const { toast, mostrarToast } = useToast();
   const queryClient = useQueryClient();
+  const preseleccionAplicada = useRef(false);
 
   // Errores en vivo, pero solo se muestran una vez que el usuario tocó el
   // campo (onBlur) o intentó avanzar con el paso 3 incompleto — así no
@@ -93,6 +98,21 @@ export function CheckInWalkIn() {
   });
 
   const habitaciones = habitacionesQuery.data?.habitaciones ?? [];
+
+  // Se aplica una sola vez (si el huésped la desmarca después, no se
+  // vuelve a forzar) y solo si la habitación sigue realmente libre en la
+  // lista — si ya se ocupó entre el click en el panel y la carga de esta
+  // pantalla, el check-in sigue el camino manual normal, sin preselección.
+  useEffect(() => {
+    if (!habitacionPreseleccionada || preseleccionAplicada.current) return;
+    if (habitacionesQuery.isLoading) return;
+    const encontrada = habitaciones.find((h) => h.numero === habitacionPreseleccionada);
+    preseleccionAplicada.current = true;
+    if (encontrada) {
+      setForm((f) => (f.habitacionIds.includes(encontrada.id) ? f : { ...f, habitacionIds: [...f.habitacionIds, encontrada.id] }));
+    }
+  }, [habitacionPreseleccionada, habitaciones, habitacionesQuery.isLoading]);
+
   const elegidas = useMemo(() => habitaciones.filter((h) => form.habitacionIds.includes(h.id)), [habitaciones, form.habitacionIds]);
   const capacidadTotal = elegidas.reduce((acc, h) => acc + h.capacidad, 0);
 
