@@ -47,8 +47,8 @@ const ESTADOS_CIRCUITO_PRESUPUESTOS = [
 
 const ESTADOS_FILTRO = [
   { valor: "", label: "Todos", activo: "border-tinta bg-tinta text-hueso" },
-  { valor: ESTADOS_REQUERIMIENTO.PENDIENTE, label: "Por solicitar", activo: "border-laton bg-laton text-hueso" },
-  { valor: ESTADOS_REQUERIMIENTO.EN_COTIZACION, label: "En cotización", activo: "border-laton bg-laton text-hueso" },
+  { valor: ESTADOS_REQUERIMIENTO.PENDIENTE, label: "Por solicitar", activo: "border-laton-700 bg-laton-700 text-hueso" },
+  { valor: ESTADOS_REQUERIMIENTO.EN_COTIZACION, label: "En cotización", activo: "border-laton-700 bg-laton-700 text-hueso" },
   { valor: ESTADOS_REQUERIMIENTO.APROBADO, label: "Adjudicados", activo: "border-pino bg-pino text-hueso" },
 ];
 

@@ -31,7 +31,7 @@ const PAGE_SIZE = 10;
 // activa sale de BADGE_ESTADO_OC (una sola fuente de verdad con el badge
 // de la tabla), no se duplica.
 const PILL_ACTIVO_POR_VARIANTE = {
-  alerta: "border-laton bg-laton text-hueso",
+  alerta: "border-laton-700 bg-laton-700 text-hueso",
   ok: "border-pino bg-pino text-hueso",
   neutro: "border-inactivo bg-inactivo text-hueso",
   error: "border-error bg-error text-hueso",

@@ -81,7 +81,7 @@ export function PasoAPaso({ pasos, pasoActual, pasoAlternativo, ultimoPasoRequie
                     ? p.cerrado
                       ? "bg-neutro-700 text-hueso"
                       : p.advertencia
-                        ? "bg-laton text-hueso"
+                        ? "bg-laton-700 text-hueso"
                         : "bg-pino text-hueso"
                     : activo
                       ? p.cerrado
