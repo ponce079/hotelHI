@@ -31,13 +31,9 @@ export const ROLES = {
     label: "Recepcionista",
     descripcion: "Reservas de huéspedes, disponibilidad y estado operativo de las habitaciones",
   },
-  mantenimiento: {
-    label: "Personal de Mantenimiento",
-    descripcion: "Órdenes correctivas, preventivas e incidentes urgentes de habitaciones",
-  },
   housekeeping: {
     label: "Housekeeping",
-    descripcion: "Estado de limpieza y liberación de habitaciones para recepción",
+    descripcion: "Estado de limpieza, liberación de habitaciones y resolución de incidentes de mantenimiento",
   },
 };
 
@@ -155,10 +151,18 @@ export function SesionProvider({ children }) {
         // Sprint 3 académico — Habitaciones (HU-31 a HU-35). Los roles son
         // una restricción de UI hasta que exista autenticación real en backend.
         if (accion === "verHabitaciones") {
-          return ["admin", "recepcionista", "mantenimiento", "housekeeping"].includes(rol);
+          return ["admin", "recepcionista", "housekeeping"].includes(rol);
         }
         if (accion === "gestionarHabitaciones") return rol === "admin";
-        if (accion === "gestionarMantenimiento") return rol === "mantenimiento";
+        // HU-33/34 (corrección): se elimina el rol "Personal de
+        // Mantenimiento" — nunca se loguea al sistema, resuelve físicamente
+        // y avisa de palabra. Reparto real: Housekeeping y Recepcionista
+        // reportan (crean la orden, ej. una queja de huésped o una tarea
+        // preventiva); admin mantiene el mismo criterio de solo lectura que
+        // ya tenía en este módulo, sin alta propia. Resolver la orden queda
+        // exclusivo de Housekeeping — ni admin ni recepcionista pueden.
+        if (accion === "gestionarMantenimiento") return rol === "housekeeping" || rol === "recepcionista";
+        if (accion === "resolverMantenimiento") return rol === "housekeeping";
         if (accion === "actualizarEstadoHabitacion") return rol === "admin" || rol === "housekeeping";
         // Sprint 3 académico — Reservas (HU-36 a HU-42). La historia dice
         // "Como recepcionista" en el alta, la modificación y la

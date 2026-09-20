@@ -6,19 +6,12 @@ import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
 import { crearOrdenMantenimiento } from "./habitaciones.api";
-import {
-  CANALES_NOTIFICACION,
-  LIMITES_HABITACION,
-  TIPOS_TAREA_MANTENIMIENTO,
-} from "./habitaciones.constantes";
+import { LIMITES_HABITACION, TIPOS_TAREA_MANTENIMIENTO } from "./habitaciones.constantes";
 
 const VACIO = {
   tipoTarea: "Correctivo",
   responsable: "",
   urgente: false,
-  destinatarioArea: "Mantenimiento",
-  canal: "Interno",
-  mensaje: "",
 };
 
 export function MantenimientoModal({ habitacion, onClose, onExito }) {
@@ -28,15 +21,10 @@ export function MantenimientoModal({ habitacion, onClose, onExito }) {
 
   const mutacion = useMutation({
     mutationFn: () => crearOrdenMantenimiento(habitacion.id, form),
-    onSuccess: ({ orden, notificacion }) => {
+    onSuccess: (orden) => {
       queryClient.invalidateQueries({ queryKey: ["habitaciones"] });
       queryClient.invalidateQueries({ queryKey: ["ordenes-mantenimiento"] });
-      queryClient.invalidateQueries({ queryKey: ["notificaciones-mantenimiento"] });
-      onExito(
-        `Orden ${orden.tipoTarea.toLowerCase()} creada para la habitación ${habitacion.numero}.${
-          notificacion ? " Se envió la notificación urgente." : ""
-        }`
-      );
+      onExito(`Orden ${orden.tipoTarea.toLowerCase()} creada para la habitación ${habitacion.numero}.`);
     },
     onError: (error) => setErrores({ general: error?.response?.data?.error ?? "No se pudo crear la orden." }),
   });
@@ -48,11 +36,8 @@ export function MantenimientoModal({ habitacion, onClose, onExito }) {
 
   function handleSubmit(evento) {
     evento.preventDefault();
-    const nuevos = {};
-    if (!form.responsable.trim()) nuevos.responsable = "El responsable es obligatorio.";
-    if (form.urgente && !form.destinatarioArea.trim()) nuevos.destinatarioArea = "El área destino es obligatoria.";
-    if (Object.keys(nuevos).length) {
-      setErrores(nuevos);
+    if (!form.responsable.trim()) {
+      setErrores({ responsable: "El responsable es obligatorio." });
       return;
     }
     mutacion.mutate();
@@ -88,35 +73,11 @@ export function MantenimientoModal({ habitacion, onClose, onExito }) {
             />
             <span>
               Incidente urgente
-              <span className="mt-0.5 block text-xs text-piedra">Genera y registra una notificación automática al confirmar.</span>
+              <span className="mt-0.5 block text-xs text-piedra">
+                Prioriza la orden y la destaca en el historial de mantenimiento — no envía ningún aviso, mantenimiento se resuelve de palabra.
+              </span>
             </span>
           </label>
-
-          {form.urgente && (
-            <>
-              <Input
-                label="Área destinataria *"
-                value={form.destinatarioArea}
-                onChange={(e) => cambiar("destinatarioArea", e.target.value)}
-                error={errores.destinatarioArea}
-                maxLength={LIMITES_HABITACION.responsable}
-              />
-              <Select label="Canal *" value={form.canal} onChange={(e) => cambiar("canal", e.target.value)}>
-                {CANALES_NOTIFICACION.map((canal) => <option key={canal} value={canal}>{canal}</option>)}
-              </Select>
-              <label className="sm:col-span-2 flex flex-col gap-1.5 font-body text-sm">
-                <span className="text-[12px] text-tinta/70">Mensaje</span>
-                <textarea
-                  rows={3}
-                  value={form.mensaje}
-                  onChange={(e) => cambiar("mensaje", e.target.value)}
-                  maxLength={LIMITES_HABITACION.mensaje}
-                  placeholder="Opcional. Si queda vacío se genera un mensaje automático."
-                  className="resize-y rounded-md border border-borde bg-white px-3 py-2 text-[13.5px] text-tinta placeholder:text-tinta/45 focus:outline-none focus:ring-2 focus:ring-pino/40"
-                />
-              </label>
-            </>
-          )}
         </div>
         <div className="flex justify-end gap-2.5 border-t border-borde px-6 py-4">
           <Button type="button" variante="secundario" icono={X} disabled={mutacion.isPending} onClick={onClose}>Cancelar</Button>

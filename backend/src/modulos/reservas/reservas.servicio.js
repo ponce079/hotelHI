@@ -795,6 +795,28 @@ function marcarEnCurso(reservaId, cliente = prisma) {
 }
 
 // HU-48 a 52 (Integrante 4): confirmar el check-out.
+//
+// OJO — esta función SOLO mueve `Reserva.estado`. No toca `Habitacion` para
+// nada. Igual que `marcarEnCurso` de arriba necesita que quien la llama
+// también ponga `Habitacion.estado = "ocupada"` en la misma transacción
+// (ver `ocuparHabitacion` en checkIn.servicio.js), quien llame a
+// `marcarCerrada` tiene que actualizar `Habitacion.estado` a "en limpieza"
+// para las habitaciones de la reserva, en la MISMA transacción — si no, el
+// check-out cierra la reserva pero la habitación queda "ocupada" para
+// siempre, sin ningún camino para liberarla (el "Cambiar estado" manual
+// bloquea justamente esa transición a propósito, ver
+// validarTransicionManual en habitaciones.servicio.js — no está pensado
+// para reemplazar un check-out real, así que no sirve como parche).
+// No usar `habitacionesServicio.cambiarEstadoHabitacion` para ese update:
+// por la misma razón de arriba, esa función lo va a rechazar — hacer un
+// `tx.habitacion.updateMany(...)` directo.
+//
+// Al momento de escribir esto ya existe una implementación real en la
+// rama `feature/checkout-facturacion` (sin mergear) —
+// `checkOut.servicio.js:confirmarCheckOut` — que hace exactamente esto.
+// Si esa rama se mergea, esta nota queda como documentación de por qué
+// está hecho así; si se reimplementa desde cero, hay que replicar el mismo
+// patrón.
 function marcarCerrada(reservaId, cliente = prisma) {
   return cambiarEstado(reservaId, ESTADO_RESERVA.CERRADA, [ESTADO_RESERVA.EN_CURSO], cliente);
 }

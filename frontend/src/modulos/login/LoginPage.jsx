@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useSesion, ROLES } from "../../lib/sesion";
 import { Button } from "../../componentes/Button";
 
-const ORDEN_ROLES = ["admin", "recepcionista", "mantenimiento", "housekeeping", "deposito", "compras", "gerente"];
+const ORDEN_ROLES = ["admin", "recepcionista", "housekeeping", "deposito", "compras", "gerente"];
 // Sprint 2 sumó Compras y Gastos como pilares del sistema, no solo
 // Depósito y Stock (Sprint 1) — el chip destacado (el último) pasa a ser
 // el más nuevo, igual que "Recepciones" lo era en el diseño de Sprint 1.

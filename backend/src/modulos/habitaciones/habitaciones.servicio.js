@@ -6,7 +6,6 @@ const prisma = require("../../lib/prisma");
 const {
   ESTADOS_HABITACION,
   TIPOS_TAREA_MANTENIMIENTO,
-  CANALES_NOTIFICACION,
   LIMITES_HABITACION,
 } = require("./habitaciones.constantes");
 
@@ -65,6 +64,43 @@ function validarEstado(estado) {
     throw new ErrorDeNegocio(`estado debe ser uno de: ${ESTADOS_HABITACION.join(", ")}.`);
   }
   return estado;
+}
+
+// Transiciones que puede disparar el cambio MANUAL de estado (PATCH
+// /:id/estado, el "Cambiar estado" del staff) — no es la matriz completa
+// del sistema, es la de esta puerta específica. "ocupada" y "mantenimiento"
+// nunca son destino válido por acá a propósito:
+//   - "ocupada" solo se llega por un check-in real (ver ocuparHabitacion en
+//     checkIn.servicio.js, que ya no pasa por esta función — hace su propio
+//     update para no heredar esta restricción).
+//   - "mantenimiento" solo se llega por crearOrdenMantenimiento (más abajo
+//     en este archivo, guarda `estadoAnterior` y tampoco pasa por acá).
+// Ninguna transición SALE de "mantenimiento" por acá tampoco — la única
+// salida es resolverOrdenMantenimiento, que restaura `estadoAnterior`.
+const TRANSICIONES_MANUALES_VALIDAS = {
+  libre: ["bloqueada", "en limpieza"],
+  ocupada: [],
+  mantenimiento: [],
+  bloqueada: ["libre", "en limpieza"],
+  "en limpieza": ["libre", "bloqueada"],
+};
+
+function validarTransicionManual(estadoActual, estadoDestino) {
+  if (TRANSICIONES_MANUALES_VALIDAS[estadoActual]?.includes(estadoDestino)) return;
+
+  if (estadoDestino === "ocupada") {
+    throw new ErrorDeNegocio('No se puede pasar una habitación a "ocupada" desde acá — esa transición ocurre únicamente en un check-in real.');
+  }
+  if (estadoDestino === "mantenimiento") {
+    throw new ErrorDeNegocio('No se puede pasar una habitación a "mantenimiento" desde acá — registrá una orden de mantenimiento en su lugar.');
+  }
+  if (estadoActual === "mantenimiento") {
+    throw new ErrorDeNegocio("Esta habitación está en mantenimiento — la única salida es resolver la orden de mantenimiento correspondiente.");
+  }
+  if (estadoActual === "ocupada") {
+    throw new ErrorDeNegocio("Esta transición requiere un check-out, no está disponible todavía.");
+  }
+  throw new ErrorDeNegocio(`No se puede pasar de "${estadoActual}" a "${estadoDestino}".`);
 }
 
 async function listarHabitaciones({ q, tipo, estado, activo } = {}) {
@@ -157,6 +193,7 @@ async function cambiarEstadoHabitacion(id, estado, motivoBloqueo, cliente = pris
   const actual = await cliente.habitacion.findUnique({ where: { id: habitacionId } });
   if (!actual) throw new ErrorDeNegocio("Habitación no encontrada.", 404);
   if (!actual.activo) throw new ErrorDeNegocio("No se puede cambiar el estado de una habitación dada de baja.");
+  validarTransicionManual(actual.estado, estadoValidado);
 
   const data = { estado: estadoValidado };
   // Obligatorio solo para "bloqueada" — para las demás transiciones no se
@@ -192,17 +229,6 @@ async function crearOrdenMantenimiento(habitacionIdEntrada, data) {
   const tipoTarea = normalizarTipoTarea(data?.tipoTarea);
   const responsable = textoObligatorio(data?.responsable, "responsable", LIMITES_HABITACION.responsable);
   const urgente = data?.urgente === true;
-  const canal = data?.canal || "Interno";
-  if (!CANALES_NOTIFICACION.includes(canal)) {
-    throw new ErrorDeNegocio(`canal debe ser uno de: ${CANALES_NOTIFICACION.join(", ")}.`);
-  }
-  const destinatarioArea = urgente
-    ? textoObligatorio(data?.destinatarioArea || "Mantenimiento", "destinatarioArea", LIMITES_HABITACION.areaDestino)
-    : null;
-  const mensajeIngresado = typeof data?.mensaje === "string" ? data.mensaje.trim() : "";
-  if (mensajeIngresado.length > LIMITES_HABITACION.mensaje) {
-    throw new ErrorDeNegocio(`mensaje no puede superar los ${LIMITES_HABITACION.mensaje} caracteres.`);
-  }
 
   return prisma.$transaction(
     async (tx) => {
@@ -212,31 +238,62 @@ async function crearOrdenMantenimiento(habitacionIdEntrada, data) {
       }
 
       const orden = await tx.ordenMantenimiento.create({
-        data: { habitacionId, tipoTarea, responsable },
+        data: { habitacionId, tipoTarea, responsable, urgente },
       });
 
-      await cambiarEstadoHabitacion(habitacionId, "mantenimiento", null, tx);
+      // Guarda el estado previo (ver Habitacion.estadoAnterior) para poder
+      // devolverla ahí, y no siempre a "libre", cuando la orden se resuelva
+      // — ej. una queja de huésped sobre una habitación OCUPADA no debe
+      // liberarla sola al terminar el arreglo.
+      await tx.habitacion.update({
+        where: { id: habitacionId },
+        data: { estado: "mantenimiento", estadoAnterior: habitacion.estado },
+      });
 
-      let notificacion = null;
-      if (urgente) {
-        notificacion = await tx.notificacion.create({
-          data: {
-            tipo: "Mantenimiento",
-            habitacionId,
-            ordenMantenimientoId: orden.id,
-            destinatarioArea,
-            canal,
-            mensaje:
-              mensajeIngresado ||
-              `Incidente urgente en la habitación ${habitacion.numero}: mantenimiento ${tipoTarea.toLowerCase()}.`,
-          },
+      return { ...orden, habitacion: { id: habitacion.id, numero: habitacion.numero, tipo: habitacion.tipo } };
+    },
+    { timeout: 15000, maxWait: 10000 }
+  );
+}
+
+// Reparto de responsabilidad (Sprint 3, corrección): Housekeeping y
+// Recepcionista pueden reportar (crearOrdenMantenimiento), pero solo
+// Housekeeping puede resolver — el gate de rol vive en el frontend
+// (sesion.jsx: resolverMantenimiento), igual que el resto del módulo.
+async function resolverOrdenMantenimiento(ordenIdEntrada, resueltaPor) {
+  const ordenId = enteroPositivo(ordenIdEntrada, "id");
+  const resueltaPorTexto = textoObligatorio(resueltaPor, "resueltaPor", LIMITES_HABITACION.responsable);
+
+  return prisma.$transaction(
+    async (tx) => {
+      const orden = await tx.ordenMantenimiento.findUnique({ where: { id: ordenId }, include: { habitacion: true } });
+      if (!orden) throw new ErrorDeNegocio("Orden de mantenimiento no encontrada.", 404);
+      if (orden.estado === "Resuelta") throw new ErrorDeNegocio("La orden ya está resuelta.");
+
+      const ordenActualizada = await tx.ordenMantenimiento.update({
+        where: { id: ordenId },
+        data: { estado: "Resuelta", resueltaEn: new Date(), resueltaPor: resueltaPorTexto },
+      });
+
+      // Si mientras tanto alguien ya sacó la habitación de "mantenimiento"
+      // a mano (PATCH /:id/estado), no la pisamos: solo restauramos el
+      // estado previo si todavía sigue en mantenimiento por esta orden. Y
+      // si queda otra orden "Pendiente" para la misma habitación (más de un
+      // incidente abierto a la vez), tampoco la restauramos todavía — recién
+      // cuando se resuelve la última pendiente.
+      if (orden.habitacion.estado === "mantenimiento") {
+        const quedanPendientes = await tx.ordenMantenimiento.count({
+          where: { habitacionId: orden.habitacionId, estado: "Pendiente", id: { not: ordenId } },
         });
+        if (quedanPendientes === 0) {
+          await tx.habitacion.update({
+            where: { id: orden.habitacionId },
+            data: { estado: orden.habitacion.estadoAnterior || "libre", estadoAnterior: null },
+          });
+        }
       }
 
-      return {
-        orden: { ...orden, habitacion: { id: habitacion.id, numero: habitacion.numero, tipo: habitacion.tipo } },
-        notificacion,
-      };
+      return { ...ordenActualizada, habitacion: { id: orden.habitacion.id, numero: orden.habitacion.numero } };
     },
     { timeout: 15000, maxWait: 10000 }
   );
@@ -246,17 +303,8 @@ async function listarOrdenesMantenimiento({ habitacionId } = {}) {
   const id = habitacionId ? enteroPositivo(habitacionId, "habitacionId") : null;
   return prisma.ordenMantenimiento.findMany({
     where: id ? { habitacionId: id } : {},
-    include: { habitacion: true, notificaciones: true },
+    include: { habitacion: true },
     orderBy: { fecha: "desc" },
-  });
-}
-
-async function listarNotificaciones({ habitacionId } = {}) {
-  const id = habitacionId ? enteroPositivo(habitacionId, "habitacionId") : null;
-  return prisma.notificacion.findMany({
-    where: { tipo: "Mantenimiento", ...(id ? { habitacionId: id } : {}) },
-    include: { habitacion: true, ordenMantenimiento: true },
-    orderBy: { fechaEnvio: "desc" },
   });
 }
 
@@ -269,7 +317,7 @@ module.exports = {
   cambiarEstadoHabitacion,
   cambiarActivoHabitacion,
   crearOrdenMantenimiento,
+  resolverOrdenMantenimiento,
   listarOrdenesMantenimiento,
-  listarNotificaciones,
   ErrorDeNegocio,
 };

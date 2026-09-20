@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Plus, RotateCw, Trash2, User, Wrench } from "lucide-react";
+import { Check, Pencil, Plus, RotateCw, Trash2, User, Wrench } from "lucide-react";
+import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { CodigoClave } from "../../componentes/CodigoClave";
 import { ConfirmDialog } from "../../componentes/ConfirmDialog";
@@ -19,8 +20,12 @@ import { ESTADO_RESERVA } from "../reservas/reservas.constantes";
 import { HabitacionModal } from "./HabitacionModal";
 import { EstadoHabitacionModal } from "./EstadoHabitacionModal";
 import { MantenimientoModal } from "./MantenimientoModal";
-import { cambiarActivoHabitacion, obtenerHabitacion } from "./habitaciones.api";
-import { ESTADO_HABITACION_LABEL, ESTADO_HABITACION_COLOR } from "./habitaciones.constantes";
+import { cambiarActivoHabitacion, obtenerHabitacion, resolverOrdenMantenimiento } from "./habitaciones.api";
+import {
+  ESTADO_HABITACION_LABEL,
+  ESTADO_HABITACION_COLOR,
+  ESTADO_ORDEN_MANTENIMIENTO_BADGE,
+} from "./habitaciones.constantes";
 
 const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
 
@@ -40,10 +45,13 @@ export function HabitacionDetallePage() {
   const puedeVer = puede("verHabitaciones");
   const puedeAdministrar = puede("gestionarHabitaciones");
   const puedeMantenimiento = puede("gestionarMantenimiento");
+  const puedeResolverMantenimiento = puede("resolverMantenimiento");
   const puedeEstado = puede("actualizarEstadoHabitacion");
   const volver = useVolver("/habitaciones");
   const [modal, setModal] = useState(null);
   const [cambioActivo, setCambioActivo] = useState(false);
+  const [ordenAResolver, setOrdenAResolver] = useState(null);
+  const [resueltaPor, setResueltaPor] = useState("");
   const { toast, mostrarToast } = useToast();
   const queryClient = useQueryClient();
 
@@ -77,6 +85,23 @@ export function HabitacionDetallePage() {
     onError: (error) => {
       mostrarToast(error?.response?.data?.error ?? "No se pudo cambiar la vigencia de la habitación.");
       setCambioActivo(false);
+    },
+  });
+
+  // Reparto de responsabilidad: solo Housekeeping resuelve (ver
+  // resolverMantenimiento en sesion.jsx). Al resolver, el backend devuelve
+  // la habitación a su estado previo a entrar en mantenimiento (no siempre
+  // "libre" — ver Habitacion.estadoAnterior en habitaciones.servicio.js).
+  const mutacionResolver = useMutation({
+    mutationFn: () => resolverOrdenMantenimiento(ordenAResolver.id, resueltaPor.trim()),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["habitaciones"] });
+      mostrarToast(`Orden de mantenimiento de la habitación ${habitacion.numero} marcada como resuelta.`);
+      setOrdenAResolver(null);
+      setResueltaPor("");
+    },
+    onError: (error) => {
+      mostrarToast(error?.response?.data?.error ?? "No se pudo marcar la orden como resuelta.");
     },
   });
 
@@ -212,7 +237,8 @@ export function HabitacionDetallePage() {
           )}
         </div>
         <Table
-          columnas={["Fecha", "Tipo", "Responsable"]}
+          columnas={["Fecha", "Tipo", "Responsable", "Prioridad", "Estado", ""]}
+          columnasDerecha={[""]}
           filas={habitacion.ordenesMantenimiento ?? []}
           vacio="Todavía no hay órdenes de mantenimiento para esta habitación."
           renderFila={(orden) => (
@@ -220,6 +246,29 @@ export function HabitacionDetallePage() {
               <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px]">{formatearTimestamp(orden.fecha)}</td>
               <td className="px-3 py-2.5 text-[13px]">{orden.tipoTarea}</td>
               <td className="px-3 py-2.5 text-[13px]">{orden.responsable}</td>
+              <td className="px-3 py-2.5">
+                {orden.urgente ? <Badge variante="error">Urgente</Badge> : <Badge variante="neutro">Normal</Badge>}
+              </td>
+              <td className="px-3 py-2.5">
+                <Badge variante={ESTADO_ORDEN_MANTENIMIENTO_BADGE[orden.estado] ?? "neutro"}>{orden.estado}</Badge>
+                {orden.estado === "Resuelta" && orden.resueltaPor && (
+                  <p className="mt-0.5 text-[11px] text-piedra">por {orden.resueltaPor}</p>
+                )}
+              </td>
+              <td className="px-3 py-2.5 text-right">
+                {orden.estado === "Pendiente" && puedeResolverMantenimiento && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setResueltaPor("");
+                      setOrdenAResolver(orden);
+                    }}
+                    className="cursor-pointer text-[12.5px] font-semibold text-pino hover:underline"
+                  >
+                    Marcar como resuelta
+                  </button>
+                )}
+              </td>
             </tr>
           )}
         />
@@ -251,6 +300,32 @@ export function HabitacionDetallePage() {
         onCancelar={() => setCambioActivo(false)}
         onConfirmar={() => mutacionActivo.mutate(!habitacion.activo)}
       />
+
+      <ConfirmDialog
+        abierto={Boolean(ordenAResolver)}
+        titulo="¿Marcar la orden como resuelta?"
+        mensaje={`La habitación ${habitacion.numero} vuelve a estar disponible para operar (se restaura el estado que tenía antes de entrar en mantenimiento).`}
+        textoConfirmar="Sí, marcar como resuelta"
+        variante="alta"
+        icono={Check}
+        cargando={mutacionResolver.isPending}
+        onCancelar={() => setOrdenAResolver(null)}
+        onConfirmar={() => {
+          if (!resueltaPor.trim()) return;
+          mutacionResolver.mutate();
+        }}
+      >
+        <label className="flex flex-col gap-1.5 font-body text-sm">
+          <span className="text-[12px] text-tinta/70">Confirmado por *</span>
+          <input
+            value={resueltaPor}
+            onChange={(e) => setResueltaPor(e.target.value)}
+            placeholder="Nombre de quien confirma la resolución"
+            className="rounded-md border border-borde bg-white px-3 py-2 text-[13.5px] text-tinta placeholder:text-tinta/45 focus:outline-none focus:ring-2 focus:ring-pino/40"
+          />
+          {!resueltaPor.trim() && <span className="text-[11.5px] text-piedra">Sin nombre no se puede confirmar.</span>}
+        </label>
+      </ConfirmDialog>
 
       <Toast mensaje={toast} />
     </div>

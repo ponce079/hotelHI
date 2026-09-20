@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { BedDouble, History, Plus, Search } from "lucide-react";
+import { BedDouble, Plus, RotateCw, Search, Trash2 } from "lucide-react";
 import { Button } from "../../componentes/Button";
+import { ConfirmDialog } from "../../componentes/ConfirmDialog";
 import { FilterBar } from "../../componentes/FilterBar";
+import { MenuAcciones } from "../../componentes/MenuAcciones";
 import { Select } from "../../componentes/Select";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { Toast } from "../../componentes/Toast";
@@ -11,10 +13,10 @@ import { Cifra } from "../../componentes/Cifra";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { hoyEnHoraLocal } from "../../lib/fechas";
+import { EstadoHabitacionModal } from "./EstadoHabitacionModal";
 import { HabitacionModal } from "./HabitacionModal";
-import { HistorialMantenimientoModal } from "./HistorialMantenimientoModal";
 import { ConsumoModal } from "../servicios-adicionales/ConsumoModal";
-import { listarHabitaciones, listarOrdenesMantenimiento, listarTiposHabitacion } from "./habitaciones.api";
+import { cambiarActivoHabitacion, listarHabitaciones, listarOrdenesMantenimiento, listarTiposHabitacion } from "./habitaciones.api";
 import { listarReservas } from "../reservas/reservas.api";
 import { ESTADO_RESERVA } from "../reservas/reservas.constantes";
 import {
@@ -23,6 +25,7 @@ import {
   ESTADO_HABITACION_COLOR,
   COLOR_SALE_HOY,
 } from "./habitaciones.constantes";
+import "./HabitacionesPage.css";
 
 const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
 
@@ -58,14 +61,17 @@ function reservasEnCursoDe(reservasEnCurso, numeroHabitacion) {
 }
 
 export function HabitacionesPage() {
-  const { puede } = useSesion();
+  const { rol, puede } = useSesion();
   const puedeVer = puede("verHabitaciones");
   const puedeAdministrar = puede("gestionarHabitaciones");
+  const puedeEstado = puede("actualizarEstadoHabitacion");
   const puedeRegistrarConsumo = puede("registrarConsumoServicio");
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [modal, setModal] = useState(null);
+  const [cambioActivo, setCambioActivo] = useState(null);
   const { toast, mostrarToast } = useToast();
+  const queryClient = useQueryClient();
   // Solo para refrescar el texto "Actualizado hace Ns" cada segundo — el
   // dato en sí ya lo refresca refetchInterval, esto no dispara ningún fetch.
   const [ahora, setAhora] = useState(() => Date.now());
@@ -111,6 +117,23 @@ export function HabitacionesPage() {
     queryKey: ["habitaciones", "mantenimiento", "ultimas"],
     queryFn: () => listarOrdenesMantenimiento(),
     enabled: puedeVer,
+  });
+
+  // Mismo patrón que HabitacionDetallePage.jsx (activo = baja lógica, ya
+  // existente en el modelo de Habitacion) — acá se repite en vez de
+  // compartirse porque cada pantalla necesita trackear una habitación
+  // distinta (una sola en el Detalle, la elegida del menú acá en el Panel).
+  const mutacionActivo = useMutation({
+    mutationFn: ({ id, valor }) => cambiarActivoHabitacion(id, valor),
+    onSuccess: (actualizada) => {
+      queryClient.invalidateQueries({ queryKey: ["habitaciones"] });
+      mostrarToast(`Habitación ${actualizada.numero} ${actualizada.activo ? "reactivada" : "dada de baja"}.`);
+      setCambioActivo(null);
+    },
+    onError: (error) => {
+      mostrarToast(error?.response?.data?.error ?? "No se pudo cambiar la vigencia de la habitación.");
+      setCambioActivo(null);
+    },
   });
 
   const reservasEnCurso = enCursoQuery.data ?? [];
@@ -186,14 +209,9 @@ export function HabitacionesPage() {
           <h1 className="font-heading text-[34px] font-semibold">Habitaciones</h1>
           <p className="mt-1.5 font-mono text-[11px] text-hueso/65">Vista general del estado operativo de cada habitación</p>
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-hueso/70">
-            <span className="h-2 w-2 rounded-full bg-pino-300" /> {textoActualizacion}
-          </span>
-          <Button variante="secundario" tamano="fila" icono={History} className="border-hueso/30 text-hueso hover:bg-pino-oscuro" onClick={() => setModal({ tipo: "historial" })}>
-            Historial
-          </Button>
-        </div>
+        <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-hueso/70">
+          <span className="h-2 w-2 rounded-full bg-pino-300" /> {textoActualizacion}
+        </span>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-5">
@@ -211,7 +229,7 @@ export function HabitacionesPage() {
                 color: color.texto,
                 borderColor: activo ? color.texto : color.borde,
               }}
-              className={`cursor-pointer rounded-lg border p-4 text-left transition-shadow ${activo ? "ring-2 ring-offset-1" : "hover:shadow-sm"}`}
+              className={`stat-chip cursor-pointer rounded-lg border p-4 text-center ${activo ? "ring-2 ring-offset-1" : ""}`}
             >
               <div className="text-[11px] font-semibold uppercase tracking-[0.03em]">{ESTADO_HABITACION_LABEL[valor]}</div>
               <Cifra tamano={30} className="mt-1">{cantidad}</Cifra>
@@ -273,8 +291,12 @@ export function HabitacionesPage() {
                       habitacion={habitacion}
                       huesped={reservaEnCurso ? { nombre: reservaEnCurso.huesped?.nombre, fechaHasta: reservaEnCurso.fechaHasta } : null}
                       ordenMantenimiento={ultimaOrdenPorHabitacion.get(habitacion.id)}
+                      puedeEstado={puedeEstado}
+                      puedeAdministrar={puedeAdministrar}
                       puedeRegistrarConsumo={puedeRegistrarConsumo}
                       onAbrir={() => navigate(`/habitaciones/${habitacion.id}`)}
+                      onCambiarEstado={() => setModal({ tipo: "estado", habitacion })}
+                      onCambiarActivo={() => setCambioActivo(habitacion)}
                       onAgregarConsumo={() => manejarAgregarConsumo(habitacion)}
                     />
                   );
@@ -286,17 +308,62 @@ export function HabitacionesPage() {
       )}
 
       {modal?.tipo === "form" && <HabitacionModal habitacion={null} onClose={() => setModal(null)} onExito={cerrarConExito} />}
-      {modal?.tipo === "historial" && <HistorialMantenimientoModal onClose={() => setModal(null)} />}
+      {modal?.tipo === "estado" && (
+        <EstadoHabitacionModal
+          habitacion={modal.habitacion}
+          soloHousekeeping={rol === "housekeeping"}
+          onClose={() => setModal(null)}
+          onExito={cerrarConExito}
+        />
+      )}
       {modal?.tipo === "consumo" && <ConsumoModal reserva={modal.reserva} onClose={() => setModal(null)} onExito={cerrarConExito} />}
+
+      <ConfirmDialog
+        abierto={Boolean(cambioActivo)}
+        titulo={cambioActivo?.activo ? "¿Dar de baja la habitación?" : "¿Reactivar la habitación?"}
+        mensaje={
+          cambioActivo?.activo
+            ? `La habitación ${cambioActivo?.numero} dejará de estar disponible para nuevas operaciones, pero conservará todo su historial.`
+            : `La habitación ${cambioActivo?.numero} volverá a estar disponible en el inventario.`
+        }
+        textoConfirmar={cambioActivo?.activo ? "Sí, dar de baja" : "Sí, reactivar"}
+        variante={cambioActivo?.activo ? "destructivo" : "alta"}
+        icono={cambioActivo?.activo ? Trash2 : RotateCw}
+        cargando={mutacionActivo.isPending}
+        onCancelar={() => setCambioActivo(null)}
+        onConfirmar={() => mutacionActivo.mutate({ id: cambioActivo.id, valor: !cambioActivo.activo })}
+      />
 
       <Toast mensaje={toast} />
     </div>
   );
 }
 
-function TarjetaHabitacion({ habitacion, huesped, ordenMantenimiento, puedeRegistrarConsumo, onAbrir, onAgregarConsumo }) {
+function TarjetaHabitacion({
+  habitacion,
+  huesped,
+  ordenMantenimiento,
+  puedeEstado,
+  puedeAdministrar,
+  puedeRegistrarConsumo,
+  onAbrir,
+  onCambiarEstado,
+  onCambiarActivo,
+  onAgregarConsumo,
+}) {
   const color = ESTADO_HABITACION_COLOR[habitacion.estado] ?? ESTADO_HABITACION_COLOR.libre;
   const saleHoy = habitacion.estado === "ocupada" && esHoy(huesped?.fechaHasta);
+
+  // Mismas dos acciones que ya vive en el menú "⋮" del Detalle
+  // (HabitacionDetallePage.jsx) — es intencional que "Cambiar estado" quede
+  // accesible desde los dos lugares (accesibilidad, no redundancia a
+  // limpiar). "Editar" y "Crear orden de mantenimiento" NO se repiten acá:
+  // esas sí viven solo en el Detalle.
+  const acciones = [];
+  if (puedeEstado) acciones.push({ label: "Cambiar estado", onClick: onCambiarEstado });
+  if (puedeAdministrar) {
+    acciones.push({ label: habitacion.activo ? "Dar de baja" : "Reactivar", variante: habitacion.activo ? "destructivo" : undefined, onClick: onCambiarActivo });
+  }
 
   return (
     <div
@@ -310,13 +377,16 @@ function TarjetaHabitacion({ habitacion, huesped, ordenMantenimiento, puedeRegis
         }
       }}
       style={{ backgroundColor: color.fondo, color: color.texto, borderColor: color.borde }}
-      className="flex cursor-pointer flex-col gap-2 rounded-lg border p-4 transition-shadow hover:shadow-sm"
+      className="room-card flex cursor-pointer flex-col gap-2 rounded-lg border p-4"
     >
       <div className="flex items-start justify-between gap-2">
         <Cifra tamano={26} className="flex items-center gap-1.5">
           <BedDouble size={18} className="inline -mt-0.5" /> {habitacion.numero}
         </Cifra>
-        <span className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.03em]">{ESTADO_HABITACION_LABEL[habitacion.estado]}</span>
+        <div className="flex items-center gap-0.5">
+          <span className="mt-0.5 text-[11px] font-semibold uppercase tracking-[0.03em]">{ESTADO_HABITACION_LABEL[habitacion.estado]}</span>
+          {acciones.length > 0 && <MenuAcciones acciones={acciones} />}
+        </div>
       </div>
 
       <p className="text-[12.5px]">
@@ -324,7 +394,7 @@ function TarjetaHabitacion({ habitacion, huesped, ordenMantenimiento, puedeRegis
       </p>
 
       {habitacion.estado === "ocupada" && (
-        <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-1.5 border-t pt-1.5" style={{ borderColor: color.borde }}>
           {huesped && (
             <>
               <p className="text-[13px] font-medium">{huesped.nombre}</p>
@@ -357,11 +427,15 @@ function TarjetaHabitacion({ habitacion, huesped, ordenMantenimiento, puedeRegis
       )}
 
       {habitacion.estado === "mantenimiento" && ordenMantenimiento && (
-        <p className="text-[12.5px]">{ordenMantenimiento.tipoTarea} · {ordenMantenimiento.responsable}</p>
+        <p className="border-t pt-1.5 text-[12.5px]" style={{ borderColor: color.borde }}>
+          {ordenMantenimiento.tipoTarea} · {ordenMantenimiento.responsable}
+        </p>
       )}
 
       {habitacion.estado === "bloqueada" && habitacion.motivoBloqueo && (
-        <p className="text-[12.5px]">{habitacion.motivoBloqueo}</p>
+        <p className="border-t pt-1.5 text-[12.5px]" style={{ borderColor: color.borde }}>
+          {habitacion.motivoBloqueo}
+        </p>
       )}
 
       {habitacion.estado === "libre" && (

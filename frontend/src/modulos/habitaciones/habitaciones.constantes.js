@@ -34,14 +34,35 @@ export const ESTADO_HABITACION_COLOR = {
 export const COLOR_SALE_HOY = { fondo: "#f7e4de", texto: "#8f3322" };
 
 export const TIPOS_TAREA_MANTENIMIENTO = ["Correctivo", "Preventivo"];
-export const CANALES_NOTIFICACION = ["Interno", "Email", "SMS"];
+
+// Espejo de TRANSICIONES_MANUALES_VALIDAS en habitaciones.servicio.js
+// (backend) — mismo criterio de duplicar constantes ya usado en el resto
+// del proyecto (el frontend no importa nada del backend). Son las
+// transiciones que deja hacer el "Cambiar estado" manual del staff: no es
+// la matriz completa del sistema, es la de esta puerta específica.
+// "ocupada" (solo check-in real) y "mantenimiento" (solo
+// crearOrdenMantenimiento, y solo se sale por resolverOrdenMantenimiento)
+// nunca aparecen como destino ni de origen hacia otro lado por acá.
+export const TRANSICIONES_MANUALES_VALIDAS = {
+  libre: ["bloqueada", "en limpieza"],
+  ocupada: [],
+  mantenimiento: [],
+  bloqueada: ["libre", "en limpieza"],
+  "en limpieza": ["libre", "bloqueada"],
+};
+
+// Pendiente | Resuelta — reparto de responsabilidad: Housekeeping y
+// Recepcionista reportan (crean la orden), solo Housekeeping resuelve.
+export const ESTADO_ORDEN_MANTENIMIENTO_BADGE = {
+  Pendiente: "alerta",
+  Resuelta: "ok",
+};
 
 export const LIMITES_HABITACION = {
   numero: 20,
   tipo: 60,
   equipamiento: 2000,
   responsable: 100,
-  mensaje: 2000,
   // Mismo límite que Reserva.motivoCancelacion (reservas.constantes.js).
   motivoBloqueo: 300,
 };

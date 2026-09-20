@@ -5,7 +5,7 @@ const router = express.Router();
 
 router.get("/tipos", habitacionesControlador.getTiposHabitacion);
 router.get("/mantenimiento", habitacionesControlador.getOrdenesMantenimiento);
-router.get("/notificaciones", habitacionesControlador.getNotificaciones);
+router.patch("/mantenimiento/:ordenId/resolver", habitacionesControlador.patchResolverOrdenMantenimiento);
 router.get("/", habitacionesControlador.getHabitaciones);
 router.post("/", habitacionesControlador.postHabitacion);
 router.get("/:id", habitacionesControlador.getHabitacion);

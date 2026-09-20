@@ -1,0 +1,24 @@
+/* Hover de las tarjetas del Panel de Habitaciones y de los chips de
+   estadísticas — implementado a propósito con :hover + transition puros
+   (nada de JS/estado de React en mouseenter/mouseleave): la grilla puede
+   tener muchas tarjetas, y un handler de mouse por tarjeta dispararía un
+   re-render en cada movimiento del cursor. El navegador resuelve :hover
+   sin tocar React en absoluto. */
+
+.room-card {
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.room-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 22px rgba(27, 26, 22, 0.18);
+}
+
+.stat-chip {
+  transition: transform 140ms ease, box-shadow 140ms ease;
+}
+
+.stat-chip:hover {
+  transform: translateY(-1.5px);
+  box-shadow: 0 4px 12px rgba(27, 26, 22, 0.1);
+}
