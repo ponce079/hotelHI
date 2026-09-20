@@ -86,6 +86,25 @@ async function main() {
     assert.equal(resultado.reserva.id, reserva.id);
   });
 
+  await prueba("encuentra una reserva vigente por el documento del huésped (no solo por código)", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101" });
+    const reserva = await crearReservaFixture();
+    const resultado = await checkInServicio.buscarReservaParaCheckIn({ codigo: reserva.huesped.numeroDocumento });
+    assert.equal(resultado.reserva.id, reserva.id);
+    assert.equal(resultado.puedeIniciarCheckIn, true);
+  });
+
+  await prueba("la búsqueda por documento no se limita al formato de DNI (pasaporte, por ejemplo)", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101" });
+    const reserva = await crearReservaFixture({
+      huesped: { nombre: "John Smith", tipoDocumento: "Pasaporte", numeroDocumento: "AB1234567", contacto: "" },
+    });
+    const resultado = await checkInServicio.buscarReservaParaCheckIn({ codigo: "AB1234567" });
+    assert.equal(resultado.reserva.id, reserva.id);
+  });
+
   await prueba("bloquea el check-in antes de la fecha de ingreso", async () => {
     limpiar();
     base._sembrarHabitacion({ numero: "101" });
@@ -249,7 +268,7 @@ async function main() {
     );
   });
 
-  seccion("HU-45 — Sugerencia y listado de habitaciones libres (walk-in)");
+  seccion("HU-45 — Listado de habitaciones libres para asignación manual (walk-in)");
 
   await prueba("el resumenPorTipo cuenta 'libre ahora', no 'disponible por fecha' (encontrado probando el flujo real)", async () => {
     limpiar();
@@ -280,27 +299,10 @@ async function main() {
     assert.equal(deCheckIn.habitaciones.length, 0, "Check-in debe filtrar por estado==='libre'");
   });
 
-  await prueba("sugiere la primera libre por piso/número cuando no hay preferencias", async () => {
-    limpiar();
-    base._sembrarHabitacion({ numero: "202", piso: 2 });
-    base._sembrarHabitacion({ numero: "101", piso: 1 });
-    const resultado = await checkInServicio.sugerirHabitacion({ fechaHasta: enDias(2) });
-    assert.equal(resultado.sugerida.numero, "101");
-  });
-
-  await prueba("prioriza piso alto cuando las preferencias lo piden", async () => {
-    limpiar();
-    base._sembrarHabitacion({ numero: "101", piso: 1 });
-    base._sembrarHabitacion({ numero: "505", piso: 5 });
-    const resultado = await checkInServicio.sugerirHabitacion({ fechaHasta: enDias(2), preferencias: "pide piso alto si se puede" });
-    assert.equal(resultado.sugerida.numero, "505");
-  });
-
-  await prueba("filtra por tipo y devuelve null si no hay ninguna disponible", async () => {
+  await prueba("filtra por tipo y devuelve lista vacía si no hay ninguna disponible", async () => {
     limpiar();
     base._sembrarHabitacion({ numero: "101", tipo: "Doble" });
-    const resultado = await checkInServicio.sugerirHabitacion({ fechaHasta: enDias(2), tipo: "Suite" });
-    assert.equal(resultado.sugerida, null);
+    const resultado = await checkInServicio.listarHabitacionesLibresAhora({ fechaHasta: enDias(2), tipo: "Suite" });
     assert.equal(resultado.habitaciones.length, 0);
   });
 

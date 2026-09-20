@@ -7,7 +7,6 @@ const router = express.Router();
 // reservas.routes.js con "/disponibilidad").
 router.get("/buscar-reserva", checkInControlador.getBuscarReserva);
 router.get("/habitaciones-libres", checkInControlador.getHabitacionesLibres);
-router.get("/sugerir-habitacion", checkInControlador.getSugerirHabitacion);
 router.post("/walk-in", checkInControlador.postCheckInWalkIn);
 router.post("/:reservaId/confirmar", checkInControlador.postConfirmarConReserva);
 

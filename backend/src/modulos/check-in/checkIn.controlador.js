@@ -26,15 +26,6 @@ async function getHabitacionesLibres(req, res) {
   }
 }
 
-// GET /api/check-in/sugerir-habitacion?fechaHasta=&tipo=&capacidadMinima=&preferencias=
-async function getSugerirHabitacion(req, res) {
-  try {
-    return res.json(await checkInServicio.sugerirHabitacion(req.query));
-  } catch (err) {
-    return responderError(res, err, "Error al sugerir habitación:", "No se pudo calcular una sugerencia de habitación.");
-  }
-}
-
 // POST /api/check-in/:reservaId/confirmar
 async function postConfirmarConReserva(req, res) {
   try {
@@ -60,7 +51,6 @@ async function postCheckInWalkIn(req, res) {
 module.exports = {
   getBuscarReserva,
   getHabitacionesLibres,
-  getSugerirHabitacion,
   postConfirmarConReserva,
   postCheckInWalkIn,
 };

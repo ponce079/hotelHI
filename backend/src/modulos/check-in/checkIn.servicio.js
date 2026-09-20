@@ -90,15 +90,18 @@ function validarReservaVigente(reserva) {
   }
 }
 
-// HU-43 — búsqueda por id o por código de confirmación, sin lanzar error de
+// HU-43 — búsqueda por id, por código de confirmación o por documento del
+// huésped (un solo campo del lado del mostrador: `codigo` prueba primero
+// como código exacto y si no matchea nada cae a documento — ver
+// reservasServicio.obtenerPorCodigoODocumento), sin lanzar error de
 // vigencia: la pantalla necesita poder MOSTRAR la reserva encontrada y el
 // motivo por el que el check-in todavía no se puede confirmar (si aplica),
 // no solo un 400 genérico.
 async function buscarReservaParaCheckIn({ id, codigo } = {}) {
   let reserva;
   if (id) reserva = await reservasServicio.obtenerReserva(id);
-  else if (codigo && String(codigo).trim()) reserva = await reservasServicio.obtenerPorCodigoConfirmacion(codigo);
-  else throw new ErrorDeNegocio("Indicá el id o el código de confirmación de la reserva.");
+  else if (codigo && String(codigo).trim()) reserva = await reservasServicio.obtenerPorCodigoODocumento(codigo);
+  else throw new ErrorDeNegocio("Indicá el id o el código de confirmación / documento de la reserva.");
 
   let motivoBloqueo = null;
   try {
@@ -179,6 +182,8 @@ async function confirmarCheckInConReserva({ reservaId, numeroDocumentoIngresado,
 
 // --------------------------------------------------------------
 // HU-44 + HU-45 — disponibilidad "ahora mismo" para walk-in / asignación
+// manual de habitación (HU-45 solo tiene selección manual: sin sugerencia
+// automática por tipo/disponibilidad/preferencias, ver decisiones.md).
 // --------------------------------------------------------------
 
 // Reusa la disponibilidad por fechas de Reservas (HU-38) y le suma el filtro
@@ -203,29 +208,6 @@ async function listarHabitacionesLibresAhora({ fechaHasta, tipo, capacidadMinima
     disponibles: libresAhora.filter((h) => h.tipo === r.tipo).length,
   }));
   return { ...disponibilidad, habitaciones: libresAhora, resumenPorTipo };
-}
-
-// HU-45 — algoritmo de sugerencia: filtra por tipo/capacidad (ya lo hace
-// listarHabitacionesLibresAhora) y usa las preferencias del huésped como
-// desempate informal, tal como anticipa el documento de referencia — no se
-// espera un motor de recomendación real, solo una sugerencia razonable.
-function ordenarPorPreferencia(habitaciones, preferencias) {
-  const texto = String(preferencias ?? "").toLowerCase();
-  const prefiereAlto = /piso alto|alto/.test(texto);
-  const prefiereBajo = /piso bajo|planta baja|bajo/.test(texto);
-  if (!prefiereAlto && !prefiereBajo) return habitaciones;
-  const orden = prefiereAlto ? -1 : 1;
-  return [...habitaciones].sort((a, b) => orden * (a.piso - b.piso) || a.numero.localeCompare(b.numero));
-}
-
-async function sugerirHabitacion({ fechaHasta, tipo, capacidadMinima, preferencias }) {
-  const disponibilidad = await listarHabitacionesLibresAhora({ fechaHasta, tipo, capacidadMinima });
-  const ordenadas = ordenarPorPreferencia(disponibilidad.habitaciones, preferencias);
-  return {
-    ...disponibilidad,
-    habitaciones: ordenadas,
-    sugerida: ordenadas[0] ?? null,
-  };
 }
 
 // --------------------------------------------------------------
@@ -267,7 +249,6 @@ module.exports = {
   buscarReservaParaCheckIn,
   confirmarCheckInConReserva,
   listarHabitacionesLibresAhora,
-  sugerirHabitacion,
   registrarCheckInWalkIn,
   validarReservaVigente,
   ErrorDeNegocio,

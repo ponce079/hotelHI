@@ -10,7 +10,6 @@ const MEDIOS_GARANTIA = ["Tarjeta de crédito", "Depósito en efectivo"];
 
 const LIMITES_CHECKIN = {
   numeroDocumento: 30,
-  preferenciasBusqueda: 300,
 };
 
 module.exports = { MEDIOS_GARANTIA, LIMITES_CHECKIN };

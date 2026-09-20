@@ -834,6 +834,45 @@ async function main() {
     assert.equal(err.statusCode, 404);
   });
 
+  await prueba("obtenerPorCodigoODocumento usa match exacto de documento, no substring", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101" });
+    base._sembrarHabitacion({ numero: "102" });
+    const corta = await servicio.crearReserva(alta({ habitacionIds: [1], huesped: { ...HUESPED, numeroDocumento: "5678" } }));
+    await servicio.crearReserva(
+      alta({ habitacionIds: [2], huesped: { ...HUESPED, nombre: "Otro Huésped", numeroDocumento: "12345678" } })
+    );
+    const resultado = await servicio.obtenerPorCodigoODocumento("5678");
+    assert.equal(resultado.id, corta.id, "un documento que es substring de otro no puede traer la reserva ajena");
+  });
+
+  await prueba(
+    "si el mismo documento tiene dos reservas 'Confirmada' vigentes a la vez, prioriza la de fechaDesde más reciente",
+    async () => {
+      limpiar();
+      base._sembrarHabitacion({ numero: "101" });
+      base._sembrarHabitacion({ numero: "102" });
+      const vieja = await servicio.crearReserva(
+        alta({ habitacionIds: [1], huesped: { ...HUESPED, numeroDocumento: "55667788" } })
+      );
+      // crearReserva no deja pedir una fechaDesde pasada (regla real, ver
+      // validarRango) — acá se simula el paso del tiempo escribiendo
+      // directo en la base falsa: una Confirmada que nunca se canceló ni
+      // se registró y a la que ya le pasó la fecha de ingreso.
+      const filaVieja = base._datos.reserva.find((r) => r.id === vieja.id);
+      filaVieja.fechaDesde = new Date(`${enDias(-5)}T00:00:00.000Z`);
+      filaVieja.fechaHasta = new Date(`${enDias(-2)}T00:00:00.000Z`);
+
+      const nueva = await servicio.crearReserva(
+        alta({ fechaDesde: enDias(0), fechaHasta: enDias(3), habitacionIds: [2], huesped: { ...HUESPED, numeroDocumento: "55667788" } })
+      );
+
+      const resultado = await servicio.obtenerPorCodigoODocumento("55667788");
+      assert.equal(resultado.id, nueva.id, "tendría que traer la reserva vigente más cercana a hoy, no la vieja");
+      assert.equal(resultado.estado, ESTADO_RESERVA.CONFIRMADA);
+    }
+  );
+
   await prueba("marcarEnCurso pasa la reserva de Confirmada a En curso", async () => {
     limpiar();
     base._sembrarHabitacion({ numero: "101" });
