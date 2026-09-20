@@ -96,17 +96,17 @@ model TipoMovimientoStock {
 }
 
 model MovimientoStock {
-  id                      Int                      @id @default(autoincrement())
-  fecha                   DateTime                 @default(now())
-  detalle                 String?
-  depositoId              Int
-  depositoDestinoId       Int?
-  tipoMovStockId          Int
-  movimientoRelacionadoId Int?
-  ordenCompraId           Int?
-  estado                  String                   @default("Confirmado")
-  activo                  Boolean                  @default(true)
-  usuario                 String?
+  id                       Int                       @id @default(autoincrement())
+  fecha                    DateTime                  @default(now())
+  detalle                  String?
+  depositoId               Int
+  depositoDestinoId        Int?
+  tipoMovStockId           Int
+  movimientoRelacionadoId  Int?
+  ordenCompraId            Int?
+  estado                   String                    @default("Confirmado")
+  activo                   Boolean                   @default(true)
+  usuario                  String?
   // Seguimiento de la resolución de una transferencia "Con diferencia"
   // (HU-14/17) — vive en la fila de la transferencia (depositoDestinoId
   // no nulo), no en su entrada relacionada. No toca cantidadRecibida ni
@@ -114,16 +114,17 @@ model MovimientoStock {
   // esto", independiente de la recepción en sí.
   // "Reclamado al depósito" | "Se acepta la diferencia" |
   // "Se generó pedido por la diferencia" | "Otro" — ver MOTIVOS_RESOLUCION_DIFERENCIA.
-  diferenciaRevisada      Boolean                  @default(false)
-  motivoResolucion        String?
-  revisadoPor             String?
-  fechaRevision           DateTime?
-  deposito                Deposito                 @relation(fields: [depositoId], references: [id])
-  depositoDestino         Deposito?                @relation("MovimientoDestino", fields: [depositoDestinoId], references: [id])
-  tipoMovStock            TipoMovimientoStock      @relation(fields: [tipoMovStockId], references: [id])
-  ordenCompra             OrdenCompra?             @relation(fields: [ordenCompraId], references: [id])
-  detalleMovimientos      MovimientoStockDetalle[]
-  requerimiento           RequerimientoReposicion?
+  diferenciaRevisada       Boolean                   @default(false)
+  motivoResolucion         String?
+  revisadoPor              String?
+  fechaRevision            DateTime?
+  deposito                 Deposito                  @relation(fields: [depositoId], references: [id])
+  depositoDestino          Deposito?                 @relation("MovimientoDestino", fields: [depositoDestinoId], references: [id])
+  tipoMovStock             TipoMovimientoStock       @relation(fields: [tipoMovStockId], references: [id])
+  ordenCompra              OrdenCompra?              @relation(fields: [ordenCompraId], references: [id])
+  detalleMovimientos       MovimientoStockDetalle[]
+  requerimiento            RequerimientoReposicion?
+  consumoServicioAdicional ConsumoServicioAdicional?
 
   @@index([depositoId], map: "movimientos_stock_depositoId_fkey")
   @@index([depositoDestinoId], map: "movimientos_stock_depositoDestinoId_fkey")
@@ -580,20 +581,31 @@ model Huesped {
 }
 
 model ConsumoServicioAdicional {
-  id            Int        @id @default(autoincrement())
-  reservaId     Int
-  habitacionId  Int
+  id                Int              @id @default(autoincrement())
+  reservaId         Int
+  habitacionId      Int
   // Restaurante | Spa | Lavandería | Minibar
-  tipoServicio  String
+  tipoServicio      String
   // Solo seteado cuando tipoServicio = Minibar, para descontar stock real.
-  articuloId    Int?
-  cantidad      Decimal?   @db.Decimal(12, 2)
-  monto         Decimal    @db.Decimal(12, 2)
-  fechaHora     DateTime   @default(now())
-  registradoPor String
-  reserva       Reserva    @relation(fields: [reservaId], references: [id])
-  habitacion    Habitacion @relation(fields: [habitacionId], references: [id])
-  articulo      Articulo?  @relation(fields: [articuloId], references: [id])
+  articuloId        Int?
+  cantidad          Decimal?         @db.Decimal(12, 2)
+  monto             Decimal          @db.Decimal(12, 2)
+  fechaHora         DateTime         @default(now())
+  registradoPor     String
+  // Solo seteado cuando tipoServicio = Minibar y se generó un movimiento de
+  // Salida real (ver serviciosAdicionales.servicio.js). Un artículo puede
+  // estar habilitado en más de un depósito a la vez (ej. el mismo vino en
+  // Bar, Cocina y Central Secos/Insumos) — sin esta referencia no había
+  // forma de saber de qué depósito salió el descuento de un consumo
+  // puntual sin parsear el texto libre de MovimientoStock.detalle
+  // (encontrado auditando a mano, no con los tests). No se duplica
+  // depositoId/cantidad/fecha acá: ya viven en el MovimientoStock
+  // referenciado, este campo solo apunta a la fuente de verdad.
+  movimientoStockId Int?             @unique
+  reserva           Reserva          @relation(fields: [reservaId], references: [id])
+  habitacion        Habitacion       @relation(fields: [habitacionId], references: [id])
+  articulo          Articulo?        @relation(fields: [articuloId], references: [id])
+  movimientoStock   MovimientoStock? @relation(fields: [movimientoStockId], references: [id])
 
   @@index([reservaId], map: "consumos_servicio_adicional_reservaId_fkey")
   @@index([habitacionId], map: "consumos_servicio_adicional_habitacionId_fkey")

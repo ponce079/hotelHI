@@ -126,7 +126,7 @@ export function Layout() {
 
           <div className="flex shrink-0 flex-col gap-1.5">
             <div className="flex items-center gap-2.5 rounded-lg bg-white/10 p-1.5">
-              <div className="flex h-[28px] w-[28px] flex-none items-center justify-center rounded-full bg-laton font-body text-[11px] font-medium text-hueso">
+              <div className="flex h-[28px] w-[28px] flex-none items-center justify-center rounded-full bg-laton-700 font-body text-[11px] font-medium text-hueso">
                 {iniciales}
               </div>
               <div className="min-w-0">

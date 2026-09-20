@@ -15,6 +15,8 @@ import {
   Tag,
   BedDouble,
   CalendarCheck,
+  DoorOpen,
+  Utensils,
 } from "lucide-react";
 
 // Menu por rol, calcado de MENUS del prototipo (y de lo que dice cada
@@ -50,6 +52,23 @@ export const MENU_GRUPOS = [
         to: "/reservas",
         label: "Reservas",
         icon: CalendarCheck,
+        roles: ["admin", "recepcionista"],
+      },
+      // Sprint 3 académico — Check-in (HU-43 a 47).
+      {
+        to: "/check-in",
+        label: "Check-in",
+        icon: DoorOpen,
+        roles: ["admin", "recepcionista"],
+      },
+      // Sprint 3 académico — Servicios Adicionales (HU-61 a 64). El rol
+      // "Personal de Servicios" se eliminó del sistema: Recepcionista
+      // registra el consumo (HU-61) y consulta los cargos acumulados
+      // (HU-63), mismo criterio que ya tiene con Reservas y Check-in.
+      {
+        to: "/servicios-adicionales",
+        label: "Servicios Adicionales",
+        icon: Utensils,
         roles: ["admin", "recepcionista"],
       },
     ],

@@ -568,6 +568,50 @@ async function obtenerPorCodigoConfirmacion(codigo) {
   return formatearReserva(reserva);
 }
 
+// Check-in — el mostrador tiene el código de confirmación O el documento
+// del huésped, nunca los dos a la vez, así que es un único campo: primero
+// prueba como código exacto (formato propio, ver generarCodigoConfirmacion)
+// y si no matchea nada, cae a documento del huésped (cualquier tipo, no
+// solo DNI — mismo `numeroDocumento` de texto libre que ya usa el alta de
+// Reservas, sin asumir formato). `numeroDocumento: buscado` sin envolver en
+// `{ contains }` es igualdad exacta (mismo criterio que Prisma resuelve un
+// campo plano) — a propósito, distinto del buscador de /reservas (que sí
+// usa `contains` porque ahí se sugieren candidatos de un listado): acá hay
+// que identificar a UNA persona puntual, un documento que sea substring de
+// otro no puede traer la reserva ajena.
+//
+// Con el mismo documento puede haber más de una reserva (histórico).
+// Orden = fechaDesde desc, id desc como desempate. Dos casos:
+//   - Ninguna puede iniciar check-in todavía: se muestra la primera del
+//     orden (la de fechaDesde más reciente) para que el motivo de bloqueo
+//     sea el más relevante, no el de un registro viejo al azar.
+//   - Dos o más SÍ califican a la vez (ambas Confirmada y ya vigentes): se
+//     queda con la de fechaDesde más reciente — la ventana de estadía más
+//     cercana a hoy es la más probable de ser la visita actual, no una
+//     Confirmada vieja que nunca se canceló ni se registró. Si empatan en
+//     fechaDesde (mismo día), gana la de id más alto (la creada después).
+async function obtenerPorCodigoODocumento(termino) {
+  const buscado = typeof termino === "string" ? termino.trim() : "";
+  if (!buscado) throw new ErrorDeNegocio("Indicá el código de confirmación o el documento del huésped.");
+
+  const porCodigo = await prisma.reserva.findUnique({
+    where: { codigoConfirmacion: buscado.toUpperCase() },
+    include: INCLUDE_RESERVA,
+  });
+  if (porCodigo) return formatearReserva(porCodigo);
+
+  const candidatas = await prisma.reserva.findMany({
+    where: { huesped: { numeroDocumento: buscado } },
+    include: INCLUDE_RESERVA,
+    orderBy: [{ fechaDesde: "desc" }, { id: "desc" }],
+  });
+  if (candidatas.length === 0) {
+    throw new ErrorDeNegocio(`No existe una reserva con el código o documento "${buscado}".`, 404);
+  }
+  const vigente = candidatas.find((r) => r.estado === ESTADO_RESERVA.CONFIRMADA);
+  return formatearReserva(vigente ?? candidatas[0]);
+}
+
 async function listarReservas({ q, estado, desde, hasta, habitacionId } = {}) {
   if (estado && !ESTADOS_RESERVA.includes(estado)) {
     throw new ErrorDeNegocio(`estado debe ser uno de: ${ESTADOS_RESERVA.join(", ")}.`);
@@ -766,6 +810,7 @@ module.exports = {
   listarReservas,
   obtenerReserva,
   obtenerPorCodigoConfirmacion,
+  obtenerPorCodigoODocumento,
   consultarDisponibilidad,
   // Transiciones para Check-in / Check-out
   marcarEnCurso,

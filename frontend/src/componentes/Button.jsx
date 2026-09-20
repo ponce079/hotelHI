@@ -13,8 +13,11 @@ import { Loader2 } from "lucide-react";
 const VARIANTES = {
   // Entrada / confirmar / accion primaria — pino solido.
   ok: "border-pino bg-pino text-hueso hover:bg-pino-oscuro",
-  // Salida — laton solido.
-  salida: "border-laton bg-laton text-hueso hover:bg-laton-oscuro",
+  // Salida — laton solido. bg/border en laton-700 (no laton-600/--color-laton):
+  // laton-600 con texto claro da 4.5:1, apenas arriba del minimo AA — laton-700
+  // da 6.6:1 con margen real. Hover un escalon mas oscuro (laton-800), mismo
+  // patron que "ok" (pino-700 -> pino-800).
+  salida: "border-laton-700 bg-laton-700 text-hueso hover:bg-laton-800",
   // Abrir una transferencia — laton tinte 100.
   transfer: "border-laton-400 bg-laton-100 text-laton-700 hover:bg-laton-200",
   // Kardex — laton tinte 100, borde mas claro.
@@ -40,10 +43,13 @@ const VARIANTES = {
 // Fraunces, no Sora. No es un capricho nuestro: es el .btn real que
 // heredan .btn-entrada/.btn-salida/etc en el dc.html. "normal" 13-14px;
 // "fila" 12.5px con padding 5px 13px, para acciones dentro de una fila de
-// tabla.
+// tabla; "campo" 14px con padding 11px 20px, para un botón al lado de un
+// input de altura fija (11px + el 1px de borde del input = misma altura
+// exterior que el input, que no tiene borde propio en el botón).
 const TAMANOS = {
   normal: "px-4 py-2 text-sm",
   fila: "px-[13px] py-[5px] text-[12.5px]",
+  campo: "px-5 py-[11px] text-sm",
 };
 
 // `icono` es opcional (default undefined, no cambia ningun uso existente):

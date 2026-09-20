@@ -58,13 +58,16 @@
   --color-error-suave: #f7e4de;
   --color-error-texto: #8f3322; /* texto sobre error-suave */
 
-  /* "info" — azul apagado, a tono con el resto de la paleta (nada de un
-     azul saturado tipo Bootstrap). Rediseño de Requerimientos: es el color
+  /* "info" — azul-verdoso templado, misma temperatura que el resto de la
+     paleta (pino/laton/hueso son cálidos; el azul puro anterior #3d6480 era
+     el único tono frío del sistema). Rediseño de Requerimientos: es el color
      de la categoría "En curso", que no tenía representante antes de esto —
-     ok/alerta/error/neutro no alcanzaban para las 4 categorías fijas. */
-  --color-info: #3d6480;
-  --color-info-suave: #e4edf2;
-  --color-info-texto: #2c4a5e;
+     ok/alerta/error/neutro no alcanzaban para las 4 categorías fijas.
+     Suave/texto calculados con el mismo criterio que exito/error/alerta:
+     suave = tinte muy suave del hue, texto = extremo oscuro de esa rampa. */
+  --color-info: #4f6f7c;
+  --color-info-suave: #e8edee;
+  --color-info-texto: #4a6670;
 
   /* "inactivo" — gris de la guia visual SGH (seccion 5: "Dado de baja" =
      gris), antes hardcodeado en 3 listados distintos. */

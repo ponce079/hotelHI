@@ -167,6 +167,18 @@ export function SesionProvider({ children }) {
         // no pasan por acá: viven fuera de <RequireSesion>, sin sesión.
         if (accion === "verReservas") return rol === "admin" || rol === "recepcionista";
         if (accion === "gestionarReservas") return rol === "admin" || rol === "recepcionista";
+        // Sprint 3 académico — Check-in (HU-43 a HU-47). El backlog dice
+        // "Recepcionista" para las 5 historias, sin matices de rol por
+        // acción (a diferencia de Habitaciones) — un solo permiso alcanza.
+        if (accion === "gestionarCheckIn") return rol === "admin" || rol === "recepcionista";
+        // Sprint 3 académico — Servicios Adicionales (HU-61 a HU-64). El rol
+        // "Personal de Servicios" se eliminó del sistema: Recepcionista
+        // absorbe todo el módulo (alta HU-61 y consulta HU-63), mismo
+        // criterio de permisos que ya tiene con Reservas
+        // (gestionarReservas) y Check-in (gestionarCheckIn) — admin +
+        // recepcionista, sin matices de rol por acción.
+        if (accion === "registrarConsumoServicio") return rol === "admin" || rol === "recepcionista";
+        if (accion === "verConsumosServicio") return rol === "admin" || rol === "recepcionista";
         return false;
       },
     };

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
-import { ArrowLeft, Ban, BedDouble, Bell, Pencil, User } from "lucide-react";
+import { ArrowLeft, Ban, BedDouble, Bell, Pencil, Plus, User, UtensilsCrossed } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -17,6 +17,9 @@ import { formatearFechaSinHora, formatearTimestamp } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { useVolver } from "../../lib/useVolver";
+import { ConsumoModal } from "../servicios-adicionales/ConsumoModal";
+import { obtenerResumenPorReserva } from "../servicios-adicionales/serviciosAdicionales.api";
+import { TIPO_SERVICIO_BADGE } from "../servicios-adicionales/serviciosAdicionales.constantes";
 import { ReservaWizard } from "./ReservaWizard";
 import { cancelarReserva, obtenerReserva } from "./reservas.api";
 import {
@@ -42,10 +45,13 @@ export function ReservaDetallePage() {
   const { puede } = useSesion();
   const puedeVer = puede("verReservas");
   const puedeGestionar = puede("gestionarReservas");
+  const puedeVerConsumos = puede("verConsumosServicio");
+  const puedeRegistrarConsumo = puede("registrarConsumoServicio");
   const volver = useVolver("/reservas");
   const [editando, setEditando] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [motivo, setMotivo] = useState("");
+  const [consumoAbierto, setConsumoAbierto] = useState(false);
   const { toast, mostrarToast } = useToast();
   const queryClient = useQueryClient();
 
@@ -53,6 +59,21 @@ export function ReservaDetallePage() {
     queryKey: ["reservas", "detalle", id],
     queryFn: () => obtenerReserva(id),
     enabled: puedeVer,
+  });
+
+  // Ajuste de flujo (Sprint 3): la carga de consumos vive en la ficha de la
+  // reserva, no en un menú aparte (ver ServiciosAdicionalesPage.jsx, que
+  // ahora es de solo lectura para todo el hotel). Solo tiene sentido
+  // consultar/cargar mientras la reserva está "En curso" — antes del
+  // check-in el huésped todavía no llegó, y el backend rechaza el alta en
+  // cualquier otro estado (ver registrarConsumo en
+  // serviciosAdicionales.servicio.js, sin cambios).
+  const enCurso = reservaQuery.data?.estado === ESTADO_RESERVA.EN_CURSO;
+  const consumosQuery = useQuery({
+    queryKey: ["consumos-servicios", "resumen", id],
+    queryFn: () => obtenerResumenPorReserva(id),
+    enabled: puedeVerConsumos && enCurso,
+    refetchInterval: 10000,
   });
 
   const mutacionCancelar = useMutation({
@@ -193,6 +214,59 @@ export function ReservaDetallePage() {
         />
       </div>
 
+      {enCurso && puedeVerConsumos && (
+        <div className="rounded-lg border border-borde bg-white p-5">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 font-heading text-[19px] font-semibold">
+              <UtensilsCrossed size={17} className="text-pino" /> Servicios Adicionales
+            </h2>
+            {puedeRegistrarConsumo && (
+              <Button icono={Plus} onClick={() => setConsumoAbierto(true)}>
+                Agregar consumo
+              </Button>
+            )}
+          </div>
+          <p className="mb-4 text-[12px] text-piedra">
+            HU 61 a 63 — restaurante, spa, lavandería y minibar cargados a la cuenta de esta estadía.
+          </p>
+          <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
+            <div className="rounded-lg border border-pino-300 bg-pino-100 p-4">
+              <p className="text-[11px] uppercase tracking-wide text-pino-700">Total acumulado</p>
+              <Cifra tamano={22}>{FORMATO_MONEDA.format(consumosQuery.data?.totalGeneral ?? 0)}</Cifra>
+            </div>
+            {consumosQuery.data?.totalPorTipo.map((t) => (
+              <div key={t.tipoServicio} className="rounded-lg border border-borde bg-hueso p-4">
+                <p className="mb-1">
+                  <Badge variante={TIPO_SERVICIO_BADGE[t.tipoServicio]}>{t.tipoServicio}</Badge>
+                </p>
+                <Cifra tamano={17}>{FORMATO_MONEDA.format(t.total)}</Cifra>
+              </div>
+            ))}
+          </div>
+          <Table
+            columnas={["Fecha", "Tipo", "Detalle", "Registrado por", "Monto"]}
+            columnasDerecha={["Monto"]}
+            filas={consumosQuery.data?.items ?? []}
+            vacio="Todavía no hay consumos registrados para esta estadía."
+            renderFila={(c) => (
+              <tr key={c.id} className="border-b border-borde last:border-0">
+                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px]">{formatearTimestamp(c.fechaHora)}</td>
+                <td className="px-3 py-2.5">
+                  <Badge variante={TIPO_SERVICIO_BADGE[c.tipoServicio]}>{c.tipoServicio}</Badge>
+                </td>
+                <td className="px-3 py-2.5 text-[12.5px] text-piedra">
+                  {c.articuloNombre ? `${c.articuloNombre} × ${c.cantidad}` : "—"}
+                </td>
+                <td className="px-3 py-2.5 text-[12.5px]">{c.registradoPor}</td>
+                <td className="px-3 py-2.5 text-right font-mono text-[13px] font-semibold">
+                  {FORMATO_MONEDA.format(c.monto)}
+                </td>
+              </tr>
+            )}
+          />
+        </div>
+      )}
+
       <div className="rounded-lg border border-borde bg-white p-5">
         <h2 className="mb-1 flex items-center gap-2 font-heading text-[19px] font-semibold">
           <Bell size={17} className="text-pino" /> Confirmaciones enviadas
@@ -266,6 +340,18 @@ export function ReservaDetallePage() {
           {!motivo.trim() && <span className="text-[11.5px] text-piedra">Sin motivo no se puede confirmar.</span>}
         </label>
       </ConfirmDialog>
+
+      {consumoAbierto && (
+        <ConsumoModal
+          reserva={reserva}
+          onClose={() => setConsumoAbierto(false)}
+          onExito={(mensaje) => {
+            setConsumoAbierto(false);
+            mostrarToast(mensaje);
+            queryClient.invalidateQueries({ queryKey: ["consumos-servicios"] });
+          }}
+        />
+      )}
 
       <Toast mensaje={toast} />
     </div>
