@@ -262,7 +262,17 @@ export function HabitacionesPage() {
       </div>
 
       <FilterBar>
-        <div className="relative min-w-[240px]">
+        {/* flex-1: antes quedaba un hueco grande entre los selects y el
+            grupo de la derecha (Limpiar filtros / Nueva habitación) porque
+            ningún ítem crecía para ocupar el ancho disponible — la barra de
+            búsqueda es la que tiene sentido que se estire (los selects se
+            quedan en su ancho natural, "se acomodan" con el espacio que
+            sobra). Con flex-wrap ya puesto en FilterBar, esto se adapta
+            solo según haya o no botón "Nueva habitación": si no está
+            (puedeAdministrar=false), el grupo de la derecha pesa menos y la
+            barra crece más; si está, el botón sigue fijo a la derecha y la
+            barra crece hasta ahí. */}
+        <div className="relative min-w-[240px] flex-1">
           <Search size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-piedra" />
           <input
             value={q}
