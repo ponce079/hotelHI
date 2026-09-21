@@ -16,7 +16,13 @@ import { hoyEnHoraLocal } from "../../lib/fechas";
 import { EstadoHabitacionModal } from "./EstadoHabitacionModal";
 import { HabitacionModal } from "./HabitacionModal";
 import { ConsumoModal } from "../servicios-adicionales/ConsumoModal";
-import { cambiarActivoHabitacion, listarHabitaciones, listarOrdenesMantenimiento, listarTiposHabitacion } from "./habitaciones.api";
+import {
+  actualizarEstadoHabitacion,
+  cambiarActivoHabitacion,
+  listarHabitaciones,
+  listarOrdenesMantenimiento,
+  listarTiposHabitacion,
+} from "./habitaciones.api";
 import { listarReservas } from "../reservas/reservas.api";
 import { ESTADO_RESERVA } from "../reservas/reservas.constantes";
 import {
@@ -66,6 +72,8 @@ export function HabitacionesPage() {
   const puedeAdministrar = puede("gestionarHabitaciones");
   const puedeEstado = puede("actualizarEstadoHabitacion");
   const puedeRegistrarConsumo = puede("registrarConsumoServicio");
+  const puedeIniciarCheckIn = puede("iniciarCheckInDesdePanel");
+  const puedeMarcarLimpia = puede("marcarHabitacionLimpia");
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [modal, setModal] = useState(null);
@@ -133,6 +141,21 @@ export function HabitacionesPage() {
     onError: (error) => {
       mostrarToast(error?.response?.data?.error ?? "No se pudo cambiar la vigencia de la habitación.");
       setCambioActivo(null);
+    },
+  });
+
+  // Atajo "→ Marcar como limpia" (HU-35, mismo flujo que ya resuelve
+  // EstadoHabitacionModal.jsx — acá sin abrir modal, porque "en limpieza →
+  // libre" es la única transición que Housekeeping necesita disparar en un
+  // click desde el Panel).
+  const mutacionMarcarLimpia = useMutation({
+    mutationFn: (id) => actualizarEstadoHabitacion(id, "libre"),
+    onSuccess: (actualizada) => {
+      queryClient.invalidateQueries({ queryKey: ["habitaciones"] });
+      mostrarToast(`Habitación ${actualizada.numero} marcada como libre.`);
+    },
+    onError: (error) => {
+      mostrarToast(error?.response?.data?.error ?? "No se pudo marcar la habitación como limpia.");
     },
   });
 
@@ -294,10 +317,13 @@ export function HabitacionesPage() {
                       puedeEstado={puedeEstado}
                       puedeAdministrar={puedeAdministrar}
                       puedeRegistrarConsumo={puedeRegistrarConsumo}
+                      puedeIniciarCheckIn={puedeIniciarCheckIn}
+                      puedeMarcarLimpia={puedeMarcarLimpia}
                       onAbrir={() => navigate(`/habitaciones/${habitacion.id}`)}
                       onCambiarEstado={() => setModal({ tipo: "estado", habitacion })}
                       onCambiarActivo={() => setCambioActivo(habitacion)}
                       onAgregarConsumo={() => manejarAgregarConsumo(habitacion)}
+                      onMarcarLimpia={() => mutacionMarcarLimpia.mutate(habitacion.id)}
                     />
                   );
                 })}
@@ -346,10 +372,13 @@ function TarjetaHabitacion({
   puedeEstado,
   puedeAdministrar,
   puedeRegistrarConsumo,
+  puedeIniciarCheckIn,
+  puedeMarcarLimpia,
   onAbrir,
   onCambiarEstado,
   onCambiarActivo,
   onAgregarConsumo,
+  onMarcarLimpia,
 }) {
   const color = ESTADO_HABITACION_COLOR[habitacion.estado] ?? ESTADO_HABITACION_COLOR.libre;
   const saleHoy = habitacion.estado === "ocupada" && esHoy(huesped?.fechaHasta);
@@ -438,7 +467,7 @@ function TarjetaHabitacion({
         </p>
       )}
 
-      {habitacion.estado === "libre" && (
+      {habitacion.estado === "libre" && puedeIniciarCheckIn && (
         <Link
           to={`/check-in?habitacion=${encodeURIComponent(habitacion.numero)}`}
           onClick={(e) => e.stopPropagation()}
@@ -446,6 +475,19 @@ function TarjetaHabitacion({
         >
           → Iniciar check-in
         </Link>
+      )}
+
+      {habitacion.estado === "en limpieza" && puedeMarcarLimpia && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onMarcarLimpia();
+          }}
+          className="mt-1 w-fit cursor-pointer text-[12.5px] font-semibold underline-offset-2 hover:underline"
+        >
+          → Marcar como limpia
+        </button>
       )}
     </div>
   );

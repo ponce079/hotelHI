@@ -164,6 +164,16 @@ export function SesionProvider({ children }) {
         if (accion === "gestionarMantenimiento") return rol === "housekeeping" || rol === "recepcionista";
         if (accion === "resolverMantenimiento") return rol === "housekeeping";
         if (accion === "actualizarEstadoHabitacion") return rol === "admin" || rol === "housekeeping";
+        // Atajos rápidos de la tarjeta del Panel (no son acceso al módulo
+        // en sí, eso sigue siendo "gestionarCheckIn"/"actualizarEstadoHabitacion"
+        // más abajo) — a propósito más angostos que esos: el atajo de
+        // check-in es exclusivo de Recepcionista (admin entra al check-in
+        // por el menú normal, no necesita el atajo de la tarjeta) y el de
+        // marcar limpia es exclusivo de Housekeeping. Corrección: antes el
+        // atajo de check-in se mostraba para cualquiera que viera el Panel,
+        // sin cruzar con el rol.
+        if (accion === "iniciarCheckInDesdePanel") return rol === "recepcionista";
+        if (accion === "marcarHabitacionLimpia") return rol === "housekeeping";
         // Sprint 3 académico — Reservas (HU-36 a HU-42). La historia dice
         // "Como recepcionista" en el alta, la modificación y la
         // cancelación; admin entra por ser quien administra la operación

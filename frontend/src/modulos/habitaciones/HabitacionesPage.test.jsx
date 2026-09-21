@@ -1,18 +1,20 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, Route, Routes, useParams } from "react-router-dom";
 import { HabitacionesPage } from "./HabitacionesPage";
+import { useSesion } from "../../lib/sesion";
+import { listarHabitaciones, actualizarEstadoHabitacion } from "./habitaciones.api";
 
-vi.mock("../../lib/sesion", () => ({
-  useSesion: () => ({ rol: "admin", puede: () => true }),
-}));
+// vi.fn() (no un objeto fijo) para poder pisar rol/puede por test — hace
+// falta simular distintos roles, no solo el "admin: puede todo" original.
+vi.mock("../../lib/sesion", () => ({ useSesion: vi.fn() }));
 
 // vi.mock(...) se "hoistea" arriba de todo el archivo, así que la fixture
 // que usa adentro tiene que declararse con vi.hoisted (si no, referenciarla
 // dentro del factory tira "Cannot access before initialization").
-const { HABITACION_LIBRE } = vi.hoisted(() => ({
+const { HABITACION_LIBRE, HABITACION_EN_LIMPIEZA } = vi.hoisted(() => ({
   HABITACION_LIBRE: {
     id: 55,
     numero: "55",
@@ -25,12 +27,25 @@ const { HABITACION_LIBRE } = vi.hoisted(() => ({
     activo: true,
     motivoBloqueo: null,
   },
+  HABITACION_EN_LIMPIEZA: {
+    id: 23,
+    numero: "23",
+    tipo: "Simple",
+    capacidad: 1,
+    piso: 0,
+    equipamiento: null,
+    estado: "en limpieza",
+    tarifaPorNoche: "20000",
+    activo: true,
+    motivoBloqueo: null,
+  },
 }));
 
 vi.mock("./habitaciones.api", () => ({
-  listarHabitaciones: vi.fn().mockResolvedValue([HABITACION_LIBRE]),
+  listarHabitaciones: vi.fn(),
   listarOrdenesMantenimiento: vi.fn().mockResolvedValue([]),
   listarTiposHabitacion: vi.fn().mockResolvedValue(["Simple"]),
+  actualizarEstadoHabitacion: vi.fn(),
 }));
 
 vi.mock("../reservas/reservas.api", () => ({
@@ -57,6 +72,12 @@ function renderPanel() {
     </QueryClientProvider>
   );
 }
+
+beforeEach(() => {
+  useSesion.mockReturnValue({ rol: "admin", puede: () => true });
+  listarHabitaciones.mockResolvedValue([HABITACION_LIBRE]);
+  actualizarEstadoHabitacion.mockResolvedValue({ ...HABITACION_EN_LIMPIEZA, estado: "libre" });
+});
 
 describe("HabitacionesPage — tarjeta clickeable", () => {
   it("navega a /habitaciones/:id al hacer click en la tarjeta de una habitación", async () => {
@@ -89,5 +110,72 @@ describe("HabitacionesPage — tarjeta clickeable", () => {
     expect(await screen.findByRole("button", { name: "Cambiar estado" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Dar de baja" })).toBeInTheDocument();
     expect(screen.queryByText(/Detalle de la habitación/)).not.toBeInTheDocument();
+  });
+});
+
+// Reparto de atajos por rol en la tarjeta (corrección: el atajo de check-in
+// no cruzaba con el rol, se mostraba para cualquiera que viera el Panel).
+function puedeComoRol(rol) {
+  return (accion) => {
+    if (accion === "verHabitaciones") return ["admin", "recepcionista", "housekeeping"].includes(rol);
+    if (accion === "gestionarCheckIn") return rol === "admin" || rol === "recepcionista";
+    if (accion === "registrarConsumoServicio") return rol === "admin" || rol === "recepcionista";
+    if (accion === "iniciarCheckInDesdePanel") return rol === "recepcionista";
+    if (accion === "marcarHabitacionLimpia") return rol === "housekeeping";
+    return false;
+  };
+}
+
+describe("HabitacionesPage — atajo de check-in en una tarjeta libre, por rol", () => {
+  it("Recepcionista sí ve \"Iniciar check-in\"", async () => {
+    useSesion.mockReturnValue({ rol: "recepcionista", puede: puedeComoRol("recepcionista") });
+    renderPanel();
+
+    expect(await screen.findByRole("link", { name: /Iniciar check-in/ })).toBeInTheDocument();
+  });
+
+  it("Housekeeping NO ve \"Iniciar check-in\" en una tarjeta libre", async () => {
+    useSesion.mockReturnValue({ rol: "housekeeping", puede: puedeComoRol("housekeeping") });
+    renderPanel();
+
+    await screen.findByText("55"); // espera a que la tarjeta termine de cargar
+    expect(screen.queryByRole("link", { name: /Iniciar check-in/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('HabitacionesPage — atajo "Marcar como limpia" en una tarjeta en limpieza, por rol', () => {
+  it("Housekeeping ve \"Marcar como limpia\" y al usarlo llama a actualizarEstadoHabitacion(id, \"libre\")", async () => {
+    useSesion.mockReturnValue({ rol: "housekeeping", puede: puedeComoRol("housekeeping") });
+    listarHabitaciones.mockResolvedValue([HABITACION_EN_LIMPIEZA]);
+    const usuario = userEvent.setup();
+    renderPanel();
+
+    // Nombre exacto (no regex): la tarjeta entera también tiene role="button"
+    // y su nombre accesible incluye todo el texto descendiente, así que una
+    // regex acá matchea tanto la tarjeta como el botón real ("Found multiple
+    // elements").
+    const boton = await screen.findByRole("button", { name: "→ Marcar como limpia" });
+    await usuario.click(boton);
+
+    expect(actualizarEstadoHabitacion).toHaveBeenCalledWith(HABITACION_EN_LIMPIEZA.id, "libre");
+  });
+
+  it("Recepcionista NO ve \"Marcar como limpia\"", async () => {
+    useSesion.mockReturnValue({ rol: "recepcionista", puede: puedeComoRol("recepcionista") });
+    listarHabitaciones.mockResolvedValue([HABITACION_EN_LIMPIEZA]);
+    renderPanel();
+
+    await screen.findByText("23");
+    expect(screen.queryByRole("button", { name: /Marcar como limpia/ })).not.toBeInTheDocument();
+  });
+
+  it("Admin tampoco ve ningún atajo en la tarjeta (ni check-in ni marcar como limpia)", async () => {
+    useSesion.mockReturnValue({ rol: "admin", puede: puedeComoRol("admin") });
+    listarHabitaciones.mockResolvedValue([HABITACION_LIBRE, HABITACION_EN_LIMPIEZA]);
+    renderPanel();
+
+    await screen.findByText("55");
+    expect(screen.queryByRole("link", { name: /Iniciar check-in/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Marcar como limpia/ })).not.toBeInTheDocument();
   });
 });
