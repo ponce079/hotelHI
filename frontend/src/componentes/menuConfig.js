@@ -17,6 +17,8 @@ import {
   CalendarCheck,
   DoorOpen,
   Utensils,
+  DoorClosed,
+  Receipt,
   Wrench,
 } from "lucide-react";
 
@@ -83,6 +85,18 @@ export const MENU_GRUPOS = [
         icon: Utensils,
         roles: ["admin", "recepcionista"],
       },
+      { 
+        to: "/check-out", 
+        label: "Check-out", 
+        icon: DoorClosed, 
+        roles: ["admin", "recepcionista"] 
+      },
+      { 
+        to: "/comprobantes-estadia",
+        label: "Comprobantes de Huésped", 
+        icon: Receipt, 
+        roles: ["admin", "recepcionista"] 
+      },
     ],
   },
   {
@@ -117,7 +131,10 @@ export const MENU_GRUPOS = [
     // Reportes: un solo item por ahora (HU-9), con lugar para crecer
     // cuando el Sprint de Reporting y Dashboard sume mas pantallas aca.
     grupo: "Reportes",
-    items: [{ to: "/reporte", label: "Reporte de Consumo", icon: BarChart3, roles: ["gerente"] }],
+    items: [
+      { to: "/reporte", label: "Reporte de Consumo", icon: BarChart3, roles: ["gerente"] },
+      { to: "/reporte-caja-diaria", label: "Caja Diaria", icon: BarChart3, roles: ["gerente"] },
+    ], 
   },
   {
     // Administracion: catalogos maestros de configuracion, exclusivos de

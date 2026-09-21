@@ -652,6 +652,7 @@ model PagoEstadiaMedio {
   // Efectivo | Tarjeta crédito | Tarjeta débito | Transferencia | Online
   medioPago     String
   importe       Decimal     @db.Decimal(12, 2)
+  referencia    String?     @db.VarChar(191)
   pagoEstadia   PagoEstadia @relation(fields: [pagoEstadiaId], references: [id])
 
   @@index([pagoEstadiaId], map: "pagos_estadia_medio_pagoEstadiaId_fkey")
@@ -665,6 +666,9 @@ model ComprobanteEstadia {
   tipo                     String
   // Correlativo interno, sin validez fiscal
   numero                   String               @unique
+  // Fecha de emisión (HU-53). La usa el reporte de caja diaria (HU-54) para
+  // ubicar las Notas de Crédito del día.
+  fecha                    DateTime             @default(now())
   importeNeto              Decimal              @db.Decimal(12, 2)
   alicuotaIVA              Decimal              @db.Decimal(5, 2)
   importeIVA               Decimal              @db.Decimal(12, 2)
@@ -673,6 +677,7 @@ model ComprobanteEstadia {
   // Facturación corporativa (HU-55)
   razonSocialTercero       String?
   cuitTercero              String?
+  motivo                   String?
   anulado                  Boolean              @default(false)
   reserva                  Reserva              @relation(fields: [reservaId], references: [id])
   comprobanteRelacionado   ComprobanteEstadia?  @relation("AjustesComprobanteEstadia", fields: [comprobanteRelacionadoId], references: [id])

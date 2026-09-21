@@ -183,6 +183,11 @@ export function SesionProvider({ children }) {
         // recepcionista, sin matices de rol por acción.
         if (accion === "registrarConsumoServicio") return rol === "admin" || rol === "recepcionista";
         if (accion === "verConsumosServicio") return rol === "admin" || rol === "recepcionista";
+                // Sprint 3 académico — Check-out y facturación (HU-48 a HU-56, 87).
+        if (accion === "gestionarCheckOut") return rol === "admin" || rol === "recepcionista";
+        if (accion === "gestionarComprobantesEstadia") return rol === "admin" || rol === "recepcionista";
+        // Caja diaria (HU-54): solo gerente, mismo criterio que Reporte de Consumo (HU-9).
+        if (accion === "verCajaDiaria") return rol === "gerente";
         return false;
       },
     };
