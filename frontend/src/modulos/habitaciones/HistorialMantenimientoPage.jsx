@@ -13,13 +13,19 @@ import { formatearTimestamp } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { listarOrdenesMantenimiento, resolverOrdenMantenimiento } from "./habitaciones.api";
-import { ESTADO_HABITACION_COLOR, ESTADO_ORDEN_MANTENIMIENTO_BADGE } from "./habitaciones.constantes";
+import { ESTADO_ORDEN_MANTENIMIENTO_BADGE } from "./habitaciones.constantes";
 
-// "Todos" no es un estado de habitación (a diferencia de los otros 3 chips,
-// que sí reusan ESTADO_HABITACION_COLOR) — necesita su propio color,
-// neutro/grisáceo a propósito para no confundirse con "Pendientes" (que ya
-// usa el mismo dorado que "mantenimiento").
-const COLOR_TODOS = { fondo: "#e2dccd", texto: "#67604e", borde: "#a79e88" };
+// Pedido explícito (2026-09-21): los chips pasan a ser tarjetas de
+// información iguales a las del Panel de Habitaciones (mismo .stat-chip,
+// mismo relleno sólido siempre, mismo hover con movimiento — ya no la
+// versión "sin relleno" de antes), pero con colores más sutiles que los de
+// ESTADO_HABITACION_COLOR: en vez de esos hex a medida, usan la rampa
+// pastel 100/300/700 que ya define el sistema de diseño (los mismos tonos
+// de Badge.jsx), un escalón más clara que las tarjetas del Panel.
+const COLOR_TODOS = { fondo: "#faf8f2", texto: "#67604e", borde: "#e2dccd" }; // neutro-100/700/300
+const COLOR_PENDIENTES = { fondo: "#f8f0df", texto: "#7c541f", borde: "#e0c896" }; // laton-100/700/300
+const COLOR_URGENTES = { fondo: "#f7e4de", texto: "#8f3322", borde: "#d9a99f" }; // error-suave/error-texto, borde intermedio
+const COLOR_RESUELTAS = { fondo: "#e8f0eb", texto: "#1f4d3a", borde: "#a7c6b5" }; // pino-100/700/300
 
 // Orden por defecto (sin filtro, o dentro del subconjunto que haya
 // quedado visible tras aplicar los chips de abajo): Pendiente antes que
@@ -42,13 +48,13 @@ function ChipFiltro({ label, cantidad, color, activo, onClick }) {
     <button
       type="button"
       onClick={onClick}
-      style={activo ? { backgroundColor: color.fondo, borderColor: color.borde, color: color.texto } : undefined}
-      className={`inline-flex cursor-pointer items-center gap-1.5 rounded-lg border px-3.5 py-2 text-[13px] ${
-        activo ? "" : "border-borde bg-white text-piedra"
-      }`}
+      style={{ backgroundColor: color.fondo, color: color.texto, borderColor: activo ? color.texto : color.borde }}
+      className={`stat-chip cursor-pointer rounded-lg border p-4 text-center ${activo ? "ring-2 ring-offset-1" : ""}`}
     >
-      <Cifra tamano={15}>{cantidad}</Cifra>{" "}
-      <span className="font-body">{label}</span>
+      <div className="text-[11px] font-semibold uppercase tracking-[0.03em]">{label}</div>
+      <Cifra tamano={30} className="mt-1">
+        {cantidad}
+      </Cifra>
     </button>
   );
 }
@@ -116,14 +122,14 @@ export function HistorialMantenimientoPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
+      <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
         <h1 className="font-heading text-[34px] font-semibold">Historial de Mantenimiento</h1>
-        <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
+        <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
           Órdenes registradas en todas las habitaciones
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <ChipFiltro
           label="Todos"
           cantidad={todas.length}
@@ -137,21 +143,21 @@ export function HistorialMantenimientoPage() {
         <ChipFiltro
           label="Pendientes"
           cantidad={cantidadPendientes}
-          color={ESTADO_HABITACION_COLOR.mantenimiento}
+          color={COLOR_PENDIENTES}
           activo={filtroEstado === "Pendiente"}
           onClick={() => setFiltroEstado((actual) => (actual === "Pendiente" ? null : "Pendiente"))}
         />
         <ChipFiltro
           label="Urgentes"
           cantidad={cantidadUrgentes}
-          color={ESTADO_HABITACION_COLOR.bloqueada}
+          color={COLOR_URGENTES}
           activo={soloUrgentes}
           onClick={() => setSoloUrgentes((actual) => !actual)}
         />
         <ChipFiltro
           label="Resueltas"
           cantidad={cantidadResueltas}
-          color={ESTADO_HABITACION_COLOR.libre}
+          color={COLOR_RESUELTAS}
           activo={filtroEstado === "Resuelta"}
           onClick={() => setFiltroEstado((actual) => (actual === "Resuelta" ? null : "Resuelta"))}
         />

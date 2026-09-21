@@ -150,20 +150,23 @@ describe("HistorialMantenimientoPage — botón inline \"Marcar como resuelta\""
 });
 
 describe("HistorialMantenimientoPage — chips de filtro", () => {
-  it('muestra el conteo real de cada chip: "4 Todos", "2 Pendientes", "2 Urgentes", "2 Resueltas"', async () => {
+  it('muestra el conteo real de cada chip: "Todos 4", "Pendientes 2", "Urgentes 2", "Resueltas 2"', async () => {
     renderPagina();
 
-    expect(await screen.findByRole("button", { name: "4 Todos" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "2 Pendientes" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "2 Urgentes" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "2 Resueltas" })).toBeInTheDocument();
+    // Tarjeta de información (2026-09-21, igual que el stat-chip del Panel
+    // de Habitaciones): la etiqueta va arriba y el número (Cifra) abajo, así
+    // que el nombre accesible del botón queda "Etiqueta N", no "N Etiqueta".
+    expect(await screen.findByRole("button", { name: "Todos 4" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Pendientes 2" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Urgentes 2" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Resueltas 2" })).toBeInTheDocument();
   });
 
   it('click en "Pendientes" filtra a solo las 2 órdenes pendientes (toggle: un segundo click lo saca)', async () => {
     const usuario = userEvent.setup();
     renderPagina();
 
-    const chip = await screen.findByRole("button", { name: "2 Pendientes" });
+    const chip = await screen.findByRole("button", { name: "Pendientes 2" });
     await usuario.click(chip);
 
     expect(screen.getByText("55")).toBeInTheDocument();
@@ -179,8 +182,8 @@ describe("HistorialMantenimientoPage — chips de filtro", () => {
     const usuario = userEvent.setup();
     renderPagina();
 
-    await usuario.click(await screen.findByRole("button", { name: "2 Pendientes" }));
-    await usuario.click(screen.getByRole("button", { name: "2 Urgentes" }));
+    await usuario.click(await screen.findByRole("button", { name: "Pendientes 2" }));
+    await usuario.click(screen.getByRole("button", { name: "Urgentes 2" }));
 
     expect(screen.getByText("23")).toBeInTheDocument();
     expect(screen.queryByText("55")).not.toBeInTheDocument();
@@ -192,11 +195,11 @@ describe("HistorialMantenimientoPage — chips de filtro", () => {
     const usuario = userEvent.setup();
     renderPagina();
 
-    await usuario.click(await screen.findByRole("button", { name: "2 Pendientes" }));
-    await usuario.click(screen.getByRole("button", { name: "2 Urgentes" }));
+    await usuario.click(await screen.findByRole("button", { name: "Pendientes 2" }));
+    await usuario.click(screen.getByRole("button", { name: "Urgentes 2" }));
     expect(screen.queryByText("55")).not.toBeInTheDocument();
 
-    await usuario.click(screen.getByRole("button", { name: "4 Todos" }));
+    await usuario.click(screen.getByRole("button", { name: "Todos 4" }));
 
     expect(await screen.findByText("55")).toBeInTheDocument();
     expect(screen.getByText("101")).toBeInTheDocument();
