@@ -78,6 +78,15 @@ const TABLAS = [
   "movimientoStock",
   "movimientoStockDetalle",
   "requerimientoReposicion",
+  // Sumadas para pruebas-integracion-mantenimiento-checkout.js: lo mínimo
+  // que necesita consolidarCargos (checkOut.servicio.js) para no fallar al
+  // leerlas — cargoVerificacionCheckout y pagoEstadiaMedio quedan vacías en
+  // esas pruebas a propósito (tarifaPorNoche = 0 en la habitación sembrada,
+  // así el saldo da 0 sin necesidad de simular un pago real). No las usa
+  // ningún otro script hoy.
+  "cargoVerificacionCheckout",
+  "pagoEstadia",
+  "pagoEstadiaMedio",
 ];
 
 // Campos `@default(now())` del schema real que ningún servicio setea a
@@ -93,6 +102,8 @@ const CAMPO_FECHA_POR_DEFECTO = {
   movimientoStock: "fecha",
   notificacion: "fechaEnvio",
   ordenMantenimiento: "fecha",
+  cargoVerificacionCheckout: "fechaHora",
+  pagoEstadia: "fecha",
 };
 let relojFalso = Date.now();
 function ahoraFalso() {
@@ -131,6 +142,13 @@ function crearBase() {
         const propias = datos.reservaHabitacion.filter((rh) => rh.reservaId === registro.id);
         if (condicion.some) return propias.some((rh) => coincide("reservaHabitacion", rh, condicion.some));
         throw new Error("Solo se soporta `some` sobre reservaHabitaciones");
+      }
+
+      // --- Relación de checkOut.servicio.js (consolidarCargos: filtra
+      // pagoEstadiaMedio por el pagoEstadia al que pertenece) ---
+      if (tabla === "pagoEstadiaMedio" && campo === "pagoEstadia") {
+        const pago = datos.pagoEstadia.find((p) => p.id === registro.pagoEstadiaId);
+        return pago ? coincide("pagoEstadia", pago, condicion) : false;
       }
 
       // --- Relaciones de Stock (Sprint 1) que usa movimientoSalida.servicio.js ---
@@ -172,6 +190,13 @@ function crearBase() {
           .filter((o) => o.habitacionId === registro.id)
           .map((o) => ({ ...o, notificaciones: datos.notificacion.filter((n) => n.ordenMantenimientoId === o.id) }));
       }
+    }
+    // Reverso de la relación de arriba — lo usa resolverOrdenMantenimiento
+    // (habitaciones.servicio.js) al leer la orden con su habitación para
+    // decidir a qué estado restaurarla. Nunca antes ejercitado por un
+    // script: pruebas-habitaciones.js solo prueba cambiarEstadoHabitacion.
+    if (tabla === "ordenMantenimiento") {
+      if (include.habitacion) salida.habitacion = datos.habitacion.find((h) => h.id === registro.habitacionId) ?? null;
     }
     if (tabla === "consumoServicioAdicional") {
       if (include.articulo) salida.articulo = datos.articulo.find((a) => a.id === registro.articuloId) ?? null;
@@ -233,11 +258,31 @@ function crearBase() {
         const filas = ordenar(datos[tabla].filter((r) => coincide(tabla, r, where)), orderBy);
         return filas[0] ? expandir(tabla, filas[0], include ?? {}) : null;
       },
+      // Usado por resolverOrdenMantenimiento (habitaciones.servicio.js) para
+      // saber si queda otra orden "Pendiente" antes de restaurar el estado.
+      count: async ({ where = {} } = {}) => datos[tabla].filter((r) => coincide(tabla, r, where)).length,
       findUnique: async ({ where = {}, include, select } = {}) => {
         const fila = datos[tabla].find((r) => coincide(tabla, r, where));
         if (!fila) return null;
         if (select) return Object.fromEntries(Object.keys(select).map((k) => [k, fila[k]]));
         return expandir(tabla, fila, include ?? {});
+      },
+      // Solo `_sum` (lo único que usa consolidarCargos en checkOut.servicio.js,
+      // vía pagoEstadiaMedio.aggregate). Mismo criterio que Prisma real: si no
+      // hay filas que matcheen, el campo da `null`, no 0 — por eso el
+      // `Number(x || 0)` que ya hace el código que lo consume.
+      aggregate: async ({ where = {}, _sum } = {}) => {
+        const filas = datos[tabla].filter((r) => coincide(tabla, r, where));
+        const resultado = {};
+        if (_sum) {
+          resultado._sum = Object.fromEntries(
+            Object.keys(_sum).map((campo) => [
+              campo,
+              filas.length ? filas.reduce((acc, f) => acc + Number(f[campo] ?? 0), 0) : null,
+            ])
+          );
+        }
+        return resultado;
       },
       create: async ({ data, include }) => {
         const { reservaHabitaciones, ...propios } = data;
@@ -412,7 +457,12 @@ function instalarDoble(base) {
   const cargarModuloOriginal = Module._load;
   Module._load = function (solicitud, ...resto) {
     if (solicitud === "@prisma/client") return { Prisma: PrismaFalso };
-    if (/(^|[/\\])lib[/\\]prisma$/.test(solicitud)) return base;
+    // Dos formas de pedirlo según desde dónde se requiere: "../../lib/prisma"
+    // (la mayoría de los *.servicio.js) o "./prisma" (archivos que ya viven
+    // adentro de src/lib/, como comprobantes.js — sumado al requerir
+    // checkOut.servicio.js para pruebas-integracion-mantenimiento-checkout.js,
+    // que es el primer script que lo trae transitivamente).
+    if (/(^|[/\\])lib[/\\]prisma$/.test(solicitud) || solicitud === "./prisma") return base;
     return cargarModuloOriginal.call(this, solicitud, ...resto);
   };
 }
