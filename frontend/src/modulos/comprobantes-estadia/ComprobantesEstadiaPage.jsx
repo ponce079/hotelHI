@@ -18,7 +18,10 @@ import { TIPO_COMPROBANTE_BADGE, TIPOS_COMPROBANTE_ESTADIA } from "./comprobante
 
 export function ComprobantesEstadiaPage() {
   const { puede } = useSesion();
-  const puedeGestionar = puede("gestionarComprobantesEstadia");
+  // Admin ve el listado pero no opera (re-auditoría del 2026-09-21) — esta
+  // pantalla solo lista y navega a "Ver", así que "ver" alcanza para todo
+  // lo que hace acá; "gestionar" solo se usa en la ficha de detalle.
+  const puedeVer = puede("verComprobantesEstadia");
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const [tipo, setTipo] = useState("");
@@ -35,10 +38,10 @@ export function ComprobantesEstadiaPage() {
         desde: desde || undefined,
         hasta: hasta || undefined,
       }),
-    enabled: puedeGestionar,
+    enabled: puedeVer,
   });
 
-  if (!puedeGestionar) return <SinPermiso />;
+  if (!puedeVer) return <SinPermiso />;
 
   const comprobantes = comprobantesQuery.data ?? [];
 

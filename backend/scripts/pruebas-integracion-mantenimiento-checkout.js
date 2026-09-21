@@ -80,6 +80,11 @@ const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Tarjeta de créd
 // real que HU-43/47 (reservasServicio.crearReserva + confirmarCheckInConReserva
 // de checkIn.servicio.js, ya probados en pruebas-checkin.js). tarifaPorNoche
 // en 0 (ver nota de arriba) para que el check-out nunca se frene por saldo.
+//
+// También registra la verificación "sin novedades" (HU-87): desde la
+// re-auditoría del 2026-09-21, confirmarCheckOut la exige — sin esto,
+// las 6 pruebas de este archivo (que no son sobre HU-87, son sobre el
+// estado de la habitación) fallarían por un motivo que no les compete.
 async function crearReservaEnCurso(numeroHabitacion) {
   const habitacion = base._sembrarHabitacion({ numero: numeroHabitacion, tarifaPorNoche: 0 });
   const reserva = await reservasServicio.crearReserva({
@@ -93,6 +98,7 @@ async function crearReservaEnCurso(numeroHabitacion) {
     numeroDocumentoIngresado: HUESPED.numeroDocumento,
     ...GARANTIA_OK,
   });
+  await checkOutServicio.registrarVerificacion(reserva.id, { tipo: "SinNovedades", registradoPor: "Ana" });
   return { habitacion, reserva };
 }
 

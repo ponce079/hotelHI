@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { DoorClosed, Search } from "lucide-react";
+import { DoorClosed, Eye, Search } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { CodigoClave } from "../../componentes/CodigoClave";
@@ -20,6 +20,10 @@ import { ESTADO_RESERVA } from "../reservas/reservas.constantes";
 // (/check-out/:reservaId).
 export function CheckOutPage() {
   const { puede } = useSesion();
+  const puedeVer = puede("verCheckOut");
+  // Admin ve el listado pero no opera (re-auditoría del 2026-09-21, mismo
+  // criterio que Habitaciones/Mantenimiento) — condiciona el botón de cada
+  // fila más abajo, no el acceso a la pantalla.
   const puedeGestionar = puede("gestionarCheckOut");
   const navigate = useNavigate();
   const [q, setQ] = useState("");
@@ -27,10 +31,10 @@ export function CheckOutPage() {
   const reservasQuery = useQuery({
     queryKey: ["reservas", "check-out", q],
     queryFn: () => listarReservas({ estado: ESTADO_RESERVA.EN_CURSO, q: q.trim() || undefined }),
-    enabled: puedeGestionar,
+    enabled: puedeVer,
   });
 
-  if (!puedeGestionar) return <SinPermiso />;
+  if (!puedeVer) return <SinPermiso />;
 
   const hoy = hoyEnHoraLocal();
   const reservas = reservasQuery.data ?? [];
@@ -87,8 +91,13 @@ export function CheckOutPage() {
                     {salida < hoy && <Badge variante="error">Salida vencida</Badge>}
                   </td>
                   <td className="px-3 py-2.5 text-right">
-                    <Button variante="ok" tamano="fila" icono={DoorClosed} onClick={() => navigate(`/check-out/${r.id}`)}>
-                      Iniciar check-out
+                    <Button
+                      variante={puedeGestionar ? "ok" : "secundario"}
+                      tamano="fila"
+                      icono={puedeGestionar ? DoorClosed : Eye}
+                      onClick={() => navigate(`/check-out/${r.id}`)}
+                    >
+                      {puedeGestionar ? "Iniciar check-out" : "Ver"}
                     </Button>
                   </td>
                 </tr>

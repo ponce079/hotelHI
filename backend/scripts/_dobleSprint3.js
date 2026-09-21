@@ -82,11 +82,14 @@ const TABLAS = [
   // que necesita consolidarCargos (checkOut.servicio.js) para no fallar al
   // leerlas — cargoVerificacionCheckout y pagoEstadiaMedio quedan vacías en
   // esas pruebas a propósito (tarifaPorNoche = 0 en la habitación sembrada,
-  // así el saldo da 0 sin necesidad de simular un pago real). No las usa
-  // ningún otro script hoy.
+  // así el saldo da 0 sin necesidad de simular un pago real).
   "cargoVerificacionCheckout",
   "pagoEstadia",
   "pagoEstadiaMedio",
+  // Sumada para pruebas-checkout-facturacion.js (crearComprobante,
+  // crearNotaCredito, anularComprobante, reporteCajaDiaria). No la usa
+  // ningún otro script hoy.
+  "comprobanteEstadia",
 ];
 
 // Campos `@default(now())` del schema real que ningún servicio setea a
@@ -104,7 +107,32 @@ const CAMPO_FECHA_POR_DEFECTO = {
   ordenMantenimiento: "fecha",
   cargoVerificacionCheckout: "fechaHora",
   pagoEstadia: "fecha",
+  comprobanteEstadia: "fecha",
 };
+
+// Mismo problema que CAMPO_FECHA_POR_DEFECTO pero para `Boolean
+// @default(false)` — sumado para pruebas-checkout-facturacion.js:
+// pagoEstadiaServicio.crearPago y comprobanteEstadiaServicio.crearComprobante/
+// crearNotaCredito no setean `anulado` a mano (confían en el default del
+// schema), así que sin esto quedaba `undefined` en el doble y cualquier
+// `where: { anulado: false }` (el chequeo de "comprobante vigente", el de
+// "pagos no anulados" de consolidarCargos, etc.) no matcheaba nunca.
+const CAMPO_BOOLEANO_FALSE_POR_DEFECTO = {
+  pagoEstadia: ["anulado"],
+  comprobanteEstadia: ["anulado"],
+};
+
+// Relaciones 1-a-N creadas con la sintaxis anidada de Prisma
+// (`campo: { create: [...] }` dentro de un `.create`/`.update`) que de
+// verdad usa código real de este proyecto — sin esto, el doble guardaba el
+// objeto `{ create: [...] }` tal cual como si fuera un campo más, en vez de
+// crear las filas hijas en su propia tabla.
+const RELACIONES_ANIDADAS = {
+  reserva: { reservaHabitaciones: { tabla: "reservaHabitacion", fk: "reservaId" } },
+  // pagoEstadiaServicio.crearPago: `medios: { create: [...] }`.
+  pagoEstadia: { medios: { tabla: "pagoEstadiaMedio", fk: "pagoEstadiaId" } },
+};
+
 let relojFalso = Date.now();
 function ahoraFalso() {
   relojFalso += 1;
@@ -209,6 +237,37 @@ function crearBase() {
         salida.stock = datos.articuloDepositoStock.find((s) => s.articuloDepositoId === registro.id) ?? null;
       }
     }
+    // Relaciones de pagoEstadia.servicio.js (pruebas-checkout-facturacion.js).
+    if (tabla === "pagoEstadia") {
+      if (include.medios) {
+        salida.medios = datos.pagoEstadiaMedio.filter((m) => m.pagoEstadiaId === registro.id);
+      }
+      if (include.reserva) {
+        const reserva = datos.reserva.find((r) => r.id === registro.reservaId);
+        salida.reserva = reserva ? expandir("reserva", reserva, include.reserva === true ? {} : include.reserva) : null;
+      }
+    }
+    // Relaciones de comprobanteEstadia.servicio.js (pruebas-checkout-facturacion.js):
+    // mismo mecanismo auto-referenciado (tipo + comprobanteRelacionadoId) que
+    // ComprobanteProveedor.ajustes en Sprint 2.
+    if (tabla === "comprobanteEstadia") {
+      if (include.ajustes) {
+        const condicionAjustes = include.ajustes === true ? {} : (include.ajustes.where ?? {});
+        salida.ajustes = datos.comprobanteEstadia.filter((c) =>
+          coincide("comprobanteEstadia", c, { comprobanteRelacionadoId: registro.id, ...condicionAjustes })
+        );
+      }
+      if (include.comprobanteRelacionado) {
+        salida.comprobanteRelacionado =
+          datos.comprobanteEstadia.find((c) => c.id === registro.comprobanteRelacionadoId) ?? null;
+      }
+      if (include.reserva) {
+        const reserva = datos.reserva.find((r) => r.id === registro.reservaId);
+        salida.reserva = reserva
+          ? expandir("reserva", reserva, include.reserva === true ? {} : include.reserva)
+          : null;
+      }
+    }
     if (tabla === "movimientoStock") {
       if (include.deposito) salida.deposito = datos.deposito.find((d) => d.id === registro.depositoId) ?? null;
       if (include.tipoMovStock) {
@@ -271,6 +330,32 @@ function crearBase() {
       // vía pagoEstadiaMedio.aggregate). Mismo criterio que Prisma real: si no
       // hay filas que matcheen, el campo da `null`, no 0 — por eso el
       // `Number(x || 0)` que ya hace el código que lo consume.
+      // Usado por reporteCajaDiaria (comprobanteEstadia.servicio.js) sobre
+      // pagoEstadiaMedio.groupBy y consumoServicioAdicional.groupBy. Solo
+      // soporta `by` (un campo o varios) + `_sum` — es lo único que pide
+      // ese reporte hoy.
+      groupBy: async ({ by, where = {}, _sum } = {}) => {
+        const claves = Array.isArray(by) ? by : [by];
+        const filas = datos[tabla].filter((r) => coincide(tabla, r, where));
+        const grupos = new Map();
+        for (const fila of filas) {
+          const clave = claves.map((c) => fila[c]).join("|");
+          if (!grupos.has(clave)) grupos.set(clave, []);
+          grupos.get(clave).push(fila);
+        }
+        return [...grupos.values()].map((filasDelGrupo) => {
+          const resultado = {};
+          claves.forEach((c) => {
+            resultado[c] = filasDelGrupo[0][c];
+          });
+          if (_sum) {
+            resultado._sum = Object.fromEntries(
+              Object.keys(_sum).map((campo) => [campo, filasDelGrupo.reduce((acc, f) => acc + Number(f[campo] ?? 0), 0)])
+            );
+          }
+          return resultado;
+        });
+      },
       aggregate: async ({ where = {}, _sum } = {}) => {
         const filas = datos[tabla].filter((r) => coincide(tabla, r, where));
         const resultado = {};
@@ -285,10 +370,15 @@ function crearBase() {
         return resultado;
       },
       create: async ({ data, include }) => {
-        const { reservaHabitaciones, ...propios } = data;
+        const relaciones = RELACIONES_ANIDADAS[tabla] ?? {};
+        const propios = { ...data };
+        for (const clave of Object.keys(relaciones)) delete propios[clave];
         const fila = { id: siguienteId(tabla), ...propios };
         const campoFecha = CAMPO_FECHA_POR_DEFECTO[tabla];
         if (campoFecha && fila[campoFecha] === undefined) fila[campoFecha] = ahoraFalso();
+        for (const campoBool of CAMPO_BOOLEANO_FALSE_POR_DEFECTO[tabla] ?? []) {
+          if (fila[campoBool] === undefined) fila[campoBool] = false;
+        }
         // Unicidad real de la base, para probar reintentos (mismo criterio
         // que pruebas-reservas.js).
         if (tabla === "reserva" && datos.reserva.some((r) => r.codigoConfirmacion === fila.codigoConfirmacion)) {
@@ -301,9 +391,12 @@ function crearBase() {
           throw new PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", meta: { target: ["numero"] } });
         }
         datos[tabla].push(fila);
-        if (reservaHabitaciones?.create) {
-          for (const rh of reservaHabitaciones.create) {
-            datos.reservaHabitacion.push({ id: siguienteId("reservaHabitacion"), reservaId: fila.id, ...rh });
+        for (const [clave, { tabla: tablaHija, fk }] of Object.entries(relaciones)) {
+          const anidado = data[clave];
+          if (anidado?.create) {
+            for (const hijo of anidado.create) {
+              datos[tablaHija].push({ id: siguienteId(tablaHija), [fk]: fila.id, ...hijo });
+            }
           }
         }
         return expandir(tabla, fila, include ?? {});
@@ -311,7 +404,9 @@ function crearBase() {
       update: async ({ where, data, include }) => {
         const fila = datos[tabla].find((r) => coincide(tabla, r, where));
         if (!fila) throw new Error(`No existe la fila a actualizar en ${tabla}`);
-        const { reservaHabitaciones, ...propios } = data;
+        const relaciones = RELACIONES_ANIDADAS[tabla] ?? {};
+        const propios = { ...data };
+        for (const clave of Object.keys(relaciones)) delete propios[clave];
         // Soporta `{ decrement: n }` (usado por articuloDepositoStock).
         for (const [campo, valor] of Object.entries(propios)) {
           if (valor && typeof valor === "object" && "decrement" in valor) {
@@ -320,9 +415,12 @@ function crearBase() {
             fila[campo] = valor;
           }
         }
-        if (reservaHabitaciones?.create) {
-          for (const rh of reservaHabitaciones.create) {
-            datos.reservaHabitacion.push({ id: siguienteId("reservaHabitacion"), reservaId: fila.id, ...rh });
+        for (const [clave, { tabla: tablaHija, fk }] of Object.entries(relaciones)) {
+          const anidado = data[clave];
+          if (anidado?.create) {
+            for (const hijo of anidado.create) {
+              datos[tablaHija].push({ id: siguienteId(tablaHija), [fk]: fila.id, ...hijo });
+            }
           }
         }
         return expandir(tabla, fila, include ?? {});
@@ -371,14 +469,57 @@ function crearBase() {
   // `Date` (a diferencia de JSON.stringify/parse). Las secuencias de id NO
   // se restauran a propósito: un rollback real de Postgres/MySQL tampoco
   // "libera" el autoincremental que ya se consumió.
+  // Cola FIFO de transacciones — sumada para pruebas-checkout-facturacion.js
+  // (condición de carrera de crearPago). Sin esto, dos `$transaction`
+  // lanzadas con Promise.all se interlazarían libremente con el event loop
+  // de JS: las dos leerían el saldo "viejo" antes de que cualquiera
+  // escriba, y las dos pasarían la validación — exactamente el doble cobro
+  // que el `SELECT ... FOR UPDATE` real evita en MySQL bloqueando la
+  // segunda transacción hasta que la primera libera la fila. Acá no hay
+  // filas reales que lockear, así que se simula con un mutex global: la
+  // segunda transacción espera a que la primera termine (commit o
+  // rollback) antes de correr su propio cuerpo. Es más estricto que un
+  // lock real (serializa TODAS las transacciones concurrentes, no solo
+  // las que compiten por la misma fila), pero para probar que el patrón
+  // "recalcular con lock adentro de la transacción" evita la carrera,
+  // alcanza y sobra.
+  //
+  // Reentrante a propósito (cuenta `profundidad`, solo espera en la cola
+  // si es la llamada MÁS externa): `movimientoSalida.servicio.js` abre su
+  // propia `cliente.$transaction` cuando lo llaman con un `tx` que ya está
+  // "dentro" de otra transacción (ver su comentario sobre `typeof
+  // cliente.$transaction === "function"`) — en Prisma real un `tx` no
+  // tiene `$transaction`, así que esa rama nunca se ejecutaría anidada,
+  // pero acá `cliente` es el mismo objeto siempre, así que si la cola no
+  // fuera reentrante, la transacción anidada de HU-61 (Minibar, ver
+  // pruebas-servicios-adicionales.js) esperaría para siempre a que la
+  // transacción externa (que la está esperando a ELLA) termine —
+  // deadlock. Con `profundidad`, solo la llamada externa hace cola; las
+  // anidadas corren enseguida, igual que antes de sumar este mutex.
+  let colaTransacciones = Promise.resolve();
+  let profundidadTransaccion = 0;
   cliente.$transaction = async (fn, _opciones) => {
     if (typeof fn !== "function") return Promise.all(fn);
-    const snapshot = structuredClone(datos);
+    let liberar = null;
+    if (profundidadTransaccion === 0) {
+      const anterior = colaTransacciones;
+      colaTransacciones = new Promise((resolve) => {
+        liberar = resolve;
+      });
+      await anterior;
+    }
+    profundidadTransaccion += 1;
     try {
-      return await fn(cliente);
-    } catch (err) {
-      for (const tabla of TABLAS) datos[tabla] = snapshot[tabla];
-      throw err;
+      const snapshot = structuredClone(datos);
+      try {
+        return await fn(cliente);
+      } catch (err) {
+        for (const tabla of TABLAS) datos[tabla] = snapshot[tabla];
+        throw err;
+      }
+    } finally {
+      profundidadTransaccion -= 1;
+      if (liberar) liberar();
     }
   };
 

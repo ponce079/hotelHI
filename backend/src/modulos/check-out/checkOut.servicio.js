@@ -3,6 +3,8 @@ const { redondear } = require('../../lib/comprobantes');
 const reservasServicio = require('../reservas/reservas.servicio');
 const {
   TIPOS_CARGO_VERIFICACION,
+  TIPO_VERIFICACION_SIN_NOVEDADES,
+  DESCRIPCION_VERIFICACION_SIN_NOVEDADES,
   ESTADO_HABITACION_POST_CHECKOUT,
   TIPO_NOTIFICACION_HOUSEKEEPING,
   AREA_HOUSEKEEPING,
@@ -165,17 +167,25 @@ async function consolidarCargos(reservaId, cliente = prisma) {
 async function registrarVerificacion(reservaId, data = {}) {
   const id = idValido(reservaId);
   const { tipo, descripcion, monto, registradoPor } = data;
+  // "Sin novedades" (ver checkOut.constantes.js): mismo registro, sin
+  // monto — es el único tipo que puede tener importe 0, todos los demás
+  // (Daño/Faltante/ConsumoNoRegistrado) siguen exigiendo un monto > 0.
+  const esSinNovedades = tipo === TIPO_VERIFICACION_SIN_NOVEDADES;
 
-  if (!TIPOS_CARGO_VERIFICACION.includes(tipo)) {
-    throw new ErrorDeNegocio(`tipo inválido. Valores permitidos: ${TIPOS_CARGO_VERIFICACION.join(', ')}`);
+  if (!esSinNovedades && !TIPOS_CARGO_VERIFICACION.includes(tipo)) {
+    throw new ErrorDeNegocio(
+      `tipo inválido. Valores permitidos: ${TIPOS_CARGO_VERIFICACION.join(', ')} o ${TIPO_VERIFICACION_SIN_NOVEDADES}`
+    );
   }
-  const desc = String(descripcion ?? '').trim();
+  const desc = String(descripcion ?? (esSinNovedades ? DESCRIPCION_VERIFICACION_SIN_NOVEDADES : '')).trim();
   if (!desc) throw new ErrorDeNegocio('La descripción es obligatoria: hay que dejar qué se encontró.');
   if (desc.length > LIMITES_VERIFICACION.descripcion) {
     throw new ErrorDeNegocio(`La descripción no puede superar ${LIMITES_VERIFICACION.descripcion} caracteres.`);
   }
-  const importe = Number(monto);
-  if (!Number.isFinite(importe) || importe <= 0) throw new ErrorDeNegocio('monto debe ser un número mayor a 0.');
+  const importe = esSinNovedades ? 0 : Number(monto);
+  if (!esSinNovedades && (!Number.isFinite(importe) || importe <= 0)) {
+    throw new ErrorDeNegocio('monto debe ser un número mayor a 0.');
+  }
   const quien = String(registradoPor ?? '').trim();
   if (!quien) throw new ErrorDeNegocio('registradoPor es obligatorio: hay que dejar quién realizó la verificación.');
   if (quien.length > LIMITES_VERIFICACION.registradoPor) {
@@ -242,6 +252,21 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
       if (cuenta.estadoReserva !== 'En curso') {
         throw new ErrorDeNegocio(
           `No se puede hacer el check-out de una reserva "${cuenta.estadoReserva}": tiene que estar "En curso".`,
+          409
+        );
+      }
+      // HU-87 (re-auditoría del 2026-09-21): hasta acá el único gate de la
+      // verificación era el botón deshabilitado en la pantalla — un POST
+      // directo a /confirmar, sin pasar nunca por /verificaciones, cerraba
+      // la reserva igual. Ahora se exige al menos un registro real (con
+      // cargo o "sin novedades", da lo mismo cuál) antes de aceptar el
+      // cierre. Se re-consulta con `tx` (mismo lock de la reserva de
+      // arriba) para no aceptar un registro que se está por perder por un
+      // rollback concurrente.
+      const huboVerificacion = await tx.cargoVerificacionCheckout.findFirst({ where: { reservaId: id } });
+      if (!huboVerificacion) {
+        throw new ErrorDeNegocio(
+          'Falta verificar la habitación antes de confirmar el check-out (HU-87): registrá lo que encontraste o marcá "Verificación sin novedades".',
           409
         );
       }

@@ -194,9 +194,21 @@ export function SesionProvider({ children }) {
         if (accion === "registrarConsumoServicio") return rol === "admin" || rol === "recepcionista";
         if (accion === "verConsumosServicio") return rol === "admin" || rol === "recepcionista";
                 // Sprint 3 académico — Check-out y facturación (HU-48 a HU-56, 87).
-        if (accion === "gestionarCheckOut") return rol === "admin" || rol === "recepcionista";
-        if (accion === "gestionarComprobantesEstadia") return rol === "admin" || rol === "recepcionista";
-        // Caja diaria (HU-54): solo gerente, mismo criterio que Reporte de Consumo (HU-9).
+        // Corrección de la re-auditoría del 2026-09-21: admin pasa a ser de
+        // solo lectura acá — mismo criterio que Habitaciones/Mantenimiento
+        // (gestionarMantenimiento excluye a admin), no el de Reservas/
+        // Check-in/Servicios Adicionales (donde admin sí gestiona). Antes
+        // "gestionarCheckOut"/"gestionarComprobantesEstadia" incluían admin
+        // con el mismo permiso de escritura que recepcionista; separados en
+        // "ver" (admin + recepcionista, para poder revisar sin operar) y
+        // "gestionar" (exclusivo recepcionista: cerrar check-outs, cobrar,
+        // registrar verificaciones, emitir/anular comprobantes y notas de
+        // crédito).
+        if (accion === "verCheckOut") return rol === "admin" || rol === "recepcionista";
+        if (accion === "gestionarCheckOut") return rol === "recepcionista";
+        if (accion === "verComprobantesEstadia") return rol === "admin" || rol === "recepcionista";
+        if (accion === "gestionarComprobantesEstadia") return rol === "recepcionista";
+        // Caja diaria (HU-54): solo gerente, mismo criterio que Reporte de Consumo (HU-9). Sin cambios.
         if (accion === "verCajaDiaria") return rol === "gerente";
         return false;
       },

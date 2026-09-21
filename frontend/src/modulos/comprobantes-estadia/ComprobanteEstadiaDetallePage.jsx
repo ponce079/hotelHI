@@ -34,6 +34,10 @@ function Dato({ etiqueta, children }) {
 export function ComprobanteEstadiaDetallePage() {
   const { id } = useParams();
   const { puede } = useSesion();
+  const puedeVer = puede("verComprobantesEstadia");
+  // Admin ve la ficha (incluida la impresión) pero no emite notas de
+  // crédito ni anula (re-auditoría del 2026-09-21, mismo criterio que
+  // Habitaciones/Mantenimiento).
   const puedeGestionar = puede("gestionarComprobantesEstadia");
   const volver = useVolver("/comprobantes-estadia");
   const queryClient = useQueryClient();
@@ -45,7 +49,7 @@ export function ComprobanteEstadiaDetallePage() {
   const comprobanteQuery = useQuery({
     queryKey: ["comprobantes-estadia", "detalle", id],
     queryFn: () => obtenerComprobante(id),
-    enabled: puedeGestionar,
+    enabled: puedeVer,
   });
 
   const mutacionAnular = useMutation({
@@ -63,7 +67,7 @@ export function ComprobanteEstadiaDetallePage() {
     },
   });
 
-  if (!puedeGestionar) return <SinPermiso />;
+  if (!puedeVer) return <SinPermiso />;
   if (comprobanteQuery.isLoading) return <p className="text-sm text-piedra">Cargando comprobante…</p>;
   if (comprobanteQuery.isError) {
     return (
@@ -85,9 +89,9 @@ export function ComprobanteEstadiaDetallePage() {
   const disponible = (centavos(c.importeTotal) - centavos(acreditado)) / 100;
   const huesped = c.reserva?.huesped;
 
-  const puedeEmitirNota = !esNota && !c.anulado && centavos(disponible) > 0;
+  const puedeEmitirNota = puedeGestionar && !esNota && !c.anulado && centavos(disponible) > 0;
   // Regla del backend: un comprobante con notas de crédito vigentes no se anula.
-  const puedeAnular = !c.anulado && notasVigentes.length === 0;
+  const puedeAnular = puedeGestionar && !c.anulado && notasVigentes.length === 0;
 
   return (
     <div className="flex flex-col gap-6">

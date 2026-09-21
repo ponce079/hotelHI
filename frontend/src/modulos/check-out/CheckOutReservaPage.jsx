@@ -35,8 +35,8 @@ import { anularPagoEstadia, listarPagosEstadia } from "../pagos-estadia/pagoEsta
 import { ESTADO_PAGO_BADGE } from "../pagos-estadia/pagoEstadia.constantes";
 import { PagoEstadiaWizard } from "../pagos-estadia/PagoEstadiaWizard";
 import { CargoVerificacionCheckoutModal } from "./CargoVerificacionCheckoutModal";
-import { confirmarCheckOut, obtenerCuenta } from "./checkOut.api";
-import { ETIQUETA_TIPO_CARGO, PASOS_CHECKOUT } from "./checkOut.constantes";
+import { confirmarCheckOut, obtenerCuenta, registrarVerificacion } from "./checkOut.api";
+import { ETIQUETA_TIPO_CARGO, PASOS_CHECKOUT, TIPO_VERIFICACION_SIN_NOVEDADES } from "./checkOut.constantes";
 
 const moneda = (n) => `$ ${formatearMonto(n)}`;
 
@@ -63,18 +63,17 @@ function Fila({ etiqueta, valor, fuerte = false }) {
 
 export function CheckOutReservaPage() {
   const { reservaId } = useParams();
-  const { puede } = useSesion();
+  const { puede, usuario } = useSesion();
+  const puedeVer = puede("verCheckOut");
+  // Admin ve la ficha completa pero no opera (re-auditoría del 2026-09-21,
+  // mismo criterio que Habitaciones/Mantenimiento) — condiciona cada botón
+  // de acción más abajo, no el acceso a la pantalla.
   const puedeGestionar = puede("gestionarCheckOut");
   const volver = useVolver("/check-out");
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { toast, mostrarToast } = useToast();
 
-  // El backend no guarda "verificación sin novedades" (el modelo solo tiene
-  // cargos), así que el orden 48 → 87 → 49 lo lleva esta pantalla: la
-  // verificación cuenta como hecha si ya hay un cargo cargado o si el
-  // recepcionista la marca como completa.
-  const [verificacionMarcada, setVerificacionMarcada] = useState(false);
   const [cargosValidados, setCargosValidados] = useState(false);
   const [modalCargo, setModalCargo] = useState(false);
   const [modalPago, setModalPago] = useState(false);
@@ -85,16 +84,17 @@ export function CheckOutReservaPage() {
   const [errorPago, setErrorPago] = useState("");
   const [motivoAnulacion, setMotivoAnulacion] = useState("");
   const [modalComprobante, setModalComprobante] = useState(false);
+  const [errorVerificacion, setErrorVerificacion] = useState("");
 
   const cuentaQuery = useQuery({
     queryKey: ["check-out", "cuenta", reservaId],
     queryFn: () => obtenerCuenta(reservaId),
-    enabled: puedeGestionar,
+    enabled: puedeVer,
   });
   const pagosQuery = useQuery({
     queryKey: ["check-out", "pagos", reservaId],
     queryFn: () => listarPagosEstadia(reservaId),
-    enabled: puedeGestionar,
+    enabled: puedeVer,
   });
 
   // El comprobante se emite una vez cerrada la estadía: recién ahí se sabe
@@ -104,7 +104,26 @@ export function CheckOutReservaPage() {
   const comprobantesQuery = useQuery({
     queryKey: ["check-out", "comprobantes", reservaId],
     queryFn: () => listarComprobantesReserva(reservaId),
-    enabled: puedeGestionar && estadoCerrado,
+    enabled: puedeVer && estadoCerrado,
+  });
+
+  // HU-87 (re-auditoría del 2026-09-21): antes esto era estado de React
+  // (`verificacionMarcada`), se perdía al recargar y el backend no exigía
+  // ninguna verificación previa para cerrar. Ahora es un registro real
+  // (tipo "SinNovedades", monto 0 — ver checkOut.constantes.js), así que
+  // `verificacionCompleta` sale directo de `cuenta.verificaciones`, sin
+  // estado propio.
+  const mutacionSinNovedades = useMutation({
+    mutationFn: () =>
+      registrarVerificacion(reservaId, { tipo: TIPO_VERIFICACION_SIN_NOVEDADES, registradoPor: usuario }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["check-out"] });
+      setErrorVerificacion("");
+      mostrarToast("Verificación registrada: sin novedades.");
+    },
+    onError: (err) => {
+      setErrorVerificacion(err?.response?.data?.error ?? "No se pudo registrar la verificación.");
+    },
   });
 
   const mutacionAnular = useMutation({
@@ -137,7 +156,7 @@ export function CheckOutReservaPage() {
     },
   });
 
-  if (!puedeGestionar) return <SinPermiso />;
+  if (!puedeVer) return <SinPermiso />;
   if (cuentaQuery.isLoading) return <p className="text-sm text-piedra">Consolidando la cuenta…</p>;
   if (cuentaQuery.isError) {
     return (
@@ -157,13 +176,13 @@ export function CheckOutReservaPage() {
   const cerrada = cuenta.estadoReserva === ESTADO_RESERVA.CERRADA || Boolean(resultado);
   const enCurso = cuenta.estadoReserva === ESTADO_RESERVA.EN_CURSO && !resultado;
   const saldado = Math.round(cuenta.saldo * 100) === 0;
-  const verificacionCompleta = verificacionMarcada || cuenta.verificaciones.length > 0;
+  const verificacionCompleta = cuenta.verificaciones.length > 0;
   const consumosMinibar = cuenta.consumos.filter((c) => c.tipoServicio === "Minibar");
   const comprobanteVigente = (comprobantesQuery.data ?? []).find((c) => c.tipo === "Comprobante" && !c.anulado);
 
   // PasoAPaso: 0 verificación · 1 confirmación · 2 pago · 3 cierre · 4 cerrado.
   const pasoActual = cerrada ? PASOS_CHECKOUT.length : !verificacionCompleta ? 0 : !cargosValidados ? 1 : !saldado ? 2 : 3;
-  const puedeCerrar = enCurso && verificacionCompleta && cargosValidados && saldado;
+  const puedeCerrar = puedeGestionar && enCurso && verificacionCompleta && cargosValidados && saldado;
 
   function alRegistrarCargo(mensaje) {
     setModalCargo(false);
@@ -225,8 +244,9 @@ export function CheckOutReservaPage() {
             ))}
           </ul>
           <p className="flex items-center gap-2 text-[12.5px] text-pino-700">
-            <Bell size={14} /> Se notificó a Housekeeping ({resultado.notificaciones.length} aviso
-            {resultado.notificaciones.length === 1 ? "" : "s"} registrado{resultado.notificaciones.length === 1 ? "" : "s"}).
+            <Bell size={14} /> Housekeeping tiene {resultado.notificaciones.length} registro
+            {resultado.notificaciones.length === 1 ? "" : "s"} pendiente{resultado.notificaciones.length === 1 ? "" : "s"} sobre
+            esta salida.
           </p>
           <div>
             <Button variante="secundario" onClick={volver}>
@@ -322,19 +342,35 @@ export function CheckOutReservaPage() {
         titulo="1. Verificación de la habitación"
         hu="HU 87 — revisá la habitación y cargá daños, faltantes o minibar sin registrar"
       >
-        <div className="flex flex-wrap items-center gap-3">
-          <Button variante="secundario" icono={Plus} disabled={!enCurso} onClick={() => setModalCargo(true)}>
-            Registrar cargo
-          </Button>
-          {verificacionCompleta ? (
-            <Badge variante="ok">Verificación completa</Badge>
-          ) : (
-            <Button variante="secundario" disabled={!enCurso} onClick={() => setVerificacionMarcada(true)}>
-              Verificación sin novedades
-            </Button>
-          )}
-          {!verificacionCompleta && enCurso && (
-            <span className="text-[12px] text-piedra">Cargá lo que encuentres o marcá que no hay nada para cargar.</span>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {puedeGestionar && (
+              <Button variante="secundario" icono={Plus} disabled={!enCurso} onClick={() => setModalCargo(true)}>
+                Registrar cargo
+              </Button>
+            )}
+            {verificacionCompleta ? (
+              <Badge variante="ok">Verificación completa</Badge>
+            ) : (
+              puedeGestionar && (
+                <Button
+                  variante="secundario"
+                  disabled={!enCurso}
+                  cargando={mutacionSinNovedades.isPending}
+                  onClick={() => mutacionSinNovedades.mutate()}
+                >
+                  {mutacionSinNovedades.isPending ? "Registrando…" : "Verificación sin novedades"}
+                </Button>
+              )
+            )}
+            {!verificacionCompleta && enCurso && puedeGestionar && (
+              <span className="text-[12px] text-piedra">Cargá lo que encuentres o marcá que no hay nada para cargar.</span>
+            )}
+          </div>
+          {errorVerificacion && (
+            <div className="rounded-md bg-error-suave px-4 py-3">
+              <p className="text-[12.5px] text-error-texto">{errorVerificacion}</p>
+            </div>
           )}
         </div>
       </Tarjeta>
@@ -344,19 +380,26 @@ export function CheckOutReservaPage() {
         titulo="2. Confirmación de cargos con el huésped"
         hu="HU 49 — el huésped revisa el detalle antes de pagar"
       >
-        <label className={`flex items-start gap-3 text-[13.5px] ${verificacionCompleta && enCurso ? "cursor-pointer" : "opacity-50"}`}>
+        <label
+          className={`flex items-start gap-3 text-[13.5px] ${
+            puedeGestionar && verificacionCompleta && enCurso ? "cursor-pointer" : "opacity-50"
+          }`}
+        >
           <input
             type="checkbox"
             className="mt-1 h-4 w-4 cursor-pointer accent-pino"
             checked={cargosValidados}
-            disabled={!verificacionCompleta || !enCurso}
+            disabled={!puedeGestionar || !verificacionCompleta || !enCurso}
             onChange={(e) => setCargosValidados(e.target.checked)}
           />
           <span>
             El huésped revisó el detalle y confirma los cargos por un total de <strong>{moneda(cuenta.totalAdeudado)}</strong>.
           </span>
         </label>
-        {!verificacionCompleta && enCurso && (
+        {!puedeGestionar && (
+          <p className="mt-2 text-[12px] text-piedra">Solo Recepcionista puede confirmar los cargos con el huésped.</p>
+        )}
+        {puedeGestionar && !verificacionCompleta && enCurso && (
           <p className="mt-2 text-[12px] text-piedra">Primero completá la verificación de la habitación.</p>
         )}
       </Tarjeta>
@@ -364,16 +407,18 @@ export function CheckOutReservaPage() {
       <Tarjeta icono={Wallet} titulo="3. Pago" hu="HU 50 — se pueden combinar medios de pago">
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
-            <Button
-              variante="secundario"
-              icono={Wallet}
-              disabled={!enCurso || !cargosValidados || saldado}
-              onClick={() => setModalPago(true)}
-            >
-              Registrar pago
-            </Button>
+            {puedeGestionar && (
+              <Button
+                variante="secundario"
+                icono={Wallet}
+                disabled={!enCurso || !cargosValidados || saldado}
+                onClick={() => setModalPago(true)}
+              >
+                Registrar pago
+              </Button>
+            )}
             {saldado && <Badge variante="ok">Cuenta saldada</Badge>}
-            {!cargosValidados && enCurso && !saldado && (
+            {puedeGestionar && !cargosValidados && enCurso && !saldado && (
               <span className="text-[12px] text-piedra">Se habilita cuando el huésped confirma los cargos.</span>
             )}
           </div>
@@ -405,7 +450,7 @@ export function CheckOutReservaPage() {
                   {p.anulado ? <Badge variante="neutro">Anulado</Badge> : <Badge variante={ESTADO_PAGO_BADGE[p.estado]}>{p.estado}</Badge>}
                 </td>
                 <td className="px-3 py-2.5 text-right">
-                  {enCurso && !p.anulado && (
+                  {puedeGestionar && enCurso && !p.anulado && (
                     <Button
                       variante="destructivo"
                       tamano="fila"
@@ -443,12 +488,14 @@ export function CheckOutReservaPage() {
             <p className="flex items-center gap-2 text-[13px] font-medium text-pino">
               <CheckCircle2 size={16} /> Check-out confirmado.
             </p>
-          ) : (
+          ) : puedeGestionar ? (
             <div>
               <Button variante="ok" icono={DoorClosed} disabled={!puedeCerrar} onClick={() => setConfirmando(true)}>
                 Confirmar check-out
               </Button>
             </div>
+          ) : (
+            <p className="text-[12px] text-piedra">Solo Recepcionista puede confirmar el check-out.</p>
           )}
         </div>
       </Tarjeta>
@@ -476,9 +523,13 @@ export function CheckOutReservaPage() {
           ) : (
             <div className="flex flex-col items-start gap-3">
               <p className="text-[13px] text-piedra">La estadía todavía no tiene comprobante emitido.</p>
-              <Button variante="ok" icono={Receipt} onClick={() => setModalComprobante(true)}>
-                Emitir comprobante
-              </Button>
+              {puedeGestionar ? (
+                <Button variante="ok" icono={Receipt} onClick={() => setModalComprobante(true)}>
+                  Emitir comprobante
+                </Button>
+              ) : (
+                <p className="text-[12px] text-piedra">Solo Recepcionista puede emitir el comprobante.</p>
+              )}
             </div>
           )}
         </Tarjeta>
