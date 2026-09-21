@@ -1,5 +1,5 @@
 const prisma = require('../../lib/prisma');
-const { MEDIOS_PAGO_ESTADIA } = require('./pagoEstadia.constantes');
+const { MEDIOS_PAGO_ESTADIA, MEDIOS_CON_TARJETA } = require('./pagoEstadia.constantes');
 const checkOutServicio = require('../check-out/checkOut.servicio');
 
 class ErrorDeNegocio extends Error {
@@ -77,6 +77,9 @@ async function crearPago({ reservaId, medios }) {
     const importe = Number(m.importe);
     if (!(importe > 0)) {
       throw new ErrorDeNegocio('Cada medio de pago necesita un importe mayor a cero.');
+    }
+    if (MEDIOS_CON_TARJETA.includes(m.tipo) && !referenciaDe(m)) {
+      throw new ErrorDeNegocio(`El pago con ${m.tipo} necesita la autorización de la tarjeta (referencia).`);
     }
     if (referenciaDe(m).length > REFERENCIA_MAX_LENGTH) {
       throw new ErrorDeNegocio(`La referencia del pago no puede superar los ${REFERENCIA_MAX_LENGTH} caracteres.`);
