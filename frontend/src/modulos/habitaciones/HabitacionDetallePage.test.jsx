@@ -153,7 +153,7 @@ describe("HabitacionDetallePage — reparto de responsabilidad (resolver manteni
     expect(resolverOrdenMantenimiento).toHaveBeenCalledWith(ORDEN_PENDIENTE.id, "Ana");
   });
 
-  it("Recepcionista puede reportar (ve el botón de registrar) pero NO ve \"Marcar como resuelta\"", async () => {
+  it("Recepcionista puede reportar (ve el botón de registrar) pero NO ve \"Marcar como resuelta\" ni la columna ACCIONES", async () => {
     useSesion.mockReturnValue({ rol: "recepcionista", puede: puedeComoRol("recepcionista") });
     obtenerHabitacion.mockResolvedValue({ ...BASE, estado: "mantenimiento", ordenesMantenimiento: [ORDEN_PENDIENTE] });
 
@@ -161,5 +161,8 @@ describe("HabitacionDetallePage — reparto de responsabilidad (resolver manteni
 
     expect(await screen.findByText("Registrar mantenimiento")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Marcar como resuelta" })).not.toBeInTheDocument();
+    // No solo el botón: la columna entera (antes quedaba con el header
+    // "Acciones" pero la celda vacía para quien no puede resolver).
+    expect(screen.queryByRole("columnheader", { name: "Acciones" })).not.toBeInTheDocument();
   });
 });

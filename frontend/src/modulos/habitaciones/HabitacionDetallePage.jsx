@@ -96,6 +96,13 @@ export function HabitacionDetallePage() {
     mutationFn: () => resolverOrdenMantenimiento(ordenAResolver.id, resueltaPor.trim()),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["habitaciones"] });
+      // Antes solo invalidaba "habitaciones": el badge de pendientes del
+      // menú lateral y la tabla de HistorialMantenimientoPage.jsx viven en
+      // el queryKey "ordenes-mantenimiento" (mismo que ya invalida
+      // MantenimientoModal.jsx al crear una orden) — sin esto, resolver
+      // una orden desde acá dejaba el badge desactualizado hasta el
+      // próximo refetchInterval.
+      queryClient.invalidateQueries({ queryKey: ["ordenes-mantenimiento"] });
       mostrarToast(`Orden de mantenimiento de la habitación ${habitacion.numero} marcada como resuelta.`);
       setOrdenAResolver(null);
       setResueltaPor("");
@@ -237,8 +244,17 @@ export function HabitacionDetallePage() {
           )}
         </div>
         <Table
-          columnas={["Fecha", "Tipo", "Responsable", "Prioridad", "Estado", ""]}
-          columnasDerecha={[""]}
+          // "Acciones" es solo para quien puede resolver (Housekeeping) —
+          // Recepcionista y Admin son de solo lectura acá (ver
+          // resolverMantenimiento en sesion.jsx), así que no se les muestra
+          // la columna vacía, se las saca del todo. Mismo criterio que ya
+          // aplica HistorialMantenimientoPage.jsx.
+          columnas={
+            puedeResolverMantenimiento
+              ? ["Fecha", "Tipo", "Responsable", "Prioridad", "Estado", "Acciones"]
+              : ["Fecha", "Tipo", "Responsable", "Prioridad", "Estado"]
+          }
+          columnasDerecha={puedeResolverMantenimiento ? ["Acciones"] : []}
           filas={habitacion.ordenesMantenimiento ?? []}
           vacio="Todavía no hay órdenes de mantenimiento para esta habitación."
           renderFila={(orden) => (
@@ -255,20 +271,28 @@ export function HabitacionDetallePage() {
                   <p className="mt-0.5 text-[11px] text-piedra">por {orden.resueltaPor}</p>
                 )}
               </td>
-              <td className="px-3 py-2.5 text-right">
-                {orden.estado === "Pendiente" && puedeResolverMantenimiento && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setResueltaPor("");
-                      setOrdenAResolver(orden);
-                    }}
-                    className="cursor-pointer text-[12.5px] font-semibold text-pino hover:underline"
-                  >
-                    Marcar como resuelta
-                  </button>
-                )}
-              </td>
+              {puedeResolverMantenimiento && (
+                <td className="px-3 py-2.5 text-right">
+                  {orden.estado === "Pendiente" && (
+                    // Mismo estilo y color que este botón en
+                    // HistorialMantenimientoPage.jsx: variante "secundario" +
+                    // hover verde pino con texto claro (con !important porque
+                    // Tailwind genera el hover:bg-hueso de la propia variante
+                    // con la misma especificidad).
+                    <Button
+                      variante="secundario"
+                      tamano="fila"
+                      className="hover:!border-pino hover:!bg-pino hover:!text-hueso"
+                      onClick={() => {
+                        setResueltaPor("");
+                        setOrdenAResolver(orden);
+                      }}
+                    >
+                      Marcar como resuelta
+                    </Button>
+                  )}
+                </td>
+              )}
             </tr>
           )}
         />

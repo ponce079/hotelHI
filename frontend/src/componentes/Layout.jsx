@@ -1,13 +1,15 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { NavLink, Outlet } from "react-router-dom";
 import { LogOut, Hotel, ChevronDown } from "lucide-react";
 import { useSesion } from "../lib/sesion";
+import { listarOrdenesMantenimiento } from "../modulos/habitaciones/habitaciones.api";
 import { MENU_ITEM_SUELTO, MENU_GRUPOS } from "./menuConfig";
 
 const PILL_ACTIVO = "rounded-full bg-hueso text-laton-700";
 const PILL_INACTIVO = "rounded-full text-hueso/75 hover:bg-white/10";
 
-function ItemMenu({ to, end, icon: Icon, label }) {
+function ItemMenu({ to, end, icon: Icon, label, badge }) {
   return (
     <div className="w-60">
       <NavLink
@@ -20,14 +22,38 @@ function ItemMenu({ to, end, icon: Icon, label }) {
         }
       >
         <Icon size={19} strokeWidth={1.8} /> {label}
+        {Boolean(badge) && (
+          <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-laton-700 px-1.5 font-mono text-[11px] font-semibold text-hueso">
+            {badge}
+          </span>
+        )}
       </NavLink>
     </div>
   );
 }
 
 export function Layout() {
-  const { rol, usuario, rolInfo, cerrarSesion } = useSesion();
+  const { rol, usuario, rolInfo, cerrarSesion, puede } = useSesion();
   const iniciales = (usuario || "?").slice(0, 2).toUpperCase();
+
+  // Badge de "Historial de Mantenimiento" (pendientes): vive acá y no en la
+  // propia pantalla porque Layout no se desmonta al navegar (Outlet
+  // adentro), así que el conteo sigue vivo aunque el usuario esté en otra
+  // pantalla. Mismo queryKey que HistorialMantenimientoPage.jsx y
+  // MantenimientoModal.jsx — comparten caché (un solo pedido de red aunque
+  // los tres estén activos) y CUALQUIERA de los tres invalidando esta
+  // key (crear una orden, o resolverla desde acá o desde el Detalle de
+  // Habitación) refresca el badge sin que Layout tenga que sondear fuerte:
+  // el refetchInterval de abajo es solo un respaldo liviano.
+  const ordenesMantenimientoQuery = useQuery({
+    queryKey: ["ordenes-mantenimiento"],
+    queryFn: () => listarOrdenesMantenimiento(),
+    enabled: puede("verHabitaciones"),
+    refetchInterval: 30000,
+  });
+  const pendientesMantenimiento = (ordenesMantenimientoQuery.data ?? []).filter(
+    (orden) => orden.estado === "Pendiente"
+  ).length;
 
   const grupos = MENU_GRUPOS.map((grupo) => ({
     ...grupo,
@@ -114,7 +140,11 @@ export function Layout() {
                     <div className="overflow-hidden">
                       <div className="flex flex-col gap-0.5 pt-0.5">
                         {grupo.items.map((item) => (
-                          <ItemMenu key={item.to} {...item} />
+                          <ItemMenu
+                            key={item.to}
+                            {...item}
+                            badge={item.to === "/historial-mantenimiento" ? pendientesMantenimiento : undefined}
+                          />
                         ))}
                       </div>
                     </div>
