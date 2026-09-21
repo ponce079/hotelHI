@@ -13,6 +13,12 @@ export function CheckInPage() {
   // libre: entra directo al modo walk-in con esa habitación preseleccionada
   // (ver CheckInWalkIn), en vez de arrancar en el modo "con reserva".
   const habitacionPreseleccionada = searchParams.get("habitacion") ?? "";
+  // Inicio del Recepcionista (RecepcionistaInicio.jsx) linkea acá con
+  // ?codigo=<codigoConfirmacion> desde el "→ Iniciar check-in" de una
+  // llegada de hoy: entra en modo "con reserva" con la búsqueda ya
+  // disparada (ver CheckInConReserva), sin tener que volver a tipear el
+  // código a mano.
+  const codigoPreseleccionado = searchParams.get("codigo") ?? "";
   const [modo, setModo] = useState(habitacionPreseleccionada ? "walkin" : "reserva");
 
   if (!puede("gestionarCheckIn")) return <SinPermiso />;
@@ -47,7 +53,11 @@ export function CheckInPage() {
         </button>
       </div>
 
-      {modo === "reserva" ? <CheckInConReserva /> : <CheckInWalkIn habitacionPreseleccionada={habitacionPreseleccionada} />}
+      {modo === "reserva" ? (
+        <CheckInConReserva codigoPreseleccionado={codigoPreseleccionado} />
+      ) : (
+        <CheckInWalkIn habitacionPreseleccionada={habitacionPreseleccionada} />
+      )}
     </div>
   );
 }

@@ -60,6 +60,18 @@ function enteroPositivo(valor, campo) {
   return numero;
 }
 
+// reservasServicio.obtenerReserva/obtenerPorCodigoODocumento tiran SU
+// propio ErrorDeNegocio (distinta clase), que checkIn.controlador.js no
+// reconoce — sin esto, un código/documento inexistente cae en 500 genérico
+// en vez del 404 que la búsqueda necesita para poder ofrecer un fallback
+// (ver mismo patrón, mismo comentario, en checkOut.servicio.js).
+function envolverErrorReservas(err) {
+  if (err instanceof reservasServicio.ErrorDeNegocio) {
+    return new ErrorDeNegocio(err.message, err.statusCode);
+  }
+  return err;
+}
+
 // --------------------------------------------------------------
 // HU-43 — validación de vigencia (compartida entre "buscar" y "confirmar")
 // --------------------------------------------------------------
@@ -106,9 +118,13 @@ function validarReservaVigente(reserva) {
 // no solo un 400 genérico.
 async function buscarReservaParaCheckIn({ id, codigo } = {}) {
   let reserva;
-  if (id) reserva = await reservasServicio.obtenerReserva(id);
-  else if (codigo && String(codigo).trim()) reserva = await reservasServicio.obtenerPorCodigoODocumento(codigo);
-  else throw new ErrorDeNegocio("Indicá el id o el código de confirmación / documento de la reserva.");
+  try {
+    if (id) reserva = await reservasServicio.obtenerReserva(id);
+    else if (codigo && String(codigo).trim()) reserva = await reservasServicio.obtenerPorCodigoODocumento(codigo);
+    else throw new ErrorDeNegocio("Indicá el id o el código de confirmación / documento de la reserva.");
+  } catch (err) {
+    throw envolverErrorReservas(err);
+  }
 
   let motivoBloqueo = null;
   try {
@@ -162,7 +178,12 @@ async function ocuparHabitacion(tx, habitacionId) {
 
 async function confirmarCheckInConReserva({ reservaId, numeroDocumentoIngresado, garantiaConfirmada, medioGarantia }) {
   const id = enteroPositivo(reservaId, "reservaId");
-  const reserva = await reservasServicio.obtenerReserva(id);
+  let reserva;
+  try {
+    reserva = await reservasServicio.obtenerReserva(id);
+  } catch (err) {
+    throw envolverErrorReservas(err);
+  }
   validarReservaVigente(reserva);
 
   // HU-43 — "verificación del documento de identidad contra los datos de

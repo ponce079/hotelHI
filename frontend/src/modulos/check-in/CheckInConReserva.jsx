@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, CheckCircle2, Search, User } from "lucide-react";
@@ -22,12 +22,13 @@ const FORM_VACIO = { documento: "", garantiaConfirmada: false, medioGarantia: ME
 // HU-43, HU-46, HU-47 — check-in de una reserva ya cargada (HU-36/40). La
 // búsqueda por código es el mismo dato que HU-42 le dio al huésped al
 // confirmar la reserva.
-export function CheckInConReserva() {
+export function CheckInConReserva({ codigoPreseleccionado = "" }) {
   const navigate = useNavigate();
-  const [codigo, setCodigo] = useState("");
+  const [codigo, setCodigo] = useState(codigoPreseleccionado);
   const [resultado, setResultado] = useState(null);
   const [form, setForm] = useState(FORM_VACIO);
   const { toast, mostrarToast } = useToast();
+  const preseleccionAplicada = useRef(false);
 
   const buscar = useMutation({
     mutationFn: (codigoBuscado) => buscarReservaParaCheckIn({ codigo: codigoBuscado }),
@@ -37,6 +38,17 @@ export function CheckInConReserva() {
     },
     onError: () => setResultado(null),
   });
+
+  // Viene del "→ Iniciar check-in" de una llegada de hoy en el Inicio del
+  // Recepcionista (RecepcionistaInicio.jsx): dispara la misma búsqueda que
+  // el botón manual de acá abajo, una sola vez (mismo patrón de ref que ya
+  // usa CheckInWalkIn.jsx para su propia preselección).
+  useEffect(() => {
+    if (!codigoPreseleccionado || preseleccionAplicada.current) return;
+    preseleccionAplicada.current = true;
+    buscar.mutate(codigoPreseleccionado);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [codigoPreseleccionado]);
 
   const confirmar = useMutation({
     mutationFn: () =>

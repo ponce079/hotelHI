@@ -13,8 +13,23 @@ import { listarTiposMovimiento } from "../tipos-movimiento/tiposMovimiento.api";
 import { listarMovimientos } from "../movimientos/movimientos.api";
 import { consultarStock } from "../stock/stock.api";
 import { hoyEnHoraLocal, primerDiaDelMesISO } from "../../lib/fechas";
+import { RecepcionistaInicio } from "./RecepcionistaInicio";
 
+// Recepcionista tiene su propia pantalla de inicio (llegadas/salidas de
+// hoy, resumen de habitaciones, mantenimiento pendiente) — datos
+// operativos del hotel, nada que ver con los TARJETAS/ACCIONES de stock de
+// acá abajo. Se despacha ANTES de declarar los hooks de stock (useQuery de
+// artículos/depósitos/movimientos) para no dispararlos de arriba para
+// abajo en una pantalla que no los usa. admin/deposito/compras/gerente y
+// housekeeping (sin cambios, sigue con tarjetas/acciones vacías) pasan de
+// largo por acá.
 export function DashboardPage() {
+  const { rol } = useSesion();
+  if (rol === "recepcionista") return <RecepcionistaInicio />;
+  return <PanelStockYCompras />;
+}
+
+function PanelStockYCompras() {
   const navigate = useNavigate();
   const { rol, rolInfo, usuario } = useSesion();
 
