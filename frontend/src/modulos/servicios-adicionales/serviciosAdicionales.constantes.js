@@ -3,12 +3,14 @@
 export const TIPOS_SERVICIO = ["Restaurante", "Spa", "Lavandería", "Minibar"];
 
 // Sin variante propia por tipo: son categorías de consumo, no estados —
-// "neutro" para todas evita sugerir que alguna es "mejor" o "peor" que otra.
+// "alerta" (tinte latón) para las 4 evita sugerir que alguna es "mejor",
+// "peor" o tiene una condición operativa distinta de las demás. Mismo
+// tinte que usan las tarjetas de totales de ServiciosAdicionalesPage.jsx.
 export const TIPO_SERVICIO_BADGE = {
-  Restaurante: "neutro",
-  Spa: "neutro",
-  Lavandería: "neutro",
-  Minibar: "info",
+  Restaurante: "alerta",
+  Spa: "alerta",
+  Lavandería: "alerta",
+  Minibar: "alerta",
 };
 
 export const LIMITES_SERVICIOS_ADICIONALES = {
