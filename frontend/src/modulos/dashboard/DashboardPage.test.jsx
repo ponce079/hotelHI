@@ -103,11 +103,13 @@ describe("DashboardPage — despacho por rol", () => {
     expect(screen.queryByText("Reservas activas")).not.toBeInTheDocument();
   });
 
-  it("housekeeping sigue con el panel genérico (tarjetas/acciones vacías), sin cambios", async () => {
-    useSesion.mockReturnValue({ rol: "housekeeping", rolInfo: { label: "Housekeeping", descripcion: "" }, usuario: "Coco" });
+  it("housekeeping ve su propio Inicio (HousekeepingInicio), no el panel genérico de Stock/Compras", async () => {
+    useSesion.mockReturnValue({ rol: "housekeeping", rolInfo: { label: "Housekeeping" }, usuario: "Coco" });
     renderDashboard();
 
-    expect(await screen.findByText("Panel del rol")).toBeInTheDocument();
+    expect(await screen.findByText(/Para limpiar ahora/)).toBeInTheDocument();
+    expect(screen.queryByText("Panel del rol")).not.toBeInTheDocument();
     expect(screen.queryByText("Reservas activas")).not.toBeInTheDocument();
+    expect(screen.queryByText("Llegadas de hoy")).not.toBeInTheDocument();
   });
 });
