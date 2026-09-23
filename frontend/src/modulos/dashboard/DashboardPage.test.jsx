@@ -62,7 +62,7 @@ describe("DashboardPage — despacho por rol", () => {
     useSesion.mockReturnValue({ rol: "admin", rolInfo: { label: "Administrador" }, usuario: "gimena" });
     renderDashboard();
 
-    expect(await screen.findByText("Pulso operativo")).toBeInTheDocument();
+    expect(await screen.findByText("Reservas activas")).toBeInTheDocument();
     expect(screen.queryByText("Panel del rol")).not.toBeInTheDocument();
     expect(screen.queryByText("Llegadas de hoy")).not.toBeInTheDocument();
   });
@@ -72,7 +72,7 @@ describe("DashboardPage — despacho por rol", () => {
     renderDashboard();
 
     expect(await screen.findByText(/Llegadas de hoy/)).toBeInTheDocument();
-    expect(screen.queryByText("Pulso operativo")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reservas activas")).not.toBeInTheDocument();
     expect(screen.queryByText("Panel del rol")).not.toBeInTheDocument();
   });
 
@@ -82,7 +82,7 @@ describe("DashboardPage — despacho por rol", () => {
 
     expect(await screen.findByText("Panel del rol")).toBeInTheDocument();
     expect(screen.getByText("Movimientos hoy")).toBeInTheDocument();
-    expect(screen.queryByText("Pulso operativo")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reservas activas")).not.toBeInTheDocument();
   });
 
   it("compras sigue con el panel genérico de Stock/Compras, sin cambios", async () => {
@@ -91,7 +91,7 @@ describe("DashboardPage — despacho por rol", () => {
 
     expect(await screen.findByText("Panel del rol")).toBeInTheDocument();
     expect(screen.getByText("Sin parámetros")).toBeInTheDocument();
-    expect(screen.queryByText("Pulso operativo")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reservas activas")).not.toBeInTheDocument();
   });
 
   it("gerente sigue con el panel genérico de Stock/Compras, sin cambios", async () => {
@@ -100,7 +100,7 @@ describe("DashboardPage — despacho por rol", () => {
 
     expect(await screen.findByText("Panel del rol")).toBeInTheDocument();
     expect(screen.getByText("Consumo del mes")).toBeInTheDocument();
-    expect(screen.queryByText("Pulso operativo")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reservas activas")).not.toBeInTheDocument();
   });
 
   it("housekeeping sigue con el panel genérico (tarjetas/acciones vacías), sin cambios", async () => {
@@ -108,6 +108,6 @@ describe("DashboardPage — despacho por rol", () => {
     renderDashboard();
 
     expect(await screen.findByText("Panel del rol")).toBeInTheDocument();
-    expect(screen.queryByText("Pulso operativo")).not.toBeInTheDocument();
+    expect(screen.queryByText("Reservas activas")).not.toBeInTheDocument();
   });
 });

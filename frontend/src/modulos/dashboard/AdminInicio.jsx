@@ -76,7 +76,7 @@ function TarjetaMetrica({ label, value, hint, hintClassName, icon: Icon, onClick
     <button
       type="button"
       onClick={onClick}
-      className="flex cursor-pointer flex-col gap-0.5 rounded-[18.4px] bg-white p-[15px] text-left shadow-[0_1px_2px_rgba(46,43,37,0.14)] transition-colors hover:bg-hueso"
+      className="flex cursor-pointer flex-col items-center gap-0.5 rounded-[18.4px] bg-white p-[15px] text-center shadow-[0_1px_2px_rgba(46,43,37,0.14)] transition-colors hover:bg-hueso"
     >
       <div className="flex items-center gap-1.5 font-body text-[10px] uppercase tracking-[0.1em] text-pino">
         {Icon && <Icon size={12} />} {label}
@@ -332,72 +332,66 @@ export function AdminInicio() {
         </div>
       </div>
 
-      <div>
-        <h2 className="mb-3 font-heading text-[16px] font-semibold text-tinta/70">Pulso operativo</h2>
-        <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
-          <TarjetaMetrica
-            label="Reservas activas"
-            icon={CalendarCheck}
-            value={reservasActivas}
-            onClick={() => navigate("/reservas")}
-          />
-          <TarjetaMetrica
-            label="Check-ins de hoy"
-            icon={LogIn}
-            value={checkinsPendientesHoy.length + checkinsRealizadosHoy.length}
-            hint={`${checkinsPendientesHoy.length} pendiente${checkinsPendientesHoy.length === 1 ? "" : "s"} · ${checkinsRealizadosHoy.length} ya ingresado${checkinsRealizadosHoy.length === 1 ? "" : "s"}`}
-            onClick={() => navigate("/check-in")}
-          />
-          <TarjetaMetrica
-            label="Check-outs de hoy"
-            icon={DoorClosed}
-            value={checkoutsHoy.length}
-            hint={checkoutsVencidos.length > 0 ? `${checkoutsVencidos.length} vencido${checkoutsVencidos.length === 1 ? "" : "s"}` : "sin vencidos"}
-            hintClassName={checkoutsVencidos.length > 0 ? "font-semibold text-error-texto" : ""}
-            onClick={() => navigate("/check-out")}
-          />
-          <TarjetaMetrica
-            label="Habitaciones disponibles"
-            icon={BedDouble}
-            value={habitacionesLibres}
-            hint={`de ${habitacionesActivas.length} totales`}
-            onClick={() => navigate("/habitaciones?estado=libre")}
-          />
-        </div>
+      <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+        <TarjetaMetrica
+          label="Reservas activas"
+          icon={CalendarCheck}
+          value={reservasActivas}
+          onClick={() => navigate("/reservas")}
+        />
+        <TarjetaMetrica
+          label="Check-ins de hoy"
+          icon={LogIn}
+          value={checkinsPendientesHoy.length + checkinsRealizadosHoy.length}
+          hint={`${checkinsPendientesHoy.length} pendiente${checkinsPendientesHoy.length === 1 ? "" : "s"} · ${checkinsRealizadosHoy.length} ya ingresado${checkinsRealizadosHoy.length === 1 ? "" : "s"}`}
+          onClick={() => navigate("/check-in")}
+        />
+        <TarjetaMetrica
+          label="Check-outs de hoy"
+          icon={DoorClosed}
+          value={checkoutsHoy.length}
+          hint={checkoutsVencidos.length > 0 ? `${checkoutsVencidos.length} vencido${checkoutsVencidos.length === 1 ? "" : "s"}` : "sin vencidos"}
+          hintClassName={checkoutsVencidos.length > 0 ? "font-semibold text-error-texto" : ""}
+          onClick={() => navigate("/check-out")}
+        />
+        <TarjetaMetrica
+          label="Habitaciones disponibles"
+          icon={BedDouble}
+          value={habitacionesLibres}
+          hint={`de ${habitacionesActivas.length} totales`}
+          onClick={() => navigate("/habitaciones?estado=libre")}
+        />
       </div>
 
-      <div>
-        <h2 className="mb-3 font-heading text-[16px] font-semibold text-tinta/70">Catálogos maestros</h2>
-        <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
-          <TarjetaMetrica
-            label="Artículos"
-            icon={Package}
-            value={totalArticulosActivos}
-            hint="activos en catálogo"
-            onClick={() => navigate("/articulos")}
-          />
-          <TarjetaMetrica
-            label="Depósitos"
-            icon={Warehouse}
-            value={depositos.length}
-            hint={`${centrales.length} centrales · ${perifericos} periféricos`}
-            onClick={() => navigate("/depositos")}
-          />
-          <TarjetaMetrica
-            label="Proveedores"
-            icon={Building2}
-            value={proveedoresActivosTotal}
-            hint={proveedoresInactivos > 0 ? `activos (${proveedoresInactivos} inactivo${proveedoresInactivos === 1 ? "" : "s"})` : "todos activos"}
-            onClick={() => navigate("/proveedores")}
-          />
-          <TarjetaMetrica
-            label="Habitaciones"
-            icon={BedDouble}
-            value={todasHabitaciones.length}
-            hint={habitacionesInactivas > 0 ? `${habitacionesInactivas} de baja` : "todas activas"}
-            onClick={() => navigate("/habitaciones")}
-          />
-        </div>
+      <div className="grid grid-cols-2 gap-3.5 sm:grid-cols-4">
+        <TarjetaMetrica
+          label="Artículos"
+          icon={Package}
+          value={totalArticulosActivos}
+          hint="activos en catálogo"
+          onClick={() => navigate("/articulos")}
+        />
+        <TarjetaMetrica
+          label="Depósitos"
+          icon={Warehouse}
+          value={depositos.length}
+          hint={`${centrales.length} centrales · ${perifericos} periféricos`}
+          onClick={() => navigate("/depositos")}
+        />
+        <TarjetaMetrica
+          label="Proveedores"
+          icon={Building2}
+          value={proveedoresActivosTotal}
+          hint={proveedoresInactivos > 0 ? `activos (${proveedoresInactivos} inactivo${proveedoresInactivos === 1 ? "" : "s"})` : "todos activos"}
+          onClick={() => navigate("/proveedores")}
+        />
+        <TarjetaMetrica
+          label="Habitaciones"
+          icon={BedDouble}
+          value={todasHabitaciones.length}
+          hint={habitacionesInactivas > 0 ? `${habitacionesInactivas} de baja` : "todas activas"}
+          onClick={() => navigate("/habitaciones")}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1.3fr_1fr]">
