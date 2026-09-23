@@ -21,9 +21,11 @@ export function formatearCuit(valor) {
   return `${d.slice(0, 2)}-${d.slice(2, 10)}-${d.slice(10)}`;
 }
 
-// ComprobanteEstadia.tipo -> variante de <Badge>. Un comprobante anulado se
-// muestra aparte (neutro), no con la de su tipo.
-export const TIPO_COMPROBANTE_BADGE = { Comprobante: "ok", "Nota de Crédito": "info" };
+// ComprobanteEstadia.tipo -> variante de <Badge>. Sin color propio por tipo
+// (mismo criterio que TIPO_SERVICIO_BADGE en Servicios Adicionales): son
+// categorías de documento, no un estado operativo, así que las dos comparten
+// tono neutro en vez de competir con el color de Estado (Vigente/Anulado).
+export const TIPO_COMPROBANTE_BADGE = { Comprobante: "neutro", "Nota de Crédito": "neutro" };
 
 // Vista previa del desglose para mostrar en pantalla ANTES de emitir. El
 // que manda es el backend (crearComprobante lo calcula y lo guarda una sola

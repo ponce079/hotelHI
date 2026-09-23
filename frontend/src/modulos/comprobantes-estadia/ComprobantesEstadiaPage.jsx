@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { Eye, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
-import { Button } from "../../componentes/Button";
 import { CodigoClave } from "../../componentes/CodigoClave";
 import { FilterBar } from "../../componentes/FilterBar";
 import { Input } from "../../componentes/Input";
@@ -54,9 +53,9 @@ export function ComprobantesEstadiaPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
+      <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
         <h1 className="font-heading text-[34px] font-semibold">Comprobantes de huésped</h1>
-        <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
+        <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
           HU 53, 55 y 56 — comprobantes de estadía y notas de crédito
         </p>
       </div>
@@ -108,14 +107,18 @@ export function ComprobantesEstadiaPage() {
           </p>
         ) : (
           <Table
-            columnas={["Número", "Tipo", "A nombre de", "Reserva", "Emitido", "Total", "Estado", ""]}
+            columnas={["Número", "Tipo", "A nombre de", "Reserva", "Emitido", "Total", "Estado"]}
             columnasDerecha={["Total"]}
             filas={comprobantes}
             vacio={hayFiltros ? "Ningún comprobante coincide con los filtros." : "Todavía no se emitió ningún comprobante."}
             renderFila={(c) => {
               const esNota = c.tipo === "Nota de Crédito";
               return (
-                <tr key={c.id} className="h-12 border-b border-borde last:border-0">
+                <tr
+                  key={c.id}
+                  onClick={() => navigate(`/comprobantes-estadia/${c.id}`)}
+                  className="h-12 cursor-pointer border-b border-borde last:border-0 hover:bg-hueso"
+                >
                   <td className="px-3 py-2.5">
                     <CodigoClave>{c.numero}</CodigoClave>
                   </td>
@@ -125,15 +128,10 @@ export function ComprobantesEstadiaPage() {
                   <td className="px-3 py-2.5 text-[13px]">{c.razonSocialTercero ?? c.reserva?.huesped?.nombre ?? "—"}</td>
                   <td className="px-3 py-2.5 font-mono text-[12.5px]">{c.reserva?.codigoConfirmacion ?? c.reservaId}</td>
                   <td className="px-3 py-2.5 text-[12.5px]">{formatearTimestamp(c.fecha)}</td>
-                  <td className="px-3 py-2.5 text-right font-mono text-xs">
+                  <td className={`px-3 py-2.5 text-right font-mono text-xs ${esNota ? "text-error-texto" : ""}`}>
                     {esNota ? "− " : ""}$ {formatearMonto(c.importeTotal)}
                   </td>
-                  <td className="px-3 py-2.5">{c.anulado ? <Badge variante="neutro">Anulado</Badge> : <Badge variante="ok">Vigente</Badge>}</td>
-                  <td className="px-3 py-2.5 text-right">
-                    <Button variante="secundario" tamano="fila" icono={Eye} onClick={() => navigate(`/comprobantes-estadia/${c.id}`)}>
-                      Ver
-                    </Button>
-                  </td>
+                  <td className="px-3 py-2.5">{c.anulado ? <Badge variante="error">Anulado</Badge> : <Badge variante="ok">Vigente</Badge>}</td>
                 </tr>
               );
             }}

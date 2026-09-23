@@ -125,7 +125,7 @@ export function ComprobanteEstadiaDetallePage() {
             <h1 className="font-heading text-[34px] font-semibold">{esNota ? "Nota de crédito" : "Comprobante"}</h1>
             <CodigoClave className="text-[20px]">{c.numero}</CodigoClave>
             <Badge variante={TIPO_COMPROBANTE_BADGE[c.tipo]}>{c.tipo}</Badge>
-            {c.anulado && <Badge variante="neutro">Anulado</Badge>}
+            {c.anulado && <Badge variante="error">Anulado</Badge>}
           </div>
           <p className="mt-1.5 font-mono text-[11px] text-tinta/55">Emitido el {formatearTimestamp(c.fecha)}</p>
         </div>
@@ -243,7 +243,7 @@ export function ComprobanteEstadiaDetallePage() {
                 <td className="px-3 py-2.5 text-[12.5px]">{formatearTimestamp(n.fecha)}</td>
                 <td className="px-3 py-2.5 text-[12.5px] text-piedra">{n.motivo ?? "—"}</td>
                 <td className="px-3 py-2.5 text-right font-mono text-xs">− {moneda(n.importeTotal)}</td>
-                <td className="px-3 py-2.5">{n.anulado ? <Badge variante="neutro">Anulada</Badge> : <Badge variante="ok">Vigente</Badge>}</td>
+                <td className="px-3 py-2.5">{n.anulado ? <Badge variante="error">Anulada</Badge> : <Badge variante="ok">Vigente</Badge>}</td>
               </tr>
             )}
           />
