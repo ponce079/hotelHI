@@ -247,14 +247,18 @@ export function HabitacionesPage() {
               type="button"
               key={valor}
               onClick={() => actualizarFiltro("estado", activo ? "" : valor)}
-              style={{
-                backgroundColor: color.fondo,
-                color: color.texto,
-                borderColor: activo ? color.texto : color.borde,
-              }}
-              className={`stat-chip cursor-pointer rounded-lg border p-4 text-center ${activo ? "ring-2 ring-offset-1" : ""}`}
+              style={activo ? { backgroundColor: color.texto, borderColor: color.texto } : undefined}
+              className={`stat-chip cursor-pointer rounded-lg border p-4 text-center ${
+                activo ? "text-hueso ring-2 ring-offset-1" : "border-borde bg-white text-inactivo"
+              }`}
             >
-              <div className="text-[11px] font-semibold uppercase tracking-[0.03em]">{ESTADO_HABITACION_LABEL[valor]}</div>
+              <div className="flex items-center justify-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.03em]">
+                <span
+                  className={`h-[7px] w-[7px] shrink-0 rounded-full ${activo ? "bg-hueso" : ""}`}
+                  style={activo ? undefined : { backgroundColor: color.texto }}
+                />
+                {ESTADO_HABITACION_LABEL[valor]}
+              </div>
               <Cifra tamano={30} className="mt-1">{cantidad}</Cifra>
             </button>
           );
