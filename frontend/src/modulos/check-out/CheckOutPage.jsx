@@ -1,12 +1,10 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { DoorClosed, Eye, Search } from "lucide-react";
+import { Search } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
-import { Button } from "../../componentes/Button";
 import { CodigoClave } from "../../componentes/CodigoClave";
 import { FilterBar } from "../../componentes/FilterBar";
-import { Input } from "../../componentes/Input";
 import { NombreClave } from "../../componentes/NombreClave";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { Table } from "../../componentes/Table";
@@ -21,10 +19,6 @@ import { ESTADO_RESERVA } from "../reservas/reservas.constantes";
 export function CheckOutPage() {
   const { puede } = useSesion();
   const puedeVer = puede("verCheckOut");
-  // Admin ve el listado pero no opera (re-auditoría del 2026-09-21, mismo
-  // criterio que Habitaciones/Mantenimiento) — condiciona el botón de cada
-  // fila más abajo, no el acceso a la pantalla.
-  const puedeGestionar = puede("gestionarCheckOut");
   const navigate = useNavigate();
   const [q, setQ] = useState("");
 
@@ -41,21 +35,21 @@ export function CheckOutPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
+      <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
         <h1 className="font-heading text-[34px] font-semibold">Check-out</h1>
-        <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
+        <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
           HU 48 a 52 y 87 — cuenta consolidada, verificación de la habitación, pago y cierre
         </p>
       </div>
 
       <FilterBar onClear={q ? () => setQ("") : undefined}>
-        <div className="relative w-full max-w-sm">
-          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-piedra" />
-          <Input
-            className="w-full pl-9"
+        <div className="relative min-w-[240px] flex-1">
+          <Search size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-piedra" />
+          <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="Código, huésped, documento o habitación"
+            className="w-full rounded-md border border-borde bg-white py-2 pl-8 pr-3 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-pino/40"
           />
         </div>
       </FilterBar>
@@ -70,13 +64,17 @@ export function CheckOutPage() {
           </p>
         ) : (
           <Table
-            columnas={["Código", "Huésped", "Habitaciones", "Entrada", "Salida", ""]}
+            columnas={["Código", "Huésped", "Habitaciones", "Entrada", "Salida"]}
             filas={reservas}
             vacio={q ? "Ninguna reserva en curso coincide con la búsqueda." : "No hay huéspedes alojados en este momento."}
             renderFila={(r) => {
               const salida = r.fechaHasta.slice(0, 10);
               return (
-                <tr key={r.id} className="h-12 border-b border-borde last:border-0">
+                <tr
+                  key={r.id}
+                  onClick={() => navigate(`/check-out/${r.id}`)}
+                  className="h-12 cursor-pointer border-b border-borde last:border-0 hover:bg-hueso"
+                >
                   <td className="px-3 py-2.5">
                     <CodigoClave>{r.codigoConfirmacion}</CodigoClave>
                   </td>
@@ -89,16 +87,6 @@ export function CheckOutPage() {
                     <span className="mr-2">{formatearFechaSinHora(r.fechaHasta)}</span>
                     {salida === hoy && <Badge variante="alerta">Sale hoy</Badge>}
                     {salida < hoy && <Badge variante="error">Salida vencida</Badge>}
-                  </td>
-                  <td className="px-3 py-2.5 text-right">
-                    <Button
-                      variante={puedeGestionar ? "ok" : "secundario"}
-                      tamano="fila"
-                      icono={puedeGestionar ? DoorClosed : Eye}
-                      onClick={() => navigate(`/check-out/${r.id}`)}
-                    >
-                      {puedeGestionar ? "Iniciar check-out" : "Ver"}
-                    </Button>
                   </td>
                 </tr>
               );
