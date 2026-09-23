@@ -210,6 +210,31 @@ async function main() {
     assert.equal((await checkOutServicio.consolidarCargos(reserva.id)).saldo, 0);
   });
 
+  await prueba("un pago con tarjeta sin la autorización (referencia) se rechaza en el backend, no solo en la pantalla", async () => {
+    limpiar();
+    const { reserva } = await crearReservaEnCurso({ numero: "309", tarifaPorNoche: 10000, noches: 1 });
+    for (const tipo of ["Tarjeta crédito", "Tarjeta débito"]) {
+      await assert.rejects(
+        () => pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo, importe: 10000 }] }),
+        /autorización de la tarjeta/
+      );
+    }
+    // una referencia vacía o de solo espacios tampoco vale
+    await assert.rejects(
+      () => pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo: "Tarjeta débito", importe: 10000, referencia: "   " }] }),
+      /autorización de la tarjeta/
+    );
+    // no quedó nada registrado ni cobrado
+    assert.equal((await checkOutServicio.consolidarCargos(reserva.id)).saldo, 10000);
+    // efectivo no necesita referencia; con ella la tarjeta sí pasa
+    await pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo: "Efectivo", importe: 4000 }] });
+    const ok = await pagoEstadiaServicio.crearPago({
+      reservaId: reserva.id,
+      medios: [{ tipo: "Tarjeta débito", importe: 6000, referencia: "Visa ****4242 · aut. 123456" }],
+    });
+    assert.equal(ok.estado, "Pagado");
+  });
+
   // ------------------------------------------------------------
   seccion("HU-50 — crearPago: condición de carrera real (dos pagos casi simultáneos)");
 
