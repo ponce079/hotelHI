@@ -6,26 +6,25 @@ import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
 import { useSesion } from "../../lib/sesion";
 import { calcularAlertas } from "../../lib/alertas";
-import { listarArticulos } from "../articulos/articulos.api";
 import { listarDepositos } from "../depositos/depositos.api";
 import { listarHabilitaciones } from "../articulo-deposito/articuloDeposito.api";
-import { listarTiposMovimiento } from "../tipos-movimiento/tiposMovimiento.api";
 import { listarMovimientos } from "../movimientos/movimientos.api";
 import { consultarStock } from "../stock/stock.api";
 import { hoyEnHoraLocal, primerDiaDelMesISO } from "../../lib/fechas";
 import { RecepcionistaInicio } from "./RecepcionistaInicio";
+import { AdminInicio } from "./AdminInicio";
 
-// Recepcionista tiene su propia pantalla de inicio (llegadas/salidas de
-// hoy, resumen de habitaciones, mantenimiento pendiente) — datos
-// operativos del hotel, nada que ver con los TARJETAS/ACCIONES de stock de
-// acá abajo. Se despacha ANTES de declarar los hooks de stock (useQuery de
-// artículos/depósitos/movimientos) para no dispararlos de arriba para
-// abajo en una pantalla que no los usa. admin/deposito/compras/gerente y
-// housekeeping (sin cambios, sigue con tarjetas/acciones vacías) pasan de
-// largo por acá.
+// Recepcionista y Admin tienen su propia pantalla de inicio (operación del
+// hotel: reservas, check-in/out, habitaciones, catálogos maestros) — nada
+// que ver con los TARJETAS/ACCIONES de stock de acá abajo. Se despachan
+// ANTES de declarar los hooks de stock (useQuery de artículos/depósitos/
+// movimientos) para no dispararlos de arriba para abajo en una pantalla
+// que no los usa. deposito/compras/gerente y housekeeping (sin cambios,
+// sigue con tarjetas/acciones vacías) pasan de largo por acá.
 export function DashboardPage() {
   const { rol } = useSesion();
   if (rol === "recepcionista") return <RecepcionistaInicio />;
+  if (rol === "admin") return <AdminInicio />;
   return <PanelStockYCompras />;
 }
 
@@ -33,17 +32,8 @@ function PanelStockYCompras() {
   const navigate = useNavigate();
   const { rol, rolInfo, usuario } = useSesion();
 
-  const { data: articulosActivos } = useQuery({
-    queryKey: ["articulos", { estado: "activo", pageSize: 1 }],
-    queryFn: () => listarArticulos({ estado: "activo", pageSize: 1 }),
-  });
-  const { data: articulosTotal } = useQuery({
-    queryKey: ["articulos", { estado: "todos", pageSize: 1 }],
-    queryFn: () => listarArticulos({ estado: "todos", pageSize: 1 }),
-  });
   const { data: depositos } = useQuery({ queryKey: ["depositos"], queryFn: listarDepositos });
   const { data: habilitaciones } = useQuery({ queryKey: ["articulo-depositos"], queryFn: listarHabilitaciones });
-  const { data: tipos } = useQuery({ queryKey: ["tipos-movimiento"], queryFn: listarTiposMovimiento });
   const { data: stock } = useQuery({ queryKey: ["stock", {}], queryFn: () => consultarStock({}) });
   const { data: movimientosHoy } = useQuery({
     queryKey: ["movimientos", { desde: hoyEnHoraLocal(), hasta: hoyEnHoraLocal() }],
@@ -71,12 +61,6 @@ function PanelStockYCompras() {
   const sinParametros = (stock ?? []).filter((f) => f.activo && !f.stockMaximo).length;
 
   const TARJETAS = {
-    admin: [
-      { label: "Artículos activos", value: articulosActivos?.total ?? "—", hint: `de ${articulosTotal?.total ?? "—"} en el catálogo` },
-      { label: "Depósitos", value: depositos?.length ?? "—", hint: "ubicaciones físicas del hotel" },
-      { label: "Habilitaciones", value: habilitacionesActivas.length, hint: "pares artículo–depósito" },
-      { label: "Tipos de movimiento", value: tipos?.length ?? "—", hint: "activos (E / S)" },
-    ],
     deposito: [
       { label: "Movimientos hoy", value: movimientosHoy?.length ?? "—", hint: hoyEnHoraLocal() },
       { label: "Alertas de stock", value: alertas.length, hint: "artículos en el mínimo" },
@@ -98,15 +82,6 @@ function PanelStockYCompras() {
   };
 
   const ACCIONES = {
-    // Un solo primario sólido por pantalla (auditoría de botones, P1.2 —
-    // mismo hallazgo que el trío entrada/salida/transferencia, no uno
-    // nuevo): "Nuevo artículo" es el alta más frecuente del catálogo, el
-    // resto baja a secundario.
-    admin: [
-      { label: "Nuevo artículo", variante: "ok", onClick: () => navigate("/articulos") },
-      { label: "Nuevo depósito", variante: "secundario", onClick: () => navigate("/depositos") },
-      { label: "Ver movimientos", variante: "secundario", onClick: () => navigate("/movimientos") },
-    ],
     // Un solo primario sólido por pantalla (auditoría de botones, P1.2):
     // mismo criterio que MovimientosPage, "Registrar entrada" es la acción
     // más frecuente del depósito, el resto baja a secundario.
