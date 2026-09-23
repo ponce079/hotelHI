@@ -104,10 +104,23 @@ export const MENU_GRUPOS = [
     items: [
       { to: "/articulos", label: "Artículos", icon: Package, roles: ["admin", "deposito"] },
       { to: "/depositos", label: "Depósitos y Stock", icon: Warehouse },
-      { to: "/stock/minmax", label: "Stock mín. / máx.", icon: SlidersHorizontal, roles: ["compras"] },
+      // Re-auditoría del 2026-09-23: el permiso "param" ya incluía admin
+      // (la propia descripción del rol dice "parámetros del sistema") — el
+      // menú no lo mostraba, así que quien podía editarlo no tenía cómo
+      // llegar sin tipear la URL a mano. Se suma acá para que código y
+      // menú digan lo mismo.
+      { to: "/stock/minmax", label: "Stock mín. / máx.", icon: SlidersHorizontal, roles: ["compras", "admin"] },
       { to: "/alertas", label: "Alertas de Stock", icon: TriangleAlert, roles: ["compras", "gerente"] },
       { to: "/movimientos", label: "Movimientos de Stock", icon: Truck, roles: ["admin", "deposito"] },
-      { to: "/recepciones", label: "Recepciones", icon: PackageCheck, roles: ["deposito"] },
+      // Re-auditoría del 2026-09-23: verRecepciones (sesion.jsx) ya incluía
+      // admin/compras/gerente a propósito (admin confirma transferencias
+      // igual que depósito; compras/gerente ven el panorama completo de
+      // solo lectura) — el menú solo mostraba depósito. Se suman los 3
+      // roles para que código y menú digan lo mismo; "Historial de
+      // Recepciones" no es un ítem de menú aparte (se linkea desde adentro
+      // de esta misma pantalla), así que hereda el mismo acceso sin tocar
+      // nada más acá.
+      { to: "/recepciones", label: "Recepciones", icon: PackageCheck, roles: ["deposito", "admin", "compras", "gerente"] },
     ],
   },
   {

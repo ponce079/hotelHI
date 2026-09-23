@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { TriangleAlert, Plus, Eye } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
+import { SinPermiso } from "../../componentes/SinPermiso";
 import { consultarStock } from "../stock/stock.api";
 import { calcularAlertas } from "../../lib/alertas";
 import { ORIGENES_REQUERIMIENTO } from "../../lib/constantes";
@@ -11,7 +12,14 @@ import { useSesion } from "../../lib/sesion";
 export function AlertasPage() {
   const navigate = useNavigate();
   const { puede } = useSesion();
-  const { data: filas, isLoading, isError } = useQuery({ queryKey: ["stock", {}], queryFn: () => consultarStock({}) });
+  const puedeVer = puede("verAlertas");
+  const { data: filas, isLoading, isError } = useQuery({
+    queryKey: ["stock", {}],
+    queryFn: () => consultarStock({}),
+    enabled: puedeVer,
+  });
+
+  if (!puedeVer) return <SinPermiso />;
 
   const alertas = calcularAlertas(filas);
 

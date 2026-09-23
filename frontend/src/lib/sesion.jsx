@@ -89,6 +89,14 @@ export function SesionProvider({ children }) {
         // /movimientos.
         if (accion === "gestionarTiposMovimiento") return rol === "admin";
         if (accion === "param") return rol === "admin" || rol === "compras";
+        // Alertas de Stock (HU-8): re-auditoría del 2026-09-23 — la pantalla
+        // no tenía ningún gate de rol (cualquier usuario logueado entraba),
+        // aunque menuConfig.js siempre la mostró solo a compras/gerente.
+        // Mismos dos roles acá: Compras es quien acciona (genera el
+        // requerimiento desde la alerta), Gerente solo mira. Depósito no
+        // entra — nunca tuvo este link en su menú y ya tiene su propio
+        // camino a Requerimientos.
+        if (accion === "verAlertas") return rol === "compras" || rol === "gerente";
         // Recepciones (transferencias + OC, hub unificado): "operar" sigue
         // siendo quien puede CONFIRMAR (admin/depósito, sin cambios). Compras
         // y gerente necesitan ver el panorama completo (todas las
