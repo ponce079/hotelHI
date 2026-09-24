@@ -24,9 +24,11 @@ const adapter = new PrismaMariaDb(
     ssl: {
       rejectUnauthorized: false,
     },
-    connectionLimit: 3,
-    connectTimeout: 20000,
-    acquireTimeout: 20000,
+    // La base remota es compartida por varios integrantes; una conexiÃ³n
+    // por proceso evita agotar el cupo global del plan de Clever Cloud.
+    connectionLimit: 1,
+    connectTimeout: 30000,
+    acquireTimeout: 30000,
   },
   {
     // Único hook de error que expone el adapter (ver
