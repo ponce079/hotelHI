@@ -33,8 +33,13 @@ const {
 // medio día, sin recorrer la tabla de artículos-depósito con una frecuencia
 // que no tiene sentido para algo que cambia lento.
 const INTERVALO_MS = 6 * 60 * 60 * 1000;
+let iniciado = false;
 
 function iniciarBarridoStockMinimoCentral() {
+  // Protege contra imports/arranques duplicados: un solo proceso debe tener
+  // un solo intervalo y ejecutar un solo barrido a la vez.
+  if (iniciado) return;
+  iniciado = true;
   async function correr() {
     try {
       const resultado = await barrerStockMinimoCentral();
@@ -62,7 +67,8 @@ function iniciarBarridoStockMinimoCentral() {
 
   // Corre una vez al arrancar (cierra el gap si el servidor estuvo caído o
   // si se acaba de cargar/editar data) y después cada INTERVALO_MS.
-  correr();
+  // El primer barrido queda para el intervalo: ejecutarlo al arrancar
+  // competÃ­a con las primeras consultas en la base remota compartida.
   setInterval(correr, INTERVALO_MS);
 }
 
