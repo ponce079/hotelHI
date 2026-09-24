@@ -1,7 +1,6 @@
-// Pruebas de la validación de datos del huésped en el alta/edición de
-// reservas (HU-36/HU-39/HU-42, ReservaWizard.jsx). Mismo criterio que
-// pruebas-checkin-walkin.js: sin framework de componentes (no hay
-// vitest/jsdom en el repo), se prueba la función de validación pura.
+// Pruebas de la validaciÃ³n de datos del huÃ©sped en el alta/ediciÃ³n de
+// reservas (HU-36/HU-39/HU-42, ReservaWizard.jsx). Se prueba la funciÃ³n
+// pura sin montar componentes para mantener este chequeo rÃ¡pido.
 //
 //   node scripts/pruebas-reservas-huesped.js
 
@@ -15,46 +14,82 @@ function prueba(nombre, fn) {
   try {
     fn();
     pasaron += 1;
-    console.log(`  ✔ ${nombre}`);
+    console.log(`  âœ” ${nombre}`);
   } catch (err) {
     fallaron.push({ nombre, err });
-    console.log(`  ✘ ${nombre}\n      ${err.message}`);
+    console.log(`  âœ˜ ${nombre}\n      ${err.message}`);
   }
 }
 
-const HUESPED_VACIO = { nombre: "", tipoDocumento: "DNI", numeroDocumento: "", contacto: "", preferencias: "" };
-const HUESPED_COMPLETO = { nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com", preferencias: "" };
+const HUESPED_VACIO = {
+  nombre: "",
+  tipoDocumento: "DNI",
+  numeroDocumento: "",
+  contacto: "",
+  preferencias: "",
+};
 
-prueba("formulario vacío: bloquea nombre y número de documento", () => {
+const HUESPED_COMPLETO = {
+  nombre: "Ana PÃ©rez",
+  tipoDocumento: "DNI",
+  numeroDocumento: "30111222",
+  contacto: "ana@mail.com",
+  preferencias: "",
+};
+
+prueba("formulario vacÃ­o: bloquea nombre, documento y correo", () => {
   const errores = validarHuesped(HUESPED_VACIO);
-  assert.ok(errores.nombre, "nombre debería tener error");
-  assert.ok(errores.numeroDocumento, "numeroDocumento debería tener error");
+  assert.ok(errores.nombre, "nombre deberÃ­a tener error");
+  assert.ok(errores.numeroDocumento, "numeroDocumento deberÃ­a tener error");
+  assert.ok(errores.contacto, "contacto deberÃ­a tener error");
 });
 
-prueba("falta solo el nombre: bloquea únicamente ese campo", () => {
+prueba("falta solo el nombre: bloquea Ãºnicamente ese campo", () => {
   const errores = validarHuesped({ ...HUESPED_COMPLETO, nombre: "" });
   assert.ok(errores.nombre);
   assert.equal(errores.numeroDocumento, undefined);
+  assert.equal(errores.contacto, undefined);
 });
 
-prueba("un campo con solo espacios en blanco cuenta como vacío", () => {
+prueba("un documento con solo espacios en blanco cuenta como vacÃ­o", () => {
   const errores = validarHuesped({ ...HUESPED_COMPLETO, numeroDocumento: "   " });
   assert.ok(errores.numeroDocumento);
 });
 
-prueba("todo correcto (con contacto): no bloquea nada", () => {
-  const errores = validarHuesped(HUESPED_COMPLETO);
-  assert.deepEqual(errores, {});
+prueba("todo correcto: no bloquea ningÃºn campo", () => {
+  assert.deepEqual(validarHuesped(HUESPED_COMPLETO), {});
 });
 
-// A diferencia de Check-in walk-in, acá el contacto es opcional a
-// propósito (ver el aviso de ReservaWizard.jsx sobre "aviso interno para
-// el mostrador" cuando no hay contacto): una reserva sin contacto tiene
-// que poder confirmarse igual, siempre que nombre y documento estén.
-prueba("sin contacto: NO bloquea (es opcional por diseño en Reservas, a diferencia de Check-in walk-in)", () => {
+prueba("sin correo: bloquea la reserva porque no se puede enviar la confirmaciÃ³n", () => {
   const errores = validarHuesped({ ...HUESPED_COMPLETO, contacto: "" });
-  assert.deepEqual(errores, {}, "contacto vacío no debería generar error acá");
+  assert.ok(errores.contacto);
+});
+
+prueba("correo con solo espacios: cuenta como vacÃ­o", () => {
+  const errores = validarHuesped({ ...HUESPED_COMPLETO, contacto: "   " });
+  assert.ok(errores.contacto);
+});
+
+prueba("correo sin arroba: bloquea la reserva", () => {
+  const errores = validarHuesped({ ...HUESPED_COMPLETO, contacto: "correo-invalido.com" });
+  assert.ok(errores.contacto);
+});
+
+prueba("correo sin dominio completo: bloquea la reserva", () => {
+  const errores = validarHuesped({ ...HUESPED_COMPLETO, contacto: "ana@localhost" });
+  assert.ok(errores.contacto);
+});
+
+prueba("acepta direcciones de distintos proveedores", () => {
+  for (const contacto of ["persona@gmail.com", "persona@outlook.com", "reservas@hotel.com.ar"]) {
+    assert.deepEqual(validarHuesped({ ...HUESPED_COMPLETO, contacto }), {});
+  }
+});
+
+prueba("ignora espacios exteriores en un correo vÃ¡lido", () => {
+  assert.deepEqual(validarHuesped({ ...HUESPED_COMPLETO, contacto: "  ana@mail.com  " }), {});
 });
 
 console.log(`\n${pasaron} pruebas OK, ${fallaron.length} con error.`);
 if (fallaron.length > 0) process.exit(1);
+
