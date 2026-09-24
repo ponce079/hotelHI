@@ -74,7 +74,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   const esEdicion = Boolean(reserva);
   const [form, setForm] = useState(() => estadoInicial(reserva, valoresIniciales));
   const [errorGeneral, setErrorGeneral] = useState("");
-  const [huespedTocado, setHuespedTocado] = useState({ nombre: false, numeroDocumento: false });
+  const [huespedTocado, setHuespedTocado] = useState({ nombre: false, numeroDocumento: false, contacto: false });
   const [intentoConfirmarHuesped, setIntentoConfirmarHuesped] = useState(false);
   const queryClient = useQueryClient();
 
@@ -140,7 +140,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
           nombre: form.huesped.nombre.trim(),
           tipoDocumento: form.huesped.tipoDocumento,
           numeroDocumento: form.huesped.numeroDocumento.trim(),
-          contacto: form.huesped.contacto.trim() || undefined,
+          contacto: form.huesped.contacto.trim(),
           preferencias: form.huesped.preferencias.trim() || undefined,
         },
       };
@@ -427,8 +427,11 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
             <Input
               label="Contacto (email o teléfono)"
               value={form.huesped.contacto}
+              type="email"
               maxLength={LIMITES_RESERVA.contacto}
               onChange={(e) => actualizarHuesped("contacto", e.target.value)}
+              onBlur={() => tocarHuesped("contacto")}
+              error={errorHuesped("contacto")}
               placeholder="ana@mail.com"
             />
             {!esEdicion && (
@@ -458,12 +461,12 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
             />
           </label>
 
-          {!form.huesped.contacto.trim() && !esEdicion && (
+          {/* Mensaje anterior conservado solo como referencia:
             <p className="text-[12px] text-piedra">
               Sin datos de contacto la confirmación no se puede enviar al huésped: queda registrada como aviso interno
               para el mostrador.
             </p>
-          )}
+          */}
 
           <div className="rounded-lg border border-borde bg-hueso px-5 py-4 text-[13px]">
             <p className="font-semibold">Resumen</p>
@@ -541,3 +544,4 @@ export function BuscadorPorCodigo({ onBuscar, cargando }) {
     </form>
   );
 }
+
