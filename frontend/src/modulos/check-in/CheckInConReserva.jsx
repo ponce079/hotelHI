@@ -14,11 +14,16 @@ import { GarantiaFieldset } from "./GarantiaFieldset";
 import { PanelResumenCheckIn } from "./PanelResumenCheckIn";
 import { TituloSeccion } from "./TituloSeccion";
 import { buscarReservaParaCheckIn, confirmarCheckInConReserva } from "./checkIn.api";
-import { MEDIOS_GARANTIA } from "./checkIn.constantes";
+import { MEDIOS_GARANTIA, MEDIO_GARANTIA_EFECTIVO } from "./checkIn.constantes";
 import { listarLlegadasPendientes } from "../reservas/reservas.api";
 import { ESTADO_RESERVA_BADGE } from "../reservas/reservas.constantes";
 
-const FORM_VACIO = { documento: "", garantiaConfirmada: false, medioGarantia: MEDIOS_GARANTIA[0] };
+const FORM_VACIO = {
+  documento: "",
+  garantiaConfirmada: false,
+  medioGarantia: MEDIOS_GARANTIA[0],
+  montoGarantiaEfectivo: "",
+};
 
 function habitacionesDeReserva(reserva) {
   return reserva.habitaciones.map((h) => `${h.numero} · ${h.tipo}`).join(", ");
@@ -119,6 +124,8 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
         numeroDocumentoIngresado: form.documento.trim(),
         garantiaConfirmada: form.garantiaConfirmada,
         medioGarantia: form.medioGarantia,
+        montoGarantiaEfectivo:
+          form.medioGarantia === MEDIO_GARANTIA_EFECTIVO ? Number(form.montoGarantiaEfectivo) : undefined,
       }),
     onSuccess: (reserva) => {
       mostrarToast(`Check-in confirmado — habitación${reserva.habitaciones.length > 1 ? "es" : ""} ${reserva.habitaciones.map((h) => h.numero).join(", ")} ocupada${reserva.habitaciones.length > 1 ? "s" : ""}.`);
@@ -135,8 +142,14 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
   }
 
   const reserva = resultado?.reserva;
+  const garantiaEfectivoCompleta =
+    form.medioGarantia !== MEDIO_GARANTIA_EFECTIVO || Number(form.montoGarantiaEfectivo) > 0;
   const puedeConfirmar =
-    resultado?.puedeIniciarCheckIn && form.documento.trim() && form.garantiaConfirmada && !confirmar.isPending;
+    resultado?.puedeIniciarCheckIn &&
+    form.documento.trim() &&
+    form.garantiaConfirmada &&
+    garantiaEfectivoCompleta &&
+    !confirmar.isPending;
 
   return (
     <div className="flex flex-col gap-5">
@@ -252,6 +265,8 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
                   <GarantiaFieldset
                     garantiaConfirmada={form.garantiaConfirmada}
                     medioGarantia={form.medioGarantia}
+                    montoGarantiaEfectivo={form.montoGarantiaEfectivo}
+                    montoAGarantizar={reserva.totalEstimadoAlojamiento}
                     onCambiar={cambiar}
                   />
 

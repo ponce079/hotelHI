@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -23,6 +23,7 @@ const RESERVA = {
   fechaDesde: "2026-09-21T00:00:00.000Z",
   fechaHasta: "2026-09-22T00:00:00.000Z",
   noches: 1,
+  totalEstimadoAlojamiento: 50000,
 };
 
 function renderComponente(props = {}) {
@@ -139,5 +140,52 @@ describe("CheckInConReserva — lista por defecto de llegadas pendientes", () =>
 
     expect(buscarReservaParaCheckIn).toHaveBeenCalledWith({ codigo: "RS-PEND01" });
     expect((await screen.findAllByText("Marcos Beltrán")).length).toBeGreaterThan(0);
+  });
+});
+
+// Corrección posterior (HU-46): la garantía con tarjeta pasó de una casilla
+// suelta a reusar TarjetaSimuladaPanel de verdad — ver GarantiaFieldset.jsx.
+describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel", () => {
+  it("con Tarjeta de crédito (default) no hay ninguna casilla: aparece el botón para autorizar la terminal simulada", async () => {
+    buscarReservaParaCheckIn.mockResolvedValue({ reserva: RESERVA, puedeIniciarCheckIn: true, motivoBloqueo: null });
+
+    renderComponente({ codigoPreseleccionado: "RS-HOY01" });
+    await screen.findAllByText("Marcos Beltrán");
+
+    expect(screen.queryByText(/Confirmo que el huésped presentó/)).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Autorizar tarjeta/ })).toBeInTheDocument();
+  });
+
+  // Fake timers recién DESPUÉS de que la búsqueda inicial (una promesa real)
+  // resolvió, y fireEvent en vez de userEvent para completar la tarjeta —
+  // mismo criterio que PagoEstadiaWizard.test.jsx: mezclar timers falsos con
+  // el polling interno de findBy*/userEvent antes de tiempo cuelga el test.
+  it("autorizar la tarjeta simulada confirma la garantía sola, sin tildar nada a mano", async () => {
+    buscarReservaParaCheckIn.mockResolvedValue({ reserva: RESERVA, puedeIniciarCheckIn: true, motivoBloqueo: null });
+
+    renderComponente({ codigoPreseleccionado: "RS-HOY01" });
+    await screen.findAllByText("Marcos Beltrán");
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(screen.getByRole("button", { name: /Autorizar tarjeta/ }));
+      fireEvent.change(screen.getByLabelText("Número de tarjeta"), { target: { value: "4242424242424242" } });
+      fireEvent.change(screen.getByLabelText("Titular"), { target: { value: "MARCOS BELTRAN" } });
+      fireEvent.change(screen.getByLabelText("Vencimiento (MM/AA)"), { target: { value: "1228" } });
+      fireEvent.change(screen.getByLabelText("Código de seguridad"), { target: { value: "123" } });
+      fireEvent.click(screen.getByRole("button", { name: /Autorizar \$/ }));
+      await act(async () => {
+        vi.advanceTimersByTime(1600);
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(screen.getByText("Autorizada")).toBeInTheDocument();
+
+    // El resto del formulario ya estaba OK (mismo documento que la reserva)
+    // — con la tarjeta autorizada, "Confirmar check-in" tiene que habilitarse.
+    fireEvent.change(screen.getByLabelText(/Documento presentado/), { target: { value: "30111222" } });
+    expect(screen.getByRole("button", { name: "Confirmar check-in" })).toBeEnabled();
   });
 });

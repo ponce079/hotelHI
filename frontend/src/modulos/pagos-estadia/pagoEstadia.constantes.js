@@ -6,6 +6,20 @@ export const MEDIOS_PAGO_ESTADIA = ["Efectivo", "Tarjeta crédito", "Tarjeta dé
 // aparte (neutro), no con su estado original.
 export const ESTADO_PAGO_BADGE = { Pagado: "ok", Parcial: "alerta" };
 
+// De dónde salió el cobro (HU-88, sumado para Movimientos de Pago) — mismos
+// 3 valores que backend/src/modulos/pagos-estadia/pagoEstadia.constantes.js.
+// "Pago final" es el default: es lo que HU-50 siempre fue antes de este campo.
+export const CONCEPTO_SENIA = "Seña";
+export const CONCEPTO_GARANTIA = "Garantía";
+export const CONCEPTO_PAGO_FINAL = "Pago final";
+export const CONCEPTOS_PAGO_ESTADIA = [CONCEPTO_SENIA, CONCEPTO_GARANTIA, CONCEPTO_PAGO_FINAL];
+
+export const CONCEPTO_PAGO_BADGE = {
+  [CONCEPTO_SENIA]: "info",
+  [CONCEPTO_GARANTIA]: "alerta",
+  [CONCEPTO_PAGO_FINAL]: "ok",
+};
+
 // ---------------------------------------------------------------------------
 // Tarjeta SIMULADA (no hay procesador real). Estos medios se cobran pasando
 // por el panel de la terminal simulada antes de poder confirmar el pago.

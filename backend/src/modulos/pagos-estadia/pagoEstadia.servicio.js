@@ -1,5 +1,10 @@
 const prisma = require('../../lib/prisma');
-const { MEDIOS_PAGO_ESTADIA, MEDIOS_CON_TARJETA } = require('./pagoEstadia.constantes');
+const {
+  MEDIOS_PAGO_ESTADIA,
+  MEDIOS_CON_TARJETA,
+  CONCEPTOS_PAGO_ESTADIA,
+  CONCEPTO_PAGO_FINAL,
+} = require('./pagoEstadia.constantes');
 const checkOutServicio = require('../check-out/checkOut.servicio');
 
 class ErrorDeNegocio extends Error {
@@ -63,10 +68,17 @@ function referenciaDe(medio) {
   return typeof medio.referencia === 'string' ? medio.referencia.trim() : '';
 }
 
-async function crearPago({ reservaId, medios }) {
+// `concepto` (default "Pago final", HU-50 de siempre) distingue de dónde
+// salió el cobro para la pantalla de Movimientos de Pago (HU-88) — quien
+// llama desde la seña de reserva o la garantía en efectivo del check-in
+// manda el suyo explícito (ver ReservaWizard.jsx / checkIn.servicio.js).
+async function crearPago({ reservaId, medios, concepto = CONCEPTO_PAGO_FINAL }) {
   if (!reservaId) throw new ErrorDeNegocio('reservaId es obligatorio.');
   if (!Array.isArray(medios) || medios.length === 0) {
     throw new ErrorDeNegocio("Debe incluir al menos un medio de pago en 'medios'.");
+  }
+  if (!CONCEPTOS_PAGO_ESTADIA.includes(concepto)) {
+    throw new ErrorDeNegocio(`concepto inválido. Valores permitidos: ${CONCEPTOS_PAGO_ESTADIA.join(', ')}`);
   }
 
   let totalMedios = 0;
@@ -118,6 +130,7 @@ async function crearPago({ reservaId, medios }) {
         data: {
           reservaId: Number(reservaId),
           estado,
+          concepto,
           medios: {
             create: medios.map((m) => ({
               medioPago: m.tipo,
@@ -155,14 +168,68 @@ async function listarPorReserva(reservaId) {
 }
 
 // --------------------------------------------------------------
+// Movimientos de Pago (HU-88) — listado GLOBAL de todos los PagoEstadia de
+// todas las reservas, no de una sola (eso ya lo cubre listarPorReserva).
+// Mismo criterio de filtros que comprobanteEstadia.servicio.js/
+// listarComprobantes: q busca por código de reserva o nombre del huésped,
+// concepto/desde/hasta acotan.
+// --------------------------------------------------------------
+const PATRON_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+
+async function listarMovimientos(filtros = {}) {
+  const { q, concepto, desde, hasta } = filtros;
+  const where = {};
+
+  if (concepto) {
+    if (!CONCEPTOS_PAGO_ESTADIA.includes(concepto)) {
+      throw new ErrorDeNegocio(`concepto inválido. Valores permitidos: ${CONCEPTOS_PAGO_ESTADIA.join(', ')}`);
+    }
+    where.concepto = concepto;
+  }
+
+  const rangoFecha = {};
+  if (desde) {
+    if (!PATRON_FECHA.test(desde)) throw new ErrorDeNegocio('desde inválido (formato YYYY-MM-DD).');
+    rangoFecha.gte = new Date(`${desde}T00:00:00.000-03:00`);
+  }
+  if (hasta) {
+    if (!PATRON_FECHA.test(hasta)) throw new ErrorDeNegocio('hasta inválido (formato YYYY-MM-DD).');
+    rangoFecha.lte = new Date(`${hasta}T23:59:59.999-03:00`);
+  }
+  if (rangoFecha.gte || rangoFecha.lte) where.fecha = rangoFecha;
+
+  const texto = (q || '').trim();
+  if (texto) {
+    where.OR = [
+      { reserva: { codigoConfirmacion: { contains: texto } } },
+      { reserva: { huesped: { nombre: { contains: texto } } } },
+    ];
+  }
+
+  return prisma.pagoEstadia.findMany({
+    where,
+    orderBy: { fecha: 'desc' },
+    include: {
+      medios: true,
+      reserva: { select: { id: true, codigoConfirmacion: true, huesped: { select: { id: true, nombre: true } } } },
+    },
+  });
+}
+
+// --------------------------------------------------------------
 // Anular (HU-50 — sección de reversión implícita, mismo criterio que
 // anularOrdenPago de Sprint 2: baja lógica, nunca se borra el registro).
 // --------------------------------------------------------------
-async function anularPago(id, motivo) {
+// `cliente` (default `prisma`) permite pasar el `tx` de una transacción ya
+// abierta por quien llama — lo usa cancelarReserva (reservas.servicio.js,
+// HU-37) para que cancelar la reserva y anular la seña sean una sola
+// operación atómica, mismo criterio que cambiarEstadoHabitacion en
+// habitaciones.servicio.js.
+async function anularPago(id, motivo, cliente = prisma) {
   if (!motivo || !motivo.trim()) {
     throw new ErrorDeNegocio('El motivo de anulación es obligatorio.');
   }
-  const pago = await prisma.pagoEstadia.findUnique({ where: { id: Number(id) }, include: { reserva: true } });
+  const pago = await cliente.pagoEstadia.findUnique({ where: { id: Number(id) }, include: { reserva: true } });
   if (!pago) throw new ErrorDeNegocio('Pago no encontrado.', 404);
   if (pago.anulado) throw new ErrorDeNegocio('El pago ya está anulado.');
   // El check-out solo se confirma con la cuenta saldada: anular un pago
@@ -171,7 +238,7 @@ async function anularPago(id, motivo) {
     throw new ErrorDeNegocio('No se puede anular un pago de una reserva ya cerrada (check-out confirmado).', 409);
   }
 
-  return prisma.pagoEstadia.update({
+  return cliente.pagoEstadia.update({
     where: { id: Number(id) },
     data: { anulado: true, motivoAnulacion: motivo.trim() },
     include: { medios: true, reserva: true },
@@ -183,6 +250,7 @@ module.exports = {
   crearPago,
   obtenerPago,
   listarPorReserva,
+  listarMovimientos,
   anularPago,
   ErrorDeNegocio,
 };

@@ -16,6 +16,8 @@ instalarDoble(base);
 
 const checkInServicio = require("../src/modulos/check-in/checkIn.servicio");
 const reservasServicio = require("../src/modulos/reservas/reservas.servicio");
+const pagoEstadiaServicio = require("../src/modulos/pagos-estadia/pagoEstadia.servicio");
+const checkOutServicio = require("../src/modulos/check-out/checkOut.servicio");
 const { ESTADO_RESERVA } = require("../src/modulos/reservas/reservas.constantes");
 
 let pasaron = 0;
@@ -229,6 +231,85 @@ async function main() {
     });
     assert.equal(base._datos.habitacion.find((h) => h.id === 1).estado, "ocupada");
     assert.equal(base._datos.habitacion.find((h) => h.id === 2).estado, "ocupada");
+  });
+
+  seccion("HU-46 (corrección) — garantía en efectivo registra un PagoEstadia real, tarjeta no");
+
+  await prueba("Depósito en efectivo exige un monto mayor a 0", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101" });
+    const reserva = await crearReservaFixture();
+    await esperaError(
+      () =>
+        checkInServicio.confirmarCheckInConReserva({
+          reservaId: reserva.id,
+          numeroDocumentoIngresado: "30111222",
+          garantiaConfirmada: true,
+          medioGarantia: "Depósito en efectivo",
+          montoGarantiaEfectivo: 0,
+        }),
+      "monto mayor a 0"
+    );
+  });
+
+  await prueba("Depósito en efectivo registra un PagoEstadia real, que se descuenta en el check-out", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 }); // 3 noches = 150000
+    const reserva = await crearReservaFixture();
+    await checkInServicio.confirmarCheckInConReserva({
+      reservaId: reserva.id,
+      numeroDocumentoIngresado: "30111222",
+      garantiaConfirmada: true,
+      medioGarantia: "Depósito en efectivo",
+      montoGarantiaEfectivo: 30000,
+    });
+
+    const { pagos, totalPagado, saldo } = await pagoEstadiaServicio.listarPorReserva(reserva.id);
+    assert.equal(pagos.length, 1, "el depósito quedó como un PagoEstadia real, no solo una casilla tildada");
+    assert.equal(pagos[0].medios[0].medioPago, "Efectivo");
+    assert.equal(Number(pagos[0].medios[0].importe), 30000);
+    assert.equal(pagos[0].concepto, "Garantía", "para distinguirlo de una seña o un pago final en Movimientos de Pago");
+    assert.equal(totalPagado, 30000);
+    assert.equal(saldo, 120000, "el check-out ya lo tiene que ver descontado del saldo (150000 - 30000)");
+
+    // Y lo mismo mirado desde consolidarCargos (HU-48), que es lo que el
+    // check-out real consulta.
+    const cuenta = await checkOutServicio.consolidarCargos(reserva.id);
+    assert.equal(cuenta.totalPagado, 30000);
+    assert.equal(cuenta.saldo, 120000);
+  });
+
+  await prueba("Tarjeta de crédito sigue sin generar ningún PagoEstadia (sin cambios)", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 });
+    const reserva = await crearReservaFixture();
+    await checkInServicio.confirmarCheckInConReserva({
+      reservaId: reserva.id,
+      numeroDocumentoIngresado: "30111222",
+      ...GARANTIA_OK, // Tarjeta de crédito
+    });
+
+    const { pagos, totalPagado, saldo } = await pagoEstadiaServicio.listarPorReserva(reserva.id);
+    assert.equal(pagos.length, 0, "la garantía con tarjeta sigue siendo confirmación simulada, sin PagoEstadia");
+    assert.equal(totalPagado, 0);
+    assert.equal(saldo, 150000);
+  });
+
+  await prueba("walk-in con garantía en efectivo también registra el PagoEstadia real", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101", tarifaPorNoche: 20000 });
+    const walkIn = await checkInServicio.registrarCheckInWalkIn({
+      fechaHasta: enDias(2),
+      habitacionIds: [1],
+      huesped: { ...HUESPED },
+      garantiaConfirmada: true,
+      medioGarantia: "Depósito en efectivo",
+      montoGarantiaEfectivo: 15000,
+    });
+
+    const { pagos, totalPagado } = await pagoEstadiaServicio.listarPorReserva(walkIn.id);
+    assert.equal(pagos.length, 1);
+    assert.equal(totalPagado, 15000);
   });
 
   await prueba("rechaza confirmar si la habitación ya no está libre (mantenimiento) y no deja nada a medio hacer", async () => {

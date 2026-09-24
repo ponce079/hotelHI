@@ -20,6 +20,7 @@ import {
   DoorClosed,
   Receipt,
   Wrench,
+  ArrowLeftRight,
 } from "lucide-react";
 
 // Menu por rol, calcado de MENUS del prototipo (y de lo que dice cada
@@ -91,11 +92,20 @@ export const MENU_GRUPOS = [
         icon: DoorClosed, 
         roles: ["admin", "recepcionista"] 
       },
-      { 
+      {
         to: "/comprobantes-estadia",
-        label: "Comprobantes de Huésped", 
-        icon: Receipt, 
-        roles: ["admin", "recepcionista"] 
+        label: "Comprobantes de Huésped",
+        icon: Receipt,
+        roles: ["admin", "recepcionista"]
+      },
+      // HU-88 — todos los PagoEstadia de todas las reservas (seña, garantía,
+      // pago final), mismo criterio de acceso que Comprobantes de Huésped:
+      // solo lectura para los dos roles, sin alta/anulación desde acá.
+      {
+        to: "/movimientos-pago",
+        label: "Movimientos de Pago",
+        icon: ArrowLeftRight,
+        roles: ["admin", "recepcionista"],
       },
     ],
   },

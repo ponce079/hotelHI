@@ -7,11 +7,13 @@ import { ReservaDetallePage } from "./ReservaDetallePage";
 import { useSesion } from "../../lib/sesion";
 import { obtenerReserva } from "./reservas.api";
 import { buscarReservaParaCheckIn } from "../check-in/checkIn.api";
+import { listarPagosEstadia } from "../pagos-estadia/pagoEstadia.api";
 import { obtenerResumenPorReserva } from "../servicios-adicionales/serviciosAdicionales.api";
 
 vi.mock("../../lib/sesion", () => ({ useSesion: vi.fn() }));
 vi.mock("./reservas.api", () => ({ obtenerReserva: vi.fn(), cancelarReserva: vi.fn() }));
 vi.mock("../check-in/checkIn.api", () => ({ buscarReservaParaCheckIn: vi.fn() }));
+vi.mock("../pagos-estadia/pagoEstadia.api", () => ({ listarPagosEstadia: vi.fn() }));
 vi.mock("../servicios-adicionales/serviciosAdicionales.api", () => ({ obtenerResumenPorReserva: vi.fn() }));
 
 const RESERVA_BASE = {
@@ -52,6 +54,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   useSesion.mockReturnValue({ rol: "recepcionista", puede: () => true });
   obtenerResumenPorReserva.mockResolvedValue({ totalGeneral: 0, totalPorTipo: [], items: [] });
+  listarPagosEstadia.mockResolvedValue({ pagos: [], totalAdeudado: 0, totalPagado: 0, saldo: 0 });
 });
 
 // La misma info (puedeIniciarCheckIn/motivoBloqueo) que ya calcula
@@ -101,5 +104,76 @@ describe("ReservaDetallePage — botón Iniciar check-in", () => {
     await screen.findByText(RESERVA_BASE.huesped.nombre);
     expect(screen.queryByRole("button", { name: /Iniciar check-in/ })).not.toBeInTheDocument();
     expect(buscarReservaParaCheckIn).not.toHaveBeenCalled();
+  });
+});
+
+// HU-37 — antes de confirmar la cancelación, el diálogo tiene que avisar
+// explícitamente qué pasa con la seña según la política de 24hs (reusa el
+// mismo umbral que cancelarReserva en el backend: MILISEGUNDOS_POR_DIA).
+describe("ReservaDetallePage — aviso de la seña al cancelar", () => {
+  function reservaConFechaDesde(horasHastaIngreso) {
+    return {
+      ...RESERVA_BASE,
+      fechaDesde: new Date(Date.now() + horasHastaIngreso * 60 * 60 * 1000).toISOString(),
+    };
+  }
+
+  const SENIA_VIGENTE = {
+    id: 30,
+    concepto: "Seña",
+    anulado: false,
+    medios: [{ medioPago: "Efectivo", importe: "18000.00" }],
+  };
+
+  async function abrirDialogoCancelar() {
+    const boton = await screen.findByRole("button", { name: "Cancelar reserva" });
+    await userEvent.setup().click(boton);
+  }
+
+  it("24hs o más de anticipación: avisa que la seña se devuelve", async () => {
+    obtenerReserva.mockResolvedValue(reservaConFechaDesde(48));
+    listarPagosEstadia.mockResolvedValue({ pagos: [SENIA_VIGENTE], totalAdeudado: 90000, totalPagado: 18000, saldo: 72000 });
+
+    renderDetalle();
+    await abrirDialogoCancelar();
+
+    expect(await screen.findByText(/Se cancela con más de 24hs de anticipación — la seña de \$ ?18\.000 va a devolverse\./)).toBeInTheDocument();
+  });
+
+  it("menos de 24hs de anticipación: avisa que la seña NO se devuelve", async () => {
+    obtenerReserva.mockResolvedValue(reservaConFechaDesde(5));
+    listarPagosEstadia.mockResolvedValue({ pagos: [SENIA_VIGENTE], totalAdeudado: 90000, totalPagado: 18000, saldo: 72000 });
+
+    renderDetalle();
+    await abrirDialogoCancelar();
+
+    expect(await screen.findByText(/Se cancela con menos de 24hs de anticipación — la seña de \$ ?18\.000 no se devuelve\./)).toBeInTheDocument();
+  });
+
+  it("sin ninguna seña vigente, no muestra ningún aviso", async () => {
+    obtenerReserva.mockResolvedValue(reservaConFechaDesde(48));
+    listarPagosEstadia.mockResolvedValue({ pagos: [], totalAdeudado: 90000, totalPagado: 0, saldo: 90000 });
+
+    renderDetalle();
+    await abrirDialogoCancelar();
+
+    expect(await screen.findByText("Motivo de la cancelación *")).toBeInTheDocument();
+    expect(screen.queryByText(/la seña de/)).not.toBeInTheDocument();
+  });
+
+  it("una seña ya anulada no dispara el aviso (no hay nada nuevo que decidir)", async () => {
+    obtenerReserva.mockResolvedValue(reservaConFechaDesde(48));
+    listarPagosEstadia.mockResolvedValue({
+      pagos: [{ ...SENIA_VIGENTE, anulado: true }],
+      totalAdeudado: 90000,
+      totalPagado: 0,
+      saldo: 90000,
+    });
+
+    renderDetalle();
+    await abrirDialogoCancelar();
+
+    expect(await screen.findByText("Motivo de la cancelación *")).toBeInTheDocument();
+    expect(screen.queryByText(/la seña de/)).not.toBeInTheDocument();
   });
 });

@@ -12,7 +12,7 @@ import { Toast } from "../../componentes/Toast";
 import { GarantiaFieldset } from "./GarantiaFieldset";
 import { TituloSeccion } from "./TituloSeccion";
 import { listarHabitacionesLibresAhora, registrarCheckInWalkIn } from "./checkIn.api";
-import { MEDIOS_GARANTIA } from "./checkIn.constantes";
+import { MEDIOS_GARANTIA, MEDIO_GARANTIA_EFECTIVO } from "./checkIn.constantes";
 import { validarHuesped } from "./validarHuesped";
 
 // El "tipo" de habitación es texto libre (lo define cada hotel en el
@@ -49,6 +49,7 @@ const VACIO = {
   huesped: { nombre: "", tipoDocumento: TIPOS_DOCUMENTO[0], numeroDocumento: "", contacto: "" },
   garantiaConfirmada: false,
   medioGarantia: MEDIOS_GARANTIA[0],
+  montoGarantiaEfectivo: "",
 };
 
 const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
@@ -115,6 +116,14 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
 
   const elegidas = useMemo(() => habitaciones.filter((h) => form.habitacionIds.includes(h.id)), [habitaciones, form.habitacionIds]);
   const capacidadTotal = elegidas.reduce((acc, h) => acc + h.capacidad, 0);
+  // Para la terminal simulada de la garantía con tarjeta (paso 4): mismo
+  // total que va a terminar en Reserva.totalEstimadoAlojamiento una vez
+  // creada — noches × tarifa de las habitaciones elegidas.
+  const nochesWalkIn = Math.round(
+    (new Date(`${form.fechaHasta}T00:00:00.000Z`).getTime() - new Date(`${hoyEnHoraLocal()}T00:00:00.000Z`).getTime()) /
+      (24 * 60 * 60 * 1000)
+  );
+  const totalEstadiaWalkIn = elegidas.reduce((acc, h) => acc + h.tarifaPorNoche, 0) * Math.max(0, nochesWalkIn);
 
   const mutacion = useMutation({
     mutationFn: () =>
@@ -129,6 +138,8 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
         },
         garantiaConfirmada: form.garantiaConfirmada,
         medioGarantia: form.medioGarantia,
+        montoGarantiaEfectivo:
+          form.medioGarantia === MEDIO_GARANTIA_EFECTIVO ? Number(form.montoGarantiaEfectivo) : undefined,
       }),
     onSuccess: (reserva) => {
       queryClient.invalidateQueries({ queryKey: ["habitaciones"] });
@@ -172,6 +183,10 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
     // el chequeo que ese gate no cubre.
     if (!form.garantiaConfirmada) {
       setErrorGeneral("Confirmá la garantía antes de completar el check-in.");
+      return;
+    }
+    if (form.medioGarantia === MEDIO_GARANTIA_EFECTIVO && !(Number(form.montoGarantiaEfectivo) > 0)) {
+      setErrorGeneral("Ingresá el monto recibido en efectivo antes de completar el check-in.");
       return;
     }
     mutacion.mutate();
@@ -354,6 +369,8 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
           <GarantiaFieldset
             garantiaConfirmada={form.garantiaConfirmada}
             medioGarantia={form.medioGarantia}
+            montoGarantiaEfectivo={form.montoGarantiaEfectivo}
+            montoAGarantizar={totalEstadiaWalkIn}
             onCambiar={actualizar}
           />
         </div>

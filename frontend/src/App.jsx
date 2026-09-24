@@ -42,6 +42,7 @@ import { CheckOutReservaPage } from "./modulos/check-out/CheckOutReservaPage";
 import { ComprobantesEstadiaPage } from "./modulos/comprobantes-estadia/ComprobantesEstadiaPage";
 import { ComprobanteEstadiaDetallePage } from "./modulos/comprobantes-estadia/ComprobanteEstadiaDetallePage";
 import { ReporteCajaDiariaPage } from "./modulos/comprobantes-estadia/ReporteCajaDiariaPage";
+import { MovimientosPagoPage } from "./modulos/pagos-estadia/MovimientosPagoPage";
 // Gatekeeper de rutas: sin sesion (sin rol elegido en el login), redirige
 // a /login. No es autenticacion real contra el backend — ver lib/sesion.jsx.
 function RequireSesion() {
@@ -110,6 +111,7 @@ export default function App() {
           <Route path="/check-out/:reservaId" element={<CheckOutReservaPage />} />
           <Route path="/comprobantes-estadia" element={<ComprobantesEstadiaPage />} />
           <Route path="/comprobantes-estadia/:id" element={<ComprobanteEstadiaDetallePage />} />
+          <Route path="/movimientos-pago" element={<MovimientosPagoPage />} />
           <Route path="/reporte-caja-diaria" element={<ReporteCajaDiariaPage />} />
         </Route>
       </Route>

@@ -75,8 +75,14 @@ function coincideValor(valor, condicion) {
 }
 
 function crearBase() {
-  const datos = { habitacion: [], reserva: [], reservaHabitacion: [], huesped: [], notificacion: [] };
-  const secuencias = { habitacion: 0, reserva: 0, reservaHabitacion: 0, huesped: 0, notificacion: 0 };
+  // pagoEstadia sumada para cancelarReserva (HU-37, anulación automática de
+  // la seña): solo necesita existir y no explotar en un findMany/update
+  // genéricos — ninguna prueba de este script siembra un PagoEstadia real
+  // (eso lo cubre pruebas-senia-reserva.js, con el doble completo de
+  // _dobleSprint3.js), así que acá siempre da una lista vacía y el loop de
+  // anulación nunca llega a ejecutar nada.
+  const datos = { habitacion: [], reserva: [], reservaHabitacion: [], huesped: [], notificacion: [], pagoEstadia: [] };
+  const secuencias = { habitacion: 0, reserva: 0, reservaHabitacion: 0, huesped: 0, notificacion: 0, pagoEstadia: 0 };
 
   function siguienteId(tabla) {
     secuencias[tabla] += 1;
@@ -211,6 +217,7 @@ function crearBase() {
     reservaHabitacion: modelo("reservaHabitacion"),
     huesped: modelo("huesped"),
     notificacion: modelo("notificacion"),
+    pagoEstadia: modelo("pagoEstadia"),
     $queryRaw: async () => [],
     $transaction: async (fn) => fn(cliente),
     _datos: datos,
@@ -249,10 +256,14 @@ const base = crearBase();
 
 Module._load = function (solicitud, ...resto) {
   if (solicitud === "@prisma/client") return { Prisma: PrismaFalso };
-  // El servicio pide "../../lib/prisma"; src/lib/prisma.js real abre una
-  // conexión contra Clever Cloud y exige DATABASE_URL, así que nunca se
-  // evalúa durante las pruebas.
-  if (/(^|[/\\])lib[/\\]prisma$/.test(solicitud)) return base;
+  // Dos formas de pedirlo según desde dónde se requiere: "../../lib/prisma"
+  // (la mayoría de los *.servicio.js) o "./prisma" (archivos que ya viven
+  // adentro de src/lib/, como comprobantes.js) — sumado junto con el require
+  // diferido de pagoEstadiaServicio en cancelarReserva (HU-37, anulación
+  // automática de la seña), que es el primer camino de este script que trae
+  // checkOut.servicio.js transitivamente y por lo tanto lib/comprobantes.js.
+  // Mismo criterio ya usado en _dobleSprint3.js (instalarDoble).
+  if (/(^|[/\\])lib[/\\]prisma$/.test(solicitud) || solicitud === "./prisma") return base;
   return cargarModuloOriginal.call(this, solicitud, ...resto);
 };
 

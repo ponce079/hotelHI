@@ -637,6 +637,12 @@ model PagoEstadia {
   fecha           DateTime           @default(now())
   // Pagado | Parcial
   estado          String             @default("Pagado")
+  // Seña (HU-88, al confirmar la reserva) | Garantía (HU-46, depósito en
+  // efectivo al check-in) | Pago final (HU-50, el de siempre en el
+  // check-out — default, para que las filas ya existentes de antes de este
+  // campo no queden con un concepto vacío). Sumado para la pantalla de
+  // Movimientos de Pago, que si no no puede distinguir de qué fue cada cobro.
+  concepto        String             @default("Pago final")
   anulado         Boolean            @default(false)
   motivoAnulacion String?
   reserva         Reserva            @relation(fields: [reservaId], references: [id])

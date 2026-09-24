@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, BedDouble, Check, Search, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, BedDouble, Check, CreditCard, Search, Users } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -9,19 +9,27 @@ import { Select } from "../../componentes/Select";
 import { Table } from "../../componentes/Table";
 import { hoyEnHoraLocal } from "../../lib/fechas";
 import { ESTADO_HABITACION_BADGE, ESTADO_HABITACION_LABEL } from "../habitaciones/habitaciones.constantes";
+import { registrarPagoEstadia } from "../pagos-estadia/pagoEstadia.api";
+import { CONCEPTO_SENIA, MEDIOS_CON_TARJETA } from "../pagos-estadia/pagoEstadia.constantes";
+import { TarjetaSimuladaPanel } from "../pagos-estadia/TarjetaSimuladaPanel";
 import { consultarDisponibilidad, crearReserva, modificarReserva } from "./reservas.api";
-import { CANALES_CONFIRMACION, LIMITES_RESERVA, TIPOS_DOCUMENTO } from "./reservas.constantes";
+import { CANALES_CONFIRMACION, LIMITES_RESERVA, PORCENTAJE_SENIA_RESERVA, TIPOS_DOCUMENTO } from "./reservas.constantes";
 import { validarHuesped } from "./validarHuesped";
 
 // Alta de reserva (HU-36) y edición de una existente (HU-37) en el mismo
-// wizard: los tres pasos son idénticos, solo cambia con qué datos arranca
-// y a qué endpoint confirma. Es además el mismo componente que usa el
-// autoservicio web (HU-40) — ahí cambia el `origen` y el envoltorio, nunca
-// la lógica, que es justo lo que pide el criterio de aceptación.
+// wizard: los primeros tres pasos son idénticos, solo cambia con qué datos
+// arranca y a qué endpoint confirma. Es además el mismo componente que usa
+// el autoservicio web (HU-40) — ahí cambia el `origen` y el envoltorio,
+// nunca la lógica, que es justo lo que pide el criterio de aceptación.
 //
 // Estructura calcada de OrdenPagoWizard.jsx: array PASOS, un único estado
 // `form` con todo, y el botón final que cambia según el paso.
-const PASOS = ["Fechas de la estadía", "Habitaciones", "Datos del huésped"];
+//
+// El 4º paso "Seña" (HU-88) es exclusivo del alta asistida por mostrador
+// (ver `requiereSenia` más abajo): edición y autoservicio web siguen
+// terminando en 3 pasos, sin tocar nada de su comportamiento.
+const PASOS_BASE = ["Fechas de la estadía", "Habitaciones", "Datos del huésped"];
+const PASOS_CON_SENIA = [...PASOS_BASE, "Seña"];
 
 const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
@@ -31,6 +39,20 @@ const HUESPED_VACIO = {
   numeroDocumento: "",
   contacto: "",
   preferencias: "",
+};
+
+// Medios que ofrece el paso de seña: los mismos 4 que Check-in/Check-out
+// salvo "Online" (mismos strings que MEDIOS_PAGO_ESTADIA, pagoEstadia.
+// constantes.js — viajan tal cual en el `tipo` del medio de pago, sin
+// traducción de por medio). Cuáles de esos 4 necesitan pasar por la
+// terminal simulada lo sigue decidiendo MEDIOS_CON_TARJETA (mismo criterio
+// que PagoEstadiaWizard, no se reimplementa esa lista acá.
+const MEDIOS_SENIA = ["Efectivo", "Transferencia", "Tarjeta crédito", "Tarjeta débito"];
+const MEDIO_SENIA_LABEL = {
+  Efectivo: "Efectivo",
+  Transferencia: "Transferencia",
+  "Tarjeta crédito": "Tarjeta de crédito",
+  "Tarjeta débito": "Tarjeta de débito",
 };
 
 function soloFecha(valorISO) {
@@ -72,10 +94,32 @@ function estadoInicial(reserva, valoresIniciales) {
 
 export function ReservaWizard({ reserva = null, valoresIniciales = null, origen = "RECEPCION", onExito, onCancelar }) {
   const esEdicion = Boolean(reserva);
+  // HU-36/88 — seña obligatoria del 20% al confirmar una reserva NUEVA desde
+  // el mostrador. No aplica a una edición (esEdicion: la reserva ya está
+  // confirmada, no hay nada nuevo que señar) ni al autoservicio web (HU-40,
+  // origen "WEB": un huésped anónimo no puede quedar frente a un cobro
+  // obligatorio ni a la terminal de tarjeta pensada para el mostrador — la
+  // seña queda acotada a HU-36, tal como se pidió).
+  const requiereSenia = !esEdicion && origen === "RECEPCION";
+  const PASOS = requiereSenia ? PASOS_CON_SENIA : PASOS_BASE;
+
   const [form, setForm] = useState(() => estadoInicial(reserva, valoresIniciales));
   const [errorGeneral, setErrorGeneral] = useState("");
   const [huespedTocado, setHuespedTocado] = useState({ nombre: false, numeroDocumento: false });
   const [intentoConfirmarHuesped, setIntentoConfirmarHuesped] = useState(false);
+  // Paso 4 (seña): la reserva ya creada (si `mutacion` llegó a completar ese
+  // tramo) — sirve de guarda para que un reintento tras un error al cobrar
+  // la seña no vuelva a crear la reserva de nuevo, y de señal de "ya no hay
+  // vuelta atrás" para Atrás/Cancelar.
+  const [reservaCreada, setReservaCreada] = useState(null);
+  const [medioSenia, setMedioSenia] = useState("");
+  const [referenciaSenia, setReferenciaSenia] = useState(null);
+  const [panelTarjetaAbierto, setPanelTarjetaAbierto] = useState(false);
+  // Confirmación manual para los medios que no pasan por la terminal
+  // simulada (Efectivo, Transferencia) — mismo rol que `referenciaSenia`
+  // para tarjeta, pero sin autorización real de por medio.
+  const [confirmacionManualSenia, setConfirmacionManualSenia] = useState(false);
+  const esTarjetaSenia = MEDIOS_CON_TARJETA.includes(medioSenia);
   const queryClient = useQueryClient();
 
   // Errores en vivo, pero solo se muestran una vez que el usuario tocó el
@@ -129,30 +173,76 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   const totalPorNoche = elegidas.reduce((acc, h) => acc + h.tarifaPorNoche, 0);
   const totalEstadia = totalPorNoche * noches;
   const capacidadTotal = elegidas.reduce((acc, h) => acc + h.capacidad, 0);
+  // Mostrado en el paso 4 antes de que la reserva exista — el monto real que
+  // se cobra usa el total que devuelve crearReserva (fuente de verdad del
+  // backend), que en condiciones normales coincide con este.
+  const seniaMonto = Number((totalEstadia * PORCENTAJE_SENIA_RESERVA).toFixed(2));
 
   const mutacion = useMutation({
-    mutationFn: () => {
-      const payload = {
-        fechaDesde: form.fechaDesde,
-        fechaHasta: form.fechaHasta,
-        habitacionIds: form.habitacionIds,
-        huesped: {
-          nombre: form.huesped.nombre.trim(),
-          tipoDocumento: form.huesped.tipoDocumento,
-          numeroDocumento: form.huesped.numeroDocumento.trim(),
-          contacto: form.huesped.contacto.trim() || undefined,
-          preferencias: form.huesped.preferencias.trim() || undefined,
-        },
-      };
-      if (esEdicion) return modificarReserva(reserva.id, payload);
-      return crearReserva({ ...payload, canalConfirmacion: form.canalConfirmacion, origen });
+    mutationFn: async () => {
+      if (esEdicion) {
+        const payload = {
+          fechaDesde: form.fechaDesde,
+          fechaHasta: form.fechaHasta,
+          habitacionIds: form.habitacionIds,
+          huesped: {
+            nombre: form.huesped.nombre.trim(),
+            tipoDocumento: form.huesped.tipoDocumento,
+            numeroDocumento: form.huesped.numeroDocumento.trim(),
+            contacto: form.huesped.contacto.trim() || undefined,
+            preferencias: form.huesped.preferencias.trim() || undefined,
+          },
+        };
+        return modificarReserva(reserva.id, payload);
+      }
+
+      // `reservaCreada` (si ya está seteada) es un reintento tras un error
+      // al cobrar la seña: la reserva en sí ya quedó confirmada, no hay que
+      // volver a darla de alta — solo reintentar el cobro.
+      let creada = reservaCreada;
+      if (!creada) {
+        creada = await crearReserva({
+          fechaDesde: form.fechaDesde,
+          fechaHasta: form.fechaHasta,
+          habitacionIds: form.habitacionIds,
+          huesped: {
+            nombre: form.huesped.nombre.trim(),
+            tipoDocumento: form.huesped.tipoDocumento,
+            numeroDocumento: form.huesped.numeroDocumento.trim(),
+            contacto: form.huesped.contacto.trim() || undefined,
+            preferencias: form.huesped.preferencias.trim() || undefined,
+          },
+          canalConfirmacion: form.canalConfirmacion,
+          origen,
+        });
+        setReservaCreada(creada);
+      }
+
+      if (requiereSenia) {
+        await registrarPagoEstadia({
+          reservaId: creada.id,
+          medios: [
+            {
+              tipo: medioSenia,
+              importe: Number((creada.totalEstimadoAlojamiento * PORCENTAJE_SENIA_RESERVA).toFixed(2)),
+              referencia: esTarjetaSenia ? referenciaSenia : undefined,
+            },
+          ],
+          concepto: CONCEPTO_SENIA,
+        });
+      }
+
+      return creada;
     },
     onSuccess: (guardada) => {
       queryClient.invalidateQueries({ queryKey: ["reservas"] });
       onExito(guardada);
     },
     onError: (error) => {
-      setErrorGeneral(error?.response?.data?.error ?? "No se pudo guardar la reserva.");
+      setErrorGeneral(
+        error?.response?.data?.error ??
+          (reservaCreada ? "La reserva ya quedó creada, pero no se pudo cobrar la seña. Reintentá." : "No se pudo guardar la reserva.")
+      );
     },
   });
 
@@ -189,8 +279,27 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
     setForm((f) => ({ ...f, paso }));
   }
 
-  function confirmar() {
+  function avanzarDesdeHuesped() {
     if (!huespedValido) {
+      setIntentoConfirmarHuesped(true);
+      return;
+    }
+    irA(4);
+  }
+
+  function elegirMedioSenia(medio) {
+    setErrorGeneral("");
+    setMedioSenia(medio);
+    setReferenciaSenia(null);
+    setPanelTarjetaAbierto(false);
+    setConfirmacionManualSenia(false);
+  }
+
+  function confirmar() {
+    // Paso 3 como último paso (edición o autoservicio web, sin seña): mismo
+    // chequeo de siempre. Con seña, el huésped ya se validó al avanzar del
+    // paso 3 al 4 (avanzarDesdeHuesped) — acá solo queda mandar.
+    if (form.paso !== 4 && !huespedValido) {
       setIntentoConfirmarHuesped(true);
       return;
     }
@@ -200,13 +309,26 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
 
   const puedeAvanzarPaso1 = rangoCompleto && !disponibilidadQuery.isError;
   const puedeAvanzarPaso2 = form.habitacionIds.length > 0;
+  const esUltimoPaso = form.paso === PASOS.length;
+  const puedeConfirmarSenia = !medioSenia
+    ? false
+    : esTarjetaSenia
+      ? Boolean(referenciaSenia)
+      : confirmacionManualSenia;
+  const puedeConfirmarFinal = form.paso === 4 ? puedeConfirmarSenia : huespedValido;
+  // Una vez que la reserva ya existe (paso 4, tras un intento), no hay
+  // "atrás" ni "cancelar" real: lo único que puede pasar es reintentar el
+  // cobro de la seña.
+  const reservaYaCreada = Boolean(reservaCreada);
 
   return (
     <div className="flex flex-col gap-5 px-6 py-5">
       <p className="-mt-1 font-mono text-[11px] text-tinta/55">
         {esEdicion
           ? "HU 37 — modificar fechas, habitaciones o datos del huésped"
-          : "HU 36, 39, 41 y 42 — disponibilidad validada antes de confirmar"}
+          : requiereSenia
+            ? "HU 36, 39, 41, 42 y 88 — disponibilidad validada y seña cobrada antes de confirmar"
+            : "HU 36, 39, 41 y 42 — disponibilidad validada antes de confirmar"}
       </p>
 
       <div className="flex flex-wrap items-center gap-2 rounded-[18.4px] bg-hueso px-6 py-4">
@@ -476,6 +598,92 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
         </div>
       )}
 
+      {/* Paso 4 — seña (HU-88), solo alta asistida por mostrador */}
+      {form.paso === 4 && requiereSenia && (
+        <div className="flex flex-col gap-4 rounded-[18.4px] bg-white px-6 py-[22px]">
+          <div className="rounded-lg border border-borde bg-hueso px-5 py-4 text-[13px]">
+            <p className="font-semibold">Resumen</p>
+            <p className="mt-1 text-piedra">
+              {elegidas.map((h) => `${h.numero} (${h.tipo})`).join(", ") || "—"} · del {form.fechaDesde} al{" "}
+              {form.fechaHasta} · {noches} noche{noches === 1 ? "" : "s"} ·{" "}
+              <span className="font-semibold text-tinta">{form.huesped.nombre}</span> ·{" "}
+              <span className="font-semibold text-tinta">{FORMATO_MONEDA.format(totalEstadia)}</span>
+            </p>
+          </div>
+
+          <div className="rounded-lg border border-pino-300 bg-pino-100 px-5 py-4">
+            <p className="text-[11px] uppercase tracking-wide text-pino-700">
+              Seña requerida ({PORCENTAJE_SENIA_RESERVA * 100}%)
+            </p>
+            <Cifra tamano={26}>{FORMATO_MONEDA.format(seniaMonto)}</Cifra>
+          </div>
+
+          {reservaYaCreada && (
+            <p className="rounded-md border border-laton-300 bg-laton-100 px-4 py-2.5 text-[13px] text-laton-700">
+              La reserva {reservaCreada.codigoConfirmacion} ya quedó creada — falta cobrar la seña para terminar.
+            </p>
+          )}
+
+          <Select
+            label="Medio de pago de la seña *"
+            value={medioSenia}
+            onChange={(e) => elegirMedioSenia(e.target.value)}
+          >
+            <option value="">Elegí un medio…</option>
+            {MEDIOS_SENIA.map((medio) => (
+              <option key={medio} value={medio}>
+                {MEDIO_SENIA_LABEL[medio]}
+              </option>
+            ))}
+          </Select>
+
+          {medioSenia && !esTarjetaSenia && (
+            <label className="flex cursor-pointer items-start gap-2.5 text-[13px] text-tinta">
+              <input
+                type="checkbox"
+                checked={confirmacionManualSenia}
+                onChange={(e) => setConfirmacionManualSenia(e.target.checked)}
+                className="mt-0.5 h-4 w-4 cursor-pointer accent-pino"
+              />
+              <span>
+                {medioSenia === "Transferencia"
+                  ? `Confirmo la transferencia de ${FORMATO_MONEDA.format(seniaMonto)} recibida del huésped.`
+                  : `Confirmo que recibí ${FORMATO_MONEDA.format(seniaMonto)} en efectivo del huésped.`}
+              </span>
+            </label>
+          )}
+
+          {esTarjetaSenia &&
+            (referenciaSenia ? (
+              <div className="flex flex-wrap items-center gap-2.5 rounded-md border border-pino-300 bg-pino-100 px-4 py-2.5">
+                <Badge variante="ok">Autorizada</Badge>
+                <span className="text-[12px] text-pino-700">{referenciaSenia}</span>
+                <button
+                  type="button"
+                  onClick={() => setReferenciaSenia(null)}
+                  className="ml-auto cursor-pointer text-[11.5px] font-semibold text-piedra underline-offset-2 hover:underline"
+                >
+                  Cambiar tarjeta
+                </button>
+              </div>
+            ) : panelTarjetaAbierto ? (
+              <TarjetaSimuladaPanel
+                tipo={medioSenia}
+                importe={seniaMonto}
+                onCancelar={() => setPanelTarjetaAbierto(false)}
+                onAutorizada={(referencia) => {
+                  setReferenciaSenia(referencia);
+                  setPanelTarjetaAbierto(false);
+                }}
+              />
+            ) : (
+              <Button variante="ok" tamano="fila" icono={CreditCard} onClick={() => setPanelTarjetaAbierto(true)}>
+                Autorizar tarjeta — {FORMATO_MONEDA.format(seniaMonto)}
+              </Button>
+            ))}
+        </div>
+      )}
+
       {errorGeneral && (
         <p className="rounded-md border border-error bg-error-suave px-4 py-2.5 text-[12.5px] text-error-texto">
           {errorGeneral}
@@ -484,16 +692,18 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
 
       <div className="flex items-center justify-between gap-3">
         <div>
-          {form.paso > 1 && (
+          {form.paso > 1 && !reservaYaCreada && (
             <Button variante="secundario" icono={ArrowLeft} onClick={() => irA(form.paso - 1)}>
               Atrás
             </Button>
           )}
         </div>
         <div className="flex items-center gap-2.5">
-          <Button variante="fantasma" onClick={onCancelar}>
-            Cancelar
-          </Button>
+          {!reservaYaCreada && (
+            <Button variante="fantasma" onClick={onCancelar}>
+              Cancelar
+            </Button>
+          )}
           {form.paso === 1 && (
             <Button variante="ok" disabled={!puedeAvanzarPaso1} onClick={() => irA(2)}>
               Ver disponibilidad <ArrowRight size={16} className="flex-none" />
@@ -504,8 +714,19 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
               Siguiente <ArrowRight size={16} className="flex-none" />
             </Button>
           )}
-          {form.paso === 3 && (
-            <Button variante="ok" icono={Check} cargando={mutacion.isPending} onClick={confirmar}>
+          {form.paso === 3 && !esUltimoPaso && (
+            <Button variante="ok" onClick={avanzarDesdeHuesped}>
+              Siguiente <ArrowRight size={16} className="flex-none" />
+            </Button>
+          )}
+          {esUltimoPaso && (
+            <Button
+              variante="ok"
+              icono={Check}
+              cargando={mutacion.isPending}
+              disabled={!puedeConfirmarFinal}
+              onClick={confirmar}
+            >
               {esEdicion ? "Guardar cambios" : "Confirmar reserva"}
             </Button>
           )}

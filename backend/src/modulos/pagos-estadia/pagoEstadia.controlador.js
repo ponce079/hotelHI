@@ -32,6 +32,25 @@ async function getPagos(req, res) {
   }
 }
 
+// GET /api/pagos-estadia/movimientos?q=&concepto=&desde=&hasta=
+// HU-88 — listado global (todas las reservas), a diferencia de getPagos que
+// exige reservaId. Ruta propia en vez de hacer opcional el reservaId de
+// arriba: esa devuelve {pagos,totalAdeudado,totalPagado,saldo} (contrato que
+// ya usa Check-out) y esta un array plano — mezclarlas en el mismo handler
+// rompería uno de los dos contratos.
+async function getMovimientos(req, res) {
+  try {
+    const movimientos = await pagoEstadiaServicio.listarMovimientos(req.query);
+    return res.json(movimientos);
+  } catch (err) {
+    if (err instanceof pagoEstadiaServicio.ErrorDeNegocio) {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
+    console.error('Error al listar los movimientos de pago:', err);
+    return res.status(500).json({ error: 'No se pudieron listar los movimientos de pago.' });
+  }
+}
+
 // GET /api/pagos-estadia/:id
 async function getPagoPorId(req, res) {
   try {
@@ -60,4 +79,4 @@ async function postAnular(req, res) {
   }
 }
 
-module.exports = { postPago, getPagos, getPagoPorId, postAnular };
+module.exports = { postPago, getPagos, getMovimientos, getPagoPorId, postAnular };

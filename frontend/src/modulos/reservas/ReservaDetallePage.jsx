@@ -18,6 +18,8 @@ import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { useVolver } from "../../lib/useVolver";
 import { buscarReservaParaCheckIn } from "../check-in/checkIn.api";
+import { listarPagosEstadia } from "../pagos-estadia/pagoEstadia.api";
+import { CONCEPTO_SENIA } from "../pagos-estadia/pagoEstadia.constantes";
 import { ConsumoModal } from "../servicios-adicionales/ConsumoModal";
 import { obtenerResumenPorReserva } from "../servicios-adicionales/serviciosAdicionales.api";
 import { TIPO_SERVICIO_BADGE } from "../servicios-adicionales/serviciosAdicionales.constantes";
@@ -55,6 +57,10 @@ export function ReservaDetallePage() {
   const [cancelando, setCancelando] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [consumoAbierto, setConsumoAbierto] = useState(false);
+  // Congelado al montar (no en cada render — mismo criterio que `ahora` en
+  // HabitacionesPage.jsx): alcanza para decidir la política de 24hs de la
+  // seña, no hace falta que tiquee en vivo mientras el diálogo está abierto.
+  const [ahora] = useState(() => Date.now());
   const { toast, mostrarToast } = useToast();
   const queryClient = useQueryClient();
 
@@ -93,6 +99,16 @@ export function ReservaDetallePage() {
     enabled: puedeGestionarCheckIn && confirmada,
   });
 
+  // HU-37 — antes de confirmar la cancelación, hay que poder avisar qué va a
+  // pasar con la seña (política de 24hs de reservas.servicio.js/
+  // cancelarReserva): trae los pagos reales de la reserva para mostrar el
+  // monto de la seña vigente, si tiene una.
+  const pagosQuery = useQuery({
+    queryKey: ["pagos-estadia", "reserva", id],
+    queryFn: () => listarPagosEstadia(id),
+    enabled: puedeGestionar && confirmada,
+  });
+
   const mutacionCancelar = useMutation({
     mutationFn: () => cancelarReserva(id, motivo.trim()),
     onSuccess: () => {
@@ -127,6 +143,15 @@ export function ReservaDetallePage() {
   const mostrarAccionCheckIn = puedeGestionarCheckIn && reserva.estado === ESTADO_RESERVA.CONFIRMADA;
   const puedeIniciarCheckInAhora = vigenciaCheckInQuery.data?.puedeIniciarCheckIn ?? false;
   const motivoAunNoHabilitado = vigenciaCheckInQuery.data?.motivoBloqueo;
+
+  // Mismo umbral que cancelarReserva (backend, MILISEGUNDOS_POR_DIA): si
+  // faltan 24hs o más para la fecha de ingreso, la seña se anula sola al
+  // cancelar; si no, queda como está. Se muestra ANTES de confirmar, no
+  // después, para que quien cancela sepa el resultado de antemano.
+  const seniaVigente = pagosQuery.data?.pagos.find((p) => p.concepto === CONCEPTO_SENIA && !p.anulado);
+  const montoSenia = seniaVigente?.medios.reduce((acc, m) => acc + Number(m.importe), 0) ?? 0;
+  const anticipacionMs = new Date(reserva.fechaDesde).getTime() - ahora;
+  const seniaSeDevuelve = anticipacionMs >= 24 * 60 * 60 * 1000;
 
   return (
     <div className="flex flex-col gap-6">
@@ -366,6 +391,17 @@ export function ReservaDetallePage() {
           mutacionCancelar.mutate();
         }}
       >
+        {seniaVigente && (
+          <p
+            className={`mb-3 rounded-md border px-4 py-2.5 text-[12.5px] ${
+              seniaSeDevuelve ? "border-pino-300 bg-pino-100 text-pino-700" : "border-laton-300 bg-laton-100 text-laton-700"
+            }`}
+          >
+            {seniaSeDevuelve
+              ? `Se cancela con más de 24hs de anticipación — la seña de ${FORMATO_MONEDA.format(montoSenia)} va a devolverse.`
+              : `Se cancela con menos de 24hs de anticipación — la seña de ${FORMATO_MONEDA.format(montoSenia)} no se devuelve.`}
+          </p>
+        )}
         <label className="flex flex-col gap-1.5 font-body text-sm">
           <span className="text-[12px] text-tinta/70">Motivo de la cancelación *</span>
           <textarea

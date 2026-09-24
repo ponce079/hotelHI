@@ -31,6 +31,22 @@ const PrismaFalso = {
   join: (valores) => valores,
 };
 
+// Prisma real acepta tanto `include: { reserva: { include: {...} } }` como
+// `include: { reserva: { select: {...} } }` para bajar un nivel más en una
+// relación (select además recorta campos, que acá no importa: el doble
+// siempre expone la fila completa). Este doble es más simple: sus `if
+// (include.campo)` esperan las flags DIRECTO en el objeto, sin el
+// select/include intermedio — así que antes de pasar el include de una
+// relación a `expandir` en el nivel de abajo, hay que desenvolverlo. Sin
+// esto, un `reserva: { select: { huesped: {...} } }` (el patrón real que ya
+// usa comprobanteEstadia.servicio.js) expandía la reserva pero nunca el
+// huésped adentro — bug latente hasta que pagoEstadia.servicio.js
+// (listarMovimientos, HU-88) fue el primero en de verdad leer ese campo.
+function desenvolverInclude(valor) {
+  if (valor === true || !valor) return {};
+  return valor.select || valor.include || valor;
+}
+
 function coincideValor(valor, condicion) {
   if (condicion === null || typeof condicion !== "object" || condicion instanceof Date) {
     if (valor instanceof Date && condicion instanceof Date) return valor.getTime() === condicion.getTime();
@@ -178,6 +194,13 @@ function crearBase() {
         const pago = datos.pagoEstadia.find((p) => p.id === registro.pagoEstadiaId);
         return pago ? coincide("pagoEstadia", pago, condicion) : false;
       }
+      // --- Relación de pagoEstadia.servicio.js (listarMovimientos, HU-88:
+      // el filtro `q` busca por reserva.codigoConfirmacion o
+      // reserva.huesped.nombre) ---
+      if (tabla === "pagoEstadia" && campo === "reserva") {
+        const reserva = datos.reserva.find((r) => r.id === registro.reservaId);
+        return reserva ? coincide("reserva", reserva, condicion) : false;
+      }
 
       // --- Relaciones de Stock (Sprint 1) que usa movimientoSalida.servicio.js ---
       if (tabla === "articuloDeposito" && campo === "articulo") {
@@ -244,7 +267,7 @@ function crearBase() {
       }
       if (include.reserva) {
         const reserva = datos.reserva.find((r) => r.id === registro.reservaId);
-        salida.reserva = reserva ? expandir("reserva", reserva, include.reserva === true ? {} : include.reserva) : null;
+        salida.reserva = reserva ? expandir("reserva", reserva, desenvolverInclude(include.reserva)) : null;
       }
     }
     // Relaciones de comprobanteEstadia.servicio.js (pruebas-checkout-facturacion.js):
@@ -263,9 +286,7 @@ function crearBase() {
       }
       if (include.reserva) {
         const reserva = datos.reserva.find((r) => r.id === registro.reservaId);
-        salida.reserva = reserva
-          ? expandir("reserva", reserva, include.reserva === true ? {} : include.reserva)
-          : null;
+        salida.reserva = reserva ? expandir("reserva", reserva, desenvolverInclude(include.reserva)) : null;
       }
     }
     if (tabla === "movimientoStock") {

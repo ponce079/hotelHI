@@ -799,6 +799,23 @@ async function modificarReserva(id, data) {
 // HU-37 — al cancelar, el período vuelve a estar disponible (lo hace solo:
 // ESTADOS_QUE_OCUPAN deja afuera a "Cancelada", así que la próxima consulta
 // de disponibilidad ya no la cuenta). El motivo es obligatorio.
+//
+// Política de cancelación (extensión de HU-37, atada a la seña de HU-88):
+// con 24hs o más de anticipación respecto a la fecha de ingreso, la seña
+// (el/los PagoEstadia activos de la reserva) se anula sola — reusa
+// anularPago, nunca reimplementa la baja lógica. Con menos de 24hs, o si la
+// fecha de ingreso ya pasó (no-show: nunca hubo check-in y la reserva sigue
+// "Confirmada"), NO se anula nada: en los dos casos la anticipación real
+// (fechaDesde - ahora) da menos de 24hs, así que un solo chequeo cubre
+// ambos, sin necesidad de distinguirlos aparte.
+//
+// El require de pagoEstadiaServicio queda DIFERIDO a propósito (no al tope
+// del archivo): pagoEstadia.servicio.js importa checkOut.servicio.js, que a
+// su vez importa ESTE archivo — un require al tope formaría un ciclo, y
+// checkOut.servicio.js capturaría un reservasServicio a medio cargar
+// (module.exports todavía no asignado en ese punto). Adentro de la función
+// no hay ciclo: para cuando esto corre, la carga inicial de módulos ya
+// terminó.
 async function cancelarReserva(id, data) {
   const reservaId = enteroPositivo(id, "id");
   const motivoCancelacion = textoObligatorio(
@@ -818,10 +835,25 @@ async function cancelarReserva(id, data) {
     );
   }
 
-  const reserva = await prisma.reserva.update({
-    where: { id: reservaId },
-    data: { estado: ESTADO_RESERVA.CANCELADA, motivoCancelacion },
-    include: INCLUDE_RESERVA,
+  const anticipacionMs = new Date(actual.fechaDesde).getTime() - Date.now();
+  const anulaSenia = anticipacionMs >= MILISEGUNDOS_POR_DIA;
+
+  const reserva = await prisma.$transaction(async (tx) => {
+    const actualizada = await tx.reserva.update({
+      where: { id: reservaId },
+      data: { estado: ESTADO_RESERVA.CANCELADA, motivoCancelacion },
+      include: INCLUDE_RESERVA,
+    });
+
+    if (anulaSenia) {
+      const pagoEstadiaServicio = require("../pagos-estadia/pagoEstadia.servicio");
+      const pagosActivos = await tx.pagoEstadia.findMany({ where: { reservaId, anulado: false } });
+      for (const pago of pagosActivos) {
+        await pagoEstadiaServicio.anularPago(pago.id, "Cancelación con anticipación (24hs+)", tx);
+      }
+    }
+
+    return actualizada;
   });
   return formatearReserva(reserva);
 }

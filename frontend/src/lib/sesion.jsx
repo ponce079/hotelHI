@@ -216,6 +216,11 @@ export function SesionProvider({ children }) {
         if (accion === "gestionarCheckOut") return rol === "recepcionista";
         if (accion === "verComprobantesEstadia") return rol === "admin" || rol === "recepcionista";
         if (accion === "gestionarComprobantesEstadia") return rol === "recepcionista";
+        // Movimientos de Pago (HU-88): mismo criterio que Comprobantes de
+        // Huésped — pantalla de solo lectura, admin y recepcionista ven,
+        // nadie "gestiona" nada acá (no hay alta/anulación desde esta
+        // pantalla, eso sigue viviendo en Check-in/Check-out/Reservas).
+        if (accion === "verPagosEstadia") return rol === "admin" || rol === "recepcionista";
         // Caja diaria (HU-54): solo gerente, mismo criterio que Reporte de Consumo (HU-9). Sin cambios.
         if (accion === "verCajaDiaria") return rol === "gerente";
         return false;

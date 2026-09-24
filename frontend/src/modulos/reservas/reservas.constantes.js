@@ -46,6 +46,20 @@ export const LIMITES_RESERVA = {
   habitacionesPorReserva: 20,
 };
 
+// HU-36/88 — seña obligatoria al confirmar una reserva nueva desde el
+// mostrador: 20% del total estimado de la estadía. Solo vive acá, en el
+// frontend — el backend NO la valida como una regla propia de crearPago (que
+// sigue aceptando cualquier importe hasta el saldo real, 100% del total):
+// ReservaWizard.jsx arma el paso de cobro con `saldo` fijado a este 20% y
+// `exigirTotal` en PagoEstadiaWizard, así que ese mismo cap (ni más ni menos)
+// es lo único que ese paso deja confirmar. Si el día de mañana hace falta
+// que el backend también la exija (ej. para blindar un POST directo a
+// /pagos-estadia sin pasar por el wizard), ese 20% tendría que vivir en
+// reservas.constantes.js (backend) y crearPago tendría que aprender a
+// distinguir "esto es una seña" de un pago de check-out común — no es el
+// caso hoy.
+export const PORCENTAJE_SENIA_RESERVA = 0.2;
+
 // Ciclo de vida para <PasoAPaso> / <MiniPasos>. "Cancelada" no es un paso
 // más de la barra: es una bifurcación fuera del camino lineal, así que va
 // como `pasoAlternativo` (mismo mecanismo que usa Requerimientos para sus
