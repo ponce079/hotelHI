@@ -26,7 +26,12 @@ const ESTADOS_RESERVA = [
 //     Integrante 4), la habitación queda realmente libre desde ese momento
 //     aunque el rango original diga otra cosa — seguir bloqueándola sería
 //     invendible por un dato que ya no describe la realidad.
-//   - Confirmada y En curso sí ocupan.
+//   - Confirmada y En curso sí ocupan, pero NO de la misma forma: ver
+//     condicionSolapamiento en reservas.servicio.js — Confirmada usa su
+//     fechaHasta tal cual (todavía no empezó), En curso bloquea sin techo
+//     desde su fechaDesde porque, sin un check-out real, no hay forma de
+//     confiar en que la fechaHasta original vaya a describir cuándo el
+//     huésped se fue.
 const ESTADOS_QUE_OCUPAN = [ESTADO_RESERVA.CONFIRMADA, ESTADO_RESERVA.EN_CURSO];
 
 // Tipos de documento aceptados para la ficha del huésped (HU-39).

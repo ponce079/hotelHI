@@ -11,8 +11,11 @@
 //     rango de fechas futuro; "ocupada" es el estado físico de HOY y lo
 //     setea el check-in (HU-47, Integrante 3). Una habitación en
 //     mantenimiento esta semana puede estar perfectamente reservable para
-//     el mes que viene, así que la disponibilidad de HU-38 se calcula solo
-//     contra fechas, nunca contra `estado`.
+//     el mes que viene, así que para una entrada a FUTURO la disponibilidad
+//     de HU-38 sigue calculándose solo contra fechas, nunca contra `estado`
+//     (a lo sumo se informa como dato de contexto, ver `estadoActual` en
+//     consultarDisponibilidad). Para una entrada de HOY sí importa el
+//     estado físico real — ver el comentario de consultarDisponibilidad.
 //   - `marcarEnCurso` / `marcarCerrada` son los únicos puntos por donde
 //     Check-in (HU-47) y Check-out (HU-48 a 52) mueven `Reserva.estado`:
 //     reciben el `tx` de una transacción ya abierta por quien llama, mismo
@@ -24,7 +27,6 @@ const prisma = require("../../lib/prisma");
 const {
   ESTADO_RESERVA,
   ESTADOS_RESERVA,
-  ESTADOS_QUE_OCUPAN,
   TIPOS_DOCUMENTO,
   CANALES_CONFIRMACION,
   CANAL_INTERNO,
@@ -253,11 +255,32 @@ const INCLUDE_RESERVA = {
 // es semiabierto [entrada, salida): una salida el día 5 y una entrada el
 // mismo día 5 NO se solapan — es el día de rotación normal de un hotel, y
 // tratarlo como conflicto perdería una noche vendible por habitación.
+//
+// "Confirmada" y "En curso" no se tratan igual acá (corrección posterior:
+// antes ambas usaban `fechaHasta` literal, y eso deja pasar como "libre"
+// una habitación cuyo huésped nunca hizo check-out):
+//   - Confirmada: todavía no empezó, así que su fechaHasta es un dato
+//     confiable — se usa tal cual, con el solapamiento semiabierto de
+//     siempre.
+//   - En curso: significa que el check-in ya ocurrió y el check-out real
+//     todavía no. Su fechaHasta original es solo una previsión — si el
+//     huésped se queda más de lo planeado, esa fecha queda vencida sin que
+//     la habitación se haya liberado. Por eso bloquea sin techo desde su
+//     propio fechaDesde: la única forma real de liberarla es `marcarCerrada`
+//     (el check-out), nunca el paso del tiempo.
 function condicionSolapamiento(fechaDesde, fechaHasta, excluirReservaId = null) {
   return {
-    estado: { in: ESTADOS_QUE_OCUPAN },
-    fechaDesde: { lt: fechaHasta },
-    fechaHasta: { gt: fechaDesde },
+    OR: [
+      {
+        estado: ESTADO_RESERVA.CONFIRMADA,
+        fechaDesde: { lt: fechaHasta },
+        fechaHasta: { gt: fechaDesde },
+      },
+      {
+        estado: ESTADO_RESERVA.EN_CURSO,
+        fechaDesde: { lt: fechaHasta },
+      },
+    ],
     ...(excluirReservaId ? { id: { not: excluirReservaId } } : {}),
   };
 }
@@ -290,9 +313,34 @@ function errorPorConflictos(conflictos) {
   );
 }
 
-// HU-38 — consulta pública de disponibilidad. No filtra por
-// `Habitacion.estado` a propósito (ver la nota de arriba del archivo):
-// la disponibilidad de un rango futuro es una pregunta sobre fechas.
+// Único criterio de "libre AHORA" — lo usa esta función cuando la entrada
+// elegida es hoy, y también checkIn.servicio.js (HU-44/45) para el walk-in y
+// la asignación manual. Nunca se reimplementa aparte: si el día de mañana
+// "libre ahora" pasa a depender de algo más que `estado`, este es el único
+// lugar que hay que tocar para que los dos caminos no se desincronicen.
+function esLibreAhora(habitacion) {
+  return habitacion.estado === "libre";
+}
+
+// HU-38 — consulta de disponibilidad usada por el alta/edición de reserva
+// (HU-36/37) y reusada por el walk-in (HU-44/45, ver listarHabitacionesLibresAhora
+// en checkIn.servicio.js).
+//
+// El estado físico de la habitación (`Habitacion.estado`) importa distinto
+// según cuándo arranca la estadía consultada:
+//   - Entrada HOY: la habitación tiene que estar realmente libre en este
+//     momento, no solo libre "por fechas" — si está ocupada, en
+//     mantenimiento, bloqueada o en limpieza, no se puede alojar a nadie
+//     ahí ahora mismo, así que se excluye de los resultados.
+//   - Entrada a futuro: el estado de HOY no dice nada sobre si la
+//     habitación va a seguir así el día que empiece la estadía (una
+//     habitación en mantenimiento esta semana puede estar libre el mes que
+//     viene), así que NO se excluye — sigue siendo reservable. Se informa
+//     igual como dato de contexto en `estadoActual`, para que el frontend
+//     pueda mostrar un aviso ("Actualmente en mantenimiento") sin bloquear
+//     la selección; no hay dato para inferir hasta cuándo va a durar ese
+//     estado, así que no se intenta.
+//
 // `excluirReservaId` deja fuera del cálculo a una reserva puntual: es lo
 // que necesita la edición (HU-37) para poder mostrar como disponibles las
 // habitaciones que esa misma reserva ya tiene tomadas — si no, editarle la
@@ -306,6 +354,7 @@ async function consultarDisponibilidad({ fechaDesde, fechaHasta, tipo, capacidad
   const capacidad = capacidadMinima ? enteroPositivo(capacidadMinima, "capacidadMinima") : null;
   const tipoBuscado = typeof tipo === "string" && tipo.trim() ? tipo.trim() : null;
   const excluida = excluirReservaId ? enteroPositivo(excluirReservaId, "excluirReservaId") : null;
+  const entradaEsHoy = mismaFecha(desde, hoyComoFechaUTC());
 
   const habitaciones = await prisma.habitacion.findMany({
     where: {
@@ -316,17 +365,22 @@ async function consultarDisponibilidad({ fechaDesde, fechaHasta, tipo, capacidad
     orderBy: [{ piso: "asc" }, { numero: "asc" }],
   });
 
-  const ocupadas = await prisma.reservaHabitacion.findMany({
+  const ocupadasPorFecha = await prisma.reservaHabitacion.findMany({
     where: {
       habitacionId: { in: habitaciones.map((h) => h.id) },
       reserva: condicionSolapamiento(desde, hasta, excluida),
     },
     select: { habitacionId: true },
   });
-  const idsOcupadas = new Set(ocupadas.map((o) => o.habitacionId));
+  const idsOcupadasPorFecha = new Set(ocupadasPorFecha.map((o) => o.habitacionId));
+
+  function bloqueadaAhora(h) {
+    if (idsOcupadasPorFecha.has(h.id)) return true;
+    return entradaEsHoy && !esLibreAhora(h);
+  }
 
   const disponibles = habitaciones
-    .filter((h) => !idsOcupadas.has(h.id))
+    .filter((h) => !bloqueadaAhora(h))
     .map((h) => ({
       id: h.id,
       numero: h.numero,
@@ -335,6 +389,11 @@ async function consultarDisponibilidad({ fechaDesde, fechaHasta, tipo, capacidad
       piso: h.piso,
       equipamiento: h.equipamiento,
       estado: h.estado,
+      // Informativo, nunca excluyente (ver comentario de arriba): queda en
+      // null salvo que la habitación no esté libre en este momento — con
+      // entrada HOY esas ya se filtraron arriba, así que en la práctica solo
+      // se completa para una entrada a futuro.
+      estadoActual: esLibreAhora(h) ? null : h.estado,
       tarifaPorNoche: Number(h.tarifaPorNoche),
       totalEstadia: Number((Number(h.tarifaPorNoche) * noches).toFixed(2)),
     }));
@@ -344,7 +403,7 @@ async function consultarDisponibilidad({ fechaDesde, fechaHasta, tipo, capacidad
   // lista de libres no se puede saber el denominador.
   const resumenPorTipo = [...new Set(habitaciones.map((h) => h.tipo))].sort().map((nombreTipo) => {
     const delTipo = habitaciones.filter((h) => h.tipo === nombreTipo);
-    const libres = delTipo.filter((h) => !idsOcupadas.has(h.id));
+    const libres = delTipo.filter((h) => !bloqueadaAhora(h));
     return {
       tipo: nombreTipo,
       total: delTipo.length,
@@ -834,6 +893,7 @@ module.exports = {
   obtenerPorCodigoConfirmacion,
   obtenerPorCodigoODocumento,
   consultarDisponibilidad,
+  esLibreAhora,
   // Transiciones para Check-in / Check-out
   marcarEnCurso,
   marcarCerrada,

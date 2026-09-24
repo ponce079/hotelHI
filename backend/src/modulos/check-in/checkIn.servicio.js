@@ -154,10 +154,10 @@ function validarGarantia({ garantiaConfirmada, medioGarantia }) {
 // HU-47 — ocupar una habitación dentro de una transacción ya abierta
 // --------------------------------------------------------------
 
-// A diferencia de la disponibilidad de HU-38 (que ignora `Habitacion.estado`
-// a propósito, por tratarse de fechas futuras — ver reservas.servicio.js),
-// acá el check-in ocupa la habitación DE INMEDIATO: si en el momento de
-// confirmar la habitación ya no está "libre" (pasó a mantenimiento, quedó
+// La reserva que llega acá pudo haberse hecho con `Habitacion.estado`
+// ignorado a propósito (una entrada a futuro, HU-38 — ver reservas.servicio.js),
+// pero el check-in ocupa la habitación DE INMEDIATO, hoy: si en el momento
+// de confirmar la habitación ya no está "libre" (pasó a mantenimiento, quedó
 // bloqueada, etc.), no tiene sentido pisarla a "ocupada" en silencio.
 async function ocuparHabitacion(tx, habitacionId) {
   const habitacion = await tx.habitacion.findUnique({ where: { id: habitacionId } });
@@ -216,28 +216,18 @@ async function confirmarCheckInConReserva({ reservaId, numeroDocumentoIngresado,
 // automática por tipo/disponibilidad/preferencias, ver decisiones.md).
 // --------------------------------------------------------------
 
-// Reusa la disponibilidad por fechas de Reservas (HU-38) y le suma el filtro
-// de estado físico "libre ahora" que acá sí importa (ver comentario de
-// ocuparHabitacion). No reimplementa el cálculo de solapamiento.
+// Reusa la disponibilidad de Reservas (HU-38): consultarDisponibilidad ya
+// exige por sí sola "libre AHORA" (`esLibreAhora`, ver reservas.servicio.js)
+// cuando `fechaDesde` es hoy, que es siempre el caso acá — walk-in y
+// asignación manual son "ahora", nunca a futuro. No hay filtro propio que
+// reimplementar: si hubiera dos, correrían el riesgo de desincronizarse.
 async function listarHabitacionesLibresAhora({ fechaHasta, tipo, capacidadMinima }) {
-  const fechaDesde = hoyComoFechaISO();
-  const disponibilidad = await reservasServicio.consultarDisponibilidad({
-    fechaDesde,
+  return reservasServicio.consultarDisponibilidad({
+    fechaDesde: hoyComoFechaISO(),
     fechaHasta,
     tipo,
     capacidadMinima,
   });
-  const libresAhora = disponibilidad.habitaciones.filter((h) => h.estado === "libre");
-  // El `resumenPorTipo` de Reservas (HU-38) cuenta "disponible por fecha",
-  // ignorando el estado físico a propósito — para acá hace falta el número
-  // más estricto ("libre AHORA"), si no el resumen le muestra al
-  // recepcionista más habitaciones de las que en realidad puede asignar en
-  // este momento (detectado probando el flujo real, no solo con los tests).
-  const resumenPorTipo = disponibilidad.resumenPorTipo.map((r) => ({
-    ...r,
-    disponibles: libresAhora.filter((h) => h.tipo === r.tipo).length,
-  }));
-  return { ...disponibilidad, habitaciones: libresAhora, resumenPorTipo };
 }
 
 // --------------------------------------------------------------

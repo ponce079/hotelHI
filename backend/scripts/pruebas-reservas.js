@@ -802,6 +802,55 @@ async function main() {
     assert.equal(resultado.habitaciones[0].totalEstadia, 120000);
   });
 
+  seccion("Corrección — 'En curso' vencidas y estado físico en consultarDisponibilidad");
+
+  await prueba("una reserva 'En curso' con fechaHasta vencida sigue bloqueando la habitación (no hubo check-out real)", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101" });
+    const reserva = await servicio.crearReserva(alta({ fechaDesde: enDias(0), fechaHasta: enDias(1) }));
+    await servicio.marcarEnCurso(reserva.id);
+    // Simula que el huésped se quedó de más y nunca hizo check-out: la
+    // fechaHasta original queda vencida (en el pasado) sin liberar la
+    // habitación — el mismo escenario que originó el reporte.
+    base._datos.reserva.find((r) => r.id === reserva.id).fechaHasta = new Date(`${enDias(-3)}T00:00:00.000Z`);
+    const resultado = await servicio.consultarDisponibilidad({ fechaDesde: enDias(5), fechaHasta: enDias(7) });
+    assert.equal(
+      resultado.habitaciones.length,
+      0,
+      "una 'En curso' vencida no debe liberar la habitación por el mero paso del tiempo: solo un check-out real (marcarCerrada) la libera"
+    );
+  });
+
+  await prueba("una reserva 'Confirmada' (no iniciada) usa su fechaHasta tal cual, no bloquea después de esa fecha", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101" });
+    await servicio.crearReserva(alta({ fechaDesde: enDias(10), fechaHasta: enDias(12) }));
+    const resultado = await servicio.consultarDisponibilidad({ fechaDesde: enDias(12), fechaHasta: enDias(15) });
+    assert.equal(resultado.habitaciones.length, 1, "Confirmada respeta su fechaHasta literal, a diferencia de En curso");
+  });
+
+  await prueba("para fecha de entrada = hoy, una habitación 'ocupada' queda excluida de los resultados", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101", estado: "ocupada" });
+    const resultado = await servicio.consultarDisponibilidad({ fechaDesde: enDias(0), fechaHasta: enDias(2) });
+    assert.equal(resultado.habitaciones.length, 0);
+  });
+
+  await prueba("para fecha de entrada futura, una habitación 'en mantenimiento' aparece con el dato informativo, sin bloquear", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101", estado: "mantenimiento" });
+    const resultado = await servicio.consultarDisponibilidad({ fechaDesde: enDias(10), fechaHasta: enDias(12) });
+    assert.equal(resultado.habitaciones.length, 1);
+    assert.equal(resultado.habitaciones[0].estadoActual, "mantenimiento");
+  });
+
+  await prueba("estadoActual queda en null cuando la habitación ya está libre", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101", estado: "libre" });
+    const resultado = await servicio.consultarDisponibilidad({ fechaDesde: enDias(10), fechaHasta: enDias(12) });
+    assert.equal(resultado.habitaciones[0].estadoActual, null);
+  });
+
   seccion("Contrato con Check-in (Integrante 3) y Check-out (Integrante 4)");
 
   await prueba("obtenerReserva devuelve la forma acordada", async () => {

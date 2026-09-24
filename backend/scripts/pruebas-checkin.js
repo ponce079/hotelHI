@@ -290,13 +290,21 @@ async function main() {
     assert.equal(resultado.habitaciones[0].numero, "101");
   });
 
-  await prueba("esto es justo lo que HU-38 (Reservas) NO hace a propósito — confirma que Check-in sí lo agrega", async () => {
+  await prueba("con entrada a futuro, Reservas NO excluye por estado físico (solo lo informa, HU-38)", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101", estado: "mantenimiento" });
+    const deReservas = await reservasServicio.consultarDisponibilidad({ fechaDesde: enDias(5), fechaHasta: enDias(7) });
+    assert.equal(deReservas.habitaciones.length, 1, "una entrada a futuro sigue sin bloquearse por el estado de hoy");
+    assert.equal(deReservas.habitaciones[0].estadoActual, "mantenimiento", "queda como dato informativo, no excluyente");
+  });
+
+  await prueba("con entrada HOY, Reservas y Check-in ya comparten el mismo criterio de 'libre ahora' (corrección posterior)", async () => {
     limpiar();
     base._sembrarHabitacion({ numero: "101", estado: "mantenimiento" });
     const deReservas = await reservasServicio.consultarDisponibilidad({ fechaDesde: enDias(0), fechaHasta: enDias(2) });
-    assert.equal(deReservas.habitaciones.length, 1, "Reservas debe seguir ignorando el estado físico");
+    assert.equal(deReservas.habitaciones.length, 0, "entrada hoy: Reservas también exige estado === 'libre'");
     const deCheckIn = await checkInServicio.listarHabitacionesLibresAhora({ fechaHasta: enDias(2) });
-    assert.equal(deCheckIn.habitaciones.length, 0, "Check-in debe filtrar por estado==='libre'");
+    assert.equal(deCheckIn.habitaciones.length, 0, "Check-in sigue exigiendo 'libre', ahora en paridad con Reservas");
   });
 
   await prueba("filtra por tipo y devuelve lista vacía si no hay ninguna disponible", async () => {

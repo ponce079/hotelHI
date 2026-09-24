@@ -8,6 +8,7 @@ import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Table } from "../../componentes/Table";
 import { hoyEnHoraLocal } from "../../lib/fechas";
+import { ESTADO_HABITACION_BADGE, ESTADO_HABITACION_LABEL } from "../habitaciones/habitaciones.constantes";
 import { consultarDisponibilidad, crearReserva, modificarReserva } from "./reservas.api";
 import { CANALES_CONFIRMACION, LIMITES_RESERVA, TIPOS_DOCUMENTO } from "./reservas.constantes";
 import { validarHuesped } from "./validarHuesped";
@@ -349,6 +350,11 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
                     <div className="flex items-center gap-2 font-mono text-[13px] font-medium">
                       <BedDouble size={16} className="text-pino" />
                       {h.numero}
+                      {h.estadoActual && (
+                        <Badge variante={ESTADO_HABITACION_BADGE[h.estadoActual] ?? "neutro"}>
+                          Actualmente {ESTADO_HABITACION_LABEL[h.estadoActual]?.toLowerCase() ?? h.estadoActual}
+                        </Badge>
+                      )}
                     </div>
                     {h.equipamiento && (
                       <div className="mt-0.5 max-w-[320px] truncate text-[11px] text-piedra">{h.equipamiento}</div>
