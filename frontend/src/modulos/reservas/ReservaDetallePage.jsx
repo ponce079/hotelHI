@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useParams } from "react-router-dom";
-import { ArrowLeft, Ban, BedDouble, Bell, Pencil, Plus, User, UtensilsCrossed } from "lucide-react";
+import { useNavigate, useParams } from "react-router-dom";
+import { ArrowLeft, Ban, BedDouble, Bell, LogIn, Pencil, Plus, User, UtensilsCrossed } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -17,6 +17,7 @@ import { formatearFechaSinHora, formatearTimestamp } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { useVolver } from "../../lib/useVolver";
+import { buscarReservaParaCheckIn } from "../check-in/checkIn.api";
 import { ConsumoModal } from "../servicios-adicionales/ConsumoModal";
 import { obtenerResumenPorReserva } from "../servicios-adicionales/serviciosAdicionales.api";
 import { TIPO_SERVICIO_BADGE } from "../servicios-adicionales/serviciosAdicionales.constantes";
@@ -42,11 +43,13 @@ function Dato({ etiqueta, children }) {
 
 export function ReservaDetallePage() {
   const { id } = useParams();
+  const navigate = useNavigate();
   const { puede } = useSesion();
   const puedeVer = puede("verReservas");
   const puedeGestionar = puede("gestionarReservas");
   const puedeVerConsumos = puede("verConsumosServicio");
   const puedeRegistrarConsumo = puede("registrarConsumoServicio");
+  const puedeGestionarCheckIn = puede("gestionarCheckIn");
   const volver = useVolver("/reservas");
   const [editando, setEditando] = useState(false);
   const [cancelando, setCancelando] = useState(false);
@@ -74,6 +77,20 @@ export function ReservaDetallePage() {
     queryFn: () => obtenerResumenPorReserva(id),
     enabled: puedeVerConsumos && enCurso,
     refetchInterval: 10000,
+  });
+
+  // El botón "Iniciar check-in" se muestra siempre para una reserva
+  // Confirmada, pero si la fecha de ingreso todavía no llegó tiene que
+  // quedar deshabilitado con el motivo — reusamos el mismo endpoint que ya
+  // usa la pantalla de Check-in (buscarReservaParaCheckIn →
+  // validarReservaVigente en checkIn.servicio.js) para traer
+  // `puedeIniciarCheckIn`/`motivoBloqueo` calculados por el backend, así el
+  // mensaje nunca puede desincronizarse del que realmente aplica ahí.
+  const confirmada = reservaQuery.data?.estado === ESTADO_RESERVA.CONFIRMADA;
+  const vigenciaCheckInQuery = useQuery({
+    queryKey: ["check-in", "vigencia", id],
+    queryFn: () => buscarReservaParaCheckIn({ id }),
+    enabled: puedeGestionarCheckIn && confirmada,
   });
 
   const mutacionCancelar = useMutation({
@@ -107,6 +124,9 @@ export function ReservaDetallePage() {
   const reserva = reservaQuery.data;
   const { pasos, pasoActual, pasoAlternativo } = construirPasosReserva(reserva);
   const editable = puedeGestionar && reserva.estado === ESTADO_RESERVA.CONFIRMADA;
+  const mostrarAccionCheckIn = puedeGestionarCheckIn && reserva.estado === ESTADO_RESERVA.CONFIRMADA;
+  const puedeIniciarCheckInAhora = vigenciaCheckInQuery.data?.puedeIniciarCheckIn ?? false;
+  const motivoAunNoHabilitado = vigenciaCheckInQuery.data?.motivoBloqueo;
 
   return (
     <div className="flex flex-col gap-6">
@@ -129,21 +149,40 @@ export function ReservaDetallePage() {
             {formatearFechaSinHora(reserva.fechaHasta)}
           </p>
         </div>
-        {editable && (
-          <div className="flex flex-wrap gap-2">
-            <Button variante="secundario" icono={Pencil} onClick={() => setEditando(true)}>
-              Modificar
-            </Button>
-            <Button
-              variante="destructivo"
-              icono={Ban}
-              onClick={() => {
-                setMotivo("");
-                setCancelando(true);
-              }}
-            >
-              Cancelar reserva
-            </Button>
+        {(mostrarAccionCheckIn || editable) && (
+          <div className="flex flex-wrap items-start gap-2">
+            {mostrarAccionCheckIn && (
+              <div className="flex flex-col items-end gap-1">
+                <Button
+                  icono={LogIn}
+                  cargando={vigenciaCheckInQuery.isLoading}
+                  disabled={!puedeIniciarCheckInAhora}
+                  onClick={() => navigate(`/check-in?codigo=${encodeURIComponent(reserva.codigoConfirmacion)}`)}
+                >
+                  Iniciar check-in
+                </Button>
+                {motivoAunNoHabilitado && (
+                  <p className="max-w-[240px] text-right text-[11px] text-piedra">{motivoAunNoHabilitado}</p>
+                )}
+              </div>
+            )}
+            {editable && (
+              <>
+                <Button variante="secundario" icono={Pencil} onClick={() => setEditando(true)}>
+                  Modificar
+                </Button>
+                <Button
+                  variante="destructivo"
+                  icono={Ban}
+                  onClick={() => {
+                    setMotivo("");
+                    setCancelando(true);
+                  }}
+                >
+                  Cancelar reserva
+                </Button>
+              </>
+            )}
           </div>
         )}
       </div>

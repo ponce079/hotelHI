@@ -9,7 +9,7 @@ import { listarHabilitaciones } from "../articulo-deposito/articuloDeposito.api"
 import { listarMovimientos } from "../movimientos/movimientos.api";
 import { consultarStock } from "../stock/stock.api";
 import { buscarReservaParaCheckIn } from "../check-in/checkIn.api";
-import { listarReservas } from "../reservas/reservas.api";
+import { listarLlegadasPendientes, listarReservas } from "../reservas/reservas.api";
 import { listarHabitaciones, listarOrdenesMantenimiento } from "../habitaciones/habitaciones.api";
 import { listarArticulos } from "../articulos/articulos.api";
 import { listarProveedores } from "../proveedores/proveedores.api";
@@ -24,7 +24,7 @@ vi.mock("../articulo-deposito/articuloDeposito.api", () => ({ listarHabilitacion
 vi.mock("../movimientos/movimientos.api", () => ({ listarMovimientos: vi.fn() }));
 vi.mock("../stock/stock.api", () => ({ consultarStock: vi.fn() }));
 vi.mock("../check-in/checkIn.api", () => ({ buscarReservaParaCheckIn: vi.fn() }));
-vi.mock("../reservas/reservas.api", () => ({ listarReservas: vi.fn() }));
+vi.mock("../reservas/reservas.api", () => ({ listarReservas: vi.fn(), listarLlegadasPendientes: vi.fn() }));
 vi.mock("../habitaciones/habitaciones.api", () => ({
   listarHabitaciones: vi.fn(),
   listarOrdenesMantenimiento: vi.fn(),
@@ -51,6 +51,7 @@ beforeEach(() => {
   consultarStock.mockResolvedValue([]);
   buscarReservaParaCheckIn.mockRejectedValue({ response: { status: 404 } });
   listarReservas.mockResolvedValue([]);
+  listarLlegadasPendientes.mockResolvedValue([]);
   listarHabitaciones.mockResolvedValue([]);
   listarOrdenesMantenimiento.mockResolvedValue([]);
   listarArticulos.mockResolvedValue({ items: [], total: 0 });

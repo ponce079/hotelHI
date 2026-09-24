@@ -1,14 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { CheckInConReserva } from "./CheckInConReserva";
 import { buscarReservaParaCheckIn } from "./checkIn.api";
+import { listarLlegadasPendientes } from "../reservas/reservas.api";
 
 vi.mock("./checkIn.api", () => ({
   buscarReservaParaCheckIn: vi.fn(),
   confirmarCheckInConReserva: vi.fn(),
 }));
+vi.mock("../reservas/reservas.api", () => ({ listarLlegadasPendientes: vi.fn() }));
 
 const RESERVA = {
   id: 5,
@@ -35,6 +38,7 @@ function renderComponente(props = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  listarLlegadasPendientes.mockResolvedValue([]);
 });
 
 // RecepcionistaInicio.jsx (Inicio del Recepcionista) linkea a
@@ -57,5 +61,83 @@ describe("CheckInConReserva — reserva preseleccionada por código", () => {
     renderComponente();
 
     expect(buscarReservaParaCheckIn).not.toHaveBeenCalled();
+  });
+});
+
+// El filtro real (Confirmada, fechaDesde <= hoy) tiene prueba propia en
+// reservas.api.test.js — acá interesa que la pantalla, sin nada tipeado,
+// muestre lo que esa función devuelva, y que escribir la reemplace por el
+// comportamiento de búsqueda de siempre (esto último no se toca).
+describe("CheckInConReserva — lista por defecto de llegadas pendientes", () => {
+  it("al entrar sin buscar nada, muestra la lista de llegadas pendientes de hoy (huésped, habitación, código)", async () => {
+    listarLlegadasPendientes.mockResolvedValue([
+      {
+        id: 30,
+        codigoConfirmacion: "RS-PEND01",
+        huesped: { nombre: "Lucía Fernández" },
+        habitaciones: [{ numero: "205", tipo: "Doble" }],
+      },
+    ]);
+
+    renderComponente();
+
+    expect(await screen.findByText("Lucía Fernández")).toBeInTheDocument();
+    expect(screen.getByText("Hab. 205 · Doble")).toBeInTheDocument();
+    expect(screen.getByText("RS-PEND01")).toBeInTheDocument();
+    expect(buscarReservaParaCheckIn).not.toHaveBeenCalled();
+  });
+
+  it("sin llegadas pendientes muestra un estado vacío explicativo, no una sección en blanco", async () => {
+    listarLlegadasPendientes.mockResolvedValue([]);
+
+    renderComponente();
+
+    expect(
+      await screen.findByText("Sin llegadas pendientes para hoy — buscá por código o documento si hace falta.")
+    ).toBeInTheDocument();
+  });
+
+  it("al escribir en el buscador, la lista desaparece y se ve el comportamiento de búsqueda de siempre", async () => {
+    listarLlegadasPendientes.mockResolvedValue([
+      {
+        id: 30,
+        codigoConfirmacion: "RS-PEND01",
+        huesped: { nombre: "Lucía Fernández" },
+        habitaciones: [{ numero: "205", tipo: "Doble" }],
+      },
+    ]);
+    buscarReservaParaCheckIn.mockResolvedValue({ reserva: RESERVA, puedeIniciarCheckIn: true, motivoBloqueo: null });
+    const usuario = userEvent.setup();
+
+    renderComponente();
+    expect(await screen.findByText("Lucía Fernández")).toBeInTheDocument();
+
+    const input = screen.getByPlaceholderText("Ej: RS-8F2K91 o 32.145.998");
+    await usuario.type(input, "RS-HOY01");
+
+    expect(screen.queryByText("Lucía Fernández")).not.toBeInTheDocument();
+    expect(screen.queryByText("RS-PEND01")).not.toBeInTheDocument();
+
+    await usuario.click(screen.getByRole("button", { name: "Buscar" }));
+    expect(await screen.findAllByText("Marcos Beltrán")).not.toHaveLength(0);
+  });
+
+  it("click en una llegada pendiente arranca su check-in directo, sin tipear nada", async () => {
+    listarLlegadasPendientes.mockResolvedValue([
+      {
+        id: 30,
+        codigoConfirmacion: "RS-PEND01",
+        huesped: { nombre: "Lucía Fernández" },
+        habitaciones: [{ numero: "205", tipo: "Doble" }],
+      },
+    ]);
+    buscarReservaParaCheckIn.mockResolvedValue({ reserva: RESERVA, puedeIniciarCheckIn: true, motivoBloqueo: null });
+    const usuario = userEvent.setup();
+
+    renderComponente();
+    await usuario.click(await screen.findByText("Lucía Fernández"));
+
+    expect(buscarReservaParaCheckIn).toHaveBeenCalledWith({ codigo: "RS-PEND01" });
+    expect((await screen.findAllByText("Marcos Beltrán")).length).toBeGreaterThan(0);
   });
 });

@@ -10,7 +10,7 @@ import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { hoyEnHoraLocal } from "../../lib/fechas";
 import { buscarReservaParaCheckIn } from "../check-in/checkIn.api";
-import { listarReservas } from "../reservas/reservas.api";
+import { listarLlegadasPendientes, listarReservas } from "../reservas/reservas.api";
 import { ESTADO_RESERVA } from "../reservas/reservas.constantes";
 import { listarHabitaciones, listarOrdenesMantenimiento } from "../habitaciones/habitaciones.api";
 import { ESTADOS_HABITACION, ESTADO_HABITACION_LABEL, ESTADO_HABITACION_COLOR } from "../habitaciones/habitaciones.constantes";
@@ -98,9 +98,9 @@ export function RecepcionistaInicio() {
   const [busqueda, setBusqueda] = useState("");
   const { toast, mostrarToast } = useToast();
 
-  const reservasConfirmadasQuery = useQuery({
-    queryKey: ["reservas", "confirmadas"],
-    queryFn: () => listarReservas({ estado: ESTADO_RESERVA.CONFIRMADA }),
+  const llegadasPendientesQuery = useQuery({
+    queryKey: ["reservas", "llegadas-pendientes"],
+    queryFn: listarLlegadasPendientes,
   });
   const reservasEnCursoQuery = useQuery({
     queryKey: ["reservas", "en-curso"],
@@ -144,7 +144,11 @@ export function RecepcionistaInicio() {
     if (termino) busquedaMutation.mutate(termino);
   }
 
-  const llegadasHoy = (reservasConfirmadasQuery.data ?? []).filter((r) => esMismoDiaQueHoy(r.fechaDesde));
+  // "Llegadas de hoy" en realidad admite fechaDesde <= hoy (ver
+  // listarLlegadasPendientes): una llegada de ayer sin check-in todavía
+  // sigue pendiente, no desaparece sola por el paso del tiempo. "Salidas de
+  // hoy" sí es por día exacto — no es lo mismo, HU-48 no admite "atrasadas".
+  const llegadasHoy = llegadasPendientesQuery.data ?? [];
   const salidasHoy = (reservasEnCursoQuery.data ?? []).filter((r) => esMismoDiaQueHoy(r.fechaHasta));
   const habitaciones = habitacionesQuery.data ?? [];
   const mantenimientoPendiente = (ordenesQuery.data ?? []).filter((o) => o.estado === "Pendiente").slice(0, 5);

@@ -7,13 +7,16 @@ import { RecepcionistaInicio } from "./RecepcionistaInicio";
 import { useSesion } from "../../lib/sesion";
 import { hoyEnHoraLocal } from "../../lib/fechas";
 import { buscarReservaParaCheckIn } from "../check-in/checkIn.api";
-import { listarReservas } from "../reservas/reservas.api";
+import { listarLlegadasPendientes, listarReservas } from "../reservas/reservas.api";
 import { ESTADO_RESERVA } from "../reservas/reservas.constantes";
 import { listarHabitaciones, listarOrdenesMantenimiento } from "../habitaciones/habitaciones.api";
 
 vi.mock("../../lib/sesion", () => ({ useSesion: vi.fn() }));
 vi.mock("../check-in/checkIn.api", () => ({ buscarReservaParaCheckIn: vi.fn() }));
-vi.mock("../reservas/reservas.api", () => ({ listarReservas: vi.fn() }));
+// listarLlegadasPendientes se mockea entera acá (su filtro <= hoy tiene
+// prueba propia en reservas.api.test.js): a esta pantalla le importa que
+// "Llegadas de hoy" muestre lo que esa función devuelva, no cómo lo calcula.
+vi.mock("../reservas/reservas.api", () => ({ listarReservas: vi.fn(), listarLlegadasPendientes: vi.fn() }));
 vi.mock("../habitaciones/habitaciones.api", () => ({
   listarHabitaciones: vi.fn(),
   listarOrdenesMantenimiento: vi.fn(),
@@ -36,15 +39,6 @@ const RESERVA_LLEGA_HOY = {
   fechaHasta: `${maniana}T00:00:00.000Z`,
   huesped: { nombre: "Marcos Beltrán" },
   habitaciones: [{ numero: "301", tipo: "Doble" }],
-};
-const RESERVA_LLEGA_MANIANA = {
-  id: 11,
-  codigoConfirmacion: "RS-MAN01",
-  estado: ESTADO_RESERVA.CONFIRMADA,
-  fechaDesde: `${maniana}T00:00:00.000Z`,
-  fechaHasta: `${maniana}T00:00:00.000Z`,
-  huesped: { nombre: "Julia Paz" },
-  habitaciones: [{ numero: "205", tipo: "Simple" }],
 };
 const RESERVA_SALE_HOY = {
   id: 20,
@@ -120,8 +114,8 @@ function renderInicio() {
 beforeEach(() => {
   vi.clearAllMocks();
   useSesion.mockReturnValue({ rol: "recepcionista", rolInfo: { label: "Recepcionista" }, usuario: "Fer" });
+  listarLlegadasPendientes.mockResolvedValue([RESERVA_LLEGA_HOY]);
   listarReservas.mockImplementation(({ estado } = {}) => {
-    if (estado === ESTADO_RESERVA.CONFIRMADA) return Promise.resolve([RESERVA_LLEGA_HOY, RESERVA_LLEGA_MANIANA]);
     if (estado === ESTADO_RESERVA.EN_CURSO) return Promise.resolve([RESERVA_SALE_HOY, RESERVA_SALE_MANIANA]);
     return Promise.resolve([]);
   });
@@ -134,11 +128,10 @@ beforeEach(() => {
 });
 
 describe("RecepcionistaInicio — llegadas y salidas de hoy", () => {
-  it('"Llegadas de hoy" solo trae reservas Confirmada cuya fechaDesde es hoy', async () => {
+  it('"Llegadas de hoy" muestra lo que trae listarLlegadasPendientes (Confirmada, fechaDesde <= hoy — filtro con prueba propia en reservas.api.test.js)', async () => {
     renderInicio();
 
     expect(await screen.findByText("Marcos Beltrán")).toBeInTheDocument();
-    expect(screen.queryByText("Julia Paz")).not.toBeInTheDocument();
     expect(screen.getByText(/Llegadas de hoy · 1/)).toBeInTheDocument();
   });
 
@@ -151,6 +144,7 @@ describe("RecepcionistaInicio — llegadas y salidas de hoy", () => {
   });
 
   it("sin llegadas ni salidas de hoy muestra el estado vacío, no una sección en blanco", async () => {
+    listarLlegadasPendientes.mockResolvedValue([]);
     listarReservas.mockResolvedValue([]);
     renderInicio();
 

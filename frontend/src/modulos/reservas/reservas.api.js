@@ -1,8 +1,26 @@
 import { api } from "../../lib/api";
+import { hoyEnHoraLocal } from "../../lib/fechas";
+import { ESTADO_RESERVA } from "./reservas.constantes";
 
 export async function listarReservas(params = {}) {
   const { data } = await api.get("/reservas", { params });
   return data;
+}
+
+// A quién hay que hacerle check-in ahora: Confirmada con fecha de ingreso
+// de hoy o anterior — mismo universo que admite validarReservaVigente en
+// checkIn.servicio.js (no bloquea una llegada atrasada, solo una que
+// todavía no llegó). Un solo lugar la calcula: la usan tanto "Llegadas de
+// hoy" (RecepcionistaInicio.jsx) como la lista por defecto del buscador de
+// Check-in (CheckInConReserva.jsx), para que no queden desincronizadas.
+export async function listarLlegadasPendientes() {
+  const confirmadas = await listarReservas({ estado: ESTADO_RESERVA.CONFIRMADA });
+  const hoyUTC = Date.parse(`${hoyEnHoraLocal()}T00:00:00Z`);
+  return confirmadas.filter((r) => {
+    const desde = new Date(r.fechaDesde);
+    const desdeUTC = Date.UTC(desde.getUTCFullYear(), desde.getUTCMonth(), desde.getUTCDate());
+    return desdeUTC <= hoyUTC;
+  });
 }
 
 export async function obtenerReserva(id) {
