@@ -5,7 +5,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "studio": "prisma studio"
+    "studio": "prisma studio",
+    "test": "jest"
   },
   "keywords": [],
   "author": "",
@@ -20,6 +21,7 @@
     "nodemailer": "^7.0.6"
   },
   "devDependencies": {
+    "jest": "^30.5.2",
     "prisma": "^7.9.1"
   }
 }
