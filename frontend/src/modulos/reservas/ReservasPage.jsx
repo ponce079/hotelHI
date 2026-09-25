@@ -108,7 +108,14 @@ export function ReservasPage() {
 
   if (!puedeVer) return <SinPermiso />;
 
-  const reservas = reservasQuery.data ?? [];
+  // El backend ordena por fecha de entrada (fechaDesde desc) — acá se
+  // reordena por orden de creación (id desc, la última cargada primero):
+  // `id` es autoincremental y nunca se reutiliza, así que sirve como
+  // proxy exacto sin necesitar una columna de timestamp propia. Solo se
+  // reordena esta pantalla, no el resto de las que comparten
+  // listarReservas (Check-out, dashboard, etc.), que siguen con el orden
+  // de siempre.
+  const reservas = [...(reservasQuery.data ?? [])].sort((a, b) => b.id - a.id);
   const resumen = resumenQuery.data ?? [];
   const hayFiltros = Boolean(q || estado || desde || hasta);
 
