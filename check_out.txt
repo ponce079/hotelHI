@@ -1,0 +1,35 @@
+SGH Holiday Inn
+Sprint Review — Sprint 2: Compras y Gastos
+Período del sprint: 2 al 9 de septiembre de 2026
+Sprint anterior: Sprint 1 — Depósitos y Stock (21 al 27 de agosto de 2026)
+Equipo: GIMENA23, Ricardo A, agusfar45, ponce079, Tomas Gudiño
+Pull requests mergeadas en el período: 7 (PR #20 a PR #26)
+Fecha del review: 10 de septiembre de 2026
+1. Objetivo del sprint
+Construir el circuito de Compras y Gastos del hotel: desde que un sector interno pide un insumo (Requerimiento) hasta que ese insumo se paga y queda reflejado en la cuenta corriente del proveedor (Orden de Pago), pasando por Presupuestos, Órdenes de Compra, Recepción de mercadería y Comprobantes.
+2. Qué se entregó
+Nota: los tres últimos ítems corresponden a alcance planificado para Sprint 3 (motor de reposición entre depósitos centrales, ABM de depósitos centrales y compra express) que el equipo adelantó dentro de esta misma ventana de trabajo — ver punto 4.
+3. Lo bueno de este sprint (comparado con Sprint 1)
+El equipo llega al Sprint 2 con más rodaje: se animó a un alcance bastante más grande y logró cerrarlo con menos improvisación que en Sprint 1.
+4. Conflictos y dificultades
+Integración entre ramas
+El merge que unificó Proveedores, Requerimientos, Presupuestos y Comprobantes (commit d5b8261) tocó los cuatro módulos a la vez porque las ramas de features se mantuvieron abiertas varios días sin sincronizar con master, igual que había pasado en Sprint 1 con el choque de convenciones ESM/CommonJS.
+Diseño de pantallas decidido tarde
+Varias pantallas se rediseñaron después de estar funcionalmente terminadas: Órdenes de Compra, Presupuestos/Comparación, Recepciones y el detalle de Orden de Pago (pasó de wizard a modal). Eso implicó reescribir UI ya probada en vez de definir el layout antes de programar la lógica.
+Bug de zona horaria
+Se encontró tarde en el sprint una confusión entre UTC y hora local (Argentina) en el manejo de fechas, lo que obligó a un commit de corrección puntual sobre varias pantallas ya entregadas.
+Permisos y sistema de botones sin cerrar hasta el final
+Los gates de rol faltantes y la falta de una jerarquía única de botones (colores, iconos) se arrastraron durante todo el sprint y se resolvieron recién en los últimos dos días, en una migración de 3 fases sobre pantallas que ya estaban en producción funcional.
+Rework por revisión de código
+HU-76/HU-77 necesitó corregir 9 hallazgos y HU-78 necesitó corregir 10 hallazgos después de la primera revisión — buena señal de que se revisa en serio, pero también evidencia de que varios de esos problemas (validaciones, condiciones de carrera) se podrían haber evitado antes del PR.
+Límite difuso entre Sprint 2 y Sprint 3
+Se construyeron funcionalidades explícitamente etiquetadas como "Sprint 3" (transferencias a central, reposición automática, compra express) dentro de la ventana de Sprint 2, lo que mezcla el alcance de ambos sprints y complica medir si Sprint 2 se cerró a tiempo o si el equipo se adelantó por sobrar capacidad.
+5. Qué vamos a mejorar para el próximo sprint
+Sincronizar las ramas de feature contra master al menos una vez por día (fetch + merge/rebase temprano), en vez de resolver un conflicto grande de varios módulos al final — es la misma lección que ya había quedado anotada en Sprint 1 y volvió a repetirse a mayor escala.
+Validar el diseño de cada pantalla (layout, wizard vs. modal, jerarquía de botones) contra el prototipo antes de empezar a programar la lógica, para no pagar el costo de rediseñar funcionalidad ya terminada.
+Aplicar desde el día 1 el sistema de botones de 5 tipos y los gates de rol como parte de la Definition of Done de cada historia, no como una migración transversal de cierre de sprint.
+Centralizar el manejo de fechas y zona horaria en un único helper compartido desde el arranque del sprint, para evitar bugs de UTC/hora local repartidos en varias pantallas.
+Agregar una checklist corta de auto-revisión (validaciones de entrada, condiciones de carrera, permisos por rol) antes de abrir el PR, para reducir la cantidad de hallazgos que hoy se detectan recién en la revisión de código.
+Definir explícitamente con el Product Owner si el trabajo adelantado de Sprint 3 se descuenta del próximo sprint o se documenta aparte, para que el próximo Sprint Review mida el sprint correcto.
+6. Cierre
+Sprint 2 entregó un circuito de compras y gastos end-to-end mucho más ambicioso que el Sprint 1, y el equipo mostró mejoras concretas en prácticas de revisión de código y manejo de merges grandes. Los puntos de mejora identificados (diseño antes de programar, permisos y estilos desde el inicio, sincronización más frecuente de ramas) ya tienen acciones concretas para Sprint 3, que arrancó parcialmente adelantado durante este mismo período.
