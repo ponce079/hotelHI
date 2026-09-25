@@ -55,6 +55,18 @@ async function postReserva(req, res) {
   }
 }
 
+// HU-88 (extensión) — alta de reserva CON seña en una sola operación
+// atómica (ver crearReservaConSena en reservas.servicio.js). Reemplaza,
+// para el alta asistida por mostrador (HU-36 con seña obligatoria), al par
+// de llamadas postReserva + POST /pagos-estadia que usaba antes.
+async function postReservaConSenia(req, res) {
+  try {
+    return res.status(201).json(await reservasServicio.crearReservaConSena(req.body));
+  } catch (err) {
+    return responderError(res, err, "Error al crear la reserva con seña:", "No se pudo crear la reserva con la seña.");
+  }
+}
+
 async function patchReserva(req, res) {
   try {
     return res.json(await reservasServicio.modificarReserva(req.params.id, req.body));
@@ -77,6 +89,7 @@ module.exports = {
   getReservaPorCodigo,
   getReservaPorId,
   postReserva,
+  postReservaConSenia,
   patchReserva,
   postCancelar,
 };

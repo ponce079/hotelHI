@@ -68,12 +68,10 @@ function referenciaDe(medio) {
   return typeof medio.referencia === 'string' ? medio.referencia.trim() : '';
 }
 
-// `concepto` (default "Pago final", HU-50 de siempre) distingue de dónde
-// salió el cobro para la pantalla de Movimientos de Pago (HU-88) — quien
-// llama desde la seña de reserva o la garantía en efectivo del check-in
-// manda el suyo explícito (ver ReservaWizard.jsx / checkIn.servicio.js).
-async function crearPago({ reservaId, medios, concepto = CONCEPTO_PAGO_FINAL }) {
-  if (!reservaId) throw new ErrorDeNegocio('reservaId es obligatorio.');
+// Valida medios/concepto (sin tocar la base) y devuelve el total — usable
+// tanto en el fail-fast de crearPago como dentro de una transacción ya
+// abierta (crearPagoEnTransaccion).
+function totalDeMedios(medios, concepto) {
   if (!Array.isArray(medios) || medios.length === 0) {
     throw new ErrorDeNegocio("Debe incluir al menos un medio de pago en 'medios'.");
   }
@@ -81,7 +79,7 @@ async function crearPago({ reservaId, medios, concepto = CONCEPTO_PAGO_FINAL }) 
     throw new ErrorDeNegocio(`concepto inválido. Valores permitidos: ${CONCEPTOS_PAGO_ESTADIA.join(', ')}`);
   }
 
-  let totalMedios = 0;
+  let total = 0;
   for (const m of medios) {
     if (!MEDIOS_PAGO_ESTADIA.includes(m.tipo)) {
       throw new ErrorDeNegocio(`medioPago inválido. Valores permitidos: ${MEDIOS_PAGO_ESTADIA.join(', ')}`);
@@ -96,11 +94,67 @@ async function crearPago({ reservaId, medios, concepto = CONCEPTO_PAGO_FINAL }) 
     if (referenciaDe(m).length > REFERENCIA_MAX_LENGTH) {
       throw new ErrorDeNegocio(`La referencia del pago no puede superar los ${REFERENCIA_MAX_LENGTH} caracteres.`);
     }
-    totalMedios += importe;
+    total += importe;
+  }
+  return total;
+}
+
+// Núcleo transaccional de un pago: valida medios/concepto, recalcula el
+// saldo FRESCO contra el `tx` recibido y crea el PagoEstadia — sin abrir
+// ninguna transacción propia ni tomar ningún lock. Pública aparte de
+// `crearPago` para que un alta con seña (HU-88, `crearReservaConSena` en
+// reservas.servicio.js) pueda cobrar la seña DENTRO de la misma transacción
+// en la que se crea la Reserva, en vez de reimplementar esta lógica — mismo
+// criterio que `crearReservaEnTransaccion` para Check-in.
+//
+// Quien llama es responsable de bloquear la fila si hace falta: crearPago
+// toma el lock antes de llamar a esto porque cobra sobre una reserva que ya
+// existía y podría estar siendo cobrada al mismo tiempo por otra request;
+// crearReservaConSena no lo necesita porque la reserva recién se creó
+// DENTRO de esa misma transacción — no existe todavía para nadie más.
+async function crearPagoEnTransaccion(tx, { reservaId, medios, concepto = CONCEPTO_PAGO_FINAL }) {
+  if (!reservaId) throw new ErrorDeNegocio('reservaId es obligatorio.');
+  const totalMedios = totalDeMedios(medios, concepto);
+
+  const { saldo, estadoReserva } = await calcularSaldoReserva(reservaId, tx);
+  validarReservaCobrable(estadoReserva);
+  if (centavos(totalMedios) > centavos(saldo)) {
+    throw new ErrorDeNegocio(
+      `El total a pagar (${totalMedios}) supera el saldo pendiente de la reserva (${saldo}).`
+    );
   }
 
+  const estado = centavos(totalMedios) >= centavos(saldo) ? 'Pagado' : 'Parcial';
+
+  return tx.pagoEstadia.create({
+    data: {
+      reservaId: Number(reservaId),
+      estado,
+      concepto,
+      medios: {
+        create: medios.map((m) => ({
+          medioPago: m.tipo,
+          importe: Number(m.importe),
+          ...(referenciaDe(m) ? { referencia: referenciaDe(m) } : {}),
+        })),
+      },
+    },
+    include: { medios: true, reserva: true },
+  });
+}
+
+// `concepto` (default "Pago final", HU-50 de siempre) distingue de dónde
+// salió el cobro para la pantalla de Movimientos de Pago (HU-88) — quien
+// llama desde la garantía en efectivo del check-in manda el suyo explícito
+// (ver checkIn.servicio.js). La seña de reserva (HU-88) ya no pasa por
+// acá — ver crearReservaConSena en reservas.servicio.js.
+async function crearPago({ reservaId, medios, concepto = CONCEPTO_PAGO_FINAL }) {
+  if (!reservaId) throw new ErrorDeNegocio('reservaId es obligatorio.');
+
   // Chequeo rápido ("fail fast") fuera de la transacción — no bloquea
-  // filas todavía. El definitivo pasa de nuevo, con lock, adentro.
+  // filas todavía. El definitivo (con lock, saldo fresco) vuelve a correr
+  // dentro, en crearPagoEnTransaccion.
+  const totalMedios = totalDeMedios(medios, concepto);
   const { saldo: saldoPrevio, estadoReserva } = await calcularSaldoReserva(reservaId);
   validarReservaCobrable(estadoReserva);
   if (centavos(totalMedios) > centavos(saldoPrevio)) {
@@ -115,32 +169,7 @@ async function crearPago({ reservaId, medios, concepto = CONCEPTO_PAGO_FINAL }) 
       // que dos pagos concurrentes a la misma reserva no se pisen —
       // mismo criterio que crearOrdenPago en pagos.servicio.js.
       await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${Number(reservaId)} FOR UPDATE`;
-      const { saldo: saldoFresco, estadoReserva: estadoFresco } = await calcularSaldoReserva(reservaId, tx);
-      validarReservaCobrable(estadoFresco);
-      if (centavos(totalMedios) > centavos(saldoFresco)) {
-        throw new ErrorDeNegocio(
-          `El total a pagar (${totalMedios}) supera el saldo pendiente actual de la reserva (${saldoFresco}). ` +
-            'Puede haber cambiado por otro pago registrado al mismo tiempo — revisá e intentá de nuevo.'
-        );
-      }
-
-      const estado = centavos(totalMedios) >= centavos(saldoFresco) ? 'Pagado' : 'Parcial';
-
-      return tx.pagoEstadia.create({
-        data: {
-          reservaId: Number(reservaId),
-          estado,
-          concepto,
-          medios: {
-            create: medios.map((m) => ({
-              medioPago: m.tipo,
-              importe: Number(m.importe),
-              ...(referenciaDe(m) ? { referencia: referenciaDe(m) } : {}),
-            })),
-          },
-        },
-        include: { medios: true, reserva: true },
-      });
+      return crearPagoEnTransaccion(tx, { reservaId, medios, concepto });
     },
     { timeout: 15000, maxWait: 10000 }
   );
@@ -271,6 +300,7 @@ async function anularPago(id, motivo, cliente = prisma) {
 module.exports = {
   calcularSaldoReserva,
   crearPago,
+  crearPagoEnTransaccion,
   obtenerPago,
   listarPorReserva,
   listarMovimientos,

@@ -2,15 +2,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReservaWizard } from "./ReservaWizard";
-import { consultarDisponibilidad, crearReserva, modificarReserva } from "./reservas.api";
-import { registrarPagoEstadia } from "../pagos-estadia/pagoEstadia.api";
+import { consultarDisponibilidad, crearReserva, crearReservaConSena, modificarReserva } from "./reservas.api";
 
 vi.mock("./reservas.api", () => ({
   consultarDisponibilidad: vi.fn(),
   crearReserva: vi.fn(),
+  crearReservaConSena: vi.fn(),
   modificarReserva: vi.fn(),
 }));
-vi.mock("../pagos-estadia/pagoEstadia.api", () => ({ registrarPagoEstadia: vi.fn() }));
 
 const HABITACION_101 = {
   id: 1,
@@ -43,6 +42,7 @@ const RESERVA_CREADA = {
   estado: "Confirmada",
   totalEstimadoAlojamiento: 150000,
   habitaciones: [HABITACION_101],
+  pagoSenia: { id: 1, estado: "Parcial", concepto: "Seña" },
 };
 
 function renderWizard(props = {}) {
@@ -86,15 +86,14 @@ describe("ReservaWizard — alta asistida por mostrador (seña obligatoria, HU-8
     await completarPasos1a3();
 
     // Paso 3 (no es el último): botón "Siguiente", no "Confirmar reserva" —
-    // crearReserva todavía no se llamó.
+    // todavía no se mandó nada a la base (ni la reserva ni la seña).
     expect(screen.getByRole("button", { name: "Siguiente" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirmar reserva" })).not.toBeInTheDocument();
-    expect(crearReserva).not.toHaveBeenCalled();
+    expect(crearReservaConSena).not.toHaveBeenCalled();
   });
 
-  it("paso 4: cobra la seña en efectivo y recién ahí crea la reserva y llama a onExito", async () => {
-    crearReserva.mockResolvedValue(RESERVA_CREADA);
-    registrarPagoEstadia.mockResolvedValue({ id: 1, estado: "Parcial", concepto: "Seña" });
+  it("paso 4: un único submit crea la reserva y cobra la seña en efectivo de forma atómica", async () => {
+    crearReservaConSena.mockResolvedValue(RESERVA_CREADA);
     const { onExito } = renderWizard({ origen: "RECEPCION" });
 
     await completarPasos1a3();
@@ -112,19 +111,18 @@ describe("ReservaWizard — alta asistida por mostrador (seña obligatoria, HU-8
 
     fireEvent.click(confirmar);
 
-    await waitFor(() => expect(crearReserva).toHaveBeenCalledTimes(1));
-    expect(crearReserva.mock.calls[0][0]).toMatchObject({
-      fechaDesde: "2026-10-10",
-      fechaHasta: "2026-10-13",
-      habitacionIds: [1],
-      origen: "RECEPCION",
-    });
-    await waitFor(() => expect(registrarPagoEstadia).toHaveBeenCalledTimes(1));
-    expect(registrarPagoEstadia).toHaveBeenCalledWith({
-      reservaId: 99,
-      medios: [{ tipo: "Efectivo", importe: 30000, referencia: undefined }],
-      concepto: "Seña",
-    });
+    // Un solo POST con todo junto: datos de reserva + medio de pago de la
+    // seña — nunca 2 llamadas separadas.
+    await waitFor(() => expect(crearReservaConSena).toHaveBeenCalledTimes(1));
+    expect(crearReservaConSena).toHaveBeenCalledWith(
+      expect.objectContaining({
+        fechaDesde: "2026-10-10",
+        fechaHasta: "2026-10-13",
+        habitacionIds: [1],
+        origen: "RECEPCION",
+        medios: [{ tipo: "Efectivo", importe: 30000, referencia: undefined }],
+      })
+    );
     await waitFor(() => expect(onExito).toHaveBeenCalledWith(RESERVA_CREADA));
   });
 
@@ -172,8 +170,7 @@ describe("ReservaWizard — alta asistida por mostrador (seña obligatoria, HU-8
   });
 
   it("con Transferencia, alcanza con la confirmación manual (sin terminal de tarjeta)", async () => {
-    crearReserva.mockResolvedValue(RESERVA_CREADA);
-    registrarPagoEstadia.mockResolvedValue({ id: 1, estado: "Parcial", concepto: "Seña" });
+    crearReservaConSena.mockResolvedValue(RESERVA_CREADA);
     const { onExito } = renderWizard({ origen: "RECEPCION" });
 
     await completarPasos1a3();
@@ -190,11 +187,11 @@ describe("ReservaWizard — alta asistida por mostrador (seña obligatoria, HU-8
 
     fireEvent.click(confirmar);
     await waitFor(() =>
-      expect(registrarPagoEstadia).toHaveBeenCalledWith({
-        reservaId: 99,
-        medios: [{ tipo: "Transferencia", importe: 30000, referencia: undefined }],
-        concepto: "Seña",
-      })
+      expect(crearReservaConSena).toHaveBeenCalledWith(
+        expect.objectContaining({
+          medios: [{ tipo: "Transferencia", importe: 30000, referencia: undefined }],
+        })
+      )
     );
     await waitFor(() => expect(onExito).toHaveBeenCalledWith(RESERVA_CREADA));
   });
@@ -211,10 +208,9 @@ describe("ReservaWizard — alta asistida por mostrador (seña obligatoria, HU-8
     expect(screen.queryByLabelText("Cuotas")).not.toBeInTheDocument();
   });
 
-  it("si crearReserva ya tuvo éxito y falla el cobro de la seña, un reintento NO vuelve a crear la reserva", async () => {
-    crearReserva.mockResolvedValue(RESERVA_CREADA);
-    registrarPagoEstadia.mockRejectedValueOnce({ response: { data: { error: "Falló el cobro" } } });
-    registrarPagoEstadia.mockResolvedValueOnce({ id: 1, estado: "Parcial", concepto: "Seña" });
+  it("si el cobro de la seña falla, no queda nada creado — Atrás/Cancelar siguen disponibles y el reintento manda todo de nuevo", async () => {
+    crearReservaConSena.mockRejectedValueOnce({ response: { data: { error: "Tarjeta rechazada" } } });
+    crearReservaConSena.mockResolvedValueOnce(RESERVA_CREADA);
     const { onExito } = renderWizard({ origen: "RECEPCION" });
 
     await completarPasos1a3();
@@ -225,18 +221,26 @@ describe("ReservaWizard — alta asistida por mostrador (seña obligatoria, HU-8
 
     const confirmar = screen.getByRole("button", { name: "Confirmar reserva" });
     fireEvent.click(confirmar);
-    await waitFor(() => expect(registrarPagoEstadia).toHaveBeenCalledTimes(1));
-    await screen.findByText("Falló el cobro");
-    expect(crearReserva).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(crearReservaConSena).toHaveBeenCalledTimes(1));
+    await screen.findByText(/Tarjeta rechazada/);
+    expect(screen.getByText(/No se guardó nada/)).toBeInTheDocument();
 
-    // Reintentar: no hay Atrás/Cancelar (la reserva ya existe), solo se
-    // puede volver a intentar el cobro.
-    expect(screen.queryByRole("button", { name: "Atrás" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Cancelar" })).not.toBeInTheDocument();
+    // Como nada se persistió (la transacción atómica revirtió todo), el
+    // recepcionista puede seguir volviendo atrás o cancelar — a diferencia
+    // del flujo viejo de 2 llamadas, acá no hay "reserva ya creada" que lo
+    // impida.
+    expect(screen.getByRole("button", { name: "Atrás" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancelar" })).toBeInTheDocument();
 
+    // Reintentar manda TODO de nuevo (reserva + seña), no solo el pago —
+    // no hay una reserva previa a la que "engancharse".
     fireEvent.click(confirmar);
-    await waitFor(() => expect(registrarPagoEstadia).toHaveBeenCalledTimes(2));
-    expect(crearReserva).toHaveBeenCalledTimes(1); // sigue en 1, no se duplicó la reserva
+    await waitFor(() => expect(crearReservaConSena).toHaveBeenCalledTimes(2));
+    expect(crearReservaConSena.mock.calls[1][0]).toMatchObject({
+      fechaDesde: "2026-10-10",
+      fechaHasta: "2026-10-13",
+      habitacionIds: [1],
+    });
     await waitFor(() => expect(onExito).toHaveBeenCalledWith(RESERVA_CREADA));
   });
 });
@@ -269,18 +273,21 @@ describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin 
 
     await waitFor(() => expect(modificarReserva).toHaveBeenCalledTimes(1));
     expect(crearReserva).not.toHaveBeenCalled();
-    expect(registrarPagoEstadia).not.toHaveBeenCalled();
+    expect(crearReservaConSena).not.toHaveBeenCalled();
     await waitFor(() => expect(onExito).toHaveBeenCalled());
   });
 
-  it("autoservicio web (origen WEB): tampoco pide seña", async () => {
+  it("autoservicio web (origen WEB): tampoco pide seña, y sigue usando el alta simple (sin seña)", async () => {
     crearReserva.mockResolvedValue({ ...RESERVA_CREADA, totalEstimadoAlojamiento: 150000 });
     renderWizard({ origen: "WEB" });
 
     expect(screen.queryByText(/Seña/)).not.toBeInTheDocument();
     await completarPasos1a3();
 
-    expect(screen.getByRole("button", { name: "Confirmar reserva" })).toBeInTheDocument();
-    expect(registrarPagoEstadia).not.toHaveBeenCalled();
+    const confirmar = screen.getByRole("button", { name: "Confirmar reserva" });
+    fireEvent.click(confirmar);
+
+    await waitFor(() => expect(crearReserva).toHaveBeenCalledTimes(1));
+    expect(crearReservaConSena).not.toHaveBeenCalled();
   });
 });

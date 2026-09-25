@@ -10,6 +10,7 @@ router.get("/disponibilidad", reservasControlador.getDisponibilidad);
 router.get("/codigo/:codigo", reservasControlador.getReservaPorCodigo);
 router.get("/", reservasControlador.getReservas);
 router.post("/", reservasControlador.postReserva);
+router.post("/con-sena", reservasControlador.postReservaConSenia);
 router.get("/:id", reservasControlador.getReservaPorId);
 router.patch("/:id", reservasControlador.patchReserva);
 router.post("/:id/cancelar", reservasControlador.postCancelar);

@@ -41,10 +41,22 @@ export async function consultarDisponibilidad(params) {
   return data;
 }
 
-// HU-36 (recepcionista) y HU-40 (autoservicio web) usan este mismo alta;
-// solo cambia `origen` en el payload.
+// HU-36 (recepcionista, alta SIN seña — ya no la usa el wizard con seña
+// obligatoria, ver crearReservaConSena) y HU-40 (autoservicio web, que
+// nunca cobra seña) usan este mismo alta; solo cambia `origen` en el
+// payload.
 export async function crearReserva(payload) {
   const { data } = await api.post("/reservas", payload);
+  return data;
+}
+
+// HU-88 (extensión) — alta de reserva CON seña en una sola operación
+// atómica: reserva y PagoEstadia se crean juntos o no se crea nada (ver
+// crearReservaConSena en reservas.servicio.js, backend). payload = los
+// mismos campos de crearReserva + `medios` ([{ tipo, importe, referencia? }]),
+// igual que le mandaría a registrarPagoEstadia.
+export async function crearReservaConSena(payload) {
+  const { data } = await api.post("/reservas/con-sena", payload);
   return data;
 }
 

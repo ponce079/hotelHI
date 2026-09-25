@@ -37,6 +37,10 @@ const {
   LONGITUD_CODIGO_BYTES,
   ZONA_ARGENTINA,
 } = require("./reservas.constantes");
+// Sin ciclo: pagoEstadia.constantes.js no importa nada (a diferencia de
+// pagoEstadia.servicio.js, que sí forma ciclo — ver el require diferido en
+// crearReservaConSena, más abajo).
+const { CONCEPTO_SENIA } = require("../pagos-estadia/pagoEstadia.constantes");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -717,6 +721,93 @@ async function crearReserva(data) {
   throw new ErrorDeNegocio("No se pudo generar un código de confirmación único, intentá de nuevo.", 503);
 }
 
+// HU-88 (extensión de HU-36) — alta de reserva CON seña, como una única
+// operación atómica.
+//
+// Antes esto eran 2 llamadas HTTP separadas (crearReserva y luego
+// pagoEstadia.crearPago) con la Reserva ya "Confirmada" en el medio: si el
+// cobro de la seña fallaba (tarjeta rechazada) o el recepcionista cerraba
+// el modal antes de terminar, quedaba una Reserva huérfana sin seña,
+// bloqueando la habitación — no hay ningún job que la detecte ni la
+// limpie. Envolver alta + cobro en una sola transacción de Prisma hace que
+// ese estado intermedio deje de ser posible: si el cobro falla en
+// cualquier punto, Prisma revierte TODO, incluida la Reserva recién creada.
+//
+// No reimplementa nada: reusa crearReservaEnTransaccion tal cual (mismo
+// código que usa el alta sin seña y el walk-in de Check-in) y
+// pagoEstadia.crearPagoEnTransaccion tal cual (mismo código que usa el
+// cobro de HU-50) — lo único nuevo acá es que corren dentro de la MISMA
+// transacción en vez de en dos llamadas separadas.
+//
+// Require diferido, mismo motivo que en cancelarReserva: pagoEstadia.
+// servicio.js importa checkOut.servicio.js, que importa este archivo — un
+// require al tope formaría un ciclo.
+async function crearReservaConSena(data) {
+  const datos = normalizarAltaReserva(data);
+  const pagoEstadiaServicio = require("../pagos-estadia/pagoEstadia.servicio");
+
+  // Chequeo rápido antes de abrir la transacción, mismo criterio (y mismos
+  // límites) que crearReserva: buena UX, no es lo que protege contra la
+  // carrera.
+  const conflictosPrevios = await buscarConflictos(prisma, {
+    habitacionIds: datos.habitacionIds,
+    fechaDesde: datos.fechaDesde,
+    fechaHasta: datos.fechaHasta,
+  });
+  if (conflictosPrevios.length > 0) throw errorPorConflictos(conflictosPrevios);
+
+  // Mismo reintento ante colisión de codigoConfirmacion que crearReserva:
+  // rehacer TODO (reserva + seña) es seguro porque nada quedó persistido en
+  // el intento fallido — la transacción entera se revirtió.
+  let ultimoError;
+  for (let intento = 0; intento < MAX_INTENTOS_CODIGO; intento += 1) {
+    try {
+      const { reserva, pago } = await prisma.$transaction(
+        async (tx) => {
+          const reservaCreada = await crearReservaEnTransaccion(tx, datos);
+          // Sin lock explícito acá (a diferencia de crearPago): la reserva
+          // recién se creó DENTRO de esta misma transacción, todavía no
+          // existe para nadie más — no hay ninguna otra transacción que
+          // pueda estar disputando su saldo.
+          let pagoCreado;
+          try {
+            pagoCreado = await pagoEstadiaServicio.crearPagoEnTransaccion(tx, {
+              reservaId: reservaCreada.id,
+              medios: data?.medios,
+              concepto: CONCEPTO_SENIA,
+            });
+          } catch (err) {
+            // El ErrorDeNegocio de pagoEstadia es OTRA clase (mismo caso que
+            // calcularSaldoReserva reenvolviendo el de checkOut, en
+            // pagoEstadia.servicio.js): sin traducirlo acá, el controlador
+            // de reservas lo trataría como error inesperado (500) en vez de
+            // devolver el mensaje real de la validación (tarjeta sin
+            // referencia, importe inválido, etc.) con su status code.
+            if (err instanceof pagoEstadiaServicio.ErrorDeNegocio) {
+              throw new ErrorDeNegocio(err.message, err.statusCode);
+            }
+            throw err;
+          }
+          return { reserva: reservaCreada, pago: pagoCreado };
+        },
+        { timeout: 15000, maxWait: 10000 }
+      );
+
+      const confirmacionEmail = await enviarConfirmacionPorEmail(reserva);
+      return { ...formatearReserva(reserva), confirmacionEmail, pagoSenia: pago };
+    } catch (err) {
+      const esCodigoDuplicado =
+        err instanceof Prisma.PrismaClientKnownRequestError &&
+        err.code === "P2002" &&
+        String(err.meta?.target ?? "").includes("codigoConfirmacion");
+      if (!esCodigoDuplicado) throw err;
+      ultimoError = err;
+    }
+  }
+  console.error("[reservas] Colisión repetida de codigoConfirmacion:", ultimoError);
+  throw new ErrorDeNegocio("No se pudo generar un código de confirmación único, intentá de nuevo.", 503);
+}
+
 // --------------------------------------------------------------
 // Lectura (contrato con Integrantes 3 y 4)
 // --------------------------------------------------------------
@@ -1028,6 +1119,7 @@ function marcarCerrada(reservaId, cliente = prisma) {
 module.exports = {
   // Alta y edición
   crearReserva,
+  crearReservaConSena,
   crearReservaEnTransaccion,
   normalizarAltaReserva,
   modificarReserva,
@@ -1045,5 +1137,6 @@ module.exports = {
   // Utilidades expuestas para pruebas y para otros módulos
   formatearReserva,
   generarCodigoConfirmacion,
+  enviarConfirmacionPorEmail,
   ErrorDeNegocio,
 };
