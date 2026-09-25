@@ -177,3 +177,61 @@ describe("ReservaDetallePage — aviso de la seña al cancelar", () => {
     expect(screen.queryByText(/la seña de/)).not.toBeInTheDocument();
   });
 });
+
+// Desglose de pago en la tarjeta "Estadía" — reusa el mismo
+// totalAdeudado/totalPagado/saldo que ya calcula consolidarCargos
+// (check-out) vía calcularSaldoReserva, expuesto acá por
+// listarPagosEstadia; no se reimplementa ninguna cuenta en el frontend.
+describe("ReservaDetallePage — desglose de pago (seña / saldo pendiente)", () => {
+  it("con seña pagada: muestra monto + medio, linkeado a Movimientos de Pago, y el saldo real pendiente", async () => {
+    obtenerReserva.mockResolvedValue(RESERVA_BASE);
+    listarPagosEstadia.mockResolvedValue({
+      pagos: [
+        {
+          id: 30,
+          concepto: "Seña",
+          anulado: false,
+          medios: [{ medioPago: "Efectivo", importe: "9000.00" }],
+        },
+      ],
+      totalAdeudado: 90000,
+      totalPagado: 9000,
+      saldo: 81000,
+    });
+
+    renderDetalle();
+
+    expect(await screen.findByText("Seña pagada")).toBeInTheDocument();
+    const link = screen.getByRole("link", { name: /9\.000.*Efectivo/ });
+    expect(link).toHaveAttribute("href", `/movimientos-pago?q=${RESERVA_BASE.codigoConfirmacion}`);
+
+    expect(screen.getByText("Saldo pendiente")).toBeInTheDocument();
+    expect(screen.getByText("$ 81.000")).toBeInTheDocument();
+  });
+
+  it("sin ningún PagoEstadia: no muestra 'Seña pagada' y el saldo pendiente es el total completo", async () => {
+    obtenerReserva.mockResolvedValue(RESERVA_BASE);
+    listarPagosEstadia.mockResolvedValue({ pagos: [], totalAdeudado: 90000, totalPagado: 0, saldo: 90000 });
+
+    renderDetalle();
+
+    await screen.findByText("Saldo pendiente");
+    expect(screen.queryByText("Seña pagada")).not.toBeInTheDocument();
+    // "Total estimado" y "Saldo pendiente" muestran el mismo monto acá
+    // (nada pagado todavía) — las dos apariciones son el comportamiento
+    // esperado, no una sola.
+    expect(screen.getAllByText("$ 90.000")).toHaveLength(2);
+  });
+
+  it("sin permiso verPagosEstadia: no muestra el desglose ni pide los pagos", async () => {
+    useSesion.mockReturnValue({ rol: "recepcionista", puede: (accion) => accion !== "verPagosEstadia" });
+    obtenerReserva.mockResolvedValue(RESERVA_BASE);
+
+    renderDetalle();
+
+    await screen.findByText(RESERVA_BASE.huesped.nombre);
+    expect(screen.queryByText("Seña pagada")).not.toBeInTheDocument();
+    expect(screen.queryByText("Saldo pendiente")).not.toBeInTheDocument();
+    expect(listarPagosEstadia).not.toHaveBeenCalled();
+  });
+});

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Ban, BedDouble, Bell, LogIn, Pencil, Plus, User, UtensilsCrossed } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
@@ -50,6 +50,7 @@ export function ReservaDetallePage() {
   const puedeVer = puede("verReservas");
   const puedeGestionar = puede("gestionarReservas");
   const puedeVerConsumos = puede("verConsumosServicio");
+  const puedeVerPagos = puede("verPagosEstadia");
   const puedeRegistrarConsumo = puede("registrarConsumoServicio");
   const puedeGestionarCheckIn = puede("gestionarCheckIn");
   const volver = useVolver("/reservas");
@@ -99,14 +100,17 @@ export function ReservaDetallePage() {
     enabled: puedeGestionarCheckIn && confirmada,
   });
 
-  // HU-37 — antes de confirmar la cancelación, hay que poder avisar qué va a
-  // pasar con la seña (política de 24hs de reservas.servicio.js/
-  // cancelarReserva): trae los pagos reales de la reserva para mostrar el
-  // monto de la seña vigente, si tiene una.
+  // Trae los pagos reales de la reserva — se usa para dos cosas: (a) el
+  // desglose de "Seña pagada"/"Saldo pendiente" en la tarjeta Estadía
+  // (cualquier estado), y (b) antes de confirmar una cancelación (HU-37),
+  // avisar qué va a pasar con la seña según la política de 24hs de
+  // reservas.servicio.js/cancelarReserva. `saldo`/`totalAdeudado` vienen de
+  // consolidarCargos (check-out) vía calcularSaldoReserva — no se
+  // reimplementa el cálculo acá.
   const pagosQuery = useQuery({
     queryKey: ["pagos-estadia", "reserva", id],
     queryFn: () => listarPagosEstadia(id),
-    enabled: puedeGestionar && confirmada,
+    enabled: puedeVerPagos,
   });
 
   const mutacionCancelar = useMutation({
@@ -252,6 +256,26 @@ export function ReservaDetallePage() {
                 Solo alojamiento, calculado a la tarifa vigente de cada habitación.
               </p>
             </div>
+
+            {pagosQuery.data && (
+              <>
+                {seniaVigente && (
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-piedra">Seña pagada</p>
+                    <Link to={`/movimientos-pago?q=${encodeURIComponent(reserva.codigoConfirmacion)}`}>
+                      <Cifra tamano={28} className="text-pino transition-colors hover:text-pino-700 hover:underline">
+                        {FORMATO_MONEDA.format(montoSenia)} · {seniaVigente.medios.map((m) => m.medioPago).join(" + ")}
+                      </Cifra>
+                    </Link>
+                  </div>
+                )}
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-piedra">Saldo pendiente</p>
+                  <Cifra tamano={28}>{FORMATO_MONEDA.format(pagosQuery.data.saldo)}</Cifra>
+                  <p className="mt-1 text-[11px] text-piedra">Lo que va a quedar por cobrar en el check-out.</p>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </div>

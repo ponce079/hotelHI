@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Check, CreditCard, Minus, Plus, RotateCcw, Search } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { CodigoClave } from "../../componentes/CodigoClave";
@@ -179,7 +179,13 @@ export function MovimientosPagoPage() {
   const { puede } = useSesion();
   const puedeVer = puede("verPagosEstadia");
   const navigate = useNavigate();
-  const [q, setQ] = useState("");
+  // ?q=<código> — así ReservaDetallePage.jsx puede linkear directo a la
+  // fila de una reserva puntual (ej. la seña) sin que el huésped tenga que
+  // volver a tipear el código. Solo se lee al montar: si el usuario edita
+  // el filtro a mano después, no queremos que el back del navegador se lo
+  // pise.
+  const [searchParams] = useSearchParams();
+  const [q, setQ] = useState(() => searchParams.get("q") ?? "");
   const [concepto, setConcepto] = useState("");
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
