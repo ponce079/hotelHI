@@ -22,6 +22,7 @@ import {
   listarHabitaciones,
   listarOrdenesMantenimiento,
   listarTiposHabitacion,
+  resolverOrdenMantenimiento,
 } from "./habitaciones.api";
 import { listarReservas } from "../reservas/reservas.api";
 import { ESTADO_RESERVA } from "../reservas/reservas.constantes";
@@ -67,17 +68,19 @@ function reservasEnCursoDe(reservasEnCurso, numeroHabitacion) {
 }
 
 export function HabitacionesPage() {
-  const { rol, puede } = useSesion();
+  const { rol, puede, usuario } = useSesion();
   const puedeVer = puede("verHabitaciones");
   const puedeAdministrar = puede("gestionarHabitaciones");
   const puedeEstado = puede("actualizarEstadoHabitacion");
   const puedeRegistrarConsumo = puede("registrarConsumoServicio");
   const puedeIniciarCheckIn = puede("iniciarCheckInDesdePanel");
   const puedeMarcarLimpia = puede("marcarHabitacionLimpia");
+  const puedeResolverMantenimiento = puede("resolverMantenimiento");
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [modal, setModal] = useState(null);
   const [cambioActivo, setCambioActivo] = useState(null);
+  const [ordenAResolver, setOrdenAResolver] = useState(null);
   const { toast, mostrarToast } = useToast();
   const queryClient = useQueryClient();
   // Solo para refrescar el texto "Actualizado hace Ns" cada segundo — el
@@ -159,13 +162,47 @@ export function HabitacionesPage() {
     },
   });
 
+  // Atajo "→ Marcar como resuelta" (mismas dos acciones que ya tienen las
+  // tarjetas "libre" y "en limpieza") para las tarjetas "mantenimiento":
+  // igual que HistorialMantenimientoPage.jsx, confirmación simple sin pedir
+  // un nombre a mano (ya se sabe quién opera por la sesión activa) — a
+  // diferencia del flujo del Detalle de Habitación, que sí lo pide.
+  const mutacionResolverMantenimiento = useMutation({
+    mutationFn: () => resolverOrdenMantenimiento(ordenAResolver.id, usuario),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["habitaciones"] });
+      // El badge de pendientes del menú lateral y HistorialMantenimientoPage
+      // viven en el queryKey "ordenes-mantenimiento" (mismo que ya invalida
+      // HabitacionDetallePage.jsx al resolver desde ahí) — sin esto quedan
+      // desactualizados hasta el próximo refetchInterval.
+      queryClient.invalidateQueries({ queryKey: ["ordenes-mantenimiento"] });
+      mostrarToast(`Orden de mantenimiento de la habitación ${ordenAResolver.habitacion?.numero} marcada como resuelta.`);
+      setOrdenAResolver(null);
+    },
+    onError: (error) => {
+      mostrarToast(error?.response?.data?.error ?? "No se pudo marcar la orden como resuelta.");
+    },
+  });
+
   const reservasEnCurso = enCursoQuery.data ?? [];
 
   const ultimaOrdenPorHabitacion = new Map();
+  // Órdenes "Pendiente" agrupadas por habitación: si hay exactamente una, el
+  // atajo rápido de la tarjeta puede resolverla sin ambigüedad; si hay 0 o
+  // más de una, no se muestra (0 no debería pasar mientras la habitación
+  // esté en "mantenimiento", pero más de una sí es un caso real — ver
+  // resolverOrdenMantenimiento en habitaciones.servicio.js, que contempla
+  // "más de un incidente abierto a la vez" — y ahí Housekeeping tiene que
+  // entrar al Detalle a elegir cuál).
+  const pendientesPorHabitacion = new Map();
   // listarOrdenesMantenimiento ya viene ordenado por fecha desc: la primera
   // que aparece para cada habitacionId es la más reciente.
   for (const orden of ordenesQuery.data ?? []) {
     if (!ultimaOrdenPorHabitacion.has(orden.habitacionId)) ultimaOrdenPorHabitacion.set(orden.habitacionId, orden);
+    if (orden.estado === "Pendiente") {
+      if (!pendientesPorHabitacion.has(orden.habitacionId)) pendientesPorHabitacion.set(orden.habitacionId, []);
+      pendientesPorHabitacion.get(orden.habitacionId).push(orden);
+    }
   }
 
   function actualizarFiltro(clave, valor) {
@@ -322,22 +359,27 @@ export function HabitacionesPage() {
               <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
                 {habitacionesDelPiso.map((habitacion) => {
                   const [reservaEnCurso] = reservasEnCursoDe(reservasEnCurso, habitacion.numero);
+                  const pendientes = pendientesPorHabitacion.get(habitacion.id) ?? [];
+                  const ordenPendienteUnica = pendientes.length === 1 ? pendientes[0] : null;
                   return (
                     <TarjetaHabitacion
                       key={habitacion.id}
                       habitacion={habitacion}
                       huesped={reservaEnCurso ? { nombre: reservaEnCurso.huesped?.nombre, fechaHasta: reservaEnCurso.fechaHasta } : null}
                       ordenMantenimiento={ultimaOrdenPorHabitacion.get(habitacion.id)}
+                      ordenPendienteUnica={ordenPendienteUnica}
                       puedeEstado={puedeEstado}
                       puedeAdministrar={puedeAdministrar}
                       puedeRegistrarConsumo={puedeRegistrarConsumo}
                       puedeIniciarCheckIn={puedeIniciarCheckIn}
                       puedeMarcarLimpia={puedeMarcarLimpia}
+                      puedeResolverMantenimiento={puedeResolverMantenimiento}
                       onAbrir={() => navigate(`/habitaciones/${habitacion.id}`)}
                       onCambiarEstado={() => setModal({ tipo: "estado", habitacion })}
                       onCambiarActivo={() => setCambioActivo(habitacion)}
                       onAgregarConsumo={() => manejarAgregarConsumo(habitacion)}
                       onMarcarLimpia={() => mutacionMarcarLimpia.mutate(habitacion.id)}
+                      onResolverMantenimiento={() => setOrdenAResolver(ordenPendienteUnica)}
                     />
                   );
                 })}
@@ -374,6 +416,17 @@ export function HabitacionesPage() {
         onConfirmar={() => mutacionActivo.mutate({ id: cambioActivo.id, valor: !cambioActivo.activo })}
       />
 
+      <ConfirmDialog
+        abierto={Boolean(ordenAResolver)}
+        titulo={`¿Confirmás que el problema en la habitación ${ordenAResolver?.habitacion?.numero ?? ""} fue resuelto?`}
+        mensaje="La habitación va a volver a su estado anterior."
+        textoConfirmar="Confirmar"
+        variante="alta"
+        cargando={mutacionResolverMantenimiento.isPending}
+        onCancelar={() => setOrdenAResolver(null)}
+        onConfirmar={() => mutacionResolverMantenimiento.mutate()}
+      />
+
       <Toast mensaje={toast} />
     </div>
   );
@@ -383,16 +436,19 @@ function TarjetaHabitacion({
   habitacion,
   huesped,
   ordenMantenimiento,
+  ordenPendienteUnica,
   puedeEstado,
   puedeAdministrar,
   puedeRegistrarConsumo,
   puedeIniciarCheckIn,
   puedeMarcarLimpia,
+  puedeResolverMantenimiento,
   onAbrir,
   onCambiarEstado,
   onCambiarActivo,
   onAgregarConsumo,
   onMarcarLimpia,
+  onResolverMantenimiento,
 }) {
   const color = ESTADO_HABITACION_COLOR[habitacion.estado] ?? ESTADO_HABITACION_COLOR.libre;
   const saleHoy = habitacion.estado === "ocupada" && esHoy(huesped?.fechaHasta);
@@ -469,10 +525,32 @@ function TarjetaHabitacion({
         </div>
       )}
 
-      {habitacion.estado === "mantenimiento" && ordenMantenimiento && (
-        <p className="border-t pt-1.5 text-[12.5px]" style={{ borderColor: color.borde }}>
-          {ordenMantenimiento.tipoTarea} · {ordenMantenimiento.responsable}
-        </p>
+      {habitacion.estado === "mantenimiento" && (ordenMantenimiento || (puedeResolverMantenimiento && ordenPendienteUnica)) && (
+        <div className="flex flex-col gap-1.5 border-t pt-1.5" style={{ borderColor: color.borde }}>
+          {ordenMantenimiento && (
+            <p className="text-[12.5px]">
+              {ordenMantenimiento.tipoTarea} · {ordenMantenimiento.responsable}
+            </p>
+          )}
+          {/* Atajo "→ Marcar como resuelta" (mismo patrón que "→ Iniciar
+              check-in" y "→ Marcar como limpia"): solo aparece cuando hay
+              exactamente una orden "Pendiente" para esta habitación — con 0
+              o más de una, Housekeeping entra al Detalle (donde ya se ve el
+              historial completo) en vez de que el atajo adivine cuál
+              resolver. */}
+          {puedeResolverMantenimiento && ordenPendienteUnica && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onResolverMantenimiento();
+              }}
+              className="w-fit cursor-pointer text-[12.5px] font-semibold underline-offset-2 hover:underline"
+            >
+              → Marcar como resuelta
+            </button>
+          )}
+        </div>
       )}
 
       {habitacion.estado === "bloqueada" && habitacion.motivoBloqueo && (
