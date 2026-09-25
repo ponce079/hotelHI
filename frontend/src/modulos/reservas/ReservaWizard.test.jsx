@@ -245,6 +245,35 @@ describe("ReservaWizard — alta asistida por mostrador (seña obligatoria, HU-8
   });
 });
 
+describe("ReservaWizard — arranca con habitaciones ya elegidas (desde Disponibilidad interna)", () => {
+  it("con habitacionIds en valoresIniciales, arranca directo en el paso 3 con 1 y 2 ya hechos", async () => {
+    renderWizard({
+      origen: "RECEPCION",
+      valoresIniciales: { fechaDesde: "2026-10-10", fechaHasta: "2026-10-13", habitacionIds: [1] },
+    });
+
+    // Paso 3 desde el vamos: el campo de huésped ya está visible, sin
+    // haber tocado nada de fechas ni habitaciones.
+    expect(await screen.findByLabelText("Nombre y apellido *")).toBeInTheDocument();
+    expect(screen.getByText("✓ Fechas de la estadía")).toBeInTheDocument();
+    expect(screen.getByText("✓ Habitaciones")).toBeInTheDocument();
+
+    // El resumen ya muestra la habitación elegida y su total, sin que el
+    // recepcionista haya pasado por el paso 2.
+    expect(await screen.findByText(/101 \(Doble\)/)).toBeInTheDocument();
+
+    // No queda bloqueado: si hace falta corregir algo, "Atrás" sigue ahí.
+    expect(screen.getByRole("button", { name: "Atrás" })).toBeEnabled();
+  });
+
+  it("sin habitacionIds (autoservicio web de siempre), sigue arrancando en el paso 1", () => {
+    renderWizard({ origen: "WEB", valoresIniciales: { fechaDesde: "2026-10-10", fechaHasta: "2026-10-13" } });
+
+    expect(screen.getByLabelText("Entrada (check-in) *")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Nombre y apellido *")).not.toBeInTheDocument();
+  });
+});
+
 describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin seña)", () => {
   const RESERVA_EXISTENTE = {
     id: 7,

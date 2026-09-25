@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
-import { BedDouble, CalendarRange, Users } from "lucide-react";
+import { BedDouble, CalendarRange, Check, Users } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -36,6 +36,14 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
     capacidadMinima: "",
   });
   const [buscado, setBuscado] = useState(null);
+  // Selección de tarjetas (solo tiene efecto en modoInterno — ver el botón
+  // "Crear reserva" más abajo): mismo patrón visual y de estado que
+  // CheckInWalkIn.jsx (relleno sólido cuando está elegida).
+  const [habitacionIds, setHabitacionIds] = useState([]);
+
+  function alternarHabitacion(id) {
+    setHabitacionIds((ids) => (ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id]));
+  }
 
   const rangoValido = Boolean(
     criterio.fechaDesde && criterio.fechaHasta && criterio.fechaHasta > criterio.fechaDesde
@@ -73,7 +81,12 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
           className="flex flex-wrap items-end gap-3 rounded-lg border border-borde bg-white p-5"
           onSubmit={(e) => {
             e.preventDefault();
-            if (rangoValido) setBuscado({ ...criterio });
+            if (rangoValido) {
+              setBuscado({ ...criterio });
+              // Una búsqueda nueva invalida la selección anterior: puede
+              // traer otras habitaciones, o ninguna de las ya elegidas.
+              setHabitacionIds([]);
+            }
           }}
         >
           <Input
@@ -156,49 +169,78 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
 
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-[13.5px] text-piedra">
-                {resultado.habitaciones.length} habitación{resultado.habitaciones.length === 1 ? "" : "es"} libre
+                {resultado.habitaciones.length} habitaci{resultado.habitaciones.length === 1 ? "ón" : "ones"} libre
                 {resultado.habitaciones.length === 1 ? "" : "s"} · {resultado.noches} noche
                 {resultado.noches === 1 ? "" : "s"}
               </p>
               {resultado.habitaciones.length > 0 && (
                 <Button
                   variante="ok"
+                  disabled={modoInterno && habitacionIds.length === 0}
                   onClick={() =>
-                    navigate(
-                      modoInterno
-                        ? `/reservas?nueva=1&desde=${buscado.fechaDesde}&hasta=${buscado.fechaHasta}`
-                        : `/reservar?desde=${buscado.fechaDesde}&hasta=${buscado.fechaHasta}`
-                    )
+                    modoInterno
+                      ? navigate(`/reservas?nueva=1&desde=${buscado.fechaDesde}&hasta=${buscado.fechaHasta}`, {
+                          state: { habitacionIds },
+                        })
+                      : navigate(`/reservar?desde=${buscado.fechaDesde}&hasta=${buscado.fechaHasta}`)
                   }
                 >
-                  {modoInterno ? "Crear reserva" : "Reservar estas fechas"}
+                  {modoInterno
+                    ? `Crear reserva${habitacionIds.length > 0 ? ` (${habitacionIds.length} ${habitacionIds.length === 1 ? "habitación" : "habitaciones"})` : ""}`
+                    : "Reservar estas fechas"}
                 </Button>
               )}
             </div>
 
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {resultado.habitaciones.map((h) => (
-                <div key={h.id} className="flex flex-col gap-2 rounded-lg border border-borde bg-white p-5">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="flex items-center gap-2 font-mono text-[15px] font-semibold">
-                      <BedDouble size={17} className="text-pino" />
-                      {h.numero}
-                    </span>
-                    <Badge variante="ok">{h.tipo}</Badge>
-                  </div>
-                  <p className="flex items-center gap-1.5 text-[12.5px] text-piedra">
-                    <Users size={14} /> Hasta {h.capacidad} persona{h.capacidad === 1 ? "" : "s"} · piso {h.piso}
-                  </p>
-                  {h.equipamiento && <p className="text-[12.5px] text-piedra">{h.equipamiento}</p>}
-                  <div className="mt-auto flex items-end justify-between gap-2 pt-2">
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-piedra">Total estadía</p>
-                      <Cifra tamano={21}>{FORMATO_MONEDA.format(h.totalEstadia)}</Cifra>
+              {resultado.habitaciones.map((h) => {
+                // La selección (para alimentar directo al wizard de "Nueva
+                // reserva") solo tiene sentido en modoInterno: el
+                // autoservicio público sigue yendo a /reservar tal cual,
+                // sin preselección de habitación.
+                const elegida = modoInterno && habitacionIds.includes(h.id);
+                return (
+                  <button
+                    key={h.id}
+                    type="button"
+                    onClick={modoInterno ? () => alternarHabitacion(h.id) : undefined}
+                    aria-pressed={modoInterno ? elegida : undefined}
+                    className={`flex flex-col gap-2 rounded-lg border p-5 text-left transition-colors ${
+                      modoInterno
+                        ? `cursor-pointer ${elegida ? "border-pino bg-pino text-hueso" : "border-borde bg-white hover:bg-hueso"}`
+                        : "border-borde bg-white"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-2 font-mono text-[15px] font-semibold">
+                        <BedDouble size={17} className={elegida ? "text-hueso" : "text-pino"} />
+                        {h.numero}
+                      </span>
+                      <div className="flex items-center gap-1.5">
+                        <Badge variante="ok">{h.tipo}</Badge>
+                        {elegida && <Check size={16} className="flex-none text-hueso" />}
+                      </div>
                     </div>
-                    <p className="text-[12px] text-piedra">{FORMATO_MONEDA.format(h.tarifaPorNoche)} / noche</p>
-                  </div>
-                </div>
-              ))}
+                    <p className={`flex items-center gap-1.5 text-[12.5px] ${elegida ? "text-hueso/80" : "text-piedra"}`}>
+                      <Users size={14} /> Hasta {h.capacidad} persona{h.capacidad === 1 ? "" : "s"} · piso {h.piso}
+                    </p>
+                    {h.equipamiento && (
+                      <p className={`text-[12.5px] ${elegida ? "text-hueso/80" : "text-piedra"}`}>{h.equipamiento}</p>
+                    )}
+                    <div className="mt-auto flex items-end justify-between gap-2 pt-2">
+                      <div>
+                        <p className={`text-[11px] uppercase tracking-wide ${elegida ? "text-hueso/70" : "text-piedra"}`}>
+                          Total estadía
+                        </p>
+                        <Cifra tamano={21}>{FORMATO_MONEDA.format(h.totalEstadia)}</Cifra>
+                      </div>
+                      <p className={`text-[12px] ${elegida ? "text-hueso/80" : "text-piedra"}`}>
+                        {FORMATO_MONEDA.format(h.tarifaPorNoche)} / noche
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
             {resultado.habitaciones.length === 0 && (

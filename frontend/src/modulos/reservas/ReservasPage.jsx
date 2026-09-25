@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, Search, Ban, Eye } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
@@ -42,6 +42,7 @@ export function ReservasPage() {
   const { toast, mostrarToast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const location = useLocation();
 
   const q = searchParams.get("q") ?? "";
   const estado = searchParams.get("estado") ?? "";
@@ -54,8 +55,12 @@ export function ReservasPage() {
     desde: desde || undefined,
     hasta: hasta || undefined,
   };
+  // Las habitaciones ya elegidas (tarjetas seleccionables de Disponibilidad
+  // interna) viajan por `location.state`, no por la URL — son un dato de
+  // uso único para precargar el wizard, no algo que tenga sentido que
+  // sobreviva a un refresh de la página como sí lo hacen desde/hasta.
   const modalDesdeDisponibilidad = searchParams.get("nueva") === "1"
-    ? { tipo: "alta", valoresIniciales: { fechaDesde: desde, fechaHasta: hasta } }
+    ? { tipo: "alta", valoresIniciales: { fechaDesde: desde, fechaHasta: hasta, habitacionIds: location.state?.habitacionIds ?? [] } }
     : null;
   const modalVisible = modal ?? modalDesdeDisponibilidad;
 

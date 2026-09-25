@@ -76,15 +76,20 @@ function textoMotivoBloqueo(motivo) {
 
 function estadoInicial(reserva, valoresIniciales) {
   if (!reserva) {
+    // La pantalla pública de disponibilidad (HU-38) manda el período ya
+    // elegido por querystring, para no hacerlo tipear dos veces. Cuando
+    // además viene con habitaciones ya elegidas (mostrador, desde las
+    // tarjetas seleccionables de Disponibilidad interna), los pasos 1 y 2
+    // se dan por hechos y arranca directo en el 3 (Datos del huésped) — no
+    // hace falta volver a elegir fecha ni habitación.
+    const habitacionIds = valoresIniciales?.habitacionIds ?? [];
     return {
-      paso: 1,
-      // La pantalla pública de disponibilidad (HU-38) manda el período ya
-      // elegido por querystring, para no hacerlo tipear dos veces.
+      paso: habitacionIds.length > 0 ? 3 : 1,
       fechaDesde: valoresIniciales?.fechaDesde ?? "",
       fechaHasta: valoresIniciales?.fechaHasta ?? "",
       tipo: "",
       capacidadMinima: "",
-      habitacionIds: [],
+      habitacionIds,
       huesped: { ...HUESPED_VACIO },
       canalConfirmacion: CANALES_CONFIRMACION[0],
     };
