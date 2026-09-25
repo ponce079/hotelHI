@@ -350,7 +350,31 @@ function esLibreAhora(habitacion) {
 // habitaciones que esa misma reserva ya tiene tomadas — si no, editarle la
 // fecha de salida a una reserva haría desaparecer su propia habitación de
 // la lista.
-async function consultarDisponibilidad({ fechaDesde, fechaHasta, tipo, capacidadMinima, excluirReservaId } = {}) {
+//
+// `incluirOcupadas` suma el campo `todas` a la respuesta: el mismo universo
+// consultado (tipo/capacidad) pero completo, con cada habitación marcando
+// `disponible` y, si no lo está, un `motivo` (por qué). Por defecto no se
+// pide (ni se consulta la reserva ocupante) — lo usa únicamente el paso de
+// selección del wizard interno (ReservaWizard.jsx) para mostrar la grilla
+// completa en vez de solo lo libre; `habitaciones` (solo disponibles) sigue
+// exactamente igual para el resto de los consumidores (DisponibilidadPublicaPage.jsx,
+// el propio wizard en origen "WEB").
+//
+// `incluirHuesped` (solo tiene efecto junto con `incluirOcupadas`) suma el
+// nombre del huésped ocupante dentro de ese motivo. Este mismo endpoint es
+// también la consulta PÚBLICA y sin sesión de la autorreserva (HU-38/40) —
+// el nombre de otro huésped no puede viajar salvo que lo pida
+// explícitamente el mostrador (ReservaWizard.jsx con origen !== "WEB"), así
+// que es un parámetro aparte y no algo implícito en `incluirOcupadas`.
+async function consultarDisponibilidad({
+  fechaDesde,
+  fechaHasta,
+  tipo,
+  capacidadMinima,
+  excluirReservaId,
+  incluirOcupadas,
+  incluirHuesped,
+} = {}) {
   const desde = parsearFechaSinHora(fechaDesde, "La fecha de entrada");
   const hasta = parsearFechaSinHora(fechaHasta, "La fecha de salida");
   const noches = validarRango(desde, hasta);
@@ -359,6 +383,8 @@ async function consultarDisponibilidad({ fechaDesde, fechaHasta, tipo, capacidad
   const tipoBuscado = typeof tipo === "string" && tipo.trim() ? tipo.trim() : null;
   const excluida = excluirReservaId ? enteroPositivo(excluirReservaId, "excluirReservaId") : null;
   const entradaEsHoy = mismaFecha(desde, hoyComoFechaUTC());
+  const conOcupadas = incluirOcupadas === true || incluirOcupadas === "true";
+  const conHuesped = conOcupadas && (incluirHuesped === true || incluirHuesped === "true");
 
   const habitaciones = await prisma.habitacion.findMany({
     where: {
@@ -374,18 +400,58 @@ async function consultarDisponibilidad({ fechaDesde, fechaHasta, tipo, capacidad
       habitacionId: { in: habitaciones.map((h) => h.id) },
       reserva: condicionSolapamiento(desde, hasta, excluida),
     },
-    select: { habitacionId: true },
+    select: conOcupadas
+      ? {
+          habitacionId: true,
+          reserva: {
+            select: {
+              codigoConfirmacion: true,
+              fechaDesde: true,
+              fechaHasta: true,
+              ...(conHuesped ? { huesped: { select: { nombre: true } } } : {}),
+            },
+          },
+        }
+      : { habitacionId: true },
   });
   const idsOcupadasPorFecha = new Set(ocupadasPorFecha.map((o) => o.habitacionId));
+  // Primera reserva encontrada por habitación: las reglas de negocio ya
+  // impiden que una misma habitación tenga dos reservas Confirmada/En curso
+  // solapadas de verdad, así que en la práctica hay a lo sumo una — esto es
+  // solo para no romper si algún dato quedara inconsistente.
+  const reservaPorHabitacion = new Map();
+  for (const o of ocupadasPorFecha) {
+    if (!reservaPorHabitacion.has(o.habitacionId)) reservaPorHabitacion.set(o.habitacionId, o.reserva);
+  }
 
   function bloqueadaAhora(h) {
     if (idsOcupadasPorFecha.has(h.id)) return true;
     return entradaEsHoy && !esLibreAhora(h);
   }
 
-  const disponibles = habitaciones
-    .filter((h) => !bloqueadaAhora(h))
-    .map((h) => ({
+  function motivoDe(h) {
+    const reserva = reservaPorHabitacion.get(h.id);
+    if (reserva) {
+      return {
+        tipo: "reserva",
+        codigoConfirmacion: reserva.codigoConfirmacion,
+        fechaDesde: reserva.fechaDesde,
+        fechaHasta: reserva.fechaHasta,
+        huespedNombre: conHuesped ? (reserva.huesped?.nombre ?? null) : null,
+      };
+    }
+    // Bloqueada por su propio estado físico (entrada HOY, sin una reserva
+    // que la explique — ver comentario de bloqueadaAhora): mantenimiento,
+    // bloqueada o en limpieza.
+    return { tipo: "estado", estado: h.estado };
+  }
+
+  const disponibles = [];
+  const todas = conOcupadas ? [] : undefined;
+
+  for (const h of habitaciones) {
+    const bloqueada = bloqueadaAhora(h);
+    const base = {
       id: h.id,
       numero: h.numero,
       tipo: h.tipo,
@@ -400,7 +466,10 @@ async function consultarDisponibilidad({ fechaDesde, fechaHasta, tipo, capacidad
       estadoActual: esLibreAhora(h) ? null : h.estado,
       tarifaPorNoche: Number(h.tarifaPorNoche),
       totalEstadia: Number((Number(h.tarifaPorNoche) * noches).toFixed(2)),
-    }));
+    };
+    if (!bloqueada) disponibles.push(base);
+    if (conOcupadas) todas.push({ ...base, disponible: !bloqueada, motivo: bloqueada ? motivoDe(h) : null });
+  }
 
   // Resumen por tipo sobre el universo consultado (no solo lo disponible):
   // "Doble: 2 de 6 libres" es la lectura que pide HU-38, y con solo la
@@ -417,7 +486,14 @@ async function consultarDisponibilidad({ fechaDesde, fechaHasta, tipo, capacidad
     };
   });
 
-  return { fechaDesde: desde, fechaHasta: hasta, noches, habitaciones: disponibles, resumenPorTipo };
+  return {
+    fechaDesde: desde,
+    fechaHasta: hasta,
+    noches,
+    habitaciones: disponibles,
+    resumenPorTipo,
+    ...(conOcupadas ? { todas } : {}),
+  };
 }
 
 // --------------------------------------------------------------

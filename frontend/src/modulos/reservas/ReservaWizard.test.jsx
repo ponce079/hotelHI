@@ -30,6 +30,10 @@ const DISPONIBILIDAD = {
   fechaHasta: "2026-10-13T00:00:00.000Z",
   noches: 3,
   habitaciones: [HABITACION_101],
+  // Con incluirOcupadas (origen !== "WEB", el caso por defecto de estos
+  // tests) el wizard arma la grilla del paso 2 desde `todas`, no desde
+  // `habitaciones` — ver mostrarOcupadas en ReservaWizard.jsx.
+  todas: [{ ...HABITACION_101, disponible: true, motivo: null }],
   resumenPorTipo: [{ tipo: "Doble", total: 1, disponibles: 1, tarifaDesde: 50000, capacidadMaxima: 2 }],
 };
 

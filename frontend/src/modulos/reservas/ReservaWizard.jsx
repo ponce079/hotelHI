@@ -7,7 +7,7 @@ import { Cifra } from "../../componentes/Cifra";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Table } from "../../componentes/Table";
-import { hoyEnHoraLocal } from "../../lib/fechas";
+import { formatearFechaSinHora, hoyEnHoraLocal } from "../../lib/fechas";
 import { ESTADO_HABITACION_BADGE, ESTADO_HABITACION_LABEL } from "../habitaciones/habitaciones.constantes";
 import { registrarPagoEstadia } from "../pagos-estadia/pagoEstadia.api";
 import { CONCEPTO_SENIA, MEDIOS_CON_TARJETA } from "../pagos-estadia/pagoEstadia.constantes";
@@ -59,6 +59,22 @@ function soloFecha(valorISO) {
   return valorISO ? String(valorISO).slice(0, 10) : "";
 }
 
+// Texto del motivo de bloqueo de una tarjeta "tomada" en el paso 2 (ver
+// `motivo` en consultarDisponibilidad, reservas.servicio.js): "reserva" es
+// otra reserva superpuesta (con huésped solo si el backend lo mandó — acá
+// nunca pasa con origen "WEB", ver mostrarOcupadas), "estado" es una
+// habitación bloqueada por su propio estado físico hoy (mantenimiento,
+// bloqueada, en limpieza) sin ninguna reserva de por medio.
+function textoMotivoBloqueo(motivo) {
+  if (!motivo) return null;
+  if (motivo.tipo === "reserva") {
+    const desde = formatearFechaSinHora(motivo.fechaDesde);
+    const hasta = formatearFechaSinHora(motivo.fechaHasta);
+    return `Reservada — ${motivo.huespedNombre ?? "otro huésped"}, ${desde} al ${hasta} (${motivo.codigoConfirmacion})`;
+  }
+  return `No disponible — ${ESTADO_HABITACION_LABEL[motivo.estado]?.toLowerCase() ?? motivo.estado}`;
+}
+
 function estadoInicial(reserva, valoresIniciales) {
   if (!reserva) {
     return {
@@ -102,6 +118,12 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   // seña queda acotada a HU-36, tal como se pidió).
   const requiereSenia = !esEdicion && origen === "RECEPCION";
   const PASOS = requiereSenia ? PASOS_CON_SENIA : PASOS_BASE;
+  // Grilla completa (disponibles + tomadas, con motivo) solo para el
+  // mostrador: este mismo wizard es también la autorreserva web pública sin
+  // sesión (HU-40, origen "WEB"), y ahí ni siquiera se pide el detalle de la
+  // reserva ocupante — ver el comentario de incluirOcupadas/incluirHuesped
+  // en consultarDisponibilidad (reservas.servicio.js).
+  const mostrarOcupadas = origen !== "WEB";
 
   const [form, setForm] = useState(() => estadoInicial(reserva, valoresIniciales));
   const [errorGeneral, setErrorGeneral] = useState("");
@@ -139,7 +161,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   const rangoCompleto = Boolean(form.fechaDesde && form.fechaHasta && form.fechaHasta > form.fechaDesde);
 
   const disponibilidadQuery = useQuery({
-    queryKey: ["reservas", "disponibilidad", form.fechaDesde, form.fechaHasta, reserva?.id ?? null],
+    queryKey: ["reservas", "disponibilidad", form.fechaDesde, form.fechaHasta, reserva?.id ?? null, mostrarOcupadas],
     queryFn: () =>
       consultarDisponibilidad({
         fechaDesde: form.fechaDesde,
@@ -148,6 +170,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
         // sus habitaciones: si no, sus cuartos actuales desaparecerían de
         // la lista y no se los podría conservar.
         ...(esEdicion ? { excluirReservaId: reserva.id } : {}),
+        ...(mostrarOcupadas ? { incluirOcupadas: true, incluirHuesped: true } : {}),
       }),
     enabled: rangoCompleto,
   });
@@ -158,13 +181,19 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   // El filtro de tipo/capacidad se aplica sobre lo ya traído: el backend
   // también los acepta, pero volver a pedir la lista entera por cada
   // cambio de un <select> es viaje de más para un dato que ya está.
+  //
+  // Con mostrarOcupadas, la grilla sale de `todas` (disponibles + tomadas,
+  // ver consultarDisponibilidad) en vez de `habitaciones` (solo
+  // disponibles) — origen "WEB" nunca pide `todas` (ver mostrarOcupadas más
+  // arriba), así que ahí sigue exactamente el mismo universo de hoy.
   const habitacionesFiltradas = useMemo(() => {
-    const todas = disponibilidad?.habitaciones ?? [];
+    const universo = mostrarOcupadas ? (disponibilidad?.todas ?? []) : (disponibilidad?.habitaciones ?? []);
     const capacidad = Number(form.capacidadMinima) || 0;
-    return todas.filter(
+    return universo.filter(
       (h) => (!form.tipo || h.tipo === form.tipo) && (!capacidad || h.capacidad >= capacidad)
     );
-  }, [disponibilidad, form.tipo, form.capacidadMinima]);
+  }, [disponibilidad, form.tipo, form.capacidadMinima, mostrarOcupadas]);
+  const cantidadDisponiblesFiltradas = habitacionesFiltradas.filter((h) => h.disponible !== false).length;
 
   const elegidas = useMemo(
     () => (disponibilidad?.habitaciones ?? []).filter((h) => form.habitacionIds.includes(h.id)),
@@ -438,8 +467,9 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
               ))}
             </Select>
             <p className="ml-auto text-[12.5px] text-piedra">
-              {habitacionesFiltradas.length} habitación{habitacionesFiltradas.length === 1 ? "" : "es"} disponible
-              {habitacionesFiltradas.length === 1 ? "" : "s"} del {form.fechaDesde} al {form.fechaHasta}
+              {cantidadDisponiblesFiltradas} habitación{cantidadDisponiblesFiltradas === 1 ? "" : "es"} disponible
+              {cantidadDisponiblesFiltradas === 1 ? "" : "s"}
+              {mostrarOcupadas ? ` de ${habitacionesFiltradas.length}` : ""} del {form.fechaDesde} al {form.fechaHasta}
             </p>
           </div>
 
@@ -449,38 +479,47 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
             columnasDerecha={["Capacidad", "Piso", "Por noche", "Estadía"]}
             vacio="No hay habitaciones disponibles con esos filtros para el período elegido."
             renderFila={(h) => {
-              const elegida = form.habitacionIds.includes(h.id);
+              // "Tomada por otra reserva" (o bloqueada por su propio estado
+              // físico hoy) NO es lo mismo que el badge informativo de
+              // estadoActual (ver textoMotivoBloqueo más arriba): acá se
+              // bloquea la selección entera, ahí solo se avisa sin bloquear
+              // nada — nunca se mezclan en la misma tarjeta.
+              const disponible = h.disponible !== false;
+              const elegida = disponible && form.habitacionIds.includes(h.id);
+              const motivo = disponible ? null : textoMotivoBloqueo(h.motivo);
               return (
                 <tr
                   key={h.id}
-                  onClick={() => alternarHabitacion(h.id)}
-                  className={`h-14 cursor-pointer border-b border-borde last:border-0 hover:bg-hueso ${
-                    elegida ? "bg-pino-100/60" : ""
+                  onClick={disponible ? () => alternarHabitacion(h.id) : undefined}
+                  className={`h-14 border-b border-borde last:border-0 ${
+                    disponible ? `cursor-pointer hover:bg-hueso ${elegida ? "bg-pino-100/60" : ""}` : "cursor-default bg-neutro-100/60 text-piedra"
                   }`}
                 >
                   <td className="w-10 px-3 py-2.5">
                     <input
                       type="checkbox"
                       checked={elegida}
+                      disabled={!disponible}
                       onChange={() => alternarHabitacion(h.id)}
                       onClick={(e) => e.stopPropagation()}
                       aria-label={`Elegir habitación ${h.numero}`}
-                      className="h-4 w-4 cursor-pointer accent-pino"
+                      className="h-4 w-4 cursor-pointer accent-pino disabled:cursor-default"
                     />
                   </td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2 font-mono text-[13px] font-medium">
-                      <BedDouble size={16} className="text-pino" />
+                      <BedDouble size={16} className={disponible ? "text-pino" : "text-piedra"} />
                       {h.numero}
-                      {h.estadoActual && (
+                      {disponible && h.estadoActual && (
                         <Badge variante={ESTADO_HABITACION_BADGE[h.estadoActual] ?? "neutro"}>
                           Actualmente {ESTADO_HABITACION_LABEL[h.estadoActual]?.toLowerCase() ?? h.estadoActual}
                         </Badge>
                       )}
                     </div>
-                    {h.equipamiento && (
+                    {disponible && h.equipamiento && (
                       <div className="mt-0.5 max-w-[320px] truncate text-[11px] text-piedra">{h.equipamiento}</div>
                     )}
+                    {motivo && <div className="mt-0.5 max-w-[320px] text-[11px] text-piedra">{motivo}</div>}
                   </td>
                   <td className="px-3 py-2.5 text-[13px]">{h.tipo}</td>
                   <td className="px-3 py-2.5 text-right font-mono text-xs">{h.capacidad}</td>
