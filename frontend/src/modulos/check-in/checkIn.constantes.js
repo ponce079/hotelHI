@@ -14,3 +14,13 @@ import { MEDIOS_PAGO_ESTADIA, MEDIOS_CON_TARJETA } from "../pagos-estadia/pagoEs
 // el mostrador, en persona, nunca a distancia.
 export const MEDIOS_GARANTIA = MEDIOS_PAGO_ESTADIA.filter((medio) => medio !== "Online");
 export { MEDIOS_CON_TARJETA };
+
+// Corrección posterior (pedido explícito 2026-09-25): la garantía es un
+// depósito de seguridad por daños/faltantes — un monto FIJO, igual para
+// todo el hotel, sin relación con el total de la estadía (eso es la seña,
+// HU-88). Antes se autorizaba/cobraba reserva.totalEstimadoAlojamiento
+// completo, lo que fallaba apenas la reserva ya tenía una seña paga o la
+// estadía costaba menos que ese total — ver checkIn.constantes.js
+// (backend), que es donde este valor se aplica de verdad; acá solo sirve
+// para mostrarlo en pantalla antes de confirmar.
+export const MONTO_GARANTIA = 30000;

@@ -14,7 +14,7 @@ import { GarantiaFieldset } from "./GarantiaFieldset";
 import { PanelResumenCheckIn } from "./PanelResumenCheckIn";
 import { TituloSeccion } from "./TituloSeccion";
 import { buscarReservaParaCheckIn, confirmarCheckInConReserva } from "./checkIn.api";
-import { MEDIOS_CON_TARJETA, MEDIOS_GARANTIA } from "./checkIn.constantes";
+import { MEDIOS_GARANTIA } from "./checkIn.constantes";
 import { listarLlegadasPendientes } from "../reservas/reservas.api";
 import { ESTADO_RESERVA_BADGE } from "../reservas/reservas.constantes";
 
@@ -22,7 +22,6 @@ const FORM_VACIO = {
   documento: "",
   garantiaConfirmada: false,
   medioGarantia: MEDIOS_GARANTIA[0],
-  montoGarantia: "",
   referenciaGarantia: undefined,
 };
 
@@ -125,7 +124,6 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
         numeroDocumentoIngresado: form.documento.trim(),
         garantiaConfirmada: form.garantiaConfirmada,
         medioGarantia: form.medioGarantia,
-        montoGarantia: Number(form.montoGarantia),
         referenciaGarantia: form.referenciaGarantia,
       }),
     onSuccess: (reserva) => {
@@ -143,17 +141,8 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
   }
 
   const reserva = resultado?.reserva;
-  // Efectivo/Transferencia solo llegan a garantiaConfirmada=true si el
-  // monto tipeado es > 0 (ver GarantiaFieldset: la casilla se puede tildar
-  // igual con el campo en blanco, así que esto no puede faltar); tarjeta la
-  // pone en true recién cuando la terminal simulada autoriza — en los dos
-  // casos alcanza con mirar garantiaConfirmada.
   const puedeConfirmar =
-    resultado?.puedeIniciarCheckIn &&
-    form.documento.trim() &&
-    form.garantiaConfirmada &&
-    (MEDIOS_CON_TARJETA.includes(form.medioGarantia) || Number(form.montoGarantia) > 0) &&
-    !confirmar.isPending;
+    resultado?.puedeIniciarCheckIn && form.documento.trim() && form.garantiaConfirmada && !confirmar.isPending;
 
   return (
     <div className="flex flex-col gap-5">
@@ -269,8 +258,6 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
                   <GarantiaFieldset
                     garantiaConfirmada={form.garantiaConfirmada}
                     medioGarantia={form.medioGarantia}
-                    montoGarantia={form.montoGarantia}
-                    montoAGarantizar={reserva.totalEstimadoAlojamiento}
                     onCambiar={cambiar}
                   />
 

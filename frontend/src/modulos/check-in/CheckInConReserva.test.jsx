@@ -143,19 +143,18 @@ describe("CheckInConReserva — lista por defecto de llegadas pendientes", () =>
   });
 });
 
-// Corrección posterior (HU-46, 2026-09-25): los 4 medios de garantía pasan
-// a ser los mismos que la seña de reserva (HU-88) — Efectivo es ahora el
-// default (primero en MEDIOS_PAGO_ESTADIA, reusado tal cual), y tanto
-// tarjeta como Efectivo/Transferencia terminan en un PagoEstadia real.
+// Corrección posterior (HU-46, 2026-09-25): la garantía pasa a ser un monto
+// FIJO (MONTO_GARANTIA) igual para los 4 medios — ya no se tipea un monto a
+// mano para Efectivo/Transferencia, ni se autoriza el total de la reserva
+// para tarjeta. Los 4 terminan en un PagoEstadia real por ese mismo monto.
 describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel", () => {
-  it("con Efectivo (default) pide un monto y una casilla de confirmación manual, no la terminal de tarjeta", async () => {
+  it("con Efectivo (default) muestra el monto fijo y una casilla de confirmación manual, no la terminal de tarjeta", async () => {
     buscarReservaParaCheckIn.mockResolvedValue({ reserva: RESERVA, puedeIniciarCheckIn: true, motivoBloqueo: null });
 
     renderComponente({ codigoPreseleccionado: "RS-HOY01" });
     await screen.findAllByText("Marcos Beltrán");
 
-    expect(screen.getByText(/Confirmo que el huésped presentó/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Monto recibido en efectivo/)).toBeInTheDocument();
+    expect(screen.getByText(/Confirmo que recibí \$ ?30\.000,00 en efectivo/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Autorizar tarjeta/ })).not.toBeInTheDocument();
   });
 
@@ -194,7 +193,7 @@ describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel
     expect(screen.getByRole("button", { name: "Confirmar check-in" })).toBeEnabled();
   });
 
-  it("confirmar con Efectivo manda medioGarantia, montoGarantia y sin referenciaGarantia al backend", async () => {
+  it("confirmar con Efectivo manda medioGarantia y sin referenciaGarantia al backend (el monto ya no lo manda el cliente)", async () => {
     buscarReservaParaCheckIn.mockResolvedValue({ reserva: RESERVA, puedeIniciarCheckIn: true, motivoBloqueo: null });
     const { confirmarCheckInConReserva } = await import("./checkIn.api");
     confirmarCheckInConReserva.mockResolvedValue({ ...RESERVA, estado: "En curso" });
@@ -203,7 +202,6 @@ describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel
     await screen.findAllByText("Marcos Beltrán");
 
     fireEvent.change(screen.getByLabelText(/Documento presentado/), { target: { value: "30111222" } });
-    fireEvent.change(screen.getByLabelText(/Monto recibido en efectivo/), { target: { value: "30000" } });
     fireEvent.click(screen.getByRole("checkbox"));
 
     const boton = screen.getByRole("button", { name: "Confirmar check-in" });
@@ -215,9 +213,9 @@ describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel
       RESERVA.id,
       expect.objectContaining({
         medioGarantia: "Efectivo",
-        montoGarantia: 30000,
         referenciaGarantia: undefined,
       })
     );
+    expect(confirmarCheckInConReserva.mock.calls[0][1]).not.toHaveProperty("montoGarantia");
   });
 });

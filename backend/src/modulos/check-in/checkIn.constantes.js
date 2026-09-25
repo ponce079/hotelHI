@@ -26,8 +26,19 @@ const {
 // el mostrador, en persona, nunca a distancia.
 const MEDIOS_GARANTIA = MEDIOS_PAGO_ESTADIA.filter((medio) => medio !== "Online");
 
+// Corrección posterior (pedido explícito 2026-09-25): la garantía es un
+// depósito de seguridad por daños/faltantes — un monto FIJO, igual para
+// todo el hotel, sin relación con el total de la estadía (eso es la seña,
+// HU-88, que se cobra al reservar). Antes se autorizaba/cobraba
+// `reserva.totalEstimadoAlojamiento` completo, lo que fallaba apenas la
+// reserva ya tenía una seña paga (el saldo pendiente real quedaba por
+// debajo de ese monto) o la estadía era más barata que el total exigido.
+// Server-side, no confiado al cliente: es una política del hotel, no un
+// dato que mande cada request.
+const MONTO_GARANTIA = 30000;
+
 const LIMITES_CHECKIN = {
   numeroDocumento: 30,
 };
 
-module.exports = { MEDIOS_GARANTIA, MEDIOS_CON_TARJETA, LIMITES_CHECKIN };
+module.exports = { MEDIOS_GARANTIA, MEDIOS_CON_TARJETA, MONTO_GARANTIA, LIMITES_CHECKIN };
