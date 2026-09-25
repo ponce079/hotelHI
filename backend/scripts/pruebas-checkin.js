@@ -48,7 +48,10 @@ function enDias(dias) {
 }
 
 const HUESPED = { nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
-const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Tarjeta de crédito" };
+// Efectivo, sin referencia: el default más simple que pasa validarGarantia.
+// 30000 queda por debajo del total de CUALQUIER fixture de este archivo
+// (mínimo 40000, con enDias(1) y la tarifa default de 50000/noche).
+const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Efectivo", montoGarantia: 30000 };
 
 async function esperaError(fn, textoEsperado) {
   try {
@@ -184,7 +187,7 @@ async function main() {
           reservaId: reserva.id,
           numeroDocumentoIngresado: "30111222",
           garantiaConfirmada: false,
-          medioGarantia: "Tarjeta de crédito",
+          medioGarantia: "Tarjeta crédito",
         }),
       "garantía"
     );
@@ -233,9 +236,9 @@ async function main() {
     assert.equal(base._datos.habitacion.find((h) => h.id === 2).estado, "ocupada");
   });
 
-  seccion("HU-46 (corrección) — garantía en efectivo registra un PagoEstadia real, tarjeta no");
+  seccion("HU-46 (corrección 2026-09-25) — los 4 medios de garantía (mismos que la seña) registran un PagoEstadia real");
 
-  await prueba("Depósito en efectivo exige un monto mayor a 0", async () => {
+  await prueba("Efectivo exige un monto mayor a 0", async () => {
     limpiar();
     base._sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture();
@@ -245,14 +248,14 @@ async function main() {
           reservaId: reserva.id,
           numeroDocumentoIngresado: "30111222",
           garantiaConfirmada: true,
-          medioGarantia: "Depósito en efectivo",
-          montoGarantiaEfectivo: 0,
+          medioGarantia: "Efectivo",
+          montoGarantia: 0,
         }),
       "monto mayor a 0"
     );
   });
 
-  await prueba("Depósito en efectivo registra un PagoEstadia real, que se descuenta en el check-out", async () => {
+  await prueba("Efectivo registra un PagoEstadia real, que se descuenta en el check-out", async () => {
     limpiar();
     base._sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 }); // 3 noches = 150000
     const reserva = await crearReservaFixture();
@@ -260,8 +263,8 @@ async function main() {
       reservaId: reserva.id,
       numeroDocumentoIngresado: "30111222",
       garantiaConfirmada: true,
-      medioGarantia: "Depósito en efectivo",
-      montoGarantiaEfectivo: 30000,
+      medioGarantia: "Efectivo",
+      montoGarantia: 30000,
     });
 
     const { pagos, totalPagado, saldo } = await pagoEstadiaServicio.listarPorReserva(reserva.id);
@@ -279,20 +282,44 @@ async function main() {
     assert.equal(cuenta.saldo, 120000);
   });
 
-  await prueba("Tarjeta de crédito sigue sin generar ningún PagoEstadia (sin cambios)", async () => {
+  await prueba("Tarjeta crédito/débito también registra un PagoEstadia real (mismo criterio que la seña)", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 });
+    base._sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 }); // 3 noches = 150000
     const reserva = await crearReservaFixture();
     await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
       numeroDocumentoIngresado: "30111222",
-      ...GARANTIA_OK, // Tarjeta de crédito
+      garantiaConfirmada: true,
+      medioGarantia: "Tarjeta crédito",
+      montoGarantia: 40000,
+      referenciaGarantia: "VISA •••• 4242 - AUT123456",
     });
 
     const { pagos, totalPagado, saldo } = await pagoEstadiaServicio.listarPorReserva(reserva.id);
-    assert.equal(pagos.length, 0, "la garantía con tarjeta sigue siendo confirmación simulada, sin PagoEstadia");
-    assert.equal(totalPagado, 0);
-    assert.equal(saldo, 150000);
+    assert.equal(pagos.length, 1, "antes la tarjeta no generaba ningún PagoEstadia — ahora sí, igual que la seña");
+    assert.equal(pagos[0].medios[0].medioPago, "Tarjeta crédito");
+    assert.equal(pagos[0].medios[0].referencia, "VISA •••• 4242 - AUT123456");
+    assert.equal(Number(pagos[0].medios[0].importe), 40000);
+    assert.equal(pagos[0].concepto, "Garantía");
+    assert.equal(totalPagado, 40000);
+    assert.equal(saldo, 110000);
+  });
+
+  await prueba("tarjeta (crédito o débito) sin la referencia de autorización no se puede confirmar", async () => {
+    limpiar();
+    base._sembrarHabitacion({ numero: "101" });
+    const reserva = await crearReservaFixture();
+    await esperaError(
+      () =>
+        checkInServicio.confirmarCheckInConReserva({
+          reservaId: reserva.id,
+          numeroDocumentoIngresado: "30111222",
+          garantiaConfirmada: true,
+          medioGarantia: "Tarjeta débito",
+          montoGarantia: 30000,
+        }),
+      "autorización de la tarjeta"
+    );
   });
 
   await prueba("walk-in con garantía en efectivo también registra el PagoEstadia real", async () => {
@@ -303,8 +330,8 @@ async function main() {
       habitacionIds: [1],
       huesped: { ...HUESPED },
       garantiaConfirmada: true,
-      medioGarantia: "Depósito en efectivo",
-      montoGarantiaEfectivo: 15000,
+      medioGarantia: "Efectivo",
+      montoGarantia: 15000,
     });
 
     const { pagos, totalPagado } = await pagoEstadiaServicio.listarPorReserva(walkIn.id);
@@ -447,7 +474,7 @@ async function main() {
           habitacionIds: [1],
           huesped: { ...HUESPED },
           garantiaConfirmada: false,
-          medioGarantia: "Tarjeta de crédito",
+          medioGarantia: "Tarjeta crédito",
         }),
       "garantía"
     );

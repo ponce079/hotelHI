@@ -14,7 +14,7 @@ import { GarantiaFieldset } from "./GarantiaFieldset";
 import { PanelResumenCheckIn } from "./PanelResumenCheckIn";
 import { TituloSeccion } from "./TituloSeccion";
 import { buscarReservaParaCheckIn, confirmarCheckInConReserva } from "./checkIn.api";
-import { MEDIOS_GARANTIA, MEDIO_GARANTIA_EFECTIVO } from "./checkIn.constantes";
+import { MEDIOS_CON_TARJETA, MEDIOS_GARANTIA } from "./checkIn.constantes";
 import { listarLlegadasPendientes } from "../reservas/reservas.api";
 import { ESTADO_RESERVA_BADGE } from "../reservas/reservas.constantes";
 
@@ -22,7 +22,8 @@ const FORM_VACIO = {
   documento: "",
   garantiaConfirmada: false,
   medioGarantia: MEDIOS_GARANTIA[0],
-  montoGarantiaEfectivo: "",
+  montoGarantia: "",
+  referenciaGarantia: undefined,
 };
 
 function habitacionesDeReserva(reserva) {
@@ -124,8 +125,8 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
         numeroDocumentoIngresado: form.documento.trim(),
         garantiaConfirmada: form.garantiaConfirmada,
         medioGarantia: form.medioGarantia,
-        montoGarantiaEfectivo:
-          form.medioGarantia === MEDIO_GARANTIA_EFECTIVO ? Number(form.montoGarantiaEfectivo) : undefined,
+        montoGarantia: Number(form.montoGarantia),
+        referenciaGarantia: form.referenciaGarantia,
       }),
     onSuccess: (reserva) => {
       mostrarToast(`Check-in confirmado — habitación${reserva.habitaciones.length > 1 ? "es" : ""} ${reserva.habitaciones.map((h) => h.numero).join(", ")} ocupada${reserva.habitaciones.length > 1 ? "s" : ""}.`);
@@ -142,13 +143,16 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
   }
 
   const reserva = resultado?.reserva;
-  const garantiaEfectivoCompleta =
-    form.medioGarantia !== MEDIO_GARANTIA_EFECTIVO || Number(form.montoGarantiaEfectivo) > 0;
+  // Efectivo/Transferencia solo llegan a garantiaConfirmada=true si el
+  // monto tipeado es > 0 (ver GarantiaFieldset: la casilla se puede tildar
+  // igual con el campo en blanco, así que esto no puede faltar); tarjeta la
+  // pone en true recién cuando la terminal simulada autoriza — en los dos
+  // casos alcanza con mirar garantiaConfirmada.
   const puedeConfirmar =
     resultado?.puedeIniciarCheckIn &&
     form.documento.trim() &&
     form.garantiaConfirmada &&
-    garantiaEfectivoCompleta &&
+    (MEDIOS_CON_TARJETA.includes(form.medioGarantia) || Number(form.montoGarantia) > 0) &&
     !confirmar.isPending;
 
   return (
@@ -265,7 +269,7 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
                   <GarantiaFieldset
                     garantiaConfirmada={form.garantiaConfirmada}
                     medioGarantia={form.medioGarantia}
-                    montoGarantiaEfectivo={form.montoGarantiaEfectivo}
+                    montoGarantia={form.montoGarantia}
                     montoAGarantizar={reserva.totalEstimadoAlojamiento}
                     onCambiar={cambiar}
                   />

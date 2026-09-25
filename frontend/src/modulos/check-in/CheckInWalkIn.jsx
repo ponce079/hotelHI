@@ -12,7 +12,7 @@ import { Toast } from "../../componentes/Toast";
 import { GarantiaFieldset } from "./GarantiaFieldset";
 import { TituloSeccion } from "./TituloSeccion";
 import { listarHabitacionesLibresAhora, registrarCheckInWalkIn } from "./checkIn.api";
-import { MEDIOS_GARANTIA, MEDIO_GARANTIA_EFECTIVO } from "./checkIn.constantes";
+import { MEDIOS_CON_TARJETA, MEDIOS_GARANTIA } from "./checkIn.constantes";
 import { validarHuesped } from "./validarHuesped";
 
 // El "tipo" de habitación es texto libre (lo define cada hotel en el
@@ -49,7 +49,8 @@ const VACIO = {
   huesped: { nombre: "", tipoDocumento: TIPOS_DOCUMENTO[0], numeroDocumento: "", contacto: "" },
   garantiaConfirmada: false,
   medioGarantia: MEDIOS_GARANTIA[0],
-  montoGarantiaEfectivo: "",
+  montoGarantia: "",
+  referenciaGarantia: undefined,
 };
 
 const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
@@ -138,8 +139,8 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
         },
         garantiaConfirmada: form.garantiaConfirmada,
         medioGarantia: form.medioGarantia,
-        montoGarantiaEfectivo:
-          form.medioGarantia === MEDIO_GARANTIA_EFECTIVO ? Number(form.montoGarantiaEfectivo) : undefined,
+        montoGarantia: Number(form.montoGarantia),
+        referenciaGarantia: form.referenciaGarantia,
       }),
     onSuccess: (reserva) => {
       queryClient.invalidateQueries({ queryKey: ["habitaciones"] });
@@ -185,8 +186,8 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
       setErrorGeneral("Confirmá la garantía antes de completar el check-in.");
       return;
     }
-    if (form.medioGarantia === MEDIO_GARANTIA_EFECTIVO && !(Number(form.montoGarantiaEfectivo) > 0)) {
-      setErrorGeneral("Ingresá el monto recibido en efectivo antes de completar el check-in.");
+    if (!MEDIOS_CON_TARJETA.includes(form.medioGarantia) && !(Number(form.montoGarantia) > 0)) {
+      setErrorGeneral("Ingresá el monto de la garantía antes de completar el check-in.");
       return;
     }
     mutacion.mutate();
@@ -369,7 +370,7 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
           <GarantiaFieldset
             garantiaConfirmada={form.garantiaConfirmada}
             medioGarantia={form.medioGarantia}
-            montoGarantiaEfectivo={form.montoGarantiaEfectivo}
+            montoGarantia={form.montoGarantia}
             montoAGarantizar={totalEstadiaWalkIn}
             onCambiar={actualizar}
           />

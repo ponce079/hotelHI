@@ -143,28 +143,33 @@ describe("CheckInConReserva — lista por defecto de llegadas pendientes", () =>
   });
 });
 
-// Corrección posterior (HU-46): la garantía con tarjeta pasó de una casilla
-// suelta a reusar TarjetaSimuladaPanel de verdad — ver GarantiaFieldset.jsx.
+// Corrección posterior (HU-46, 2026-09-25): los 4 medios de garantía pasan
+// a ser los mismos que la seña de reserva (HU-88) — Efectivo es ahora el
+// default (primero en MEDIOS_PAGO_ESTADIA, reusado tal cual), y tanto
+// tarjeta como Efectivo/Transferencia terminan en un PagoEstadia real.
 describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel", () => {
-  it("con Tarjeta de crédito (default) no hay ninguna casilla: aparece el botón para autorizar la terminal simulada", async () => {
+  it("con Efectivo (default) pide un monto y una casilla de confirmación manual, no la terminal de tarjeta", async () => {
     buscarReservaParaCheckIn.mockResolvedValue({ reserva: RESERVA, puedeIniciarCheckIn: true, motivoBloqueo: null });
 
     renderComponente({ codigoPreseleccionado: "RS-HOY01" });
     await screen.findAllByText("Marcos Beltrán");
 
-    expect(screen.queryByText(/Confirmo que el huésped presentó/)).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Autorizar tarjeta/ })).toBeInTheDocument();
+    expect(screen.getByText(/Confirmo que el huésped presentó/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Monto recibido en efectivo/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Autorizar tarjeta/ })).not.toBeInTheDocument();
   });
 
   // Fake timers recién DESPUÉS de que la búsqueda inicial (una promesa real)
   // resolvió, y fireEvent en vez de userEvent para completar la tarjeta —
   // mismo criterio que PagoEstadiaWizard.test.jsx: mezclar timers falsos con
   // el polling interno de findBy*/userEvent antes de tiempo cuelga el test.
-  it("autorizar la tarjeta simulada confirma la garantía sola, sin tildar nada a mano", async () => {
+  it("eligiendo Tarjeta crédito, autorizar la terminal simulada confirma la garantía sola, sin tildar nada a mano", async () => {
     buscarReservaParaCheckIn.mockResolvedValue({ reserva: RESERVA, puedeIniciarCheckIn: true, motivoBloqueo: null });
 
     renderComponente({ codigoPreseleccionado: "RS-HOY01" });
     await screen.findAllByText("Marcos Beltrán");
+
+    fireEvent.change(screen.getByLabelText("Medio de garantía *"), { target: { value: "Tarjeta crédito" } });
 
     vi.useFakeTimers();
     try {
@@ -187,5 +192,32 @@ describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel
     // — con la tarjeta autorizada, "Confirmar check-in" tiene que habilitarse.
     fireEvent.change(screen.getByLabelText(/Documento presentado/), { target: { value: "30111222" } });
     expect(screen.getByRole("button", { name: "Confirmar check-in" })).toBeEnabled();
+  });
+
+  it("confirmar con Efectivo manda medioGarantia, montoGarantia y sin referenciaGarantia al backend", async () => {
+    buscarReservaParaCheckIn.mockResolvedValue({ reserva: RESERVA, puedeIniciarCheckIn: true, motivoBloqueo: null });
+    const { confirmarCheckInConReserva } = await import("./checkIn.api");
+    confirmarCheckInConReserva.mockResolvedValue({ ...RESERVA, estado: "En curso" });
+
+    renderComponente({ codigoPreseleccionado: "RS-HOY01" });
+    await screen.findAllByText("Marcos Beltrán");
+
+    fireEvent.change(screen.getByLabelText(/Documento presentado/), { target: { value: "30111222" } });
+    fireEvent.change(screen.getByLabelText(/Monto recibido en efectivo/), { target: { value: "30000" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+
+    const boton = screen.getByRole("button", { name: "Confirmar check-in" });
+    expect(boton).toBeEnabled();
+    fireEvent.click(boton);
+
+    await screen.findAllByText(/Check-in confirmado/);
+    expect(confirmarCheckInConReserva).toHaveBeenCalledWith(
+      RESERVA.id,
+      expect.objectContaining({
+        medioGarantia: "Efectivo",
+        montoGarantia: 30000,
+        referenciaGarantia: undefined,
+      })
+    );
   });
 });

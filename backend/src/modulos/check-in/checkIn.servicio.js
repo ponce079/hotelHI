@@ -28,7 +28,7 @@ const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
 // ciclo.
 const pagoEstadiaServicio = require("../pagos-estadia/pagoEstadia.servicio");
 const { CONCEPTO_GARANTIA } = require("../pagos-estadia/pagoEstadia.constantes");
-const { MEDIOS_GARANTIA, MEDIO_GARANTIA_EFECTIVO } = require("./checkIn.constantes");
+const { MEDIOS_GARANTIA, MEDIOS_CON_TARJETA } = require("./checkIn.constantes");
 
 // ErrorDeNegocio duplicada a propósito (mismo criterio documentado en
 // movimientoSalida.servicio.js): esta carpeta queda autocontenida.
@@ -78,10 +78,10 @@ function envolverErrorReservas(err) {
   return err;
 }
 
-// Mismo criterio que envolverErrorReservas, para cuando la garantía en
-// efectivo (ver registrarGarantiaEfectivo) dispara un crearPago que rechaza
-// el monto — sin esto, ese error caería como 500 genérico en vez del 400/409
-// real que tira pagoEstadia.servicio.js.
+// Mismo criterio que envolverErrorReservas, para cuando la garantía (ver
+// registrarGarantia) dispara un crearPago que rechaza el monto — sin esto,
+// ese error caería como 500 genérico en vez del 400/409 real que tira
+// pagoEstadia.servicio.js.
 function envolverErrorPago(err) {
   if (err instanceof pagoEstadiaServicio.ErrorDeNegocio) {
     return new ErrorDeNegocio(err.message, err.statusCode);
@@ -153,40 +153,43 @@ async function buscarReservaParaCheckIn({ id, codigo } = {}) {
 }
 
 // --------------------------------------------------------------
-// HU-46 — validación de pago/garantía. "Tarjeta de crédito" sigue siendo
-// pura confirmación simulada (sin monto, sin impacto en el saldo). "Depósito
-// en efectivo" corrección posterior: ya no es solo una casilla — necesita un
-// monto real, que registrarGarantiaEfectivo (más abajo) convierte en un
-// PagoEstadia real contra la reserva, así consolidarCargos lo descuenta
-// en el check-out en vez de dejarlo como un dato que no impacta la cuenta.
+// HU-46 — validación de pago/garantía. Mismos 4 medios que la seña de
+// reserva (HU-88) y el mismo criterio: los 4 generan un PagoEstadia real
+// (concepto Garantía) contra la reserva, así consolidarCargos lo descuenta
+// en el check-out — antes solo "Depósito en efectivo" lo hacía; Transferencia
+// y las dos tarjetas eran una confirmación sin impacto en el saldo.
 // --------------------------------------------------------------
 
-function validarGarantia({ garantiaConfirmada, medioGarantia, montoGarantiaEfectivo }) {
+function validarGarantia({ garantiaConfirmada, medioGarantia, montoGarantia, referenciaGarantia }) {
   if (garantiaConfirmada !== true) {
     throw new ErrorDeNegocio(
-      "No se puede confirmar el check-in sin validar el pago o la garantía del huésped (tarjeta o depósito)."
+      "No se puede confirmar el check-in sin validar el pago o la garantía del huésped."
     );
   }
   if (!MEDIOS_GARANTIA.includes(medioGarantia)) {
     throw new ErrorDeNegocio(`medioGarantia debe ser uno de: ${MEDIOS_GARANTIA.join(", ")}.`);
   }
-  if (medioGarantia === MEDIO_GARANTIA_EFECTIVO && !(Number(montoGarantiaEfectivo) > 0)) {
-    throw new ErrorDeNegocio("El depósito en efectivo necesita un monto mayor a 0.");
+  if (!(Number(montoGarantia) > 0)) {
+    throw new ErrorDeNegocio("La garantía necesita un monto mayor a 0.");
+  }
+  if (MEDIOS_CON_TARJETA.includes(medioGarantia) && !referenciaGarantia) {
+    throw new ErrorDeNegocio(`El pago con ${medioGarantia} necesita la autorización de la tarjeta (referencia).`);
   }
 }
 
-// Registra la garantía en efectivo como un PagoEstadia real (HU-50), reusando
-// crearPago tal cual — no reimplementa ninguna validación de importe/saldo.
-// Se llama DESPUÉS de que el check-in ya quedó confirmado (reserva "En
-// curso", habitación "ocupada"): si esto fallara (ej. el importe ya no entra
-// en el saldo porque se registró otro pago al mismo tiempo), el check-in en
-// sí no queda a medio hacer — el recepcionista puede reintentar el cobro de
-// la garantía aparte, desde Pagos, sin tener que repetir el check-in.
-async function registrarGarantiaEfectivo(reservaId, montoGarantiaEfectivo) {
+// Registra la garantía como un PagoEstadia real (HU-50), reusando crearPago
+// tal cual — no reimplementa ninguna validación de importe/saldo (esa la
+// hace crearPago mismo, contra el saldo fresco). Se llama DESPUÉS de que el
+// check-in ya quedó confirmado (reserva "En curso", habitación "ocupada"):
+// si esto fallara (ej. el importe ya no entra en el saldo porque se
+// registró otro pago al mismo tiempo), el check-in en sí no queda a medio
+// hacer — el recepcionista puede reintentar el cobro de la garantía aparte,
+// desde Pagos, sin tener que repetir el check-in.
+async function registrarGarantia(reservaId, { medioGarantia, montoGarantia, referenciaGarantia }) {
   try {
     await pagoEstadiaServicio.crearPago({
       reservaId,
-      medios: [{ tipo: "Efectivo", importe: Number(montoGarantiaEfectivo) }],
+      medios: [{ tipo: medioGarantia, importe: Number(montoGarantia), referencia: referenciaGarantia }],
       concepto: CONCEPTO_GARANTIA,
     });
   } catch (err) {
@@ -225,7 +228,8 @@ async function confirmarCheckInConReserva({
   numeroDocumentoIngresado,
   garantiaConfirmada,
   medioGarantia,
-  montoGarantiaEfectivo,
+  montoGarantia,
+  referenciaGarantia,
 }) {
   const id = enteroPositivo(reservaId, "reservaId");
   let reserva;
@@ -245,7 +249,7 @@ async function confirmarCheckInConReserva({
     );
   }
 
-  validarGarantia({ garantiaConfirmada, medioGarantia, montoGarantiaEfectivo });
+  validarGarantia({ garantiaConfirmada, medioGarantia, montoGarantia, referenciaGarantia });
 
   await prisma.$transaction(
     async (tx) => {
@@ -257,9 +261,7 @@ async function confirmarCheckInConReserva({
     { timeout: 15000, maxWait: 10000 }
   );
 
-  if (medioGarantia === MEDIO_GARANTIA_EFECTIVO) {
-    await registrarGarantiaEfectivo(id, montoGarantiaEfectivo);
-  }
+  await registrarGarantia(id, { medioGarantia, montoGarantia, referenciaGarantia });
 
   return reservasServicio.obtenerReserva(id);
 }
@@ -295,9 +297,10 @@ async function registrarCheckInWalkIn({
   huesped,
   garantiaConfirmada,
   medioGarantia,
-  montoGarantiaEfectivo,
+  montoGarantia,
+  referenciaGarantia,
 }) {
-  validarGarantia({ garantiaConfirmada, medioGarantia, montoGarantiaEfectivo });
+  validarGarantia({ garantiaConfirmada, medioGarantia, montoGarantia, referenciaGarantia });
 
   // Mismo alta que HU-36 (recepcionista) — la "reserva inmediata" que pide
   // la tarea técnica de HU-44 no es un modelo aparte, es una Reserva común
@@ -323,9 +326,7 @@ async function registrarCheckInWalkIn({
     { timeout: 15000, maxWait: 10000 }
   );
 
-  if (medioGarantia === MEDIO_GARANTIA_EFECTIVO) {
-    await registrarGarantiaEfectivo(reservaId, montoGarantiaEfectivo);
-  }
+  await registrarGarantia(reservaId, { medioGarantia, montoGarantia, referenciaGarantia });
 
   return reservasServicio.obtenerReserva(reservaId);
 }
