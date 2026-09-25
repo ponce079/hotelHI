@@ -27,6 +27,7 @@ import {
   ESTADO_RESERVA,
   ESTADOS_RESERVA,
   ESTADO_RESERVA_BADGE,
+  ESTADO_RESERVA_COLOR,
   LIMITES_RESERVA,
 } from "./reservas.constantes";
 
@@ -108,41 +109,30 @@ export function ReservasPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-borde bg-white px-6 py-5">
-        <div>
-          <h1 className="font-heading text-[34px] font-semibold">Reservas</h1>
-          <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-            HU 36 a 42 — alta individual y grupal, disponibilidad, huéspedes y confirmación
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variante="secundario" icono={Eye} onClick={() => navigate("/reservas/disponibilidad")}>
-            Ver disponibilidad
-          </Button>
-          {puedeGestionar && (
-            <Button icono={Plus} onClick={() => setModal({ tipo: "alta" })}>
-              Nueva reserva
-            </Button>
-          )}
-        </div>
+      <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
+        <h1 className="font-heading text-[34px] font-semibold">Reservas</h1>
+        <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
+          HU 36 a 42 — alta individual y grupal, disponibilidad, huéspedes y confirmación
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {ESTADOS_RESERVA.map((valor) => {
           const cantidad = resumen.filter((r) => r.estado === valor).length;
+          const color = ESTADO_RESERVA_COLOR[valor];
+          const activo = estado === valor;
           return (
             <button
               type="button"
               key={valor}
-              onClick={() => actualizarFiltro("estado", estado === valor ? "" : valor)}
-              className={`cursor-pointer rounded-lg border bg-white p-4 text-left transition-colors hover:bg-hueso ${
-                estado === valor ? "border-pino ring-1 ring-pino/20" : "border-borde"
-              }`}
+              onClick={() => actualizarFiltro("estado", activo ? "" : valor)}
+              style={{ backgroundColor: color.fondo, color: color.texto, borderColor: activo ? color.texto : color.borde }}
+              className={`stat-chip cursor-pointer rounded-lg border p-4 text-center ${activo ? "ring-2 ring-offset-1" : ""}`}
             >
-              <div className="mb-2">
-                <Badge variante={ESTADO_RESERVA_BADGE[valor]}>{valor}</Badge>
-              </div>
-              <Cifra tamano={30}>{cantidad}</Cifra>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.03em]">{valor}</div>
+              <Cifra tamano={30} className="mt-1">
+                {cantidad}
+              </Cifra>
             </button>
           );
         })}
@@ -185,6 +175,16 @@ export function ReservasPage() {
           onChange={(e) => actualizarFiltro("hasta", e.target.value)}
           className="min-w-[150px]"
         />
+        <div className="ml-auto flex items-center gap-2.5">
+          <Button variante="secundario" icono={Eye} onClick={() => navigate("/reservas/disponibilidad")}>
+            Ver disponibilidad
+          </Button>
+          {puedeGestionar && (
+            <Button icono={Plus} onClick={() => setModal({ tipo: "alta" })}>
+              Nueva reserva
+            </Button>
+          )}
+        </div>
       </FilterBar>
 
       {reservasQuery.isLoading && <p className="text-sm text-piedra">Cargando reservas…</p>}

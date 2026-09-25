@@ -27,6 +27,19 @@ export const ESTADO_RESERVA_BADGE = {
   [ESTADO_RESERVA.CANCELADA]: "error",
 };
 
+// Tarjetas de estado de ReservasPage.jsx (chips clickeables, mismo patrón
+// que ESTADO_HABITACION_COLOR/stat-chip de HabitacionesPage y los chips de
+// HistorialMantenimientoPage): reusa tal cual los mismos 4 pares fondo/texto
+// que ya usa Habitaciones para sus categorías semánticamente equivalentes —
+// no es una paleta nueva. Confirmada ↔ ocupada (info), En curso ↔ libre
+// (ok/pino), Cerrada ↔ en limpieza (neutro), Cancelada ↔ bloqueada (error).
+export const ESTADO_RESERVA_COLOR = {
+  [ESTADO_RESERVA.CONFIRMADA]: { fondo: "#cddde1", texto: "#2f4650", borde: "#a6c0c6" },
+  [ESTADO_RESERVA.EN_CURSO]: { fondo: "#cfe4d8", texto: "#1f4d3a", borde: "#a9cdb7" },
+  [ESTADO_RESERVA.CERRADA]: { fondo: "#ddd0b3", texto: "#5a5340", borde: "#c4b48d" },
+  [ESTADO_RESERVA.CANCELADA]: { fondo: "#f2c6b9", texto: "#8f3322", borde: "#e4a08c" },
+};
+
 export const TIPOS_DOCUMENTO = [
   "DNI",
   "Pasaporte",
