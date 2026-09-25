@@ -101,7 +101,7 @@ async function main() {
     limpiar();
     base._sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture({
-      huesped: { nombre: "John Smith", tipoDocumento: "Pasaporte", numeroDocumento: "AB1234567", contacto: "" },
+      huesped: { nombre: "John Smith", tipoDocumento: "Pasaporte", numeroDocumento: "AB1234567", contacto: "john@mail.com" },
     });
     const resultado = await checkInServicio.buscarReservaParaCheckIn({ codigo: "AB1234567" });
     assert.equal(resultado.reserva.id, reserva.id);

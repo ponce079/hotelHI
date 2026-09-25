@@ -27,7 +27,7 @@ function manana() {
   return new Date(hoy.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-export function DisponibilidadPublicaPage() {
+export function DisponibilidadPublicaPage({ modoInterno = false }) {
   const navigate = useNavigate();
   const [criterio, setCriterio] = useState({
     fechaDesde: hoyEnHoraLocal(),
@@ -60,12 +60,11 @@ export function DisponibilidadPublicaPage() {
     setCriterio((c) => ({ ...c, [campo]: valor }));
   }
 
-  return (
-    <LayoutPublico>
+  const contenido = (
       <div className="flex flex-col gap-6">
-        <div>
+        <div className={modoInterno ? "rounded-lg bg-pino px-6 py-5 text-hueso" : ""}>
           <h1 className="font-heading text-[34px] font-semibold">Disponibilidad</h1>
-          <p className="mt-1.5 text-[13.5px] text-piedra">
+          <p className={`mt-1.5 text-[13.5px] ${modoInterno ? "text-hueso/70" : "text-piedra"}`}>
             Elegí las fechas de tu estadía y mirá qué habitaciones quedan libres.
           </p>
         </div>
@@ -164,9 +163,15 @@ export function DisponibilidadPublicaPage() {
               {resultado.habitaciones.length > 0 && (
                 <Button
                   variante="ok"
-                  onClick={() => navigate(`/reservar?desde=${buscado.fechaDesde}&hasta=${buscado.fechaHasta}`)}
+                  onClick={() =>
+                    navigate(
+                      modoInterno
+                        ? `/reservas?nueva=1&desde=${buscado.fechaDesde}&hasta=${buscado.fechaHasta}`
+                        : `/reservar?desde=${buscado.fechaDesde}&hasta=${buscado.fechaHasta}`
+                    )
+                  }
                 >
-                  Reservar estas fechas
+                  {modoInterno ? "Crear reserva" : "Reservar estas fechas"}
                 </Button>
               )}
             </div>
@@ -210,6 +215,8 @@ export function DisponibilidadPublicaPage() {
           </p>
         )}
       </div>
-    </LayoutPublico>
   );
+
+  return modoInterno ? contenido : <LayoutPublico>{contenido}</LayoutPublico>;
 }
+

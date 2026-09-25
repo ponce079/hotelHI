@@ -88,6 +88,11 @@ export function ReservaWebPage() {
             <CheckCircle2 size={22} />
             <span className="font-heading text-[21px] font-semibold">¡Reserva confirmada!</span>
           </div>
+          <p className={confirmada.confirmacionEmail?.enviado ? "text-[13px] text-exito" : "text-[13px] text-advertencia-texto"}>
+            {confirmada.confirmacionEmail?.enviado
+              ? `Enviamos la confirmación a ${confirmada.huesped?.contacto}.`
+              : "La reserva quedó registrada, pero no fue posible enviar el correo de confirmación."}
+          </p>
           <FichaReserva reserva={confirmada} titulo="Tu reserva" />
           <div>
             <Button variante="secundario" onClick={() => setConfirmada(null)}>
@@ -135,3 +140,4 @@ export function ReservaWebPage() {
     </LayoutPublico>
   );
 }
+

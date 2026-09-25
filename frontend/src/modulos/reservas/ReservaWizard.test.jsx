@@ -66,6 +66,7 @@ async function completarPasos1a3() {
 
   fireEvent.change(await screen.findByLabelText("Nombre y apellido *"), { target: { value: "Ana Pérez" } });
   fireEvent.change(screen.getByLabelText("Número *"), { target: { value: "30111222" } });
+  fireEvent.change(screen.getByLabelText("Correo electrónico *"), { target: { value: "ana@mail.com" } });
 }
 
 beforeEach(() => {
@@ -242,7 +243,7 @@ describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin 
     fechaDesde: "2026-10-10T00:00:00.000Z",
     fechaHasta: "2026-10-13T00:00:00.000Z",
     habitaciones: [{ id: 1, numero: "101", tipo: "Doble" }],
-    huesped: { nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "", preferencias: "" },
+    huesped: { nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com", preferencias: "" },
   };
 
   it("edición: solo 3 pasos, sin 'Seña', y el paso 3 confirma directo ('Guardar cambios')", async () => {

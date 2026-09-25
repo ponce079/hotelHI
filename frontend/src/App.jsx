@@ -101,6 +101,7 @@ export default function App() {
           <Route path="/historial-mantenimiento" element={<HistorialMantenimientoPage />} />
           {/* Sprint 3 académico — Reservas (HU-36 a HU-42). */}
           <Route path="/reservas" element={<ReservasPage />} />
+          <Route path="/reservas/disponibilidad" element={<DisponibilidadPublicaPage modoInterno />} />
           <Route path="/reservas/:id" element={<ReservaDetallePage />} />
           {/* Sprint 3 académico — Check-in (HU-43 a HU-47). */}
           <Route path="/check-in" element={<CheckInPage />} />

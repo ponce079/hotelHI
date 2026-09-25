@@ -13,9 +13,13 @@
 // reservas.constantes.js) — y acá además las reglas ya no son idénticas
 // (contacto obligatorio en un lado, opcional en el otro), así que ni
 // convenía forzarlas a compartir una sola función con un flag.
+const PATRON_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export function validarHuesped(huesped) {
   const errores = {};
   if (!huesped.nombre.trim()) errores.nombre = "El nombre y apellido son obligatorios.";
   if (!huesped.numeroDocumento.trim()) errores.numeroDocumento = "El número de documento es obligatorio.";
+  if (!huesped.contacto.trim()) errores.contacto = "El correo electrónico es obligatorio.";
+  else if (!PATRON_EMAIL.test(huesped.contacto.trim())) errores.contacto = "Ingresá un correo electrónico válido.";
   return errores;
 }

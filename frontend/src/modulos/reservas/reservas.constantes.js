@@ -35,12 +35,12 @@ export const TIPOS_DOCUMENTO = [
   "Libreta de enrolamiento",
 ];
 
-export const CANALES_CONFIRMACION = ["Email", "SMS"];
+export const CANALES_CONFIRMACION = ["Email"];
 
 export const LIMITES_RESERVA = {
   nombre: 120,
   numeroDocumento: 30,
-  contacto: 120,
+  contacto: 190,
   preferencias: 2000,
   motivoCancelacion: 300,
   habitacionesPorReserva: 20,

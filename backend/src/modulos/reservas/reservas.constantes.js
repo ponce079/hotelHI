@@ -41,8 +41,7 @@ const TIPOS_DOCUMENTO = ["DNI", "Pasaporte", "Cédula de identidad", "Libreta c�
 // admite además "Interno" (ver habitaciones.constantes.js), que acá se usa
 // como fallback cuando el huésped no dejó datos de contacto — ver
 // armarNotificacionConfirmacion en reservas.servicio.js.
-const CANALES_CONFIRMACION = ["Email", "SMS"];
-const CANAL_INTERNO = "Interno";
+const CANALES_CONFIRMACION = ["Email"];
 
 // Notificacion.destinatarioArea es NOT NULL y describe a quién le llega el
 // aviso: una confirmación por Email/SMS va al huésped, y el fallback
@@ -57,7 +56,7 @@ const TIPO_NOTIFICACION_RESERVA = "Reserva";
 const LIMITES_RESERVA = {
   nombre: 120,
   numeroDocumento: 30,
-  contacto: 120,
+  contacto: 190,
   preferencias: 2000,
   motivoCancelacion: 300,
   // Tope defensivo de una reserva grupal: evita que un payload con 500
@@ -85,7 +84,6 @@ module.exports = {
   ESTADOS_QUE_OCUPAN,
   TIPOS_DOCUMENTO,
   CANALES_CONFIRMACION,
-  CANAL_INTERNO,
   DESTINATARIO_HUESPED,
   DESTINATARIO_RECEPCION,
   TIPO_NOTIFICACION_RESERVA,

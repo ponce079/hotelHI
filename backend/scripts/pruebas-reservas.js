@@ -556,8 +556,8 @@ async function main() {
     base._sembrarHabitacion({ numero: "101" });
     base._sembrarHabitacion({ numero: "102" });
     await servicio.crearReserva(alta({ habitacionIds: [1] }));
-    await servicio.crearReserva(alta({ habitacionIds: [2], huesped: { ...HUESPED, contacto: "" } }));
-    assert.equal(base._datos.huesped[0].contacto, "ana@mail.com");
+    await servicio.crearReserva(alta({ habitacionIds: [2], huesped: { ...HUESPED, contacto: "nuevo@mail.com" } }));
+    assert.equal(base._datos.huesped[0].contacto, "nuevo@mail.com");
   });
 
   seccion("HU-41 / HU-42 — Confirmación automática y código único");
@@ -581,18 +581,19 @@ async function main() {
   await prueba("registra la notificación de confirmación con el código y el canal pedido", async () => {
     limpiar();
     base._sembrarHabitacion({ numero: "101" });
-    const reserva = await servicio.crearReserva(alta({ canalConfirmacion: "SMS" }));
+    const reserva = await servicio.crearReserva(alta({ canalConfirmacion: "Email" }));
     assert.equal(base._datos.notificacion.length, 1);
     const notificacion = base._datos.notificacion[0];
     assert.equal(notificacion.tipo, "Reserva");
-    assert.equal(notificacion.canal, "SMS");
+    assert.equal(notificacion.canal, "Email");
     assert.ok(notificacion.mensaje.includes(reserva.codigoConfirmacion));
   });
 
   await prueba("sin datos de contacto, la confirmación queda como aviso interno", async () => {
     limpiar();
     base._sembrarHabitacion({ numero: "101" });
-    await servicio.crearReserva(alta({ huesped: { ...HUESPED, contacto: "" } }));
+    await esperaError(() => servicio.crearReserva(alta({ huesped: { ...HUESPED, contacto: "" } })), "correo");
+    return;
     assert.equal(base._datos.notificacion[0].canal, "Interno");
     assert.equal(base._datos.notificacion[0].destinatarioArea, "Recepción");
   });

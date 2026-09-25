@@ -53,6 +53,19 @@ export function ReservasPage() {
     desde: desde || undefined,
     hasta: hasta || undefined,
   };
+  const modalDesdeDisponibilidad = searchParams.get("nueva") === "1"
+    ? { tipo: "alta", valoresIniciales: { fechaDesde: desde, fechaHasta: hasta } }
+    : null;
+  const modalVisible = modal ?? modalDesdeDisponibilidad;
+
+  function cerrarModal() {
+    setModal(null);
+    if (searchParams.get("nueva") === "1") {
+      const params = new URLSearchParams(searchParams);
+      params.delete("nueva");
+      setSearchParams(params, { replace: true });
+    }
+  }
 
   const reservasQuery = useQuery({
     queryKey: ["reservas", "lista", filtros],
@@ -95,7 +108,7 @@ export function ReservasPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
+      <div className="flex flex-wrap items-start justify-between gap-4 rounded-lg border border-borde bg-white px-6 py-5">
         <div>
           <h1 className="font-heading text-[34px] font-semibold">Reservas</h1>
           <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
@@ -103,7 +116,7 @@ export function ReservasPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button variante="secundario" icono={Eye} onClick={() => navigate("/disponibilidad")}>
+          <Button variante="secundario" icono={Eye} onClick={() => navigate("/reservas/disponibilidad")}>
             Ver disponibilidad
           </Button>
           {puedeGestionar && (
@@ -249,29 +262,34 @@ export function ReservasPage() {
         </div>
       )}
 
-      {modal?.tipo === "alta" && (
-        <Modal titulo="Nueva reserva" onClose={() => setModal(null)} ancho="max-w-4xl">
+      {modalVisible?.tipo === "alta" && (
+        <Modal titulo="Nueva reserva" onClose={cerrarModal} ancho="max-w-4xl">
           <ReservaWizard
-            onCancelar={() => setModal(null)}
+            valoresIniciales={modalVisible.valoresIniciales}
+            onCancelar={cerrarModal}
             onExito={(reserva) => {
               setModal(null);
-              mostrarToast(`Reserva ${reserva.codigoConfirmacion} confirmada.`);
+              mostrarToast(
+                reserva.confirmacionEmail?.enviado
+                  ? `Reserva ${reserva.codigoConfirmacion} confirmada y enviada por correo.`
+                  : `Reserva ${reserva.codigoConfirmacion} confirmada. El correo no pudo enviarse; revisá la configuración SMTP.`
+              );
               navigate(`/reservas/${reserva.id}`);
             }}
           />
         </Modal>
       )}
 
-      {modal?.tipo === "edicion" && (
+      {modalVisible?.tipo === "edicion" && (
         <Modal
-          titulo={`Modificar reserva ${modal.reserva.codigoConfirmacion}`}
+          titulo={`Modificar reserva ${modalVisible.reserva.codigoConfirmacion}`}
           subtitulo="Se vuelve a validar la disponibilidad con las fechas y habitaciones nuevas"
-          onClose={() => setModal(null)}
+          onClose={cerrarModal}
           ancho="max-w-4xl"
         >
           <ReservaWizard
-            reserva={modal.reserva}
-            onCancelar={() => setModal(null)}
+            reserva={modalVisible.reserva}
+            onCancelar={cerrarModal}
             onExito={(reserva) => {
               setModal(null);
               mostrarToast(`Reserva ${reserva.codigoConfirmacion} actualizada.`);
@@ -315,3 +333,4 @@ export function ReservasPage() {
     </div>
   );
 }
+

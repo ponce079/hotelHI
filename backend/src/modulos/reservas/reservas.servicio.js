@@ -24,14 +24,13 @@
 const crypto = require("crypto");
 const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
+const { enviarCorreo } = require("../../lib/correo");
 const {
   ESTADO_RESERVA,
   ESTADOS_RESERVA,
   TIPOS_DOCUMENTO,
   CANALES_CONFIRMACION,
-  CANAL_INTERNO,
   DESTINATARIO_HUESPED,
-  DESTINATARIO_RECEPCION,
   TIPO_NOTIFICACION_RESERVA,
   LIMITES_RESERVA,
   MAX_INTENTOS_CODIGO,
@@ -48,6 +47,7 @@ class ErrorDeNegocio extends Error {
 
 const MILISEGUNDOS_POR_DIA = 24 * 60 * 60 * 1000;
 const PATRON_FECHA = /^\d{4}-\d{2}-\d{2}$/;
+const PATRON_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // --------------------------------------------------------------
 // Helpers de validación
@@ -158,11 +158,15 @@ function normalizarHuesped(data) {
   if (!TIPOS_DOCUMENTO.includes(tipoDocumento)) {
     throw new ErrorDeNegocio(`tipoDocumento debe ser uno de: ${TIPOS_DOCUMENTO.join(", ")}.`);
   }
+  const email = textoObligatorio(data.contacto, "El correo electrónico del huésped", LIMITES_RESERVA.contacto).toLowerCase();
+  if (!PATRON_EMAIL.test(email)) {
+    throw new ErrorDeNegocio("El correo electrónico del huésped no tiene un formato válido.");
+  }
   return {
     nombre: textoObligatorio(data.nombre, "El nombre del huésped", LIMITES_RESERVA.nombre),
     tipoDocumento,
     numeroDocumento: textoObligatorio(data.numeroDocumento, "El número de documento", LIMITES_RESERVA.numeroDocumento),
-    contacto: textoOpcional(data.contacto, "El contacto del huésped", LIMITES_RESERVA.contacto),
+    contacto: email,
     preferencias: textoOpcional(data.preferencias, "Las preferencias del huésped", LIMITES_RESERVA.preferencias),
   };
 }
@@ -467,9 +471,7 @@ async function resolverHuesped(tx, datos) {
 // criterio de aceptación ("queda un registro del envío"), sin integración
 // real. Sin datos de contacto cargados no se puede fingir un envío: queda
 // como aviso interno para el mostrador.
-function armarNotificacionConfirmacion({ reserva, huesped, habitaciones, canalPedido, origen }) {
-  const hayContacto = Boolean(huesped.contacto);
-  const canal = hayContacto ? canalPedido : CANAL_INTERNO;
+function armarNotificacionConfirmacion({ reserva, huesped, habitaciones, origen }) {
   const numeros = habitaciones.map((h) => h.numero).join(", ");
   const periodo = `${formatearFechaMensaje(reserva.fechaDesde)} al ${formatearFechaMensaje(reserva.fechaHasta)}`;
   const base =
@@ -480,12 +482,47 @@ function armarNotificacionConfirmacion({ reserva, huesped, habitaciones, canalPe
   return {
     tipo: TIPO_NOTIFICACION_RESERVA,
     reservaId: reserva.id,
-    canal,
-    destinatarioArea: hayContacto ? DESTINATARIO_HUESPED : DESTINATARIO_RECEPCION,
-    mensaje: hayContacto
-      ? `${base} Enviada a ${huesped.contacto}.`
-      : `${base} El huésped no dejó datos de contacto: confirmar por mostrador.`,
+    canal: "Email",
+    destinatarioArea: DESTINATARIO_HUESPED,
+    mensaje: `${base} Destinada a ${huesped.contacto}.`,
   };
+}
+
+function escaparHTML(valor) {
+  return String(valor)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+async function enviarConfirmacionPorEmail(reserva) {
+  const huesped = reserva.huesped;
+  const habitaciones = (reserva.reservaHabitaciones ?? []).map((rh) => rh.habitacion).filter(Boolean);
+  const numeros = habitaciones.map((h) => h.numero).join(", ");
+  const periodo = `${formatearFechaMensaje(reserva.fechaDesde)} al ${formatearFechaMensaje(reserva.fechaHasta)}`;
+  const texto =
+    `Hola ${huesped.nombre},\n\n` +
+    `tu reserva en Holiday Inn fue confirmada.\n` +
+    `Código de confirmación: ${reserva.codigoConfirmacion}\n` +
+    `Habitación/es: ${numeros}\n` +
+    `Estadía: ${periodo}\n\n` +
+    "Presentá el código de confirmación al realizar el check-in.";
+
+  return enviarCorreo({
+    para: huesped.contacto,
+    asunto: `Reserva confirmada · ${reserva.codigoConfirmacion}`,
+    texto,
+    html: `
+      <div style="font-family:Arial,sans-serif;color:#1b1a16;line-height:1.5">
+        <h2 style="color:#1f4d3a">Reserva confirmada</h2>
+        <p>Hola <strong>${escaparHTML(huesped.nombre)}</strong>, tu reserva en Holiday Inn fue confirmada.</p>
+        <p style="font-size:18px"><strong>Código: ${escaparHTML(reserva.codigoConfirmacion)}</strong></p>
+        <p>Habitación/es: ${escaparHTML(numeros)}<br>Estadía: ${escaparHTML(periodo)}</p>
+        <p>Presentá este código al realizar el check-in.</p>
+      </div>`,
+  });
 }
 
 function normalizarAltaReserva(data) {
@@ -555,7 +592,6 @@ async function crearReservaEnTransaccion(tx, datos) {
       reserva,
       huesped: huespedGuardado,
       habitaciones,
-      canalPedido: canalConfirmacion,
       origen,
     }),
   });
@@ -590,7 +626,8 @@ async function crearReserva(data) {
         timeout: 15000,
         maxWait: 10000,
       });
-      return formatearReserva(reserva);
+      const confirmacionEmail = await enviarConfirmacionPorEmail(reserva);
+      return { ...formatearReserva(reserva), confirmacionEmail };
     } catch (err) {
       const esCodigoDuplicado =
         err instanceof Prisma.PrismaClientKnownRequestError &&
