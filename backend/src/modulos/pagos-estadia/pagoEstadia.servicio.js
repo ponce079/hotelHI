@@ -206,13 +206,36 @@ async function listarMovimientos(filtros = {}) {
     ];
   }
 
-  return prisma.pagoEstadia.findMany({
+  const movimientos = await prisma.pagoEstadia.findMany({
     where,
     orderBy: { fecha: 'desc' },
     include: {
       medios: true,
-      reserva: { select: { id: true, codigoConfirmacion: true, huesped: { select: { id: true, nombre: true } } } },
+      reserva: {
+        select: {
+          id: true,
+          codigoConfirmacion: true,
+          fechaDesde: true,
+          fechaHasta: true,
+          estado: true,
+          huesped: { select: { id: true, nombre: true } },
+          reservaHabitaciones: { include: { habitacion: { select: { id: true, numero: true } } } },
+        },
+      },
     },
+  });
+
+  // El front agrupa por reservaId (rediseño "tarjeta por reserva", HU-88):
+  // el encabezado del grupo necesita habitación y fechas de estadía además
+  // de código/huésped, que ya venían. `habitaciones` aplana reservaHabitaciones
+  // igual que formatearReserva en reservas.servicio.js, para no obligar al
+  // front a conocer la tabla intermedia. `estado` deja que la línea de
+  // tiempo distinga "todavía no llegó al check-out" (sin nodo de Pago final
+  // real) de "se cobró" sin otra consulta.
+  return movimientos.map((m) => {
+    if (!m.reserva) return m;
+    const { reservaHabitaciones, ...reserva } = m.reserva;
+    return { ...m, reserva: { ...reserva, habitaciones: (reservaHabitaciones ?? []).map((rh) => rh.habitacion).filter(Boolean) } };
   });
 }
 
