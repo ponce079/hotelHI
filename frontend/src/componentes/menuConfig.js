@@ -60,6 +60,15 @@ export const MENU_GRUPOS = [
         icon: Wrench,
         roles: ["admin", "recepcionista", "housekeeping"],
       },
+      // HU-89 — Catálogo de Tipos de Habitación (Etapa 1 de tarifas por
+      // temporada). Mismos roles que verTiposHabitacion (sesion.jsx):
+      // admin gestiona, recepcionista y gerente ven de solo lectura.
+      {
+        to: "/tipos-habitacion",
+        label: "Tipos de Habitación",
+        icon: Tag,
+        roles: ["admin", "recepcionista", "gerente"],
+      },
       // Sprint 3 académico — Reservas (HU-36 a 42). Las pantallas públicas
       // (/disponibilidad y /reservar) no entran al menú: son del rol
       // "Huésped" y viven fuera de la sesión de staff.

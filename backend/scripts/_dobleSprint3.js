@@ -80,6 +80,7 @@ function coincideValor(valor, condicion) {
 
 const TABLAS = [
   "habitacion",
+  "tipoHabitacion",
   "ordenMantenimiento",
   "reserva",
   "reservaHabitacion",
@@ -138,6 +139,15 @@ const CAMPO_BOOLEANO_FALSE_POR_DEFECTO = {
   comprobanteEstadia: ["anulado"],
 };
 
+// Mismo problema, para `Boolean @default(true)` — sumado para HU-89:
+// tiposHabitacion.servicio.js no setea `activo` a mano al crear (confía en
+// el default del schema, mismo criterio que crearProveedor en
+// proveedores.servicio.js), así que sin esto quedaba `undefined` en el
+// doble y `listarTiposHabitacion({activo:"true"})` no matcheaba nunca.
+const CAMPO_BOOLEANO_TRUE_POR_DEFECTO = {
+  tipoHabitacion: ["activo"],
+};
+
 // Relaciones 1-a-N creadas con la sintaxis anidada de Prisma
 // (`campo: { create: [...] }` dentro de un `.create`/`.update`) que de
 // verdad usa código real de este proyecto — sin esto, el doble guardaba el
@@ -187,6 +197,13 @@ function crearBase() {
         if (condicion.some) return propias.some((rh) => coincide("reservaHabitacion", rh, condicion.some));
         throw new Error("Solo se soporta `some` sobre reservaHabitaciones");
       }
+      // HU-89 — tiposHabitacion.servicio.js (listarTiposHabitacion con
+      // conHabitacionActiva) filtra por la relación inversa Habitacion[].
+      if (tabla === "tipoHabitacion" && campo === "habitaciones") {
+        const propias = datos.habitacion.filter((h) => h.tipoHabitacionId === registro.id);
+        if (condicion.some) return propias.some((h) => coincide("habitacion", h, condicion.some));
+        throw new Error("Solo se soporta `some` sobre habitaciones");
+      }
 
       // --- Relación de checkOut.servicio.js (consolidarCargos: filtra
       // pagoEstadiaMedio por el pagoEstadia al que pertenece) ---
@@ -223,16 +240,30 @@ function crearBase() {
     if (tabla === "reserva") {
       if (include.huesped) salida.huesped = datos.huesped.find((h) => h.id === registro.huespedId) ?? null;
       if (include.reservaHabitaciones) {
+        // HU-89: honra el include anidado hasta tipoHabitacion (INCLUDE_RESERVA
+        // en reservas.servicio.js pide reservaHabitaciones.habitacion.tipoHabitacion)
+        // en vez del find() plano de antes, que no expandía nada más abajo de
+        // habitacion.
+        const incluirHabitacion = desenvolverInclude(include.reservaHabitaciones).habitacion;
         salida.reservaHabitaciones = datos.reservaHabitacion
           .filter((rh) => rh.reservaId === registro.id)
-          .map((rh) => ({ ...rh, habitacion: datos.habitacion.find((h) => h.id === rh.habitacionId) ?? null }));
+          .map((rh) => {
+            const habitacion = datos.habitacion.find((h) => h.id === rh.habitacionId) ?? null;
+            return {
+              ...rh,
+              habitacion: habitacion ? expandir("habitacion", habitacion, desenvolverInclude(incluirHabitacion)) : null,
+            };
+          });
       }
       if (include.notificaciones) {
         salida.notificaciones = datos.notificacion.filter((n) => n.reservaId === registro.id);
       }
     }
     if (tabla === "reservaHabitacion") {
-      if (include.habitacion) salida.habitacion = datos.habitacion.find((h) => h.id === registro.habitacionId) ?? null;
+      if (include.habitacion) {
+        const habitacion = datos.habitacion.find((h) => h.id === registro.habitacionId) ?? null;
+        salida.habitacion = habitacion ? expandir("habitacion", habitacion, desenvolverInclude(include.habitacion)) : null;
+      }
       if (include.reserva) salida.reserva = datos.reserva.find((r) => r.id === registro.reservaId) ?? null;
     }
     if (tabla === "habitacion") {
@@ -240,6 +271,11 @@ function crearBase() {
         salida.ordenesMantenimiento = datos.ordenMantenimiento
           .filter((o) => o.habitacionId === registro.id)
           .map((o) => ({ ...o, notificaciones: datos.notificacion.filter((n) => n.ordenMantenimientoId === o.id) }));
+      }
+      // HU-89 — habitaciones.servicio.js/reservas.servicio.js/checkOut.servicio.js
+      // ahora piden `include: { tipoHabitacion: ... }` para armar `conTipoPlano`.
+      if (include.tipoHabitacion) {
+        salida.tipoHabitacion = datos.tipoHabitacion.find((t) => t.id === registro.tipoHabitacionId) ?? null;
       }
     }
     // Reverso de la relación de arriba — lo usa resolverOrdenMantenimiento
@@ -400,6 +436,9 @@ function crearBase() {
         for (const campoBool of CAMPO_BOOLEANO_FALSE_POR_DEFECTO[tabla] ?? []) {
           if (fila[campoBool] === undefined) fila[campoBool] = false;
         }
+        for (const campoBool of CAMPO_BOOLEANO_TRUE_POR_DEFECTO[tabla] ?? []) {
+          if (fila[campoBool] === undefined) fila[campoBool] = true;
+        }
         // Unicidad real de la base, para probar reintentos (mismo criterio
         // que pruebas-reservas.js).
         if (tabla === "reserva" && datos.reserva.some((r) => r.codigoConfirmacion === fila.codigoConfirmacion)) {
@@ -549,17 +588,43 @@ function crearBase() {
     for (const tabla of TABLAS) secuencias[tabla] = 0;
   };
 
+  // HU-89: sigue aceptando `tipo` como string de conveniencia (mínimo
+  // churn en los scripts pruebas-*.js existentes), pero por debajo
+  // resuelve-o-crea un TipoHabitacion real y setea tipoHabitacionId — así
+  // la FK se ejercita de verdad. `tipoHabitacionId` explícito en `extra`
+  // gana si viene (para las pruebas que sí quieren un tipo puntual, ej.
+  // uno ya dado de baja).
+  cliente._resolverOCrearTipoHabitacion = (nombre) => {
+    let tipoRow = datos.tipoHabitacion.find((t) => t.nombre.toLowerCase() === String(nombre).toLowerCase());
+    if (!tipoRow) {
+      const codigo = String(nombre).toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 10) || "TIPO";
+      tipoRow = {
+        id: siguienteId("tipoHabitacion"),
+        codigo,
+        nombre,
+        descripcion: null,
+        activo: true,
+        creadoEn: ahoraFalso(),
+        actualizadoEn: ahoraFalso(),
+      };
+      datos.tipoHabitacion.push(tipoRow);
+    }
+    return tipoRow;
+  };
+
   cliente._sembrarHabitacion = (extra = {}) => {
+    const { tipo = "Doble", tipoHabitacionId, ...resto } = extra;
+    const tipoId = tipoHabitacionId ?? cliente._resolverOCrearTipoHabitacion(tipo).id;
     const fila = {
       id: siguienteId("habitacion"),
       activo: true,
       estado: "libre",
       piso: 1,
       capacidad: 2,
-      tipo: "Doble",
+      tipoHabitacionId: tipoId,
       equipamiento: null,
       tarifaPorNoche: 50000,
-      ...extra,
+      ...resto,
     };
     datos.habitacion.push(fila);
     return fila;

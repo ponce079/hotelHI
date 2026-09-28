@@ -17,14 +17,6 @@ async function getHabitaciones(req, res) {
   }
 }
 
-async function getTiposHabitacion(_req, res) {
-  try {
-    return res.json(await habitacionesServicio.listarTiposHabitacion());
-  } catch (err) {
-    return responderError(res, err, "Error al listar tipos de habitación:", "No se pudieron listar los tipos de habitación.");
-  }
-}
-
 async function getHabitacion(req, res) {
   try {
     return res.json(await habitacionesServicio.obtenerHabitacion(req.params.id));
@@ -93,7 +85,6 @@ async function patchResolverOrdenMantenimiento(req, res) {
 
 module.exports = {
   getHabitaciones,
-  getTiposHabitacion,
   getHabitacion,
   postHabitacion,
   putHabitacion,

@@ -270,11 +270,11 @@ async function confirmarCheckInConReserva({
 // cuando `fechaDesde` es hoy, que es siempre el caso acá — walk-in y
 // asignación manual son "ahora", nunca a futuro. No hay filtro propio que
 // reimplementar: si hubiera dos, correrían el riesgo de desincronizarse.
-async function listarHabitacionesLibresAhora({ fechaHasta, tipo, capacidadMinima }) {
+async function listarHabitacionesLibresAhora({ fechaHasta, tipoHabitacionId, capacidadMinima }) {
   return reservasServicio.consultarDisponibilidad({
     fechaDesde: hoyComoFechaISO(),
     fechaHasta,
-    tipo,
+    tipoHabitacionId,
     capacidadMinima,
   });
 }

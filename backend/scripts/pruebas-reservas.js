@@ -81,8 +81,24 @@ function crearBase() {
   // (eso lo cubre pruebas-senia-reserva.js, con el doble completo de
   // _dobleSprint3.js), así que acá siempre da una lista vacía y el loop de
   // anulación nunca llega a ejecutar nada.
-  const datos = { habitacion: [], reserva: [], reservaHabitacion: [], huesped: [], notificacion: [], pagoEstadia: [] };
-  const secuencias = { habitacion: 0, reserva: 0, reservaHabitacion: 0, huesped: 0, notificacion: 0, pagoEstadia: 0 };
+  const datos = {
+    habitacion: [],
+    tipoHabitacion: [],
+    reserva: [],
+    reservaHabitacion: [],
+    huesped: [],
+    notificacion: [],
+    pagoEstadia: [],
+  };
+  const secuencias = {
+    habitacion: 0,
+    tipoHabitacion: 0,
+    reserva: 0,
+    reservaHabitacion: 0,
+    huesped: 0,
+    notificacion: 0,
+    pagoEstadia: 0,
+  };
 
   function siguienteId(tabla) {
     secuencias[tabla] += 1;
@@ -116,23 +132,47 @@ function crearBase() {
     });
   }
 
+  // HU-89: `include` con un include/select anidado adentro (ej.
+  // `{ include: { tipoHabitacion: ... } }`) — desenvuelve un nivel para
+  // poder pasárselo a `expandir` recursivamente. Mismo helper que
+  // _dobleSprint3.js.
+  function desenvolverInclude(valor) {
+    if (valor === true || !valor) return {};
+    return valor.select || valor.include || valor;
+  }
+
   function expandir(tabla, registro, include = {}) {
     if (!registro) return registro;
     const salida = { ...registro };
     if (tabla === "reserva") {
       if (include.huesped) salida.huesped = datos.huesped.find((h) => h.id === registro.huespedId) ?? null;
       if (include.reservaHabitaciones) {
+        const incluirHabitacion = desenvolverInclude(include.reservaHabitaciones).habitacion;
         salida.reservaHabitaciones = datos.reservaHabitacion
           .filter((rh) => rh.reservaId === registro.id)
-          .map((rh) => ({ ...rh, habitacion: datos.habitacion.find((h) => h.id === rh.habitacionId) ?? null }));
+          .map((rh) => {
+            const habitacion = datos.habitacion.find((h) => h.id === rh.habitacionId) ?? null;
+            return {
+              ...rh,
+              habitacion: habitacion ? expandir("habitacion", habitacion, desenvolverInclude(incluirHabitacion)) : null,
+            };
+          });
       }
       if (include.notificaciones) {
         salida.notificaciones = datos.notificacion.filter((n) => n.reservaId === registro.id);
       }
     }
     if (tabla === "reservaHabitacion") {
-      if (include.habitacion) salida.habitacion = datos.habitacion.find((h) => h.id === registro.habitacionId) ?? null;
+      if (include.habitacion) {
+        const habitacion = datos.habitacion.find((h) => h.id === registro.habitacionId) ?? null;
+        salida.habitacion = habitacion ? expandir("habitacion", habitacion, desenvolverInclude(include.habitacion)) : null;
+      }
       if (include.reserva) salida.reserva = datos.reserva.find((r) => r.id === registro.reservaId) ?? null;
+    }
+    if (tabla === "habitacion") {
+      if (include.tipoHabitacion) {
+        salida.tipoHabitacion = datos.tipoHabitacion.find((t) => t.id === registro.tipoHabitacionId) ?? null;
+      }
     }
     return salida;
   }
@@ -213,6 +253,7 @@ function crearBase() {
 
   const cliente = {
     habitacion: modelo("habitacion"),
+    tipoHabitacion: modelo("tipoHabitacion"),
     reserva: modelo("reserva"),
     reservaHabitacion: modelo("reservaHabitacion"),
     huesped: modelo("huesped"),
@@ -228,17 +269,31 @@ function crearBase() {
       for (const tabla of Object.keys(datos)) datos[tabla] = [];
       for (const tabla of Object.keys(secuencias)) secuencias[tabla] = 0;
     },
+    // HU-89: resuelve-o-crea un TipoHabitacion por nombre — usado por
+    // _sembrarHabitacion (conveniencia, ver abajo) y directamente por las
+    // pruebas que necesitan un tipoHabitacionId puntual para filtrar.
+    _resolverOCrearTipoHabitacion(nombre) {
+      let tipoRow = datos.tipoHabitacion.find((t) => t.nombre.toLowerCase() === String(nombre).toLowerCase());
+      if (!tipoRow) {
+        const codigo = String(nombre).toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 10) || "TIPO";
+        tipoRow = { id: siguienteId("tipoHabitacion"), codigo, nombre, descripcion: null, activo: true };
+        datos.tipoHabitacion.push(tipoRow);
+      }
+      return tipoRow;
+    },
     _sembrarHabitacion(datosHabitacion) {
+      const { tipo = "Doble", tipoHabitacionId, ...resto } = datosHabitacion ?? {};
+      const tipoId = tipoHabitacionId ?? this._resolverOCrearTipoHabitacion(tipo).id;
       const fila = {
         id: siguienteId("habitacion"),
         activo: true,
         estado: "libre",
         piso: 1,
         capacidad: 2,
-        tipo: "Doble",
+        tipoHabitacionId: tipoId,
         equipamiento: null,
         tarifaPorNoche: 50000,
-        ...datosHabitacion,
+        ...resto,
       };
       datos.habitacion.push(fila);
       return fila;
@@ -740,11 +795,11 @@ async function main() {
   await prueba("filtra por tipo de habitación", async () => {
     limpiar();
     base._sembrarHabitacion({ numero: "101", tipo: "Doble" });
-    base._sembrarHabitacion({ numero: "201", tipo: "Suite" });
+    const suite = base._sembrarHabitacion({ numero: "201", tipo: "Suite" });
     const resultado = await servicio.consultarDisponibilidad({
       fechaDesde: enDias(10),
       fechaHasta: enDias(12),
-      tipo: "Suite",
+      tipoHabitacionId: suite.tipoHabitacionId,
     });
     assert.equal(resultado.habitaciones.length, 1);
     assert.equal(resultado.habitaciones[0].tipo, "Suite");
@@ -876,7 +931,7 @@ async function main() {
     for (const campo of ["id", "nombre", "tipoDocumento", "numeroDocumento", "contacto"]) {
       assert.ok(campo in reserva.huesped, `Falta el campo "${campo}" del huésped`);
     }
-    for (const campo of ["id", "numero", "tipo"]) {
+    for (const campo of ["id", "numero", "tipo", "tipoHabitacionId"]) {
       assert.ok(campo in reserva.habitaciones[0], `Falta el campo "${campo}" de la habitación`);
     }
   });

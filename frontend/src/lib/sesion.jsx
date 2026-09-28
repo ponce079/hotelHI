@@ -162,6 +162,14 @@ export function SesionProvider({ children }) {
           return ["admin", "recepcionista", "housekeeping"].includes(rol);
         }
         if (accion === "gestionarHabitaciones") return rol === "admin";
+        // HU-89 — Catálogo de Tipos de Habitación (Etapa 1 de tarifas por
+        // temporada). gestionar: admin únicamente, catálogo maestro —
+        // mismo criterio que gestionarTiposMovimiento. ver: admin,
+        // recepcionista (necesita el catálogo al dar de alta/editar una
+        // habitación y en los filtros de Reservas/Check-in) y gerente
+        // (referencia para el análisis de tarifas de las próximas etapas).
+        if (accion === "gestionarTiposHabitacion") return rol === "admin";
+        if (accion === "verTiposHabitacion") return ["admin", "recepcionista", "gerente"].includes(rol);
         // HU-33/34 (corrección): se elimina el rol "Personal de
         // Mantenimiento" — nunca se loguea al sistema, resuelve físicamente
         // y avisa de palabra. Reparto real: Housekeeping y Recepcionista

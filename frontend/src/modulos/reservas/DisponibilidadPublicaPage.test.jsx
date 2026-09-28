@@ -7,6 +7,11 @@ import { consultarDisponibilidad } from "./reservas.api";
 
 vi.mock("./reservas.api", () => ({ consultarDisponibilidad: vi.fn() }));
 
+// HU-89: el select de tipo sale del catálogo, no de resumenPorTipo.
+vi.mock("../tipos-habitacion/tiposHabitacion.api", () => ({
+  listarTiposHabitacion: vi.fn().mockResolvedValue([{ id: 10, codigo: "DOBLE", nombre: "Doble", activo: true }]),
+}));
+
 const mockNavigate = vi.fn();
 vi.mock("react-router-dom", async (importOriginal) => {
   const actual = await importOriginal();
@@ -17,6 +22,7 @@ const HABITACION_101 = {
   id: 1,
   numero: "101",
   tipo: "Doble",
+  tipoHabitacionId: 10,
   capacidad: 2,
   piso: 1,
   equipamiento: null,
@@ -27,6 +33,7 @@ const HABITACION_204 = {
   id: 2,
   numero: "204",
   tipo: "Doble",
+  tipoHabitacionId: 10,
   capacidad: 2,
   piso: 2,
   equipamiento: null,
@@ -37,7 +44,7 @@ const HABITACION_204 = {
 const DISPONIBILIDAD = {
   noches: 3,
   habitaciones: [HABITACION_101, HABITACION_204],
-  resumenPorTipo: [{ tipo: "Doble", total: 2, disponibles: 2, tarifaDesde: 50000, capacidadMaxima: 2 }],
+  resumenPorTipo: [{ tipo: "Doble", tipoHabitacionId: 10, total: 2, disponibles: 2, tarifaDesde: 50000, capacidadMaxima: 2 }],
 };
 
 function renderPagina(props = {}) {

@@ -12,6 +12,7 @@ import { ESTADO_HABITACION_BADGE, ESTADO_HABITACION_LABEL } from "../habitacione
 import { MEDIOS_CON_TARJETA } from "../pagos-estadia/pagoEstadia.constantes";
 import { TarjetaSimuladaPanel } from "../pagos-estadia/TarjetaSimuladaPanel";
 import { consultarDisponibilidad, crearReserva, crearReservaConSena, modificarReserva } from "./reservas.api";
+import { listarTiposHabitacion } from "../tipos-habitacion/tiposHabitacion.api";
 import { CANALES_CONFIRMACION, LIMITES_RESERVA, PORCENTAJE_SENIA_RESERVA, TIPOS_DOCUMENTO } from "./reservas.constantes";
 import { validarHuesped } from "./validarHuesped";
 
@@ -87,7 +88,7 @@ function estadoInicial(reserva, valoresIniciales) {
       paso: habitacionIds.length > 0 ? 3 : 1,
       fechaDesde: valoresIniciales?.fechaDesde ?? "",
       fechaHasta: valoresIniciales?.fechaHasta ?? "",
-      tipo: "",
+      tipoHabitacionId: "",
       capacidadMinima: "",
       habitacionIds,
       huesped: { ...HUESPED_VACIO },
@@ -98,7 +99,7 @@ function estadoInicial(reserva, valoresIniciales) {
     paso: 1,
     fechaDesde: soloFecha(reserva.fechaDesde),
     fechaHasta: soloFecha(reserva.fechaHasta),
-    tipo: "",
+    tipoHabitacionId: "",
     capacidadMinima: "",
     habitacionIds: reserva.habitaciones.map((h) => h.id),
     huesped: {
@@ -177,6 +178,17 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   const disponibilidad = disponibilidadQuery.data;
   const noches = disponibilidad?.noches ?? 0;
 
+  // HU-89 — catálogo para el select de tipo del paso 2 (ya no `resumenPorTipo`,
+  // que solo trae los tipos que tienen habitaciones en el universo consultado
+  // hoy — ver DisponibilidadPublicaPage.jsx para el mismo criterio). En modo
+  // "WEB" (autoservicio del huésped, HU-40) mismo filtro que la disponibilidad
+  // pública: solo tipos activos con al menos una habitación activa. En modo
+  // mostrador, todos los tipos activos del catálogo.
+  const tiposQuery = useQuery({
+    queryKey: ["tipos-habitacion", "activos", origen],
+    queryFn: () => listarTiposHabitacion(origen === "WEB" ? { activo: "true", conHabitacionActiva: "true" } : { activo: "true" }),
+  });
+
   // El filtro de tipo/capacidad se aplica sobre lo ya traído: el backend
   // también los acepta, pero volver a pedir la lista entera por cada
   // cambio de un <select> es viaje de más para un dato que ya está.
@@ -187,11 +199,12 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   // arriba), así que ahí sigue exactamente el mismo universo de hoy.
   const habitacionesFiltradas = useMemo(() => {
     const universo = mostrarOcupadas ? (disponibilidad?.todas ?? []) : (disponibilidad?.habitaciones ?? []);
+    const tipoId = form.tipoHabitacionId ? Number(form.tipoHabitacionId) : null;
     const capacidad = Number(form.capacidadMinima) || 0;
     return universo.filter(
-      (h) => (!form.tipo || h.tipo === form.tipo) && (!capacidad || h.capacidad >= capacidad)
+      (h) => (!tipoId || h.tipoHabitacionId === tipoId) && (!capacidad || h.capacidad >= capacidad)
     );
-  }, [disponibilidad, form.tipo, form.capacidadMinima, mostrarOcupadas]);
+  }, [disponibilidad, form.tipoHabitacionId, form.capacidadMinima, mostrarOcupadas]);
   const cantidadDisponiblesFiltradas = habitacionesFiltradas.filter((h) => h.disponible !== false).length;
 
   const elegidas = useMemo(
@@ -408,7 +421,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {(disponibilidad?.resumenPorTipo ?? []).map((r) => (
-                  <Badge key={r.tipo} variante={r.disponibles > 0 ? "ok" : "neutro"}>
+                  <Badge key={r.tipoHabitacionId} variante={r.disponibles > 0 ? "ok" : "neutro"}>
                     {r.tipo}: {r.disponibles}/{r.total}
                   </Badge>
                 ))}
@@ -430,14 +443,14 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
           <div className="flex flex-wrap items-end gap-3">
             <Select
               label="Tipo"
-              value={form.tipo}
-              onChange={(e) => actualizar("tipo", e.target.value)}
+              value={form.tipoHabitacionId}
+              onChange={(e) => actualizar("tipoHabitacionId", e.target.value)}
               className="min-w-[160px]"
             >
               <option value="">Todos los tipos</option>
-              {(disponibilidad?.resumenPorTipo ?? []).map((r) => (
-                <option key={r.tipo} value={r.tipo}>
-                  {r.tipo}
+              {(tiposQuery.data ?? []).map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nombre}
                 </option>
               ))}
             </Select>

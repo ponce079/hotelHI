@@ -3,7 +3,6 @@ const habitacionesControlador = require("./habitaciones.controlador");
 
 const router = express.Router();
 
-router.get("/tipos", habitacionesControlador.getTiposHabitacion);
 router.get("/mantenimiento", habitacionesControlador.getOrdenesMantenimiento);
 router.patch("/mantenimiento/:ordenId/resolver", habitacionesControlador.patchResolverOrdenMantenimiento);
 router.get("/", habitacionesControlador.getHabitaciones);

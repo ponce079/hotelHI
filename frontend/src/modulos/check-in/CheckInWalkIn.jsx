@@ -12,6 +12,7 @@ import { Toast } from "../../componentes/Toast";
 import { GarantiaFieldset } from "./GarantiaFieldset";
 import { TituloSeccion } from "./TituloSeccion";
 import { listarHabitacionesLibresAhora, registrarCheckInWalkIn } from "./checkIn.api";
+import { listarTiposHabitacion } from "../tipos-habitacion/tiposHabitacion.api";
 import { MEDIOS_GARANTIA } from "./checkIn.constantes";
 import { validarHuesped } from "./validarHuesped";
 
@@ -43,7 +44,7 @@ function manana() {
 const VACIO = {
   paso: 1,
   fechaHasta: manana(),
-  tipo: "",
+  tipoHabitacionId: "",
   capacidadMinima: "",
   habitacionIds: [],
   huesped: { nombre: "", tipoDocumento: TIPOS_DOCUMENTO[0], numeroDocumento: "", contacto: "" },
@@ -88,14 +89,23 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
   // (no solo "sin reserva encimada", ver checkIn.servicio.js:
   // listarHabitacionesLibresAhora), sin ninguna sugerencia automática.
   const habitacionesQuery = useQuery({
-    queryKey: ["check-in", "habitaciones-libres", form.fechaHasta, form.tipo, form.capacidadMinima],
+    queryKey: ["check-in", "habitaciones-libres", form.fechaHasta, form.tipoHabitacionId, form.capacidadMinima],
     queryFn: () =>
       listarHabitacionesLibresAhora({
         fechaHasta: form.fechaHasta,
-        tipo: form.tipo || undefined,
+        tipoHabitacionId: form.tipoHabitacionId || undefined,
         capacidadMinima: form.capacidadMinima || undefined,
       }),
     enabled: rangoValido && form.paso >= 2,
+  });
+
+  // HU-89 — pantalla interna (mostrador): todos los tipos activos del
+  // catálogo, mismo criterio que HabitacionesPage/ReservaWizard de
+  // mostrador (no `resumenPorTipo`, que solo trae tipos con habitaciones en
+  // el universo consultado hoy).
+  const tiposQuery = useQuery({
+    queryKey: ["tipos-habitacion", "activos"],
+    queryFn: () => listarTiposHabitacion({ activo: "true" }),
   });
 
   const habitaciones = habitacionesQuery.data?.habitaciones ?? [];
@@ -224,11 +234,15 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
               value={form.fechaHasta}
               onChange={(e) => actualizar({ fechaHasta: e.target.value, habitacionIds: [] })}
             />
-            <Select label="Tipo deseado" value={form.tipo} onChange={(e) => actualizar({ tipo: e.target.value, habitacionIds: [] })}>
+            <Select
+              label="Tipo deseado"
+              value={form.tipoHabitacionId}
+              onChange={(e) => actualizar({ tipoHabitacionId: e.target.value, habitacionIds: [] })}
+            >
               <option value="">Cualquiera</option>
-              {(habitacionesQuery.data?.resumenPorTipo ?? []).map((r) => (
-                <option key={r.tipo} value={r.tipo}>
-                  {r.tipo}
+              {(tiposQuery.data ?? []).map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.nombre}
                 </option>
               ))}
             </Select>

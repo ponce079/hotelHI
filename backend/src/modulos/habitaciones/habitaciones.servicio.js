@@ -8,6 +8,11 @@ const {
   TIPOS_TAREA_MANTENIMIENTO,
   LIMITES_HABITACION,
 } = require("./habitaciones.constantes");
+const { conTipoPlano } = require("../../lib/tipoHabitacion");
+const { hoyComoFechaUTC } = require("../../lib/fechas");
+// Solo constantes (ESTADO_RESERVA) — reservas.constantes.js no importa
+// nada, así que esto nunca puede cerrar un ciclo con reservas.servicio.js.
+const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -36,7 +41,7 @@ function textoObligatorio(valor, campo, maximo) {
 
 function normalizarHabitacion(data) {
   const numero = textoObligatorio(data?.numero, "numero", LIMITES_HABITACION.numero);
-  const tipo = textoObligatorio(data?.tipo, "tipo", LIMITES_HABITACION.tipo);
+  const tipoHabitacionId = enteroPositivo(data?.tipoHabitacionId, "tipoHabitacionId");
   const capacidad = enteroPositivo(data?.capacidad, "capacidad");
   const piso = enteroPositivo(data?.piso, "piso", { permitirCero: true });
   const tarifaPorNoche = Number(data?.tarifaPorNoche);
@@ -51,12 +56,60 @@ function normalizarHabitacion(data) {
 
   return {
     numero,
-    tipo,
+    tipoHabitacionId,
     capacidad,
     piso,
     equipamiento: equipamiento || null,
     tarifaPorNoche,
   };
+}
+
+// HU-89 — el tipo elegido tiene que existir y, para poder ASIGNARLO (alta,
+// o edición que de verdad cambia el tipo), estar activo. Una habitación ya
+// existente cuyo tipo fue dado de baja DESPUÉS sigue funcionando igual
+// (regla 4) — por eso esto no se llama en cada lectura ni en una edición
+// que no toca tipoHabitacionId, solo cuando el valor cambia de verdad (ver
+// crearHabitacion/actualizarHabitacion).
+async function tipoHabitacionValidoYActivo(tipoHabitacionId) {
+  const tipo = await prisma.tipoHabitacion.findUnique({ where: { id: tipoHabitacionId } });
+  if (!tipo) throw new ErrorDeNegocio("El tipo de habitación indicado no existe.", 404);
+  if (!tipo.activo) {
+    throw new ErrorDeNegocio(`El tipo de habitación "${tipo.nombre}" está dado de baja y no puede asignarse.`);
+  }
+  return tipo;
+}
+
+// Regla 5 (HU-89) — no se puede cambiar el tipo de una habitación con
+// reservas vigentes: la reserva se vendió contra un tipo determinado.
+// Bloquean:
+//   - Toda reserva 'En curso' (el huésped ya está alojado, sin condición
+//     de fecha).
+//   - Solo las 'Confirmada' cuya fechaHasta sea >= hoy en hora argentina.
+//     Una 'Confirmada' vencida es un no-show que el sistema nunca procesó
+//     (no existe un estado "No-show" en Reserva) y no tiene que bloquear.
+async function exigirSinReservasVigentes(habitacionId) {
+  const hoy = hoyComoFechaUTC();
+  const reservasBloqueantes = await prisma.reservaHabitacion.findMany({
+    where: {
+      habitacionId,
+      reserva: {
+        OR: [{ estado: ESTADO_RESERVA.EN_CURSO }, { estado: ESTADO_RESERVA.CONFIRMADA, fechaHasta: { gte: hoy } }],
+      },
+    },
+    // `include` (no `select` anidado) a propósito: el doble de Prisma usado
+    // en los tests (_dobleSprint3.js) solo expande relaciones vía `include`
+    // — un `select` con una relación anidada adentro no la resuelve. Contra
+    // Prisma real el resultado es equivalente para lo único que se lee acá
+    // (`reserva.codigoConfirmacion`).
+    include: { reserva: { select: { codigoConfirmacion: true } } },
+  });
+  if (reservasBloqueantes.length > 0) {
+    const codigos = reservasBloqueantes.map((r) => r.reserva.codigoConfirmacion).join(", ");
+    throw new ErrorDeNegocio(
+      `No se puede cambiar el tipo de esta habitación: tiene reservas vigentes (${codigos}).`,
+      409
+    );
+  }
 }
 
 function validarEstado(estado) {
@@ -103,44 +156,38 @@ function validarTransicionManual(estadoActual, estadoDestino) {
   throw new ErrorDeNegocio(`No se puede pasar de "${estadoActual}" a "${estadoDestino}".`);
 }
 
-async function listarHabitaciones({ q, tipo, estado, activo } = {}) {
+async function listarHabitaciones({ q, tipoHabitacionId, estado, activo } = {}) {
   if (estado) validarEstado(estado);
+  const tipoBuscado = tipoHabitacionId ? enteroPositivo(tipoHabitacionId, "tipoHabitacionId") : null;
 
   const where = {
     ...(activo === "todos" ? {} : { activo: activo === "false" ? false : true }),
-    ...(tipo ? { tipo } : {}),
+    ...(tipoBuscado ? { tipoHabitacionId: tipoBuscado } : {}),
     ...(estado ? { estado } : {}),
     ...(q
       ? {
           OR: [
             { numero: { contains: q.trim() } },
-            { tipo: { contains: q.trim() } },
+            { tipoHabitacion: { nombre: { contains: q.trim() } } },
             { equipamiento: { contains: q.trim() } },
           ],
         }
       : {}),
   };
 
-  return prisma.habitacion.findMany({
+  const habitaciones = await prisma.habitacion.findMany({
     where,
+    include: { tipoHabitacion: { select: { nombre: true } } },
     orderBy: [{ activo: "desc" }, { piso: "asc" }, { numero: "asc" }],
   });
-}
-
-async function listarTiposHabitacion() {
-  const filas = await prisma.habitacion.findMany({
-    where: { activo: true },
-    select: { tipo: true },
-    distinct: ["tipo"],
-    orderBy: { tipo: "asc" },
-  });
-  return filas.map((fila) => fila.tipo);
+  return habitaciones.map((h) => ({ ...h, ...conTipoPlano(h) }));
 }
 
 async function obtenerHabitacion(id) {
   const habitacion = await prisma.habitacion.findUnique({
     where: { id: Number(id) },
     include: {
+      tipoHabitacion: { select: { nombre: true } },
       ordenesMantenimiento: {
         orderBy: { fecha: "desc" },
         include: { notificaciones: true },
@@ -148,16 +195,21 @@ async function obtenerHabitacion(id) {
     },
   });
   if (!habitacion) throw new ErrorDeNegocio("Habitación no encontrada.", 404);
-  return habitacion;
+  return { ...habitacion, ...conTipoPlano(habitacion) };
 }
 
 async function crearHabitacion(data) {
   const normalizada = normalizarHabitacion(data);
   const existente = await prisma.habitacion.findUnique({ where: { numero: normalizada.numero } });
   if (existente) throw new ErrorDeNegocio(`Ya existe una habitación con el número "${normalizada.numero}".`, 409);
+  await tipoHabitacionValidoYActivo(normalizada.tipoHabitacionId);
 
   try {
-    return await prisma.habitacion.create({ data: normalizada });
+    const creada = await prisma.habitacion.create({
+      data: normalizada,
+      include: { tipoHabitacion: { select: { nombre: true } } },
+    });
+    return { ...creada, ...conTipoPlano(creada) };
   } catch (err) {
     if (err?.code === "P2002") {
       throw new ErrorDeNegocio(`Ya existe una habitación con el número "${normalizada.numero}".`, 409);
@@ -177,8 +229,23 @@ async function actualizarHabitacion(id, data) {
   });
   if (duplicada) throw new ErrorDeNegocio(`Ya existe una habitación con el número "${normalizada.numero}".`, 409);
 
+  // Solo se re-valida/re-bloquea si el tipo REALMENTE cambia — una edición
+  // que no toca tipoHabitacionId tiene que seguir funcionando aunque el
+  // tipo actual de la habitación haya sido dado de baja mientras tanto
+  // (regla 4), y no tiene sentido exigir "reservas vigentes" para guardar
+  // un campo que ni se está tocando.
+  if (normalizada.tipoHabitacionId !== actual.tipoHabitacionId) {
+    await tipoHabitacionValidoYActivo(normalizada.tipoHabitacionId);
+    await exigirSinReservasVigentes(habitacionId);
+  }
+
   try {
-    return await prisma.habitacion.update({ where: { id: habitacionId }, data: normalizada });
+    const actualizada = await prisma.habitacion.update({
+      where: { id: habitacionId },
+      data: normalizada,
+      include: { tipoHabitacion: { select: { nombre: true } } },
+    });
+    return { ...actualizada, ...conTipoPlano(actualizada) };
   } catch (err) {
     if (err?.code === "P2002") {
       throw new ErrorDeNegocio(`Ya existe una habitación con el número "${normalizada.numero}".`, 409);
@@ -232,7 +299,10 @@ async function crearOrdenMantenimiento(habitacionIdEntrada, data) {
 
   return prisma.$transaction(
     async (tx) => {
-      const habitacion = await tx.habitacion.findUnique({ where: { id: habitacionId } });
+      const habitacion = await tx.habitacion.findUnique({
+        where: { id: habitacionId },
+        include: { tipoHabitacion: { select: { nombre: true } } },
+      });
       if (!habitacion || !habitacion.activo) {
         throw new ErrorDeNegocio("La habitación no existe o está dada de baja.", 404);
       }
@@ -250,7 +320,7 @@ async function crearOrdenMantenimiento(habitacionIdEntrada, data) {
         data: { estado: "mantenimiento", estadoAnterior: habitacion.estado },
       });
 
-      return { ...orden, habitacion: { id: habitacion.id, numero: habitacion.numero, tipo: habitacion.tipo } };
+      return { ...orden, habitacion: { id: habitacion.id, numero: habitacion.numero, ...conTipoPlano(habitacion) } };
     },
     { timeout: 15000, maxWait: 10000 }
   );
@@ -310,7 +380,6 @@ async function listarOrdenesMantenimiento({ habitacionId } = {}) {
 
 module.exports = {
   listarHabitaciones,
-  listarTiposHabitacion,
   obtenerHabitacion,
   crearHabitacion,
   actualizarHabitacion,

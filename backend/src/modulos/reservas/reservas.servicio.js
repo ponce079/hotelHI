@@ -35,8 +35,12 @@ const {
   LIMITES_RESERVA,
   MAX_INTENTOS_CODIGO,
   LONGITUD_CODIGO_BYTES,
-  ZONA_ARGENTINA,
 } = require("./reservas.constantes");
+// HU-89: hoyComoFechaUTC vive en lib/ (no acá) porque habitaciones.servicio.js
+// también la necesita, y ese import directo desde acá cerraría un ciclo de
+// require — ver el comentario en lib/tipoHabitacion.js.
+const { hoyComoFechaUTC } = require("../../lib/fechas");
+const { conTipoPlano } = require("../../lib/tipoHabitacion");
 // Sin ciclo: pagoEstadia.constantes.js no importa nada (a diferencia de
 // pagoEstadia.servicio.js, que sí forma ciclo — ver el require diferido en
 // crearReservaConSena, más abajo).
@@ -96,14 +100,6 @@ function parsearFechaSinHora(valor, campo) {
     throw new ErrorDeNegocio(`${campo} no es una fecha válida del calendario.`);
   }
   return fecha;
-}
-
-// "Hoy" a medianoche UTC, anclado en hora argentina — misma lógica que
-// hoyEnHoraLocal() en frontend/src/lib/fechas.js, para que el backend y la
-// pantalla coincidan en qué día es "hoy" después de las 21hs ART.
-function hoyComoFechaUTC() {
-  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: ZONA_ARGENTINA });
-  return new Date(`${hoy}T00:00:00.000Z`);
 }
 
 function mismaFecha(a, b) {
@@ -204,7 +200,7 @@ function formatearReserva(reserva) {
     .map((h) => ({
       id: h.id,
       numero: h.numero,
-      tipo: h.tipo,
+      ...conTipoPlano(h),
       capacidad: h.capacidad,
       piso: h.piso,
       estado: h.estado,
@@ -251,7 +247,7 @@ function formatearReserva(reserva) {
 
 const INCLUDE_RESERVA = {
   huesped: true,
-  reservaHabitaciones: { include: { habitacion: true } },
+  reservaHabitaciones: { include: { habitacion: { include: { tipoHabitacion: { select: { nombre: true } } } } } },
   notificaciones: { orderBy: { fechaEnvio: "desc" } },
 };
 
@@ -373,7 +369,7 @@ function esLibreAhora(habitacion) {
 async function consultarDisponibilidad({
   fechaDesde,
   fechaHasta,
-  tipo,
+  tipoHabitacionId,
   capacidadMinima,
   excluirReservaId,
   incluirOcupadas,
@@ -384,7 +380,9 @@ async function consultarDisponibilidad({
   const noches = validarRango(desde, hasta);
 
   const capacidad = capacidadMinima ? enteroPositivo(capacidadMinima, "capacidadMinima") : null;
-  const tipoBuscado = typeof tipo === "string" && tipo.trim() ? tipo.trim() : null;
+  // HU-89: filtro por catálogo (id), ya no por el nombre-string libre de
+  // antes.
+  const tipoBuscado = tipoHabitacionId ? enteroPositivo(tipoHabitacionId, "tipoHabitacionId") : null;
   const excluida = excluirReservaId ? enteroPositivo(excluirReservaId, "excluirReservaId") : null;
   const entradaEsHoy = mismaFecha(desde, hoyComoFechaUTC());
   const conOcupadas = incluirOcupadas === true || incluirOcupadas === "true";
@@ -393,9 +391,10 @@ async function consultarDisponibilidad({
   const habitaciones = await prisma.habitacion.findMany({
     where: {
       activo: true,
-      ...(tipoBuscado ? { tipo: tipoBuscado } : {}),
+      ...(tipoBuscado ? { tipoHabitacionId: tipoBuscado } : {}),
       ...(capacidad ? { capacidad: { gte: capacidad } } : {}),
     },
+    include: { tipoHabitacion: { select: { nombre: true } } },
     orderBy: [{ piso: "asc" }, { numero: "asc" }],
   });
 
@@ -458,7 +457,7 @@ async function consultarDisponibilidad({
     const base = {
       id: h.id,
       numero: h.numero,
-      tipo: h.tipo,
+      ...conTipoPlano(h),
       capacidad: h.capacidad,
       piso: h.piso,
       equipamiento: h.equipamiento,
@@ -477,18 +476,28 @@ async function consultarDisponibilidad({
 
   // Resumen por tipo sobre el universo consultado (no solo lo disponible):
   // "Doble: 2 de 6 libres" es la lectura que pide HU-38, y con solo la
-  // lista de libres no se puede saber el denominador.
-  const resumenPorTipo = [...new Set(habitaciones.map((h) => h.tipo))].sort().map((nombreTipo) => {
-    const delTipo = habitaciones.filter((h) => h.tipo === nombreTipo);
-    const libres = delTipo.filter((h) => !bloqueadaAhora(h));
-    return {
-      tipo: nombreTipo,
-      total: delTipo.length,
-      disponibles: libres.length,
-      tarifaDesde: libres.length ? Math.min(...libres.map((h) => Number(h.tarifaPorNoche))) : null,
-      capacidadMaxima: delTipo.length ? Math.max(...delTipo.map((h) => h.capacidad)) : null,
-    };
-  });
+  // lista de libres no se puede saber el denominador. HU-89: agrupa por
+  // tipoHabitacionId (antes era por el string h.tipo) — si dos variantes
+  // de texto distintas se fusionaron en el mismo TipoHabitacion durante la
+  // migración, acá van a aparecer como un solo grupo, que es lo correcto
+  // (ya eran el mismo tipo, mal tipeado antes). Sigue devolviendo `tipo`
+  // (el nombre) para no romper a los consumidores de frontend que ya lo
+  // leen como texto, sumando `tipoHabitacionId` para quien filtre por id.
+  const idsTipoPresentes = [...new Set(habitaciones.map((h) => h.tipoHabitacionId))];
+  const resumenPorTipo = idsTipoPresentes
+    .map((id) => {
+      const delTipo = habitaciones.filter((h) => h.tipoHabitacionId === id);
+      const libres = delTipo.filter((h) => !bloqueadaAhora(h));
+      return {
+        tipoHabitacionId: id,
+        tipo: delTipo[0]?.tipoHabitacion?.nombre ?? null,
+        total: delTipo.length,
+        disponibles: libres.length,
+        tarifaDesde: libres.length ? Math.min(...libres.map((h) => Number(h.tarifaPorNoche))) : null,
+        capacidadMaxima: delTipo.length ? Math.max(...delTipo.map((h) => h.capacidad)) : null,
+      };
+    })
+    .sort((a, b) => (a.tipo ?? "").localeCompare(b.tipo ?? ""));
 
   return {
     fechaDesde: desde,
@@ -1138,5 +1147,6 @@ module.exports = {
   formatearReserva,
   generarCodigoConfirmacion,
   enviarConfirmacionPorEmail,
+  hoyComoFechaUTC,
   ErrorDeNegocio,
 };

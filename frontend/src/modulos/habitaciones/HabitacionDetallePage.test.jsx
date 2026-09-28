@@ -24,10 +24,16 @@ vi.mock("../reservas/reservas.api", () => ({
   listarReservas: vi.fn(),
 }));
 
+// HU-89: HabitacionModal (abierta desde "Editar") pide el catálogo de tipos.
+vi.mock("../tipos-habitacion/tiposHabitacion.api", () => ({
+  listarTiposHabitacion: vi.fn().mockResolvedValue([{ id: 10, codigo: "DOBLE", nombre: "Doble", activo: true }]),
+}));
+
 const BASE = {
   id: 301,
   numero: "301",
   tipo: "Doble",
+  tipoHabitacionId: 10,
   capacidad: 2,
   piso: 3,
   equipamiento: "Aire acondicionado, TV smart",

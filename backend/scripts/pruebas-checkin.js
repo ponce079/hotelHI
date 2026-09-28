@@ -438,10 +438,11 @@ async function main() {
     assert.equal(deCheckIn.habitaciones.length, 0, "Check-in sigue exigiendo 'libre', ahora en paridad con Reservas");
   });
 
-  await prueba("filtra por tipo y devuelve lista vacía si no hay ninguna disponible", async () => {
+  await prueba("filtra por tipoHabitacionId y devuelve lista vacía si no hay ninguna disponible", async () => {
     limpiar();
     base._sembrarHabitacion({ numero: "101", tipo: "Doble" });
-    const resultado = await checkInServicio.listarHabitacionesLibresAhora({ fechaHasta: enDias(2), tipo: "Suite" });
+    const suite = base._resolverOCrearTipoHabitacion("Suite");
+    const resultado = await checkInServicio.listarHabitacionesLibresAhora({ fechaHasta: enDias(2), tipoHabitacionId: suite.id });
     assert.equal(resultado.habitaciones.length, 0);
   });
 

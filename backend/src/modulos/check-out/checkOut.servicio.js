@@ -1,5 +1,6 @@
 const prisma = require('../../lib/prisma');
 const { redondear } = require('../../lib/comprobantes');
+const { conTipoPlano } = require('../../lib/tipoHabitacion');
 const reservasServicio = require('../reservas/reservas.servicio');
 const {
   TIPOS_CARGO_VERIFICACION,
@@ -71,7 +72,10 @@ async function consolidarCargos(reservaId, cliente = prisma) {
     where: { id },
     include: {
       huesped: true,
-      reservaHabitaciones: { include: { habitacion: true }, orderBy: { id: 'asc' } },
+      reservaHabitaciones: {
+        include: { habitacion: { include: { tipoHabitacion: { select: { nombre: true } } } } },
+        orderBy: { id: 'asc' },
+      },
     },
   });
   if (!reserva) throw new ErrorDeNegocio('La reserva no existe.', 404);
@@ -83,7 +87,7 @@ async function consolidarCargos(reservaId, cliente = prisma) {
     return {
       habitacionId: rh.habitacion.id,
       numero: rh.habitacion.numero,
-      tipo: rh.habitacion.tipo,
+      ...conTipoPlano(rh.habitacion),
       tarifaPorNoche,
       noches,
       subtotal: redondear(tarifaPorNoche * noches),

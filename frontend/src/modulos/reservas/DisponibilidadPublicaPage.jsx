@@ -10,6 +10,7 @@ import { Select } from "../../componentes/Select";
 import { hoyEnHoraLocal } from "../../lib/fechas";
 import { LayoutPublico } from "./LayoutPublico";
 import { consultarDisponibilidad } from "./reservas.api";
+import { listarTiposHabitacion } from "../tipos-habitacion/tiposHabitacion.api";
 
 // HU-38 — consulta pública de disponibilidad en tiempo real por fecha y
 // tipo. Sin sesión: el rol habilitado es "Huésped" (autoservicio), así que
@@ -32,10 +33,21 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
   const [criterio, setCriterio] = useState({
     fechaDesde: hoyEnHoraLocal(),
     fechaHasta: manana(),
-    tipo: "",
+    tipoHabitacionId: "",
     capacidadMinima: "",
   });
   const [buscado, setBuscado] = useState(null);
+
+  // HU-89 — catálogo para el select de tipo. En la web pública (modoInterno
+  // false) solo tipos activos con al menos una habitación activa: no tiene
+  // sentido ofrecerle al huésped un tipo sin ninguna unidad real. En uso
+  // interno (modoInterno true, /reservas/disponibilidad) todos los tipos
+  // activos del catálogo, mismo criterio que el resto de las pantallas de
+  // mostrador.
+  const tiposQuery = useQuery({
+    queryKey: ["tipos-habitacion", "activos", modoInterno],
+    queryFn: () => listarTiposHabitacion(modoInterno ? { activo: "true" } : { activo: "true", conHabitacionActiva: "true" }),
+  });
   // Selección de tarjetas (solo tiene efecto en modoInterno — ver el botón
   // "Crear reserva" más abajo): mismo patrón visual y de estado que
   // CheckInWalkIn.jsx (relleno sólido cuando está elegida).
@@ -55,7 +67,7 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
       consultarDisponibilidad({
         fechaDesde: buscado.fechaDesde,
         fechaHasta: buscado.fechaHasta,
-        tipo: buscado.tipo || undefined,
+        tipoHabitacionId: buscado.tipoHabitacionId || undefined,
         capacidadMinima: buscado.capacidadMinima || undefined,
       }),
     enabled: Boolean(buscado),
@@ -105,14 +117,14 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
           />
           <Select
             label="Tipo"
-            value={criterio.tipo}
-            onChange={(e) => actualizar("tipo", e.target.value)}
+            value={criterio.tipoHabitacionId}
+            onChange={(e) => actualizar("tipoHabitacionId", e.target.value)}
             className="min-w-[160px]"
           >
             <option value="">Todos</option>
-            {(resultado?.resumenPorTipo ?? []).map((r) => (
-              <option key={r.tipo} value={r.tipo}>
-                {r.tipo}
+            {(tiposQuery.data ?? []).map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.nombre}
               </option>
             ))}
           </Select>
@@ -148,7 +160,7 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
           <>
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               {resultado.resumenPorTipo.map((r) => (
-                <div key={r.tipo} className="rounded-lg border border-borde bg-white p-5">
+                <div key={r.tipoHabitacionId} className="rounded-lg border border-borde bg-white p-5">
                   <div className="mb-2 flex items-center justify-between gap-2">
                     <span className="font-heading text-[17px] font-semibold">{r.tipo}</span>
                     <Badge variante={r.disponibles > 0 ? "ok" : "neutro"}>

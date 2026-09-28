@@ -498,10 +498,36 @@ model OrdenPagoMedio {
 // de columnas y relaciones que sustenta este bloque.
 // ────────────────────────────────────────────────────────────
 
+// Etapa 1 de tarifas por temporada (HU-89) — catálogo formal de tipos de
+// habitación. Sobre esto se van a colgar las tarifas en las próximas
+// etapas: tarifaPorNoche SIGUE viviendo en Habitacion (precio por
+// habitación individual, no por tipo) — no mover ese campo acá.
+model TipoHabitacion {
+  id            Int          @id @default(autoincrement())
+  // 2-10 chars, MAYÚSCULAS, letras/dígitos/guion — validado en código
+  // (tiposHabitacion.servicio.js), guardado ya normalizado a mayúsculas.
+  codigo        String       @unique
+  // Unicidad case-insensitive + trim: se valida en código (no alcanza con
+  // el @unique de acá), ver tiposHabitacion.servicio.js.
+  nombre        String       @unique
+  descripcion   String?      @db.Text
+  activo        Boolean      @default(true)
+  creadoEn      DateTime     @default(now())
+  actualizadoEn DateTime     @updatedAt
+  habitaciones  Habitacion[]
+
+  @@map("tipos_habitacion")
+}
+
 model Habitacion {
   id             Int     @id @default(autoincrement())
   numero         String  @unique
-  tipo           String
+  // Sin usar por código nuevo desde HU-89 — el tipo real vive en
+  // tipoHabitacionId. Se deja la columna (nullable) hasta el cierre de
+  // Etapa 1 (pasar tipoHabitacionId a NOT NULL + borrar esta columna),
+  // que se pide aparte cuando todo el equipo corrió la migración.
+  tipo             String?
+  tipoHabitacionId Int?
   capacidad      Int
   piso           Int
   // Texto libre o JSON con el detalle de equipamiento.
@@ -521,11 +547,13 @@ model Habitacion {
   tarifaPorNoche Decimal @db.Decimal(12, 2)
   activo         Boolean @default(true)
 
+  tipoHabitacion            TipoHabitacion?             @relation(fields: [tipoHabitacionId], references: [id])
   ordenesMantenimiento      OrdenMantenimiento[]
   reservaHabitaciones       ReservaHabitacion[]
   consumosServicioAdicional ConsumoServicioAdicional[]
   notificaciones            Notificacion[]
 
+  @@index([tipoHabitacionId], map: "habitaciones_tipoHabitacionId_fkey")
   @@map("habitaciones")
 }
 

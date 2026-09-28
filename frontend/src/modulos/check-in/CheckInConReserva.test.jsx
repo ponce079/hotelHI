@@ -19,7 +19,7 @@ const RESERVA = {
   estado: "Confirmada",
   cantidadHabitaciones: 1,
   huesped: { nombre: "Marcos Beltrán", tipoDocumento: "DNI", numeroDocumento: "30111222" },
-  habitaciones: [{ numero: "301", tipo: "Doble" }],
+  habitaciones: [{ numero: "301", tipo: "Doble", tipoHabitacionId: 10 }],
   fechaDesde: "2026-09-21T00:00:00.000Z",
   fechaHasta: "2026-09-22T00:00:00.000Z",
   noches: 1,
@@ -76,7 +76,7 @@ describe("CheckInConReserva — lista por defecto de llegadas pendientes", () =>
         id: 30,
         codigoConfirmacion: "RS-PEND01",
         huesped: { nombre: "Lucía Fernández" },
-        habitaciones: [{ numero: "205", tipo: "Doble" }],
+        habitaciones: [{ numero: "205", tipo: "Doble", tipoHabitacionId: 10 }],
       },
     ]);
 
@@ -104,7 +104,7 @@ describe("CheckInConReserva — lista por defecto de llegadas pendientes", () =>
         id: 30,
         codigoConfirmacion: "RS-PEND01",
         huesped: { nombre: "Lucía Fernández" },
-        habitaciones: [{ numero: "205", tipo: "Doble" }],
+        habitaciones: [{ numero: "205", tipo: "Doble", tipoHabitacionId: 10 }],
       },
     ]);
     buscarReservaParaCheckIn.mockResolvedValue({ reserva: RESERVA, puedeIniciarCheckIn: true, motivoBloqueo: null });
@@ -129,7 +129,7 @@ describe("CheckInConReserva — lista por defecto de llegadas pendientes", () =>
         id: 30,
         codigoConfirmacion: "RS-PEND01",
         huesped: { nombre: "Lucía Fernández" },
-        habitaciones: [{ numero: "205", tipo: "Doble" }],
+        habitaciones: [{ numero: "205", tipo: "Doble", tipoHabitacionId: 10 }],
       },
     ]);
     buscarReservaParaCheckIn.mockResolvedValue({ reserva: RESERVA, puedeIniciarCheckIn: true, motivoBloqueo: null });

@@ -3,6 +3,7 @@ import { render, screen, fireEvent, act, waitFor } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReservaWizard } from "./ReservaWizard";
 import { consultarDisponibilidad, crearReserva, crearReservaConSena, modificarReserva } from "./reservas.api";
+import { listarTiposHabitacion } from "../tipos-habitacion/tiposHabitacion.api";
 
 vi.mock("./reservas.api", () => ({
   consultarDisponibilidad: vi.fn(),
@@ -11,10 +12,16 @@ vi.mock("./reservas.api", () => ({
   modificarReserva: vi.fn(),
 }));
 
+// HU-89: el select de tipo del paso 2 sale del catálogo, no de resumenPorTipo.
+vi.mock("../tipos-habitacion/tiposHabitacion.api", () => ({
+  listarTiposHabitacion: vi.fn().mockResolvedValue([{ id: 10, codigo: "DOBLE", nombre: "Doble", activo: true }]),
+}));
+
 const HABITACION_101 = {
   id: 1,
   numero: "101",
   tipo: "Doble",
+  tipoHabitacionId: 10,
   capacidad: 2,
   piso: 1,
   equipamiento: null,
@@ -33,7 +40,7 @@ const DISPONIBILIDAD = {
   // tests) el wizard arma la grilla del paso 2 desde `todas`, no desde
   // `habitaciones` — ver mostrarOcupadas en ReservaWizard.jsx.
   todas: [{ ...HABITACION_101, disponible: true, motivo: null }],
-  resumenPorTipo: [{ tipo: "Doble", total: 1, disponibles: 1, tarifaDesde: 50000, capacidadMaxima: 2 }],
+  resumenPorTipo: [{ tipo: "Doble", tipoHabitacionId: 10, total: 1, disponibles: 1, tarifaDesde: 50000, capacidadMaxima: 2 }],
 };
 
 const RESERVA_CREADA = {
@@ -279,7 +286,7 @@ describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin 
     id: 7,
     fechaDesde: "2026-10-10T00:00:00.000Z",
     fechaHasta: "2026-10-13T00:00:00.000Z",
-    habitaciones: [{ id: 1, numero: "101", tipo: "Doble" }],
+    habitaciones: [{ id: 1, numero: "101", tipo: "Doble", tipoHabitacionId: 10 }],
     huesped: { nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com", preferencias: "" },
   };
 
@@ -318,5 +325,19 @@ describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin 
 
     await waitFor(() => expect(crearReserva).toHaveBeenCalledTimes(1));
     expect(crearReservaConSena).not.toHaveBeenCalled();
+  });
+});
+
+describe("ReservaWizard — HU-89: el filtro de tipo del paso 2 respeta el origen", () => {
+  it('origen "WEB" (autoservicio): pide el catálogo con conHabitacionActiva', async () => {
+    renderWizard({ origen: "WEB", valoresIniciales: { fechaDesde: "2026-10-10", fechaHasta: "2026-10-13" } });
+    await waitFor(() =>
+      expect(listarTiposHabitacion).toHaveBeenCalledWith({ activo: "true", conHabitacionActiva: "true" })
+    );
+  });
+
+  it('origen "RECEPCION" (mostrador): pide todos los tipos activos, sin conHabitacionActiva', async () => {
+    renderWizard({ origen: "RECEPCION" });
+    await waitFor(() => expect(listarTiposHabitacion).toHaveBeenCalledWith({ activo: "true" }));
   });
 });
