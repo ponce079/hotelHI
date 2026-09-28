@@ -21,6 +21,7 @@ import {
   Receipt,
   Wrench,
   ArrowLeftRight,
+  Users,
 } from "lucide-react";
 
 // Menu por rol, calcado de MENUS del prototipo (y de lo que dice cada
@@ -164,6 +165,11 @@ export const MENU_GRUPOS = [
     // admin (HU-10/HU-11) — a diferencia de "Stock y Depositos", que es
     // operacion diaria compartida con deposito.
     grupo: "Administración",
-    items: [{ to: "/tipos-movimiento", label: "Tipos de Movimiento", icon: Tag, roles: ["admin"] }],
+    items: [
+      // Usuarios y Seguridad: alta de usuarios, roles y acceso — solo admin
+      // (ver gestionarUsuarios en sesion.jsx).
+      { to: "/usuarios", label: "Usuarios", icon: Users, roles: ["admin"] },
+      { to: "/tipos-movimiento", label: "Tipos de Movimiento", icon: Tag, roles: ["admin"] },
+    ],
   },
 ];

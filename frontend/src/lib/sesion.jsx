@@ -1,10 +1,13 @@
-import { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { CLAVE_AVISO_LOGIN, CLAVE_SESION, EVENTO_SESION_VENCIDA } from "./sesionClaves";
 
-// Sesion solo de frontend: el propio prototipo del diseno dice que el
-// bloqueo por intentos fallidos y la gestion de roles "son parte del
-// Sprint 3" — este login no valida usuario/contrasena contra el backend,
-// solo elige un rol y guarda quien esta "operando" para filtrar menu y
-// permisos. No crea tablas Usuario/Rol nuevas.
+// Usuarios y Seguridad: el login ya no es "elegí una tarjeta de rol" — se
+// entra con usuario y contraseña reales, validados contra la tabla
+// `usuarios` del backend (bloqueo después de 5 intentos fallidos). El rol
+// sale de la base, no lo elige quien entra. Lo que se guarda acá es el
+// resultado de ese login: rol, usuario (nombre de login, el mismo que ya
+// usaban las demás pantallas como "quién lo hizo"), el token de sesión y
+// los datos del perfil (nombre, apellido, foto…).
 // Descripciones actualizadas para Sprint 2 (Compras y Gastos) — antes
 // solo describían el alcance de Sprint 1 (Depósito y Stock), aunque los
 // permisos de cada rol ya se habían ampliado más abajo en este mismo
@@ -37,33 +40,70 @@ export const ROLES = {
   },
 };
 
-const CLAVE_STORAGE = "sgh_sesion";
 const SesionContext = createContext(null);
 
 function leerSesionGuardada() {
   try {
-    const raw = sessionStorage.getItem(CLAVE_STORAGE);
+    const raw = sessionStorage.getItem(CLAVE_SESION);
     const datos = raw ? JSON.parse(raw) : null;
-    return datos && ROLES[datos.rol] ? datos : null;
+    // Sin token es una sesión del login simulado anterior: ya no sirve, se
+    // pide entrar de nuevo con usuario y contraseña.
+    return datos && ROLES[datos.rol] && datos.token ? datos : null;
   } catch {
     return null;
+  }
+}
+
+function guardarSesion(datos) {
+  try {
+    sessionStorage.setItem(CLAVE_SESION, JSON.stringify(datos));
+  } catch {
+    // Sin almacenamiento disponible la sesión sigue viva en memoria hasta
+    // recargar la página.
   }
 }
 
 export function SesionProvider({ children }) {
   const [sesion, setSesion] = useState(leerSesionGuardada);
 
-  const iniciarSesion = useCallback((rol, usuario) => {
+  // `extras`: { token, perfil } tal cual los devuelve POST /api/auth/login.
+  const iniciarSesion = useCallback((rol, usuario, extras = {}) => {
     if (!ROLES[rol]) return;
-    const nueva = { rol, usuario };
-    sessionStorage.setItem(CLAVE_STORAGE, JSON.stringify(nueva));
+    const nueva = { rol, usuario, token: extras.token ?? null, perfil: extras.perfil ?? null };
+    guardarSesion(nueva);
     setSesion(nueva);
   }, []);
 
   const cerrarSesion = useCallback(() => {
-    sessionStorage.removeItem(CLAVE_STORAGE);
+    sessionStorage.removeItem(CLAVE_SESION);
     setSesion(null);
   }, []);
+
+  // Después de editar "Mi perfil": refresca nombre/foto en el menú sin
+  // tener que volver a iniciar sesión.
+  const actualizarPerfil = useCallback((perfil) => {
+    setSesion((actual) => {
+      if (!actual) return actual;
+      const nueva = { ...actual, perfil };
+      guardarSesion(nueva);
+      return nueva;
+    });
+  }, []);
+
+  // El backend avisó (vía lib/api.js) que el token venció o que el usuario
+  // fue desactivado: se cierra la sesión y el login muestra el motivo.
+  useEffect(() => {
+    function alVencerSesion(evento) {
+      try {
+        sessionStorage.setItem(CLAVE_AVISO_LOGIN, evento.detail || "Tu sesión venció. Volvé a iniciar sesión.");
+      } catch {
+        // Sin almacenamiento: se cierra igual, solo que sin el aviso.
+      }
+      cerrarSesion();
+    }
+    window.addEventListener(EVENTO_SESION_VENCIDA, alVencerSesion);
+    return () => window.removeEventListener(EVENTO_SESION_VENCIDA, alVencerSesion);
+  }, [cerrarSesion]);
 
   const value = useMemo(() => {
     const rol = sesion?.rol ?? null;
@@ -71,8 +111,11 @@ export function SesionProvider({ children }) {
       rol,
       usuario: sesion?.usuario ?? null,
       rolInfo: rol ? ROLES[rol] : null,
+      token: sesion?.token ?? null,
+      perfil: sesion?.perfil ?? null,
       iniciarSesion,
       cerrarSesion,
+      actualizarPerfil,
       // abmDeposito: alta/edicion de depositos. abmArticulo: alta/edicion/baja
       // de articulos del catalogo. operar: registrar movimientos/
       // transferencias y confirmar recepciones. param: definir min/max.
@@ -223,10 +266,16 @@ export function SesionProvider({ children }) {
         if (accion === "verPagosEstadia") return rol === "admin" || rol === "recepcionista";
         // Caja diaria (HU-54): solo gerente, mismo criterio que Reporte de Consumo (HU-9). Sin cambios.
         if (accion === "verCajaDiaria") return rol === "gerente";
+        // Usuarios y Seguridad: dar de alta usuarios, asignarles el rol,
+        // desactivarlos, desbloquearlos y restablecerles la contraseña es
+        // exclusivo del administrador (mismo criterio que el resto de los
+        // catálogos maestros). "Mi perfil" no pasa por acá: cada usuario
+        // logueado edita el suyo, sea cual sea su rol.
+        if (accion === "gestionarUsuarios") return rol === "admin";
         return false;
       },
     };
-  }, [sesion, iniciarSesion, cerrarSesion]);
+  }, [sesion, iniciarSesion, cerrarSesion, actualizarPerfil]);
 
   return <SesionContext.Provider value={value}>{children}</SesionContext.Provider>;
 }
