@@ -7,7 +7,7 @@ import { Button } from "../../componentes/Button";
 import { crearTipoHabitacion, actualizarTipoHabitacion } from "./tiposHabitacion.api";
 import { LIMITES_TIPO_HABITACION } from "./tiposHabitacion.constantes";
 
-const VACIO = { codigo: "", nombre: "", descripcion: "" };
+const VACIO = { codigo: "", nombre: "", descripcion: "", ocupacionBase: "2" };
 
 // El código se guarda en MAYÚSCULAS (regla de negocio) — se normaliza en
 // vivo al tipear, mismo criterio que TipoMovimientoForm.jsx con descripcion.
@@ -18,16 +18,22 @@ function normalizarCodigoEnVivo(valor) {
 export function TipoHabitacionModal({ tipo, onClose, onExito }) {
   const editando = Boolean(tipo);
   const [form, setForm] = useState(
-    tipo ? { codigo: tipo.codigo, nombre: tipo.nombre, descripcion: tipo.descripcion ?? "" } : VACIO
+    tipo
+      ? { codigo: tipo.codigo, nombre: tipo.nombre, descripcion: tipo.descripcion ?? "", ocupacionBase: String(tipo.ocupacionBase ?? 2) }
+      : VACIO
   );
   const [errores, setErrores] = useState({});
   const queryClient = useQueryClient();
 
   const mutacion = useMutation({
-    mutationFn: () => (editando ? actualizarTipoHabitacion(tipo.id, form) : crearTipoHabitacion(form)),
+    mutationFn: () => {
+      const payload = { ...form, ocupacionBase: Number(form.ocupacionBase) };
+      return editando ? actualizarTipoHabitacion(tipo.id, payload) : crearTipoHabitacion(payload);
+    },
     onSuccess: (guardado) => {
       queryClient.invalidateQueries({ queryKey: ["tipos-habitacion"] });
-      onExito(`Tipo de habitación "${guardado.nombre}" ${editando ? "actualizado" : "creado"} correctamente.`);
+      const base = `Tipo de habitación "${guardado.nombre}" ${editando ? "actualizado" : "creado"} correctamente.`;
+      onExito(guardado.advertenciaCapacidad ? `${base} ${guardado.advertenciaCapacidad}` : base);
     },
     onError: (error) => {
       const mensaje = error?.response?.data?.error ?? "No se pudo guardar el tipo de habitación.";
@@ -54,6 +60,10 @@ export function TipoHabitacionModal({ tipo, onClose, onExito }) {
       nuevos.codigo = `El código debe tener entre ${LIMITES_TIPO_HABITACION.codigoMin} y ${LIMITES_TIPO_HABITACION.codigoMax} caracteres.`;
     }
     if (!form.nombre.trim()) nuevos.nombre = "El nombre es obligatorio.";
+    const ocupacionBase = Number(form.ocupacionBase);
+    if (!Number.isInteger(ocupacionBase) || ocupacionBase < 1) {
+      nuevos.ocupacionBase = "Tiene que ser un número entero mayor o igual a 1.";
+    }
     return nuevos;
   }
 
@@ -92,6 +102,15 @@ export function TipoHabitacionModal({ tipo, onClose, onExito }) {
             error={errores.nombre}
             maxLength={LIMITES_TIPO_HABITACION.nombre}
             placeholder="ej. Doble"
+          />
+          <Input
+            label="Ocupación base *"
+            type="number"
+            min="1"
+            step="1"
+            value={form.ocupacionBase}
+            onChange={(e) => cambiar("ocupacionBase", e.target.value)}
+            error={errores.ocupacionBase}
           />
           <div className="sm:col-span-2">
             <label className="flex flex-col gap-1.5 font-body text-sm">

@@ -512,42 +512,48 @@ model TipoHabitacion {
   nombre        String       @unique
   descripcion   String?      @db.Text
   activo        Boolean      @default(true)
+  // Etapa 2 de tarifas por temporada (HU-92) — cantidad de adultos
+  // incluida en el precio base de la tarifa; adultos extra pagan el
+  // adicional de Tarifa.adicionalAdultoExtra. Se edita desde ACÁ (el ABM
+  // de Tipos de Habitación, HU-89), no desde el módulo de tarifas.
+  ocupacionBase Int          @default(2)
   creadoEn      DateTime     @default(now())
   actualizadoEn DateTime     @updatedAt
   habitaciones  Habitacion[]
+  tarifas       Tarifa[]
 
   @@map("tipos_habitacion")
 }
 
 model Habitacion {
-  id             Int     @id @default(autoincrement())
-  numero         String  @unique
+  id               Int     @id @default(autoincrement())
+  numero           String  @unique
   // Sin usar por código nuevo desde HU-89 — el tipo real vive en
   // tipoHabitacionId. Se deja la columna (nullable) hasta el cierre de
   // Etapa 1 (pasar tipoHabitacionId a NOT NULL + borrar esta columna),
   // que se pide aparte cuando todo el equipo corrió la migración.
   tipo             String?
   tipoHabitacionId Int?
-  capacidad      Int
-  piso           Int
+  capacidad        Int
+  piso             Int
   // Texto libre o JSON con el detalle de equipamiento.
-  equipamiento   String? @db.Text
+  equipamiento     String? @db.Text
   // libre | ocupada | mantenimiento | bloqueada | en limpieza
-  estado         String  @default("libre")
+  estado           String  @default("libre")
   // Obligatorio solo cuando estado = "bloqueada" (ver cambiarEstadoHabitacion
   // en habitaciones.servicio.js) — no aplica a los demás estados, por eso
   // nullable, mismo criterio que OrdenCompra.motivoAnulacion.
-  motivoBloqueo  String? @db.Text
+  motivoBloqueo    String? @db.Text
   // Estado justo antes de entrar en "mantenimiento" (ver crearOrdenMantenimiento
   // en habitaciones.servicio.js) — permite devolverla a ese estado (no siempre
   // "libre") cuando la orden se marca "Resuelta", en vez de liberar por error
   // una habitación que seguía ocupada. Se limpia (vuelve a null) al resolver.
-  estadoAnterior String?
+  estadoAnterior   String?
   // Precio por noche propio de la habitación (no una tarifa fija por tipo).
-  tarifaPorNoche Decimal @db.Decimal(12, 2)
-  activo         Boolean @default(true)
+  tarifaPorNoche   Decimal @db.Decimal(12, 2)
+  activo           Boolean @default(true)
 
-  tipoHabitacion            TipoHabitacion?             @relation(fields: [tipoHabitacionId], references: [id])
+  tipoHabitacion            TipoHabitacion?            @relation(fields: [tipoHabitacionId], references: [id])
   ordenesMantenimiento      OrdenMantenimiento[]
   reservaHabitaciones       ReservaHabitacion[]
   consumosServicioAdicional ConsumoServicioAdicional[]
@@ -757,4 +763,138 @@ model CargoVerificacionCheckout {
 
   @@index([reservaId], map: "cargos_verificacion_checkout_reservaId_fkey")
   @@map("cargos_verificacion_checkout")
+}
+
+// ────────────────────────────────────────────────────────────
+// Etapa 2 de tarifas por temporada (HU-90 a HU-93) — maestros comerciales:
+// temporadas, planes tarifarios, tarifas versionadas por tipo×temporada,
+// modificador por día de semana y actualización masiva por lote. Nada de
+// esto se conecta todavía con Reserva/Habitacion (eso es Etapa 3/4) — solo
+// resolverTemporadaEfectiva y obtenerTarifaVigente (temporadas.servicio.js
+// / precios.servicio.js) quedan listas para que la Etapa 3 las reuse.
+// ────────────────────────────────────────────────────────────
+
+model Temporada {
+  id            Int       @id @default(autoincrement())
+  nombre        String
+  // BASE | BAJA | MEDIA | ALTA | EVENTO — validado en código
+  // (tarifas.constantes.js). Solo una Temporada con nivel BASE puede
+  // existir, y siempre activa (no se puede dar de baja).
+  nivel         String
+  // null solo para la Temporada BASE — cubre cualquier fecha que ninguna
+  // otra temporada activa cubra. El resto siempre tiene las dos, rango de
+  // pernocte con ambos extremos inclusive.
+  fechaDesde    DateTime?
+  fechaHasta    DateTime?
+  estadiaMinima Int?
+  cierreLlegada Boolean   @default(false)
+  activa        Boolean   @default(true)
+  motivoBaja    String?
+  // Quién dio de baja — mismo mecanismo `usuario` que el resto del
+  // proyecto (ver ordenesCompra.servicio.js), no hay tabla de Usuario real.
+  bajaPor       String?
+  creadoPor     String?
+  creadoEn      DateTime  @default(now())
+  actualizadoEn DateTime  @updatedAt
+  tarifas       Tarifa[]
+
+  @@map("temporadas")
+}
+
+model PlanTarifario {
+  id                       Int             @id @default(autoincrement())
+  // MAYÚSCULAS, único, inmutable una vez creado (tarifas.servicio.js
+  // nunca lo toca en un update).
+  codigo                   String          @unique
+  nombre                   String
+  // BASE | DERIVADO — solo un plan BASE puede existir (es "BAR").
+  tipo                     String
+  // Obligatorio si tipo=DERIVADO; tiene que apuntar a un plan tipo=BASE
+  // (no se puede derivar de un derivado).
+  planBaseId               Int?
+  // Obligatorio si tipo=DERIVADO, 0 < x < 100 — descuento sobre el precio
+  // del plan base (el derivado no tiene Tarifa propia, se calcula).
+  descuentoPorcentaje      Decimal?        @db.Decimal(5, 2)
+  reembolsable             Boolean         @default(true)
+  // Obligatorio solo si reembolsable=true.
+  horasCancelacionSinCargo Int?
+  // PRIMERA_NOCHE | TOTAL_ESTADIA
+  penalidadNoShow          String
+  visibleWeb               Boolean         @default(true)
+  activo                   Boolean         @default(true)
+  motivoBaja               String?
+  bajaPor                  String?
+  creadoPor                String?
+  creadoEn                 DateTime        @default(now())
+  actualizadoEn            DateTime        @updatedAt
+  planBase                 PlanTarifario?  @relation("PlanDerivado", fields: [planBaseId], references: [id])
+  derivados                PlanTarifario[] @relation("PlanDerivado")
+
+  @@index([planBaseId], map: "planes_tarifarios_planBaseId_fkey")
+  @@map("planes_tarifarios")
+}
+
+model Tarifa {
+  id                   Int                         @id @default(autoincrement())
+  tipoHabitacionId     Int
+  temporadaId          Int
+  // IVA incluido (precio final al consumidor) — hasta ocupacionBase
+  // adultos del tipo de habitación.
+  precioBase           Decimal                     @db.Decimal(12, 2)
+  adicionalAdultoExtra Decimal                     @db.Decimal(12, 2)
+  // Fecha de VENTA desde la que esta versión aplica — nunca anterior a
+  // hoy al crearla. La tarifa vigente para una venta del día D es la
+  // versión con mayor vigenteDesde <= D (ver obtenerTarifaVigente).
+  vigenteDesde         DateTime
+  // Si esta versión nació de una actualización masiva (HU-93) — null si
+  // se cargó a mano.
+  loteActualizacionId  Int?
+  creadoPor            String?
+  creadoEn             DateTime                    @default(now())
+  actualizadoEn        DateTime                    @updatedAt
+  tipoHabitacion       TipoHabitacion              @relation(fields: [tipoHabitacionId], references: [id])
+  temporada            Temporada                   @relation(fields: [temporadaId], references: [id])
+  loteActualizacion    LoteActualizacionTarifaria? @relation(fields: [loteActualizacionId], references: [id])
+
+  @@unique([tipoHabitacionId, temporadaId, vigenteDesde])
+  @@index([temporadaId], map: "tarifas_temporadaId_fkey")
+  @@index([loteActualizacionId], map: "tarifas_loteActualizacionId_fkey")
+  @@map("tarifas")
+}
+
+// 7 filas fijas (una por día de semana), sembradas por seed-tarifas.js —
+// global para todo el hotel, no por tipo de habitación. Se aplica recién
+// en la Etapa 3 (motor de cotización); acá solo se carga y se muestra.
+model ModificadorDiaSemana {
+  id            Int      @id @default(autoincrement())
+  // 0 = domingo … 6 = sábado.
+  diaSemana     Int      @unique
+  // -50 a 50, default 0.
+  porcentaje    Decimal  @default(0) @db.Decimal(5, 2)
+  creadoEn      DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+
+  @@map("modificadores_dia_semana")
+}
+
+model LoteActualizacionTarifaria {
+  id               Int      @id @default(autoincrement())
+  // ACT-00001, vía crearConNumeroSecuencial (lib/numeracion.js).
+  numero           String   @unique
+  porcentaje       Decimal  @db.Decimal(6, 2)
+  vigenteDesde     DateTime
+  // JSON con los filtros elegidos (temporadaIds/tipoHabitacionIds) —
+  // puramente informativo/auditoría, no se vuelve a parsear para nada.
+  filtrosAplicados String?  @db.Text
+  motivo           String   @db.Text
+  // Aplicado | Anulado
+  estado           String   @default("Aplicado")
+  motivoAnulacion  String?
+  anuladoPor       String?
+  creadoPor        String?
+  creadoEn         DateTime @default(now())
+  actualizadoEn    DateTime @updatedAt
+  tarifas          Tarifa[]
+
+  @@map("lotes_actualizacion_tarifaria")
 }

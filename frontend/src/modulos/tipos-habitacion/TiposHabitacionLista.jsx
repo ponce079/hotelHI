@@ -44,7 +44,7 @@ export function TiposHabitacionLista({ puedeGestionar, onEditar }) {
         <Tag size={20} className="text-pino" /> Catálogo de tipos de habitación
       </h2>
       <Table
-        columnas={["Código", "Nombre", "Descripción", "Estado", puedeGestionar ? "Acciones" : null].filter(Boolean)}
+        columnas={["Código", "Nombre", "Ocupación base", "Descripción", "Estado", puedeGestionar ? "Acciones" : null].filter(Boolean)}
         columnasDerecha={puedeGestionar ? ["Acciones"] : []}
         filas={tipos}
         vacio="Todavía no hay tipos de habitación cargados."
@@ -52,6 +52,7 @@ export function TiposHabitacionLista({ puedeGestionar, onEditar }) {
           <tr key={t.id} className="border-b border-borde last:border-0">
             <td className="px-3 py-2 font-mono text-[12.5px]">{t.codigo}</td>
             <td className="px-3 py-2 font-body text-[13.5px] font-semibold">{t.nombre}</td>
+            <td className="px-3 py-2 text-[12.5px]">{t.ocupacionBase ?? 2}</td>
             <td className="px-3 py-2 text-[12.5px] text-tinta/60">{t.descripcion || "—"}</td>
             <td className="px-3 py-2">
               <Badge variante={t.activo ? "ok" : "neutro"}>{t.activo ? "Activo" : "Dado de baja"}</Badge>

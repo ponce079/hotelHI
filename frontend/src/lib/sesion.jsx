@@ -170,6 +170,17 @@ export function SesionProvider({ children }) {
         // (referencia para el análisis de tarifas de las próximas etapas).
         if (accion === "gestionarTiposHabitacion") return rol === "admin";
         if (accion === "verTiposHabitacion") return ["admin", "recepcionista", "gerente"].includes(rol);
+        // Etapa 2 de tarifas por temporada (HU-90 a HU-93): ver es lo mismo
+        // que verTiposHabitacion (admin, recepcionista y gerente necesitan
+        // consultar temporadas/planes/precios); gestionar (alta/edición/
+        // baja/actualización masiva/anulación) queda exclusivo de gerente,
+        // que es quien define la política comercial — a diferencia de
+        // gestionarTiposHabitacion (admin), acá ni admin ni recepcionista
+        // escriben. El backend no valida rol todavía (mismo comentario que
+        // el resto de los módulos), así que esta pantalla depende de este
+        // chequeo + <SinPermiso />.
+        if (accion === "verTarifas") return ["admin", "recepcionista", "gerente"].includes(rol);
+        if (accion === "gestionarTarifas") return rol === "gerente";
         // HU-33/34 (corrección): se elimina el rol "Personal de
         // Mantenimiento" — nunca se loguea al sistema, resuelve físicamente
         // y avisa de palabra. Reparto real: Housekeeping y Recepcionista

@@ -39,7 +39,7 @@ const {
 // HU-89: hoyComoFechaUTC vive en lib/ (no acá) porque habitaciones.servicio.js
 // también la necesita, y ese import directo desde acá cerraría un ciclo de
 // require — ver el comentario en lib/tipoHabitacion.js.
-const { hoyComoFechaUTC } = require("../../lib/fechas");
+const { hoyComoFechaUTC, parsearFechaSinHora: parsearFechaSinHoraBase } = require("../../lib/fechas");
 const { conTipoPlano } = require("../../lib/tipoHabitacion");
 // Sin ciclo: pagoEstadia.constantes.js no importa nada (a diferencia de
 // pagoEstadia.servicio.js, que sí forma ciclo — ver el require diferido en
@@ -54,7 +54,6 @@ class ErrorDeNegocio extends Error {
 }
 
 const MILISEGUNDOS_POR_DIA = 24 * 60 * 60 * 1000;
-const PATRON_FECHA = /^\d{4}-\d{2}-\d{2}$/;
 const PATRON_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // --------------------------------------------------------------
@@ -86,20 +85,19 @@ function enteroPositivo(valor, campo) {
 // (mismo criterio que ComprobanteProveedor.fecha cuando es Factura). NUNCA
 // new Date(valorSuelto): eso interpreta un string sin zona en la hora local
 // del proceso y en Argentina (UTC-3) corre la reserva un día.
+//
+// Etapa 2 de tarifas por temporada (HU-90/92/93) extrajo esta lógica a
+// lib/fechas.js para reutilizarla sin duplicarla — esta función queda como
+// un envoltorio fino que re-lanza el Error plano de la base como el
+// ErrorDeNegocio propio de este módulo (mismo patrón que
+// envolverErrorReservas en checkOut.servicio.js), así los ~40 call sites
+// de acá adentro no cambian.
 function parsearFechaSinHora(valor, campo) {
-  const texto = valor instanceof Date ? valor.toISOString() : typeof valor === "string" ? valor.trim() : "";
-  const soloFecha = texto.slice(0, 10);
-  if (!PATRON_FECHA.test(soloFecha)) {
-    throw new ErrorDeNegocio(`${campo} es obligatoria y debe tener formato AAAA-MM-DD.`);
+  try {
+    return parsearFechaSinHoraBase(valor, campo);
+  } catch (err) {
+    throw new ErrorDeNegocio(err.message);
   }
-  const fecha = new Date(`${soloFecha}T00:00:00.000Z`);
-  // Date "corrige" solo un 2026-02-31 al 3 de marzo en vez de fallar, así
-  // que la única forma de detectar un día inexistente es comparar la
-  // vuelta con lo que entró.
-  if (Number.isNaN(fecha.getTime()) || fecha.toISOString().slice(0, 10) !== soloFecha) {
-    throw new ErrorDeNegocio(`${campo} no es una fecha válida del calendario.`);
-  }
-  return fecha;
 }
 
 function mismaFecha(a, b) {

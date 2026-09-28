@@ -21,6 +21,7 @@ import {
   Receipt,
   Wrench,
   ArrowLeftRight,
+  DollarSign,
 } from "lucide-react";
 
 // Menu por rol, calcado de MENUS del prototipo (y de lo que dice cada
@@ -67,6 +68,16 @@ export const MENU_GRUPOS = [
         to: "/tipos-habitacion",
         label: "Tipos de Habitación",
         icon: Tag,
+        roles: ["admin", "recepcionista", "gerente"],
+      },
+      // Etapa 2 de tarifas por temporada (HU-90 a HU-93). Mismos roles que
+      // verTarifas (sesion.jsx): admin y recepcionista consultan, gerente
+      // además gestiona (verTarifas alcanza para mostrar el ítem; el botón
+      // de escritura de cada pantalla ya se gatea con gestionarTarifas).
+      {
+        to: "/tarifas",
+        label: "Tarifas",
+        icon: DollarSign,
         roles: ["admin", "recepcionista", "gerente"],
       },
       // Sprint 3 académico — Reservas (HU-36 a 42). Las pantallas públicas

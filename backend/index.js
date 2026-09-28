@@ -55,6 +55,7 @@ app.use("/api/comprobantes", require("./src/modulos/comprobantes/comprobantes.ro
 app.use("/api/ordenes-compra", require("./src/modulos/ordenes-compra/ordenesCompra.routes"));
 app.use("/api/habitaciones", require("./src/modulos/habitaciones/habitaciones.routes"));
 app.use("/api/tipos-habitacion", require("./src/modulos/tipos-habitacion/tiposHabitacion.routes"));
+app.use("/api/tarifas", require("./src/modulos/tarifas/tarifas.routes"));
 app.use("/api/reservas", require("./src/modulos/reservas/reservas.routes"));
 app.use("/api/check-in", require("./src/modulos/check-in/checkIn.routes"));
 app.use("/api/consumos-servicios", require("./src/modulos/servicios-adicionales/serviciosAdicionales.routes"));

@@ -107,6 +107,12 @@ const TABLAS = [
   // crearNotaCredito, anularComprobante, reporteCajaDiaria). No la usa
   // ningún otro script hoy.
   "comprobanteEstadia",
+  // Etapa 2 de tarifas por temporada (HU-90 a HU-93).
+  "temporada",
+  "planTarifario",
+  "tarifa",
+  "modificadorDiaSemana",
+  "loteActualizacionTarifaria",
 ];
 
 // Campos `@default(now())` del schema real que ningún servicio setea a
@@ -146,6 +152,18 @@ const CAMPO_BOOLEANO_FALSE_POR_DEFECTO = {
 // doble y `listarTiposHabitacion({activo:"true"})` no matcheaba nunca.
 const CAMPO_BOOLEANO_TRUE_POR_DEFECTO = {
   tipoHabitacion: ["activo"],
+  // Etapa 2 de tarifas por temporada: temporadas.servicio.js/
+  // planesTarifarios.servicio.js tampoco setean `activa`/`activo` a mano
+  // al crear (mismo criterio de arriba).
+  temporada: ["activa"],
+  planTarifario: ["activo"],
+};
+
+// Mismo problema, para un default de tipo texto (`String @default("...")`)
+// — sumado para HU-93: lotesActualizacion.servicio.js no setea `estado` a
+// mano al crear un lote (confía en el default "Aplicado" del schema).
+const CAMPO_STRING_POR_DEFECTO = {
+  loteActualizacionTarifaria: { estado: "Aplicado" },
 };
 
 // Relaciones 1-a-N creadas con la sintaxis anidada de Prisma
@@ -203,6 +221,14 @@ function crearBase() {
         const propias = datos.habitacion.filter((h) => h.tipoHabitacionId === registro.id);
         if (condicion.some) return propias.some((h) => coincide("habitacion", h, condicion.some));
         throw new Error("Solo se soporta `some` sobre habitaciones");
+      }
+      // Etapa 2 de tarifas por temporada — lotesActualizacion.servicio.js
+      // busca conflictos con el índice único compuesto de Tarifa
+      // (@@unique([tipoHabitacionId, temporadaId, vigenteDesde])). Prisma
+      // real nombra esa clave concatenando los 3 campos con "_"; el doble
+      // la desarma y evalúa los 3 como un where plano normal.
+      if (tabla === "tarifa" && campo === "tipoHabitacionId_temporadaId_vigenteDesde") {
+        return coincide(tabla, registro, condicion);
       }
 
       // --- Relación de checkOut.servicio.js (consolidarCargos: filtra
@@ -336,6 +362,14 @@ function crearBase() {
           .map((d) => ({ ...d, articulo: datos.articulo.find((a) => a.id === d.articuloId) ?? null }));
       }
     }
+    // Etapa 2 de tarifas por temporada — lotesActualizacion.servicio.js lee
+    // el lote con sus Tarifa asociadas (relación inversa) para reportar el
+    // resultado de confirmarActualizacion y para revisar cada celda al anular.
+    if (tabla === "loteActualizacionTarifaria") {
+      if (include.tarifas) {
+        salida.tarifas = datos.tarifa.filter((t) => t.loteActualizacionId === registro.id);
+      }
+    }
     return salida;
   }
 
@@ -439,6 +473,9 @@ function crearBase() {
         for (const campoBool of CAMPO_BOOLEANO_TRUE_POR_DEFECTO[tabla] ?? []) {
           if (fila[campoBool] === undefined) fila[campoBool] = true;
         }
+        for (const [campoString, valorDefecto] of Object.entries(CAMPO_STRING_POR_DEFECTO[tabla] ?? {})) {
+          if (fila[campoString] === undefined) fila[campoString] = valorDefecto;
+        }
         // Unicidad real de la base, para probar reintentos (mismo criterio
         // que pruebas-reservas.js).
         if (tabla === "reserva" && datos.reserva.some((r) => r.codigoConfirmacion === fila.codigoConfirmacion)) {
@@ -449,6 +486,23 @@ function crearBase() {
         }
         if (tabla === "habitacion" && datos.habitacion.some((h) => h.numero === fila.numero)) {
           throw new PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", meta: { target: ["numero"] } });
+        }
+        // Etapa 2 de tarifas por temporada — @@unique([tipoHabitacionId,
+        // temporadaId, vigenteDesde]) de Tarifa (precios.servicio.js:crearTarifa
+        // depende de este P2002 para el mensaje de "ya existe una versión...").
+        if (
+          tabla === "tarifa" &&
+          datos.tarifa.some(
+            (t) =>
+              t.tipoHabitacionId === fila.tipoHabitacionId &&
+              t.temporadaId === fila.temporadaId &&
+              t.vigenteDesde?.getTime() === fila.vigenteDesde?.getTime()
+          )
+        ) {
+          throw new PrismaClientKnownRequestError("Unique constraint failed", {
+            code: "P2002",
+            meta: { target: ["tipoHabitacionId", "temporadaId", "vigenteDesde"] },
+          });
         }
         datos[tabla].push(fila);
         for (const [clave, { tabla: tablaHija, fk }] of Object.entries(relaciones)) {
@@ -515,6 +569,16 @@ function crearBase() {
         const borradas = datos[tabla].length - quedan.length;
         datos[tabla] = quedan;
         return { count: borradas };
+      },
+      // Singular — sumado para HU-92 (precios.servicio.js:eliminarTarifa,
+      // borra una versión futura puntual por id). A diferencia de
+      // deleteMany, Prisma real tira P2025 si no encuentra la fila; acá no
+      // hace falta reproducir ese detalle porque los servicios que llaman
+      // a esto ya validan `findUnique` antes de borrar.
+      delete: async ({ where = {} }) => {
+        const fila = datos[tabla].find((r) => coincide(tabla, r, where));
+        datos[tabla] = datos[tabla].filter((r) => r !== fila);
+        return fila;
       },
     };
   }
@@ -594,7 +658,7 @@ function crearBase() {
   // la FK se ejercita de verdad. `tipoHabitacionId` explícito en `extra`
   // gana si viene (para las pruebas que sí quieren un tipo puntual, ej.
   // uno ya dado de baja).
-  cliente._resolverOCrearTipoHabitacion = (nombre) => {
+  cliente._resolverOCrearTipoHabitacion = (nombre, extra = {}) => {
     let tipoRow = datos.tipoHabitacion.find((t) => t.nombre.toLowerCase() === String(nombre).toLowerCase());
     if (!tipoRow) {
       const codigo = String(nombre).toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 10) || "TIPO";
@@ -604,8 +668,13 @@ function crearBase() {
         nombre,
         descripcion: null,
         activo: true,
+        // Etapa 2 de tarifas por temporada (HU-92) — default del schema,
+        // overrideable por las pruebas que necesiten un tipo con otra
+        // ocupación puntual.
+        ocupacionBase: 2,
         creadoEn: ahoraFalso(),
         actualizadoEn: ahoraFalso(),
+        ...extra,
       };
       datos.tipoHabitacion.push(tipoRow);
     }

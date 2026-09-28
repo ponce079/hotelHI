@@ -6,7 +6,12 @@
 // individual) — este módulo no la toca para nada.
 
 const prisma = require("../../lib/prisma");
-const { LIMITES_TIPO_HABITACION, PATRON_CODIGO } = require("./tiposHabitacion.constantes");
+const {
+  LIMITES_TIPO_HABITACION,
+  PATRON_CODIGO,
+  OCUPACION_BASE_DEFAULT,
+  OCUPACION_BASE_MIN,
+} = require("./tiposHabitacion.constantes");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -46,6 +51,32 @@ function normalizarDescripcion(valor) {
   return descripcion;
 }
 
+// Etapa 2 de tarifas por temporada (HU-92) — adultos incluidos en el
+// precio base de la tarifa. Si no viene en el payload, cae al default del
+// schema (2) para que el ABM pueda seguir mandando el resto de los campos
+// sin este uno sin romper.
+function normalizarOcupacionBase(valor) {
+  if (valor === undefined || valor === null || valor === "") return OCUPACION_BASE_DEFAULT;
+  const numero = Number(valor);
+  if (!Number.isInteger(numero) || numero < OCUPACION_BASE_MIN) {
+    throw new ErrorDeNegocio(`ocupacionBase debe ser un número entero mayor o igual a ${OCUPACION_BASE_MIN}.`);
+  }
+  return numero;
+}
+
+// Puramente informativo (no bloquea guardar): si alguna habitación activa
+// de este tipo tiene menos capacidad que la ocupación base recién
+// guardada, se lo hace saber a quien gestiona el catálogo — el conflicto
+// real (si corresponde) se resuelve a mano, editando la habitación o la
+// ocupación base.
+async function advertenciaCapacidad(tipoHabitacionId, ocupacionBase) {
+  const conCapacidadMenor = await prisma.habitacion.count({
+    where: { tipoHabitacionId, activo: true, capacidad: { lt: ocupacionBase } },
+  });
+  if (conCapacidadMenor === 0) return null;
+  return `${conCapacidadMenor} habitación${conCapacidadMenor > 1 ? "es" : ""} activa${conCapacidadMenor > 1 ? "s" : ""} de este tipo tiene${conCapacidadMenor > 1 ? "n" : ""} capacidad menor a la ocupación base (${ocupacionBase}).`;
+}
+
 // Unicidad de nombre case-insensitive + trim, verificada en código (no
 // delegada al collation de MySQL): la tabla es chica —un catálogo
 // maestro—, así que un scan completo no tiene costo real, y esto deja el
@@ -65,6 +96,7 @@ async function crearTipoHabitacion(data) {
   const codigo = normalizarCodigo(data?.codigo);
   const nombre = normalizarNombre(data?.nombre);
   const descripcion = normalizarDescripcion(data?.descripcion);
+  const ocupacionBase = normalizarOcupacionBase(data?.ocupacionBase);
 
   const codigoExistente = await prisma.tipoHabitacion.findUnique({ where: { codigo } });
   if (codigoExistente) throw new ErrorDeNegocio(`Ya existe un tipo de habitación con el código "${codigo}".`, 409);
@@ -72,14 +104,21 @@ async function crearTipoHabitacion(data) {
     throw new ErrorDeNegocio(`Ya existe un tipo de habitación con el nombre "${nombre}".`, 409);
   }
 
+  let tipo;
   try {
-    return await prisma.tipoHabitacion.create({ data: { codigo, nombre, descripcion } });
+    tipo = await prisma.tipoHabitacion.create({ data: { codigo, nombre, descripcion, ocupacionBase } });
   } catch (err) {
     if (err?.code === "P2002") {
       throw new ErrorDeNegocio("Ya existe un tipo de habitación con ese código o nombre.", 409);
     }
     throw err;
   }
+  // Un tipo recién creado todavía no tiene habitaciones — la advertencia
+  // siempre da null acá, pero se calcula igual para que la forma de la
+  // respuesta sea la misma que actualizarTipoHabitacion (el frontend no
+  // tiene que distinguir alta de edición para leer `advertenciaCapacidad`).
+  const advertenciaCapacidadTexto = await advertenciaCapacidad(tipo.id, ocupacionBase);
+  return { ...tipo, advertenciaCapacidad: advertenciaCapacidadTexto };
 }
 
 // Código y nombre son editables (regla 6); el id nunca se acepta del
@@ -94,6 +133,7 @@ async function actualizarTipoHabitacion(id, data) {
   const codigo = normalizarCodigo(data?.codigo);
   const nombre = normalizarNombre(data?.nombre);
   const descripcion = normalizarDescripcion(data?.descripcion);
+  const ocupacionBase = normalizarOcupacionBase(data?.ocupacionBase);
 
   const codigoDuplicado = await prisma.tipoHabitacion.findFirst({ where: { codigo, id: { not: tipoId } } });
   if (codigoDuplicado) throw new ErrorDeNegocio(`Ya existe un tipo de habitación con el código "${codigo}".`, 409);
@@ -101,14 +141,17 @@ async function actualizarTipoHabitacion(id, data) {
     throw new ErrorDeNegocio(`Ya existe un tipo de habitación con el nombre "${nombre}".`, 409);
   }
 
+  let tipo;
   try {
-    return await prisma.tipoHabitacion.update({ where: { id: tipoId }, data: { codigo, nombre, descripcion } });
+    tipo = await prisma.tipoHabitacion.update({ where: { id: tipoId }, data: { codigo, nombre, descripcion, ocupacionBase } });
   } catch (err) {
     if (err?.code === "P2002") {
       throw new ErrorDeNegocio("Ya existe un tipo de habitación con ese código o nombre.", 409);
     }
     throw err;
   }
+  const advertenciaCapacidadTexto = await advertenciaCapacidad(tipo.id, ocupacionBase);
+  return { ...tipo, advertenciaCapacidad: advertenciaCapacidadTexto };
 }
 
 function filtroActivoDesdeQuery(activo) {
