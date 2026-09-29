@@ -1,7 +1,8 @@
 const checkInServicio = require("./checkIn.servicio");
 
 function responderError(res, err, contexto, mensaje) {
-  if (err instanceof checkInServicio.ErrorDeNegocio) {
+  if (err.code === 'P2002') return res.status(409).json({error:'Una persona ya tiene un ingreso activo. Revisá sus datos.'});
+  if (err instanceof checkInServicio.ErrorDeNegocio || err instanceof require('../estadia/estadia.servicio').ErrorDeNegocio || err instanceof require('../reservas/reservas.servicio').ErrorDeNegocio) {
     return res.status(err.statusCode).json({ error: err.message });
   }
   console.error(contexto, err);
@@ -47,6 +48,13 @@ async function postCheckInWalkIn(req, res) {
     return responderError(res, err, "Error al registrar el check-in walk-in:", "No se pudo registrar el check-in.");
   }
 }
+
+module.exports = {
+  getBuscarReserva,
+  getHabitacionesLibres,
+  postConfirmarConReserva,
+  postCheckInWalkIn,
+};
 
 module.exports = {
   getBuscarReserva,
