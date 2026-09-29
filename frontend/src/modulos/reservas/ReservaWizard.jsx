@@ -867,7 +867,16 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
             <p className="mt-1 text-piedra">
               {elegidas.map((h) => `${h.info?.numero ?? h.habitacionId} (${h.info?.tipo ?? ""})`).join(", ") || "—"} · del{" "}
               {form.fechaDesde} al {form.fechaHasta} · {noches} noche{noches === 1 ? "" : "s"} · {planSeleccionado?.nombre ?? "—"} ·{" "}
-              <span className="font-semibold text-tinta">{FORMATO_MONEDA.format(totalEstadia)}</span>
+              <span className="font-semibold text-tinta">
+                {/* Etapa 4A (HU-96) — en edición, `totalEstadia` es la
+                    recotización cruda de TODA la estadía (lo que costaría si
+                    nada se conservara); lo que de verdad se va a guardar es
+                    el de la vista previa (con las noches sin cambios
+                    conservando su precio congelado) — mostrar el crudo acá
+                    confundiría al recepcionista con dos totales distintos
+                    para la misma acción. */}
+                {FORMATO_MONEDA.format(esEdicion ? (previaQuery.data?.totalNuevo ?? totalEstadia) : totalEstadia)}
+              </span>
             </p>
           </div>
 
