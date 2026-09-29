@@ -192,14 +192,13 @@ function validarCanal(valor) {
 // Toda lectura de una reserva sale por acá, para que la ficha, el listado
 // y lo que consuman los otros módulos no puedan divergir de forma.
 // `noches` y `totalEstimado` se calculan al vuelo, nunca se persisten —
-// mismo criterio que el total de un Presupuesto en Sprint 2: si mañana
-// cambia la tarifa de la habitación, una reserva vieja no tiene que
-// arrastrar un número congelado que ya nadie sabe de dónde salió.
+// usando la tarifa pactada. Las reservas históricas sin precio pactado
+// conservan el cálculo con la tarifa actual de la habitación.
 function formatearReserva(reserva) {
   if (!reserva) return null;
 
   const habitaciones = (reserva.reservaHabitaciones ?? [])
-    .map((rh) => rh.habitacion)
+    .map((rh) => rh.habitacion ? {...rh.habitacion, tarifaPorNoche: rh.tarifaPactada ?? rh.habitacion.tarifaPorNoche} : null)
     .filter(Boolean)
     .map((h) => ({
       id: h.id,
@@ -663,7 +662,7 @@ async function crearReservaEnTransaccion(tx, datos) {
       fechaHasta,
       estado: ESTADO_RESERVA.CONFIRMADA,
       codigoConfirmacion,
-      reservaHabitaciones: { create: habitacionIds.map((habitacionId) => ({ habitacionId })) },
+      reservaHabitaciones: { create: habitacionIds.map((habitacionId) => ({ habitacionId, tarifaPactada: habitaciones.find(h=>h.id===habitacionId).tarifaPorNoche })) },
     },
   });
 
@@ -977,18 +976,21 @@ async function modificarReserva(id, data) {
 
       const huespedGuardado = huesped ? await resolverHuesped(tx, huesped) : null;
 
-      // Las habitaciones se reemplazan por completo (borrar + crear) en vez
-      // de hacer un diff: la tabla puente no tiene datos propios que se
-      // pierdan, y así la reserva queda exactamente con lo que mandó la
-      // pantalla, sin estados intermedios raros.
-      await tx.reservaHabitacion.deleteMany({ where: { reservaId } });
+      // Conservar tarifa y condiciones de las habitaciones que permanecen;
+      // impedir cambios incompatibles con los ocupantes ya registrados.
+      await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${reservaId} FOR UPDATE`;
+      const vigente = await tx.reserva.findUnique({where:{id:reservaId},include:{reservaHabitaciones:true}});
+      exigirModificable(vigente);
+      const ocupantes = await tx.ocupanteReserva.findMany({where:{reservaId,estado:{in:['Previsto','Alojado']}},include:{asignaciones:true}});
+      if(ocupantes.some(p=>p.fechaDesde<fechaDesde||p.fechaHasta>fechaHasta||p.asignaciones.some(a=>!a.hasta&&!habitacionIds.includes(a.habitacionId)))) throw new ErrorDeNegocio('Revisá las fechas y habitaciones de los ocupantes antes de modificar la reserva.');
+      await tx.reservaHabitacion.deleteMany({ where: { reservaId, habitacionId:{notIn:habitacionIds} } });
       await tx.reserva.update({
         where: { id: reservaId },
         data: {
           fechaDesde,
           fechaHasta,
           ...(huespedGuardado ? { huespedId: huespedGuardado.id } : {}),
-          reservaHabitaciones: { create: habitacionIds.map((habitacionId) => ({ habitacionId })) },
+          reservaHabitaciones: { create: habitacionIds.filter(hid=>!vigente.reservaHabitaciones.some(rh=>rh.habitacionId===hid)).map((habitacionId) => ({ habitacionId, tarifaPactada:habitaciones.find(h=>h.id===habitacionId).tarifaPorNoche })) },
         },
       });
 
