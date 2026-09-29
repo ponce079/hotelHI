@@ -150,10 +150,8 @@ async function buscarReservaParaCheckIn({ id, codigo } = {}) {
 // exige que el importe no supere el saldo pendiente de la reserva, que es
 // exactamente la regla que no aplica acá (la garantía es plata aparte, no
 // un pago a cuenta del alojamiento). Sigue quedando como un PagoEstadia
-// real (concepto Garantía) para que se vea en Movimientos de Pago y
-// consolidarCargos la tenga en cuenta como ya cobrada. Qué pasa con ella en
-// el check-out (devolverla si no hubo daños, descontarla si los hubo)
-// queda pendiente como otra tarea — esto solo cubre el cobro en el check-in.
+// real (concepto Garantía), marcada como separada. La cuenta solo descuenta
+// la parte aplicada; el resto debe devolverse o aplicarse antes del cierre.
 // --------------------------------------------------------------
 
 function validarGarantia({ garantiaConfirmada, medioGarantia, referenciaGarantia }) {
@@ -168,16 +166,15 @@ function validarGarantia({ garantiaConfirmada, medioGarantia, referenciaGarantia
   }
 }
 
-// Se llama DESPUÉS de que el check-in ya quedó confirmado (reserva "En
-// curso", habitación "ocupada"): si esto fallara, el check-in en sí no
-// queda a medio hacer — el recepcionista puede reintentar el cobro de la
-// garantía aparte, desde Pagos, sin tener que repetir el check-in.
-async function registrarGarantia(reservaId, { medioGarantia, referenciaGarantia }) {
-  await prisma.pagoEstadia.create({
+// La garantía comparte la transacción del check-in: cualquier fallo revierte
+// el ingreso, la ocupación de habitaciones y el registro del depósito.
+async function registrarGarantia(reservaId, { medioGarantia, referenciaGarantia }, tx) {
+  await tx.pagoEstadia.create({
     data: {
       reservaId,
       estado: "Pagado",
       concepto: CONCEPTO_GARANTIA,
+      garantiaSeparada: true,
       medios: {
         create: [
           {
@@ -218,6 +215,8 @@ async function ocuparHabitacion(tx, habitacionId) {
 // --------------------------------------------------------------
 
 async function confirmarCheckInConReserva({
+  cantidadesOcupantes,
+  operador,
   reservaId,
   numeroDocumentoIngresado,
   garantiaConfirmada,
@@ -246,15 +245,19 @@ async function confirmarCheckInConReserva({
 
   await prisma.$transaction(
     async (tx) => {
+      await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${id} FOR UPDATE`;
+      const vigente = await tx.reserva.findUnique({where:{id}});
+      validarReservaVigente(vigente);
+      await require('../estadia/ingreso').prepararIngreso(tx, id, reserva.habitaciones.map(h=>h.id), cantidadesOcupantes, operador);
       await reservasServicio.marcarEnCurso(id, tx);
       for (const habitacion of reserva.habitaciones) {
         await ocuparHabitacion(tx, habitacion.id);
       }
+      await registrarGarantia(id, { medioGarantia, referenciaGarantia }, tx);
     },
     { timeout: 15000, maxWait: 10000 }
   );
 
-  await registrarGarantia(id, { medioGarantia, referenciaGarantia });
 
   return reservasServicio.obtenerReserva(id);
 }
@@ -285,6 +288,9 @@ async function listarHabitacionesLibresAhora({ fechaHasta, tipo, capacidadMinima
 // --------------------------------------------------------------
 
 async function registrarCheckInWalkIn({
+  cantidadesOcupantes,
+  personas,
+  operador,
   fechaHasta,
   habitacionIds,
   huesped,
@@ -309,16 +315,18 @@ async function registrarCheckInWalkIn({
   const reservaId = await prisma.$transaction(
     async (tx) => {
       const reserva = await reservasServicio.crearReservaEnTransaccion(tx, datos);
+      await require('../estadia/ingreso').cargarWalkIn(tx,reserva.id,personas,operador);
+      await require('../estadia/ingreso').prepararIngreso(tx,reserva.id,datos.habitacionIds,cantidadesOcupantes,operador);
       await reservasServicio.marcarEnCurso(reserva.id, tx);
       for (const habitacionId of datos.habitacionIds) {
         await ocuparHabitacion(tx, habitacionId);
       }
+      await registrarGarantia(reserva.id, { medioGarantia, referenciaGarantia }, tx);
       return reserva.id;
     },
     { timeout: 15000, maxWait: 10000 }
   );
 
-  await registrarGarantia(reservaId, { medioGarantia, referenciaGarantia });
 
   return reservasServicio.obtenerReserva(reservaId);
 }
