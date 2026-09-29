@@ -1,6 +1,6 @@
 // Mismas listas fijas que backend/src/modulos/servicios-adicionales/serviciosAdicionales.constantes.js,
 // duplicadas a mano (misma convención que el resto de Sprint 3).
-export const TIPOS_SERVICIO = ["Restaurante", "Spa", "Lavandería", "Minibar"];
+export const TIPOS_SERVICIO = ["Restaurante", "Spa", "Lavandería", "Minibar", "Persona adicional", "Otro"];
 
 // Sin variante propia por tipo: son categorías de consumo, no estados —
 // "alerta" (tinte latón) para las 4 evita sugerir que alguna es "mejor",
