@@ -76,6 +76,52 @@ function enDias(dias) {
 const HUESPED = { nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
 const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Tarjeta de crédito" };
 
+// Etapa 4A — crearReserva ahora pasa por el motor de cotización: hace falta
+// una temporada Base + un plan BAR + una Tarifa vigente por tipo, aunque
+// sea a precio 0 (ver nota de arriba: acá no importa la plata).
+async function asegurarTemporadaYPlanBase() {
+  let temporadaBase = base._datos.temporada.find((t) => t.nivel === "BASE");
+  if (!temporadaBase) {
+    temporadaBase = await base.temporada.create({
+      data: { nombre: "Base", nivel: "BASE", fechaDesde: null, fechaHasta: null, estadiaMinima: null, cierreLlegada: false, activa: true },
+    });
+  }
+  let planBar = base._datos.planTarifario.find((p) => p.codigo === "BAR");
+  if (!planBar) {
+    planBar = await base.planTarifario.create({
+      data: {
+        codigo: "BAR",
+        nombre: "Best Available Rate",
+        tipo: "BASE",
+        planBaseId: null,
+        descuentoPorcentaje: null,
+        reembolsable: true,
+        horasCancelacionSinCargo: 48,
+        penalidadNoShow: "PRIMERA_NOCHE",
+        visibleWeb: true,
+        activo: true,
+      },
+    });
+  }
+  return { temporadaBase, planBar };
+}
+
+async function asegurarTarifaParaTipo(tipoHabitacionId, precioPorNoche) {
+  const { temporadaBase } = await asegurarTemporadaYPlanBase();
+  const yaTiene = base._datos.tarifa.some((t) => t.tipoHabitacionId === tipoHabitacionId && t.temporadaId === temporadaBase.id);
+  if (!yaTiene) {
+    await base.tarifa.create({
+      data: {
+        tipoHabitacionId,
+        temporadaId: temporadaBase.id,
+        precioBase: precioPorNoche,
+        adicionalAdultoExtra: 0,
+        vigenteDesde: new Date(`${enDias(-365)}T00:00:00.000Z`),
+      },
+    });
+  }
+}
+
 // Deja una reserva "En curso" con la habitación "ocupada" — mismo camino
 // real que HU-43/47 (reservasServicio.crearReserva + confirmarCheckInConReserva
 // de checkIn.servicio.js, ya probados en pruebas-checkin.js). tarifaPorNoche
@@ -87,10 +133,17 @@ const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Tarjeta de créd
 // estado de la habitación) fallarían por un motivo que no les compete.
 async function crearReservaEnCurso(numeroHabitacion) {
   const habitacion = base._sembrarHabitacion({ numero: numeroHabitacion, tarifaPorNoche: 0 });
+  await asegurarTarifaParaTipo(habitacion.tipoHabitacionId, 0);
+  const { planBar } = await asegurarTemporadaYPlanBase();
+  const fechaDesde = enDias(0);
+  const fechaHasta = enDias(2);
+  const habitaciones = [{ habitacionId: habitacion.id, adultos: 2, menores: 0 }];
   const reserva = await reservasServicio.crearReserva({
-    fechaDesde: enDias(0),
-    fechaHasta: enDias(2),
-    habitacionIds: [habitacion.id],
+    fechaDesde,
+    fechaHasta,
+    habitaciones,
+    planTarifarioId: planBar.id,
+    totalEsperado: 0,
     huesped: { ...HUESPED },
   });
   await checkInServicio.confirmarCheckInConReserva({

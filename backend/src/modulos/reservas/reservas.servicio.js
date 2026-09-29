@@ -45,6 +45,11 @@ const { conTipoPlano } = require("../../lib/tipoHabitacion");
 // pagoEstadia.servicio.js, que sí forma ciclo — ver el require diferido en
 // crearReservaConSena, más abajo).
 const { CONCEPTO_SENIA } = require("../pagos-estadia/pagoEstadia.constantes");
+// Etapa 4A (HU-95/96) — el motor de cotización es la ÚNICA fuente de
+// cálculo de precio: acá nunca se calcula un importe a mano. Sin ciclo:
+// cotizacion.servicio.js (y todo lo que importa, dentro de tarifas/) no
+// depende de nada de reservas.
+const cotizacionServicio = require("../tarifas/cotizacion.servicio");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -80,6 +85,31 @@ function enteroPositivo(valor, campo) {
   return numero;
 }
 
+// Etapa 4A — `menores` de una habitación (0 a 12 años, HU-95): 0 es válido
+// y es el default si no viene.
+function enteroNoNegativo(valor, campo) {
+  if (valor === undefined || valor === null || valor === "") return 0;
+  const numero = Number(valor);
+  if (!Number.isInteger(numero) || numero < 0) throw new ErrorDeNegocio(`${campo} debe ser un número entero mayor o igual a 0.`);
+  return numero;
+}
+
+// Etapa 4A — `totalEsperado` (regla 4): el total que el frontend mostró en
+// la vista previa, para comparar contra el recalculado dentro de la
+// transacción.
+function numeroNoNegativo(valor, campo) {
+  const numero = Number(valor);
+  if (!Number.isFinite(numero) || numero < 0) throw new ErrorDeNegocio(`${campo} debe ser un número mayor o igual a 0.`);
+  return numero;
+}
+
+// Compara importes en centavos (enteros), mismo criterio que
+// pagoEstadia.servicio.js — así dos totales que difieren solo por
+// redondeo binario (100.10 vs 100.099999...) no disparan un 409 falso.
+function centavos(n) {
+  return Math.round(Number(n) * 100);
+}
+
 // `fechaDesde`/`fechaHasta` son fechas-sin-hora elegidas por el usuario en
 // un <input type="date"> — se guardan como medianoche UTC del día elegido
 // (mismo criterio que ComprobanteProveedor.fecha cuando es Factura). NUNCA
@@ -104,6 +134,14 @@ function mismaFecha(a, b) {
   return a instanceof Date && b instanceof Date && a.getTime() === b.getTime();
 }
 
+// Etapa 4A — misma forma que isoDeFecha en cotizacion.servicio.js (no
+// exportada desde ahí), para poder cruzar una fecha guardada en
+// ReservaNoche con el `fecha` (string ISO) que devuelve el detalle del
+// motor por esa misma noche.
+function isoDeFecha(fecha) {
+  return new Date(fecha).toISOString().slice(0, 10);
+}
+
 function formatearFechaMensaje(fecha) {
   return new Date(fecha).toLocaleDateString("es-AR", { timeZone: "UTC" });
 }
@@ -122,7 +160,13 @@ function validarRango(fechaDesde, fechaHasta, fechaDesdeActual = null) {
   }
   const noches = calcularNoches(fechaDesde, fechaHasta);
   if (noches > LIMITES_RESERVA.nochesPorReserva) {
-    throw new ErrorDeNegocio(`La estadía no puede superar las ${LIMITES_RESERVA.nochesPorReserva} noches.`);
+    // Etapa 4A: mismo mensaje que el motor de cotización (cotizarEstadia,
+    // MAX_NOCHES_ESTADIA) — LIMITES_RESERVA.nochesPorReserva ya es esa
+    // misma constante, así que los dos frenan exactamente en el mismo
+    // punto con el mismo texto.
+    throw new ErrorDeNegocio(
+      `Las estadías de más de ${LIMITES_RESERVA.nochesPorReserva} noches requieren una tarifa de larga estadía: consultá con gerencia.`
+    );
   }
   const hoy = hoyComoFechaUTC();
   const arranqueSinCambios = fechaDesdeActual && mismaFecha(fechaDesde, fechaDesdeActual);
@@ -132,18 +176,26 @@ function validarRango(fechaDesde, fechaHasta, fechaDesdeActual = null) {
   return noches;
 }
 
-function normalizarIdsHabitacion(valor) {
+// Etapa 4A (HU-95) — sin duplicados, tope de habitacionesPorReserva, con la
+// ocupación de CADA habitación: adultos/menores se cargan por habitación,
+// no para toda la reserva. El plan tarifario sí es uno solo para toda la
+// reserva — viaja aparte, en normalizarAltaReserva.
+function normalizarHabitacionesConOcupacion(valor) {
   const lista = Array.isArray(valor) ? valor : [];
   if (lista.length === 0) throw new ErrorDeNegocio("Hay que elegir al menos una habitación para la reserva.");
-  const ids = lista.map((id) => enteroPositivo(id, "habitacionId"));
-  const unicos = [...new Set(ids)];
-  if (unicos.length !== ids.length) {
+  const habitaciones = lista.map((h) => ({
+    habitacionId: enteroPositivo(h?.habitacionId, "habitacionId"),
+    adultos: enteroPositivo(h?.adultos, "adultos"),
+    menores: enteroNoNegativo(h?.menores, "menores"),
+  }));
+  const idsUnicos = new Set(habitaciones.map((h) => h.habitacionId));
+  if (idsUnicos.size !== habitaciones.length) {
     throw new ErrorDeNegocio("Una misma habitación no puede repetirse dentro de la reserva.");
   }
-  if (unicos.length > LIMITES_RESERVA.habitacionesPorReserva) {
+  if (habitaciones.length > LIMITES_RESERVA.habitacionesPorReserva) {
     throw new ErrorDeNegocio(`Una reserva no puede tener más de ${LIMITES_RESERVA.habitacionesPorReserva} habitaciones.`);
   }
-  return unicos;
+  return habitaciones;
 }
 
 // HU-39: los campos obligatorios de la ficha del huésped se validan antes
@@ -185,28 +237,55 @@ function validarCanal(valor) {
 
 // Toda lectura de una reserva sale por acá, para que la ficha, el listado
 // y lo que consuman los otros módulos no puedan divergir de forma.
-// `noches` y `totalEstimado` se calculan al vuelo, nunca se persisten —
-// mismo criterio que el total de un Presupuesto en Sprint 2: si mañana
-// cambia la tarifa de la habitación, una reserva vieja no tiene que
-// arrastrar un número congelado que ya nadie sabe de dónde salió.
+// `noches` se calcula al vuelo (nunca se persiste), pero el PRECIO ya no:
+// desde la Etapa 4A (HU-96) cada noche de cada habitación queda congelada
+// en ReservaNoche al confirmar (alta o modificación) — totalEstimadoAlojamiento
+// es la suma de esas filas, no un cálculo contra la tarifa de hoy. Así, si
+// mañana cambia una tarifa o se corre una actualización masiva, una
+// reserva ya confirmada sigue mostrando (y cobrando en el check-out)
+// exactamente lo que se vendió.
 function formatearReserva(reserva) {
   if (!reserva) return null;
 
   const habitaciones = (reserva.reservaHabitaciones ?? [])
-    .map((rh) => rh.habitacion)
-    .filter(Boolean)
-    .map((h) => ({
-      id: h.id,
-      numero: h.numero,
-      ...conTipoPlano(h),
-      capacidad: h.capacidad,
-      piso: h.piso,
-      estado: h.estado,
-      tarifaPorNoche: Number(h.tarifaPorNoche),
-    }));
+    .filter((rh) => rh.habitacion)
+    .map((rh) => {
+      const h = rh.habitacion;
+      const reservaNoches = (rh.reservaNoches ?? [])
+        .slice()
+        .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
+        .map((n) => ({
+          fecha: n.fecha,
+          temporadaId: n.temporadaId,
+          temporadaNombre: n.temporada?.nombre ?? null,
+          temporadaNivel: n.temporada?.nivel ?? null,
+          tarifaId: n.tarifaId,
+          precioNoche: Number(n.precioNoche),
+          origen: n.origen,
+        }));
+      const subtotalAlojamiento = reservaNoches.reduce((acc, n) => acc + n.precioNoche, 0);
+      return {
+        id: h.id,
+        numero: h.numero,
+        ...conTipoPlano(h),
+        capacidad: h.capacidad,
+        piso: h.piso,
+        estado: h.estado,
+        // Etapa 4A: precio por habitación pasado a HU-95/96 (adultos/
+        // menores + noches congeladas). `tarifaPorNoche` queda como dato
+        // informativo de la habitación en sí (no se usa para ningún
+        // cálculo nuevo) hasta que se retire en la Etapa 4C.
+        tarifaPorNoche: Number(h.tarifaPorNoche),
+        adultos: rh.adultos,
+        menores: rh.menores,
+        reservaNoches,
+        subtotalAlojamiento,
+        promedioPorNoche: reservaNoches.length ? subtotalAlojamiento / reservaNoches.length : 0,
+      };
+    });
 
   const noches = calcularNoches(new Date(reserva.fechaDesde), new Date(reserva.fechaHasta));
-  const tarifaTotalPorNoche = habitaciones.reduce((acc, h) => acc + h.tarifaPorNoche, 0);
+  const totalEstimadoAlojamiento = habitaciones.reduce((acc, h) => acc + h.subtotalAlojamiento, 0);
 
   return {
     id: reserva.id,
@@ -226,13 +305,27 @@ function formatearReserva(reserva) {
           preferencias: reserva.huesped.preferencias,
         }
       : null,
+    // Etapa 4A (HU-95) — un plan tarifario por reserva. `null` solo en
+    // reservas todavía no migradas a esta etapa (no debería pasar después
+    // de correr el script de migración).
+    planTarifarioId: reserva.planTarifarioId ?? null,
+    planTarifario: reserva.planTarifario
+      ? {
+          id: reserva.planTarifario.id,
+          codigo: reserva.planTarifario.codigo,
+          nombre: reserva.planTarifario.nombre,
+          tipo: reserva.planTarifario.tipo,
+          reembolsable: reserva.planTarifario.reembolsable,
+          horasCancelacionSinCargo: reserva.planTarifario.horasCancelacionSinCargo,
+          penalidadNoShow: reserva.planTarifario.penalidadNoShow,
+        }
+      : null,
     habitaciones,
-    // Datos derivados (no columnas): sirven para la ficha, y a Integrante 4
-    // le ahorran recalcular el alojamiento al consolidar cargos (HU-48).
+    // Datos derivados (no columnas): sirven para la ficha, y a Check-out
+    // (HU-48) le ahorran recalcular el alojamiento al consolidar cargos.
     noches,
     cantidadHabitaciones: habitaciones.length,
-    tarifaTotalPorNoche,
-    totalEstimadoAlojamiento: Number((tarifaTotalPorNoche * noches).toFixed(2)),
+    totalEstimadoAlojamiento,
     notificaciones: (reserva.notificaciones ?? []).map((n) => ({
       id: n.id,
       canal: n.canal,
@@ -245,7 +338,13 @@ function formatearReserva(reserva) {
 
 const INCLUDE_RESERVA = {
   huesped: true,
-  reservaHabitaciones: { include: { habitacion: { include: { tipoHabitacion: { select: { nombre: true } } } } } },
+  planTarifario: true,
+  reservaHabitaciones: {
+    include: {
+      habitacion: { include: { tipoHabitacion: { select: { nombre: true } } } },
+      reservaNoches: { include: { temporada: { select: { nombre: true, nivel: true } } }, orderBy: { fecha: "asc" } },
+    },
+  },
   notificaciones: { orderBy: { fechaEnvio: "desc" } },
 };
 
@@ -369,6 +468,9 @@ async function consultarDisponibilidad({
   fechaHasta,
   tipoHabitacionId,
   capacidadMinima,
+  adultos,
+  menores,
+  canal,
   excluirReservaId,
   incluirOcupadas,
   incluirHuesped,
@@ -385,6 +487,12 @@ async function consultarDisponibilidad({
   const entradaEsHoy = mismaFecha(desde, hoyComoFechaUTC());
   const conOcupadas = incluirOcupadas === true || incluirOcupadas === "true";
   const conHuesped = conOcupadas && (incluirHuesped === true || incluirHuesped === "true");
+  // Etapa 4A (HU-95, regla 6) — ocupación buscada, para cotizar por tipo.
+  // Default 2/0 (mismo default que consultarDisponibilidad usaba antes de
+  // forma implícita: el precio de la habitación no dependía de ocupación).
+  const adultosBuscados = adultos !== undefined && adultos !== null && adultos !== "" ? enteroPositivo(adultos, "adultos") : 2;
+  const menoresBuscados = enteroNoNegativo(menores, "menores");
+  const canalBuscado = canal === "WEB" ? "WEB" : "RECEPCION";
 
   const habitaciones = await prisma.habitacion.findMany({
     where: {
@@ -447,11 +555,45 @@ async function consultarDisponibilidad({
     return { tipo: "estado", estado: h.estado };
   }
 
+  // Etapa 4A (HU-95, regla 6) — UNA cotización por TIPO presente (no por
+  // habitación): todas las habitaciones del mismo tipo comparten el mismo
+  // resultado, así que cotizarlo una vez por habitación sería trabajo
+  // repetido. Si la cotización de un tipo falla (sin tarifa, estadía
+  // mínima, cierre a llegadas, capacidad, más de MAX_NOCHES_ESTADIA
+  // noches…), ese motivo de negocio queda en `motivoNoDisponible` para ese
+  // tipo — no rompe la consulta entera, ni bloquea el resto de los tipos.
+  const idsTipoPresentes = [...new Set(habitaciones.map((h) => h.tipoHabitacionId))];
+  const cotizacionPorTipo = new Map();
+  for (const tipoId of idsTipoPresentes) {
+    try {
+      const resultado = await cotizacionServicio.cotizarEstadia({
+        tipoHabitacionId: tipoId,
+        fechaIngreso: desde,
+        fechaEgreso: hasta,
+        adultos: adultosBuscados,
+        menores: menoresBuscados,
+        canal: canalBuscado,
+      });
+      cotizacionPorTipo.set(tipoId, {
+        planes: resultado.planes,
+        estadiaMinimaExigida: resultado.estadiaMinimaExigida,
+        motivoNoDisponible: null,
+      });
+    } catch (err) {
+      if (err instanceof cotizacionServicio.ErrorDeNegocio) {
+        cotizacionPorTipo.set(tipoId, { planes: [], estadiaMinimaExigida: null, motivoNoDisponible: err.message });
+      } else {
+        throw err;
+      }
+    }
+  }
+
   const disponibles = [];
   const todas = conOcupadas ? [] : undefined;
 
   for (const h of habitaciones) {
     const bloqueada = bloqueadaAhora(h);
+    const cotizacion = cotizacionPorTipo.get(h.tipoHabitacionId);
     const base = {
       id: h.id,
       numero: h.numero,
@@ -465,8 +607,12 @@ async function consultarDisponibilidad({
       // entrada HOY esas ya se filtraron arriba, así que en la práctica solo
       // se completa para una entrada a futuro.
       estadoActual: esLibreAhora(h) ? null : h.estado,
-      tarifaPorNoche: Number(h.tarifaPorNoche),
-      totalEstadia: Number((Number(h.tarifaPorNoche) * noches).toFixed(2)),
+      // Etapa 4A: reemplaza tarifaPorNoche/totalEstadia — el precio sale
+      // siempre del motor, por plan (total y promedio por noche de CADA
+      // plan disponible para el canal pedido, no un solo número).
+      planes: cotizacion.planes,
+      estadiaMinimaExigida: cotizacion.estadiaMinimaExigida,
+      motivoNoDisponible: cotizacion.motivoNoDisponible,
     };
     if (!bloqueada) disponibles.push(base);
     if (conOcupadas) todas.push({ ...base, disponible: !bloqueada, motivo: bloqueada ? motivoDe(h) : null });
@@ -481,17 +627,23 @@ async function consultarDisponibilidad({
   // (ya eran el mismo tipo, mal tipeado antes). Sigue devolviendo `tipo`
   // (el nombre) para no romper a los consumidores de frontend que ya lo
   // leen como texto, sumando `tipoHabitacionId` para quien filtre por id.
-  const idsTipoPresentes = [...new Set(habitaciones.map((h) => h.tipoHabitacionId))];
   const resumenPorTipo = idsTipoPresentes
     .map((id) => {
       const delTipo = habitaciones.filter((h) => h.tipoHabitacionId === id);
       const libres = delTipo.filter((h) => !bloqueadaAhora(h));
+      const cotizacion = cotizacionPorTipo.get(id);
+      // Etapa 4A: tarifaDesde pasa a ser el menor promedio-por-noche entre
+      // los planes en alcance (regla 6) — antes era el mínimo tarifaPorNoche
+      // plano entre las habitaciones libres.
+      const tarifaDesde = cotizacion.planes.length ? Math.min(...cotizacion.planes.map((p) => p.promedioPorNoche)) : null;
       return {
         tipoHabitacionId: id,
         tipo: delTipo[0]?.tipoHabitacion?.nombre ?? null,
         total: delTipo.length,
         disponibles: libres.length,
-        tarifaDesde: libres.length ? Math.min(...libres.map((h) => Number(h.tarifaPorNoche))) : null,
+        tarifaDesde,
+        planes: cotizacion.planes,
+        motivoNoDisponible: cotizacion.motivoNoDisponible,
         capacidadMaxima: delTipo.length ? Math.max(...delTipo.map((h) => h.capacidad)) : null,
       };
     })
@@ -619,27 +771,74 @@ function normalizarAltaReserva(data) {
   return {
     fechaDesde,
     fechaHasta,
-    habitacionIds: normalizarIdsHabitacion(data?.habitacionIds),
+    // Etapa 4A (HU-95/96): ocupación por habitación + un plan tarifario
+    // para toda la reserva + el total que el frontend mostró en la vista
+    // previa (se recalcula y se compara adentro de la transacción).
+    habitaciones: normalizarHabitacionesConOcupacion(data?.habitaciones),
+    planTarifarioId: enteroPositivo(data?.planTarifarioId, "planTarifarioId"),
+    totalEsperado: numeroNoNegativo(data?.totalEsperado, "totalEsperado"),
     huesped: normalizarHuesped(data?.huesped),
     canalConfirmacion: validarCanal(data?.canalConfirmacion),
     // HU-40: el canal web reutiliza este mismo alta sin duplicar lógica.
     // No hay columna para el origen (el schema está congelado), así que
-    // solo matiza el texto de la notificación.
+    // solo matiza el texto de la notificación — y ahora también decide el
+    // `canal` que le llega al motor de cotización (visibleWeb o no).
     origen: data?.origen === "WEB" ? "WEB" : "RECEPCION",
   };
+}
+
+// Envoltorio fino (mismo patrón que el resto del proyecto — ver
+// envolverErrorReservas en checkOut.servicio.js): cotizacion.servicio.js
+// tiene su propia clase ErrorDeNegocio; sin traducirla acá, el controlador
+// de reservas la trataría como un error inesperado (500) en vez de
+// devolver el mensaje real (precio cambiado, plan no disponible, capacidad,
+// estadía mínima, etc.) con su status code.
+async function cotizarReservaEnvuelto(datos, cliente) {
+  try {
+    return await cotizacionServicio.cotizarReserva(datos, cliente);
+  } catch (err) {
+    if (err instanceof cotizacionServicio.ErrorDeNegocio) {
+      throw new ErrorDeNegocio(err.message, err.statusCode);
+    }
+    throw err;
+  }
+}
+
+// HU-95 (regla 5) — cotización previa a confirmar un alta o una
+// modificación, para el mostrador y para la web. Mismo payload que el
+// alta pero sin `totalEsperado` (acá no hay nada que comparar todavía) y
+// SIN leer `fechaVenta` del body nunca: la fecha de venta es siempre HOY
+// del servidor — aceptar una del cliente dejaría cotizar con una fecha de
+// venta falsa para esquivar un aumento ya vigente.
+async function cotizarParaReserva(data) {
+  const fechaDesde = parsearFechaSinHora(data?.fechaDesde, "La fecha de entrada");
+  const fechaHasta = parsearFechaSinHora(data?.fechaHasta, "La fecha de salida");
+  validarRango(fechaDesde, fechaHasta);
+  const habitaciones = normalizarHabitacionesConOcupacion(data?.habitaciones);
+  const planTarifarioId =
+    data?.planTarifarioId === undefined || data?.planTarifarioId === null || data?.planTarifarioId === ""
+      ? undefined
+      : enteroPositivo(data.planTarifarioId, "planTarifarioId");
+  const canal = data?.canal === "WEB" ? "WEB" : "RECEPCION";
+
+  return cotizarReservaEnvuelto(
+    { fechaDesde, fechaHasta, planTarifarioId, habitaciones, canal, fechaVenta: hoyComoFechaUTC() },
+    prisma
+  );
 }
 
 // Núcleo transaccional del alta. Público aparte de `crearReserva` para que
 // Check-in (HU-44, walk-in) pueda crear la reserva DENTRO de su propia
 // transacción, en vez de tener que reimplementar esta lógica.
 async function crearReservaEnTransaccion(tx, datos) {
-  const { fechaDesde, fechaHasta, habitacionIds, huesped, canalConfirmacion, origen } = datos;
+  const { fechaDesde, fechaHasta, habitaciones, planTarifarioId, totalEsperado, huesped, origen } = datos;
+  const habitacionIds = habitaciones.map((h) => h.habitacionId);
 
-  const habitaciones = await tx.habitacion.findMany({ where: { id: { in: habitacionIds } } });
-  if (habitaciones.length !== habitacionIds.length) {
+  const habitacionesDb = await tx.habitacion.findMany({ where: { id: { in: habitacionIds } } });
+  if (habitacionesDb.length !== habitacionIds.length) {
     throw new ErrorDeNegocio("Alguna de las habitaciones elegidas no existe.", 404);
   }
-  const dadasDeBaja = habitaciones.filter((h) => !h.activo);
+  const dadasDeBaja = habitacionesDb.filter((h) => !h.activo);
   if (dadasDeBaja.length > 0) {
     throw new ErrorDeNegocio(
       `No se puede reservar una habitación dada de baja: ${dadasDeBaja.map((h) => h.numero).join(", ")}.`
@@ -660,6 +859,29 @@ async function crearReservaEnTransaccion(tx, datos) {
   const conflictos = await buscarConflictos(tx, { habitacionIds, fechaDesde, fechaHasta });
   if (conflictos.length > 0) throw errorPorConflictos(conflictos);
 
+  // HU-95/96 (Etapa 4A) — el precio SIEMPRE sale del motor, recalculado
+  // acá adentro (con `tx`, para que vea exactamente lo que esta misma
+  // transacción ya validó) y comparado contra lo que el frontend mostró en
+  // la vista previa. Si difiere (alguien cambió una tarifa mientras el
+  // recepcionista tenía la pantalla abierta), se rechaza toda la
+  // operación — no se cobra ni un centavo distinto de lo que el huésped
+  // vio.
+  const canal = origen === "WEB" ? "WEB" : "RECEPCION";
+  const cotizacion = await cotizarReservaEnvuelto(
+    { fechaDesde, fechaHasta, planTarifarioId, habitaciones, canal, fechaVenta: hoyComoFechaUTC() },
+    tx
+  );
+  const plan = cotizacion.planes[0];
+  if (!plan) {
+    throw new ErrorDeNegocio("El plan tarifario elegido no está disponible para este canal.");
+  }
+  if (centavos(plan.total) !== centavos(totalEsperado)) {
+    throw new ErrorDeNegocio(
+      `El precio cambió desde la cotización: antes $${totalEsperado}, ahora $${plan.total}. Volvé a cotizar.`,
+      409
+    );
+  }
+
   const huespedGuardado = await resolverHuesped(tx, huesped);
   const codigoConfirmacion = await reservarCodigoLibre(tx);
 
@@ -670,15 +892,42 @@ async function crearReservaEnTransaccion(tx, datos) {
       fechaHasta,
       estado: ESTADO_RESERVA.CONFIRMADA,
       codigoConfirmacion,
-      reservaHabitaciones: { create: habitacionIds.map((habitacionId) => ({ habitacionId })) },
+      planTarifarioId,
+      reservaHabitaciones: {
+        create: habitaciones.map((h) => ({ habitacionId: h.habitacionId, adultos: h.adultos, menores: h.menores })),
+      },
     },
+    include: { reservaHabitaciones: true },
   });
+
+  // Precio congelado por noche (HU-96) — una ReservaNoche por habitación y
+  // noche, con el detalle que ya calculó cotizarReserva arriba. Loop
+  // aparte (no nested-create de 2 niveles): más simple, y sin sorpresas en
+  // el doble de Prisma de los tests, que solo sabe expandir un nivel de
+  // relación anidada.
+  const reservaHabitacionIdPorHabitacion = new Map(reserva.reservaHabitaciones.map((rh) => [rh.habitacionId, rh.id]));
+  for (const habitacionPlan of plan.habitaciones) {
+    const reservaHabitacionId = reservaHabitacionIdPorHabitacion.get(habitacionPlan.habitacionId);
+    for (const noche of habitacionPlan.detalle) {
+      await tx.reservaNoche.create({
+        data: {
+          reservaHabitacionId,
+          fecha: parsearFechaSinHora(noche.fecha, "fecha"),
+          temporadaId: noche.temporadaId,
+          tarifaId: noche.tarifaId,
+          planTarifarioId,
+          precioNoche: noche.precioNoche,
+          origen: "MOTOR",
+        },
+      });
+    }
+  }
 
   await tx.notificacion.create({
     data: armarNotificacionConfirmacion({
       reserva,
       huesped: huespedGuardado,
-      habitaciones,
+      habitaciones: habitacionesDb,
       origen,
     }),
   });
@@ -696,7 +945,7 @@ async function crearReserva(data) {
   // tomar locks si el pedido ya está mal), no es lo que protege contra la
   // carrera — eso pasa de nuevo, con las filas bloqueadas, adentro.
   const conflictosPrevios = await buscarConflictos(prisma, {
-    habitacionIds: datos.habitacionIds,
+    habitacionIds: datos.habitaciones.map((h) => h.habitacionId),
     fechaDesde: datos.fechaDesde,
     fechaHasta: datos.fechaHasta,
   });
@@ -757,7 +1006,7 @@ async function crearReservaConSena(data) {
   // límites) que crearReserva: buena UX, no es lo que protege contra la
   // carrera.
   const conflictosPrevios = await buscarConflictos(prisma, {
-    habitacionIds: datos.habitacionIds,
+    habitacionIds: datos.habitaciones.map((h) => h.habitacionId),
     fechaDesde: datos.fechaDesde,
     fechaHasta: datos.fechaHasta,
   });
@@ -934,77 +1183,229 @@ function exigirModificable(reserva) {
   }
 }
 
+// Etapa 4A (HU-96, regla 9) — el precio se recalcula noche por noche: una
+// noche que conserva exactamente la misma habitación, fecha, ocupación y
+// plan que ya tenía mantiene el precio congelado; el resto (fechas nuevas,
+// habitaciones nuevas o una ocupación distinta) se recotiza con el motor.
+// `data.soloPrevia === true` hace todo el cálculo (incluida la validación
+// de conflictos) sin escribir nada — para que la pantalla muestre
+// `{totalAnterior, totalNuevo, diferencia}` ANTES de que el recepcionista
+// confirme.
+//
+// Ajuste B (plan no reembolsable): un cambio de ocupación que baja el
+// precio de una noche que ya existía NO se aplica — se conserva el precio
+// anterior de esa noche, porque una tarifa no reembolsable no tiene
+// devolución. Si el cambio de ocupación sube el precio, se recotiza normal.
 async function modificarReserva(id, data) {
   const reservaId = enteroPositivo(id, "id");
   const actual = await prisma.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
   if (!actual) throw new ErrorDeNegocio("La reserva no existe.", 404);
   exigirModificable(actual);
 
-  const fechaDesde =
-    data?.fechaDesde === undefined ? new Date(actual.fechaDesde) : parsearFechaSinHora(data.fechaDesde, "La fecha de entrada");
-  const fechaHasta =
-    data?.fechaHasta === undefined ? new Date(actual.fechaHasta) : parsearFechaSinHora(data.fechaHasta, "La fecha de salida");
+  const planActualId = actual.planTarifarioId;
+  const planActualEsNoReembolsable = actual.planTarifario?.reembolsable === false;
+
+  const nuevoFechaDesde =
+    data?.fechaDesde === undefined ? null : parsearFechaSinHora(data.fechaDesde, "La fecha de entrada");
+  const nuevoFechaHasta =
+    data?.fechaHasta === undefined ? null : parsearFechaSinHora(data.fechaHasta, "La fecha de salida");
+  const nuevoPlanTarifarioId =
+    data?.planTarifarioId === undefined ? planActualId : enteroPositivo(data.planTarifarioId, "planTarifarioId");
+
+  const cambiaFechaDesde = nuevoFechaDesde !== null && !mismaFecha(nuevoFechaDesde, new Date(actual.fechaDesde));
+  const cambiaFechaHasta = nuevoFechaHasta !== null && !mismaFecha(nuevoFechaHasta, new Date(actual.fechaHasta));
+  const cambiaPlan = nuevoPlanTarifarioId !== planActualId;
+
+  // Regla 9 — un plan no reembolsable no admite cambiar fechas ni plan: no
+  // hay margen para recotizar más barato una tarifa que ya se vendió sin
+  // devolución.
+  if (planActualEsNoReembolsable && (cambiaFechaDesde || cambiaFechaHasta || cambiaPlan)) {
+    throw new ErrorDeNegocio("Las reservas con tarifa no reembolsable no admiten cambios de fechas ni de plan.");
+  }
+
+  const fechaDesde = nuevoFechaDesde ?? new Date(actual.fechaDesde);
+  const fechaHasta = nuevoFechaHasta ?? new Date(actual.fechaHasta);
   validarRango(fechaDesde, fechaHasta, new Date(actual.fechaDesde));
 
-  const habitacionIds =
-    data?.habitacionIds === undefined
-      ? actual.reservaHabitaciones.map((rh) => rh.habitacionId)
-      : normalizarIdsHabitacion(data.habitacionIds);
+  const habitaciones =
+    data?.habitaciones === undefined
+      ? actual.reservaHabitaciones.map((rh) => ({ habitacionId: rh.habitacionId, adultos: rh.adultos, menores: rh.menores }))
+      : normalizarHabitacionesConOcupacion(data.habitaciones);
+  const habitacionIds = habitaciones.map((h) => h.habitacionId);
 
   // El huésped solo se toca si vino en el payload. Si cambia el documento,
   // la reserva pasa a apuntar a otra ficha (un documento distinto es otra
   // persona) en vez de renombrar la del huésped original, que puede tener
   // otras reservas colgando.
   const huesped = data?.huesped === undefined ? null : normalizarHuesped(data.huesped);
+  const soloPrevia = data?.soloPrevia === true;
 
-  const reserva = await prisma.$transaction(
-    async (tx) => {
-      const habitaciones = await tx.habitacion.findMany({ where: { id: { in: habitacionIds } } });
-      if (habitaciones.length !== habitacionIds.length) {
-        throw new ErrorDeNegocio("Alguna de las habitaciones elegidas no existe.", 404);
-      }
-      const dadasDeBaja = habitaciones.filter((h) => !h.activo);
-      if (dadasDeBaja.length > 0) {
-        throw new ErrorDeNegocio(
-          `No se puede reservar una habitación dada de baja: ${dadasDeBaja.map((h) => h.numero).join(", ")}.`
-        );
-      }
+  // Snapshot de lo que la reserva YA tenía congelado (por habitación y por
+  // noche), para decidir noche por noche qué conserva precio y qué se
+  // recotiza.
+  const snapshotPorHabitacion = new Map(
+    actual.reservaHabitaciones.map((rh) => [
+      rh.habitacionId,
+      {
+        adultos: rh.adultos,
+        menores: rh.menores,
+        noches: new Map(rh.reservaNoches.map((n) => [isoDeFecha(n.fecha), n])),
+      },
+    ])
+  );
+  const totalAnterior = actual.reservaHabitaciones.reduce(
+    (acc, rh) => acc + rh.reservaNoches.reduce((a, n) => a + Number(n.precioNoche), 0),
+    0
+  );
 
+  const ejecutar = async (tx) => {
+    const habitacionesDb = await tx.habitacion.findMany({ where: { id: { in: habitacionIds } } });
+    if (habitacionesDb.length !== habitacionIds.length) {
+      throw new ErrorDeNegocio("Alguna de las habitaciones elegidas no existe.", 404);
+    }
+    const dadasDeBaja = habitacionesDb.filter((h) => !h.activo);
+    if (dadasDeBaja.length > 0) {
+      throw new ErrorDeNegocio(
+        `No se puede reservar una habitación dada de baja: ${dadasDeBaja.map((h) => h.numero).join(", ")}.`
+      );
+    }
+
+    // El lock preventivo contra carreras solo hace falta cuando esto va a
+    // escribir: una vista previa no reserva nada, así que no vale la pena
+    // tomar gap locks que podrían pisarse con otra vista previa concurrente.
+    if (!soloPrevia) {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM reservas_habitaciones WHERE habitacionId IN (${Prisma.join(habitacionIds)}) FOR UPDATE`
       );
+    }
 
-      const conflictos = await buscarConflictos(tx, {
-        habitacionIds,
+    const conflictos = await buscarConflictos(tx, {
+      habitacionIds,
+      fechaDesde,
+      fechaHasta,
+      excluirReservaId: reservaId,
+    });
+    if (conflictos.length > 0) throw errorPorConflictos(conflictos);
+
+    const cotizacion = await cotizarReservaEnvuelto(
+      { fechaDesde, fechaHasta, planTarifarioId: nuevoPlanTarifarioId, habitaciones, canal: "RECEPCION", fechaVenta: hoyComoFechaUTC() },
+      tx
+    );
+    const plan = cotizacion.planes[0];
+    if (!plan) throw new ErrorDeNegocio("El plan tarifario elegido no está disponible para este canal.");
+
+    let huboReduccionNoReembolsable = false;
+    const nochesPorHabitacion = new Map();
+    for (const habitacionPlan of plan.habitaciones) {
+      const anterior = snapshotPorHabitacion.get(habitacionPlan.habitacionId);
+      const mismaOcupacion = Boolean(
+        anterior && anterior.adultos === habitacionPlan.adultos && anterior.menores === habitacionPlan.menores
+      );
+      const noches = habitacionPlan.detalle.map((noche) => {
+        const nocheAnterior = anterior?.noches.get(noche.fecha);
+        // Misma habitación + misma fecha + misma ocupación + mismo plan:
+        // conserva el precio congelado que ya tenía.
+        if (nocheAnterior && mismaOcupacion && !cambiaPlan) {
+          return {
+            fecha: noche.fecha,
+            temporadaId: nocheAnterior.temporadaId,
+            tarifaId: nocheAnterior.tarifaId,
+            precioNoche: Number(nocheAnterior.precioNoche),
+            origen: nocheAnterior.origen,
+          };
+        }
+        // Ajuste B: ocupación distinta en un plan no reembolsable, y el
+        // motor da un precio MENOR al que ya tenía esa noche → no se
+        // aplica la baja, se conserva el precio anterior.
+        if (nocheAnterior && !mismaOcupacion && planActualEsNoReembolsable && noche.precioNoche < Number(nocheAnterior.precioNoche)) {
+          huboReduccionNoReembolsable = true;
+          return {
+            fecha: noche.fecha,
+            temporadaId: nocheAnterior.temporadaId,
+            tarifaId: nocheAnterior.tarifaId,
+            precioNoche: Number(nocheAnterior.precioNoche),
+            origen: nocheAnterior.origen,
+          };
+        }
+        return {
+          fecha: noche.fecha,
+          temporadaId: noche.temporadaId,
+          tarifaId: noche.tarifaId,
+          precioNoche: noche.precioNoche,
+          origen: "MOTOR",
+        };
+      });
+      nochesPorHabitacion.set(habitacionPlan.habitacionId, noches);
+    }
+
+    const totalNuevo = [...nochesPorHabitacion.values()].reduce(
+      (acc, noches) => acc + noches.reduce((a, n) => a + n.precioNoche, 0),
+      0
+    );
+
+    if (soloPrevia) {
+      return {
+        totalAnterior,
+        totalNuevo,
+        diferencia: Number((totalNuevo - totalAnterior).toFixed(2)),
+        mensajeNoReembolsable: huboReduccionNoReembolsable
+          ? "Tarifa no reembolsable: la reducción de ocupación no modifica el precio."
+          : null,
+      };
+    }
+
+    const huespedGuardado = huesped ? await resolverHuesped(tx, huesped) : null;
+
+    // Las habitaciones se reemplazan por completo (borrar + crear) en vez
+    // de hacer un diff: la tabla puente no tiene datos propios que se
+    // pierdan, y así la reserva queda exactamente con lo que mandó la
+    // pantalla, sin estados intermedios raros. Las ReservaNoche viejas se
+    // borran primero (FK contra reservas_habitaciones, sin cascada).
+    const reservaHabitacionIdsViejos = actual.reservaHabitaciones.map((rh) => rh.id);
+    if (reservaHabitacionIdsViejos.length > 0) {
+      await tx.reservaNoche.deleteMany({ where: { reservaHabitacionId: { in: reservaHabitacionIdsViejos } } });
+    }
+    await tx.reservaHabitacion.deleteMany({ where: { reservaId } });
+    const actualizada = await tx.reserva.update({
+      where: { id: reservaId },
+      data: {
         fechaDesde,
         fechaHasta,
-        excluirReservaId: reservaId,
-      });
-      if (conflictos.length > 0) throw errorPorConflictos(conflictos);
-
-      const huespedGuardado = huesped ? await resolverHuesped(tx, huesped) : null;
-
-      // Las habitaciones se reemplazan por completo (borrar + crear) en vez
-      // de hacer un diff: la tabla puente no tiene datos propios que se
-      // pierdan, y así la reserva queda exactamente con lo que mandó la
-      // pantalla, sin estados intermedios raros.
-      await tx.reservaHabitacion.deleteMany({ where: { reservaId } });
-      await tx.reserva.update({
-        where: { id: reservaId },
-        data: {
-          fechaDesde,
-          fechaHasta,
-          ...(huespedGuardado ? { huespedId: huespedGuardado.id } : {}),
-          reservaHabitaciones: { create: habitacionIds.map((habitacionId) => ({ habitacionId })) },
+        planTarifarioId: nuevoPlanTarifarioId,
+        ...(huespedGuardado ? { huespedId: huespedGuardado.id } : {}),
+        reservaHabitaciones: {
+          create: habitaciones.map((h) => ({ habitacionId: h.habitacionId, adultos: h.adultos, menores: h.menores })),
         },
-      });
+      },
+      include: { reservaHabitaciones: true },
+    });
 
-      return tx.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
-    },
-    { timeout: 15000, maxWait: 10000 }
-  );
+    // Precio congelado por noche (HU-96), un loop aparte igual que en el
+    // alta (crearReservaEnTransaccion): el doble de Prisma de los tests
+    // solo sabe expandir un nivel de relación anidada.
+    const reservaHabitacionIdPorHabitacion = new Map(actualizada.reservaHabitaciones.map((rh) => [rh.habitacionId, rh.id]));
+    for (const [habitacionId, noches] of nochesPorHabitacion) {
+      const reservaHabitacionId = reservaHabitacionIdPorHabitacion.get(habitacionId);
+      for (const noche of noches) {
+        await tx.reservaNoche.create({
+          data: {
+            reservaHabitacionId,
+            fecha: parsearFechaSinHora(noche.fecha, "fecha"),
+            temporadaId: noche.temporadaId,
+            tarifaId: noche.tarifaId,
+            planTarifarioId: nuevoPlanTarifarioId,
+            precioNoche: noche.precioNoche,
+            origen: noche.origen,
+          },
+        });
+      }
+    }
 
-  return formatearReserva(reserva);
+    return tx.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
+  };
+
+  const resultado = await prisma.$transaction(ejecutar, { timeout: 15000, maxWait: 10000 });
+  return soloPrevia ? resultado : formatearReserva(resultado);
 }
 
 // HU-37 — al cancelar, el período vuelve a estar disponible (lo hace solo:
@@ -1131,6 +1532,7 @@ module.exports = {
   normalizarAltaReserva,
   modificarReserva,
   cancelarReserva,
+  cotizarParaReserva,
   // Lectura
   listarReservas,
   obtenerReserva,

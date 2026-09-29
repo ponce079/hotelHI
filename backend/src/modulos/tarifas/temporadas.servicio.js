@@ -249,10 +249,13 @@ async function resolverTemporadaEfectiva(fecha) {
 }
 
 // Variante por rango — UNA sola consulta (no N), usada por el calendario
-// anual (HU-90) y reutilizable por la Etapa 3 para resolver varias
-// noches de una estadía sin ida y vuelta a la base por cada día.
-async function resolverTemporadasEfectivasEnRango(fechaDesde, fechaHasta) {
-  const candidatas = await prisma.temporada.findMany({
+// anual (HU-90) y reutilizable por la Etapa 3 (motor de cotización) para
+// resolver varias noches de una estadía sin ida y vuelta a la base por
+// cada día. `cliente` opcional (Etapa 4A) — un `tx` para que
+// cotizarReserva pueda correr dentro de la misma transacción del alta o
+// la modificación de una reserva.
+async function resolverTemporadasEfectivasEnRango(fechaDesde, fechaHasta, cliente = prisma) {
+  const candidatas = await cliente.temporada.findMany({
     where: {
       activa: true,
       OR: [{ nivel: NIVEL_TEMPORADA.BASE }, { fechaDesde: { lte: fechaHasta }, fechaHasta: { gte: fechaDesde } }],

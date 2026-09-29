@@ -53,7 +53,10 @@ function envolverErrorReservas(err) {
 //
 // "CargoEstadia" NO es una tabla: es este objeto agregado, armado en
 // cada llamada con 3 fuentes:
-//   (a) noches × tarifaPorNoche de cada habitación de la reserva
+//   (a) Etapa 4A (HU-96) — la suma de ReservaNoche.precioNoche de cada
+//       habitación de la reserva (precio ya congelado noche por noche al
+//       confirmar el alta o la última modificación; nunca se recalcula
+//       contra la tarifa de hoy)
 //   (b) ConsumoServicioAdicional (Integrante 3)
 //   (c) CargoVerificacionCheckout (HU-87, propia)
 // más lo ya pagado (PagoEstadiaMedio de pagos no anulados) para dar el
@@ -73,7 +76,10 @@ async function consolidarCargos(reservaId, cliente = prisma) {
     include: {
       huesped: true,
       reservaHabitaciones: {
-        include: { habitacion: { include: { tipoHabitacion: { select: { nombre: true } } } } },
+        include: {
+          habitacion: { include: { tipoHabitacion: { select: { nombre: true } } } },
+          reservaNoches: { orderBy: { fecha: 'asc' } },
+        },
         orderBy: { id: 'asc' },
       },
     },
@@ -82,15 +88,40 @@ async function consolidarCargos(reservaId, cliente = prisma) {
 
   const noches = calcularNoches(reserva.fechaDesde, reserva.fechaHasta);
 
+  // Etapa 4A — sin ReservaNoche no hay de dónde sacar el precio: nunca se
+  // cae en silencio al viejo tarifaPorNoche de la habitación (eso
+  // duplicaría el riesgo de cobrar algo distinto de lo que se vendió). Solo
+  // puede pasar en una reserva anterior a esta etapa que todavía no corrió
+  // el script de migración.
+  const sinPrecioCongelado = reserva.reservaHabitaciones.filter((rh) => rh.reservaNoches.length === 0);
+  if (sinPrecioCongelado.length > 0) {
+    throw new ErrorDeNegocio(
+      `La reserva no tiene precio de alojamiento cargado para: ${sinPrecioCongelado
+        .map((rh) => rh.habitacion.numero)
+        .join(', ')}. Puede ser una reserva anterior a la Etapa 4A: correr el script de migración.`,
+      409
+    );
+  }
+
   const habitaciones = reserva.reservaHabitaciones.map((rh) => {
-    const tarifaPorNoche = Number(rh.habitacion.tarifaPorNoche);
+    const detalleNoches = rh.reservaNoches.map((n) => ({
+      fecha: n.fecha,
+      precioNoche: Number(n.precioNoche),
+      origen: n.origen,
+    }));
+    const nochesHabitacion = detalleNoches.length;
+    const subtotal = redondear(detalleNoches.reduce((acc, n) => acc + n.precioNoche, 0));
     return {
       habitacionId: rh.habitacion.id,
       numero: rh.habitacion.numero,
       ...conTipoPlano(rh.habitacion),
-      tarifaPorNoche,
-      noches,
-      subtotal: redondear(tarifaPorNoche * noches),
+      // Promedio informativo (las noches pueden valer distinto entre sí
+      // por temporada/día de semana) — el subtotal real es la suma de
+      // detalleNoches, no noches × este promedio.
+      tarifaPorNoche: redondear(subtotal / nochesHabitacion),
+      noches: nochesHabitacion,
+      detalleNoches,
+      subtotal,
     };
   });
 

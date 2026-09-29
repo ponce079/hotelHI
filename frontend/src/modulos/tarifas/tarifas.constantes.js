@@ -45,3 +45,7 @@ export const ESTADO_LOTE = { APLICADO: "Aplicado", ANULADO: "Anulado" };
 
 // Motor de cotización (Etapa 3, HU-94).
 export const EDAD_MAXIMA_MENOR_SIN_CARGO = 12;
+// Etapa 4A — misma constante que usa reservas.constantes.js (LIMITES_RESERVA.
+// nochesPorReserva): el tope real de cualquier estadía es el del motor de
+// cotización, no un límite propio de Reservas.
+export const MAX_NOCHES_ESTADIA = 30;

@@ -47,6 +47,16 @@ async function getReservaPorId(req, res) {
 // mismo endpoint y la misma validación de disponibilidad para los dos
 // canales, sin duplicar lógica — la pantalla pública manda origen: "WEB"
 // y eso solo cambia el texto de la confirmación.
+// HU-95 (regla 5) — cotización previa a confirmar un alta o una
+// modificación (mostrador o web), sin persistir nada.
+async function postCotizar(req, res) {
+  try {
+    return res.json(await reservasServicio.cotizarParaReserva(req.body));
+  } catch (err) {
+    return responderError(res, err, "Error al cotizar la reserva:", "No se pudo cotizar la reserva.");
+  }
+}
+
 async function postReserva(req, res) {
   try {
     return res.status(201).json(await reservasServicio.crearReserva(req.body));
@@ -88,6 +98,7 @@ module.exports = {
   getReservas,
   getReservaPorCodigo,
   getReservaPorId,
+  postCotizar,
   postReserva,
   postReservaConSenia,
   patchReserva,

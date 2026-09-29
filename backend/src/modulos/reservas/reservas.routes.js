@@ -9,6 +9,7 @@ const router = express.Router();
 router.get("/disponibilidad", reservasControlador.getDisponibilidad);
 router.get("/codigo/:codigo", reservasControlador.getReservaPorCodigo);
 router.get("/", reservasControlador.getReservas);
+router.post("/cotizar", reservasControlador.postCotizar);
 router.post("/", reservasControlador.postReserva);
 router.post("/con-sena", reservasControlador.postReservaConSenia);
 router.get("/:id", reservasControlador.getReservaPorId);

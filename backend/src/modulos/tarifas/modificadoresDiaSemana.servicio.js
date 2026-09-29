@@ -13,8 +13,11 @@ class ErrorDeNegocio extends Error {
   }
 }
 
-async function listarModificadores() {
-  return prisma.modificadorDiaSemana.findMany({ orderBy: { diaSemana: "asc" } });
+// `cliente` opcional (Etapa 4A) — mismo motivo que en los demás servicios
+// de tarifas: cotizarReserva la llama dentro de la transacción del alta o
+// la modificación de una reserva.
+async function listarModificadores(cliente = prisma) {
+  return cliente.modificadorDiaSemana.findMany({ orderBy: { diaSemana: "asc" } });
 }
 
 async function actualizarModificador(diaSemana, porcentaje) {

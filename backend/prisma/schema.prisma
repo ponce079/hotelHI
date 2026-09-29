@@ -587,15 +587,22 @@ model OrdenMantenimiento {
 }
 
 model Reserva {
-  id                 Int      @id @default(autoincrement())
+  id                 Int            @id @default(autoincrement())
   huespedId          Int
   fechaDesde         DateTime
   fechaHasta         DateTime
   // Confirmada | En curso (tras check-in) | Cerrada (tras check-out) | Cancelada
-  estado             String   @default("Confirmada")
+  estado             String         @default("Confirmada")
   motivoCancelacion  String?
-  codigoConfirmacion String   @unique
-  huesped            Huesped  @relation(fields: [huespedId], references: [id])
+  codigoConfirmacion String         @unique
+  huesped            Huesped        @relation(fields: [huespedId], references: [id])
+  // Etapa 4A (HU-95/96) — un plan tarifario por reserva, elegido al
+  // confirmar. Nullable a propósito: no hay "plan por defecto" razonable a
+  // nivel schema (asumir que BAR siempre tiene un id fijo sería frágil).
+  // A nivel de aplicación es obligatorio desde el alta en adelante — pasa a
+  // NOT NULL recién en la Etapa 4C, después de migrar las reservas viejas.
+  planTarifarioId    Int?
+  planTarifario      PlanTarifario? @relation(fields: [planTarifarioId], references: [id])
 
   reservaHabitaciones        ReservaHabitacion[]
   consumosServicioAdicional  ConsumoServicioAdicional[]
@@ -605,15 +612,25 @@ model Reserva {
   notificaciones             Notificacion[]
 
   @@index([huespedId], map: "reservas_huespedId_fkey")
+  @@index([planTarifarioId], map: "reservas_planTarifarioId_fkey")
   @@map("reservas")
 }
 
 model ReservaHabitacion {
-  id           Int        @id @default(autoincrement())
-  reservaId    Int
-  habitacionId Int
-  reserva      Reserva    @relation(fields: [reservaId], references: [id])
-  habitacion   Habitacion @relation(fields: [habitacionId], references: [id])
+  id            Int            @id @default(autoincrement())
+  reservaId     Int
+  habitacionId  Int
+  // Etapa 4A (HU-95) — ocupación de ESTA habitación dentro de la reserva.
+  // `adultos` con default 2 es un bootstrap puntual para que el alta de
+  // esta columna sobre las reservas ya existentes no falle (db push exige
+  // un valor para las filas ya pobladas) — el script de migración lo
+  // corrige enseguida al valor real de cada una. Ese default se retira en
+  // la Etapa 4C: de acá en más toda alta nueva lo manda siempre explícito.
+  adultos       Int            @default(2)
+  menores       Int            @default(0)
+  reserva       Reserva        @relation(fields: [reservaId], references: [id])
+  habitacion    Habitacion     @relation(fields: [habitacionId], references: [id])
+  reservaNoches ReservaNoche[]
 
   @@unique([reservaId, habitacionId])
   @@index([habitacionId], map: "reservas_habitaciones_habitacionId_fkey")
@@ -775,7 +792,7 @@ model CargoVerificacionCheckout {
 // ────────────────────────────────────────────────────────────
 
 model Temporada {
-  id            Int       @id @default(autoincrement())
+  id            Int            @id @default(autoincrement())
   nombre        String
   // BASE | BAJA | MEDIA | ALTA | EVENTO — validado en código
   // (tarifas.constantes.js). Solo una Temporada con nivel BASE puede
@@ -787,16 +804,17 @@ model Temporada {
   fechaDesde    DateTime?
   fechaHasta    DateTime?
   estadiaMinima Int?
-  cierreLlegada Boolean   @default(false)
-  activa        Boolean   @default(true)
+  cierreLlegada Boolean        @default(false)
+  activa        Boolean        @default(true)
   motivoBaja    String?
   // Quién dio de baja — mismo mecanismo `usuario` que el resto del
   // proyecto (ver ordenesCompra.servicio.js), no hay tabla de Usuario real.
   bajaPor       String?
   creadoPor     String?
-  creadoEn      DateTime  @default(now())
-  actualizadoEn DateTime  @updatedAt
+  creadoEn      DateTime       @default(now())
+  actualizadoEn DateTime       @updatedAt
   tarifas       Tarifa[]
+  reservaNoches ReservaNoche[]
 
   @@map("temporadas")
 }
@@ -829,6 +847,8 @@ model PlanTarifario {
   actualizadoEn            DateTime        @updatedAt
   planBase                 PlanTarifario?  @relation("PlanDerivado", fields: [planBaseId], references: [id])
   derivados                PlanTarifario[] @relation("PlanDerivado")
+  reservas                 Reserva[]
+  reservaNoches            ReservaNoche[]
 
   @@index([planBaseId], map: "planes_tarifarios_planBaseId_fkey")
   @@map("planes_tarifarios")
@@ -855,6 +875,7 @@ model Tarifa {
   tipoHabitacion       TipoHabitacion              @relation(fields: [tipoHabitacionId], references: [id])
   temporada            Temporada                   @relation(fields: [temporadaId], references: [id])
   loteActualizacion    LoteActualizacionTarifaria? @relation(fields: [loteActualizacionId], references: [id])
+  reservaNoches        ReservaNoche[]
 
   @@unique([tipoHabitacionId, temporadaId, vigenteDesde])
   @@index([temporadaId], map: "tarifas_temporadaId_fkey")
@@ -934,4 +955,46 @@ model Usuario {
   actualizadoEn    DateTime  @updatedAt
 
   @@map("usuarios")
+}
+
+// ────────────────────────────────────────────────────────────
+// Etapa 4A de tarifas por temporada (HU-95/HU-96) — el precio de cada
+// noche reservada queda congelado acá al confirmar (alta o modificación),
+// para que un cambio posterior de tarifas nunca altere lo ya vendido y el
+// check-out cobre exactamente lo reservado. Sin endpoint de edición propio
+// en esta etapa: se reemplaza entera (delete + create) dentro de la misma
+// transacción del alta/modificación, nunca con un update fila por fila.
+// ────────────────────────────────────────────────────────────
+
+model ReservaNoche {
+  id                  Int               @id @default(autoincrement())
+  reservaHabitacionId Int
+  // Fecha-sin-hora, misma convención que Reserva.fechaDesde/fechaHasta y
+  // Tarifa.vigenteDesde (parsearFechaSinHora / hoyComoFechaUTC, lib/fechas.js).
+  fecha               DateTime
+  // temporadaId/tarifaId quedan null en las filas creadas por la migración
+  // (origen MIGRACION): esas noches usan el tarifaPorNoche viejo de la
+  // habitación, sin una Tarifa/Temporada real detrás para apuntar.
+  temporadaId         Int?
+  tarifaId            Int?
+  planTarifarioId     Int
+  // IVA incluido, ya con el modificador de día de semana y el descuento
+  // del plan (si corresponde) aplicados — es el precio final de ESA noche,
+  // no un insumo para recalcular nada.
+  precioNoche         Decimal           @db.Decimal(12, 2)
+  // MOTOR (calculada por cotizarReserva, alta o modificación) | MIGRACION
+  // (script de la Etapa 4A sobre reservas anteriores a esta etapa).
+  origen              String
+  creadoEn            DateTime          @default(now())
+  actualizadoEn       DateTime          @updatedAt
+  reservaHabitacion   ReservaHabitacion @relation(fields: [reservaHabitacionId], references: [id])
+  temporada           Temporada?        @relation(fields: [temporadaId], references: [id])
+  tarifa              Tarifa?           @relation(fields: [tarifaId], references: [id])
+  planTarifario       PlanTarifario     @relation(fields: [planTarifarioId], references: [id])
+
+  @@unique([reservaHabitacionId, fecha])
+  @@index([temporadaId], map: "reservas_noche_temporadaId_fkey")
+  @@index([tarifaId], map: "reservas_noche_tarifaId_fkey")
+  @@index([planTarifarioId], map: "reservas_noche_planTarifarioId_fkey")
+  @@map("reservas_noche")
 }

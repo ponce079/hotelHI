@@ -41,6 +41,14 @@ export async function consultarDisponibilidad(params) {
   return data;
 }
 
+// HU-95 (Etapa 4A) — cotización previa a confirmar un alta o una
+// modificación: mismo payload que crearReserva pero sin totalEsperado, y
+// nunca manda fechaVenta (el backend siempre usa la de hoy).
+export async function cotizarReserva(payload) {
+  const { data } = await api.post("/reservas/cotizar", payload);
+  return data;
+}
+
 // HU-36 (recepcionista, alta SIN seña — ya no la usa el wizard con seña
 // obligatoria, ver crearReservaConSena) y HU-40 (autoservicio web, que
 // nunca cobra seña) usan este mismo alta; solo cambia `origen` en el

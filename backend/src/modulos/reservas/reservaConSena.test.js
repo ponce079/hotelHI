@@ -26,6 +26,10 @@ function coincideValor(valor, condicion) {
         return valor < esperado;
       case "gt":
         return valor > esperado;
+      case "lte":
+        return valor <= esperado;
+      case "gte":
+        return valor >= esperado;
       default:
         throw new Error(`Operador no soportado por el doble: ${operador}`);
     }
@@ -63,6 +67,44 @@ function crearCliente(obtenerTablas) {
   return {
     habitacion: {
       findMany: async ({ where }) => obtenerTablas().habitacion.filter((h) => coincide(obtenerTablas(), "habitacion", h, where)),
+      findUnique: async ({ where }) => obtenerTablas().habitacion.find((h) => h.id === where.id) ?? null,
+    },
+    // Etapa 4A (HU-95/96) — crearReserva ahora pasa por el motor de
+    // cotización (cotizacion.servicio.js), que necesita estas 5 tablas.
+    // Solo se implementa lo que ese camino de lectura pide: nada de acá
+    // crea Temporada/PlanTarifario/Tarifa durante el test.
+    tipoHabitacion: {
+      findUnique: async ({ where }) => obtenerTablas().tipoHabitacion.find((t) => t.id === where.id) ?? null,
+    },
+    temporada: {
+      findMany: async ({ where = {} }) => {
+        const t = obtenerTablas();
+        return t.temporada.filter((x) => coincide(t, "temporada", x, where));
+      },
+    },
+    planTarifario: {
+      findMany: async ({ where = {} }) => {
+        const t = obtenerTablas();
+        return t.planTarifario.filter((x) => coincide(t, "planTarifario", x, where));
+      },
+      findUnique: async ({ where }) => obtenerTablas().planTarifario.find((p) => p.id === where.id) ?? null,
+    },
+    tarifa: {
+      findMany: async ({ where = {} }) => {
+        const t = obtenerTablas();
+        return t.tarifa.filter((x) => coincide(t, "tarifa", x, where));
+      },
+    },
+    modificadorDiaSemana: {
+      findMany: async () => obtenerTablas().modificadorDiaSemana,
+    },
+    reservaNoche: {
+      create: async ({ data }) => {
+        const t = obtenerTablas();
+        const fila = { id: t.secuencias.reservaNoche++, ...data };
+        t.reservaNoche.push(fila);
+        return fila;
+      },
     },
     reservaHabitacion: {
       findMany: async ({ where }) => {
@@ -95,15 +137,20 @@ function crearCliente(obtenerTablas) {
       },
     },
     reserva: {
-      create: async ({ data }) => {
+      create: async ({ data, include }) => {
         const t = obtenerTablas();
         const { reservaHabitaciones, ...resto } = data;
         const fila = { id: t.secuencias.reserva++, ...resto };
         t.reserva.push(fila);
-        for (const rh of reservaHabitaciones?.create ?? []) {
-          t.reservaHabitacion.push({ id: t.secuencias.reservaHabitacion++, reservaId: fila.id, habitacionId: rh.habitacionId });
-        }
-        return fila;
+        const creadas = (reservaHabitaciones?.create ?? []).map((rh) => {
+          const nueva = { id: t.secuencias.reservaHabitacion++, reservaId: fila.id, ...rh };
+          t.reservaHabitacion.push(nueva);
+          return nueva;
+        });
+        // Etapa 4A — crearReservaEnTransaccion pide de vuelta las filas
+        // reservaHabitaciones recién creadas (para mapear habitacionId ->
+        // reservaHabitacionId y colgarles las ReservaNoche).
+        return include?.reservaHabitaciones ? { ...fila, reservaHabitaciones: creadas } : fila;
       },
       findUnique: async ({ where, include }) => {
         const t = obtenerTablas();
@@ -156,19 +203,77 @@ function crearCliente(obtenerTablas) {
 
 function crearDoblePrisma() {
   let tablas = {
-    habitacion: [{ id: 1, numero: "101", tipo: "Doble", capacidad: 2, piso: 1, tarifaPorNoche: 50000, activo: true }],
+    habitacion: [{ id: 1, numero: "101", tipo: "Doble", tipoHabitacionId: 1, capacidad: 2, piso: 1, tarifaPorNoche: 50000, activo: true }],
+    // Etapa 4A — fixture mínima de tarifas: un tipo con ocupación base 2, la
+    // temporada Base, el plan BAR y una Tarifa vigente hace mucho, al mismo
+    // precio que ya traía tarifaPorNoche — así el total que cotiza el motor
+    // (100000 = 2 noches × 50000) coincide con lo que ya esperaban estos tests.
+    tipoHabitacion: [{ id: 1, nombre: "Doble", ocupacionBase: 2, activo: true }],
+    temporada: [
+      {
+        id: 1,
+        nombre: "Base",
+        nivel: "BASE",
+        fechaDesde: null,
+        fechaHasta: null,
+        estadiaMinima: null,
+        cierreLlegada: false,
+        activa: true,
+      },
+    ],
+    planTarifario: [
+      {
+        id: 1,
+        codigo: "BAR",
+        nombre: "Best Available Rate",
+        tipo: "BASE",
+        planBaseId: null,
+        descuentoPorcentaje: null,
+        reembolsable: true,
+        horasCancelacionSinCargo: 48,
+        penalidadNoShow: "PRIMERA_NOCHE",
+        visibleWeb: true,
+        activo: true,
+      },
+    ],
+    tarifa: [
+      {
+        id: 1,
+        tipoHabitacionId: 1,
+        temporadaId: 1,
+        precioBase: 50000,
+        adicionalAdultoExtra: 0,
+        vigenteDesde: new Date("2020-01-01T00:00:00.000Z"),
+      },
+    ],
+    modificadorDiaSemana: [],
+    reservaNoche: [],
     reserva: [],
     reservaHabitacion: [],
     huesped: [],
     notificacion: [],
     pagoEstadia: [],
     pagoEstadiaMedio: [],
-    secuencias: { reserva: 1, reservaHabitacion: 1, huesped: 1, notificacion: 1, pagoEstadia: 1, pagoEstadiaMedio: 1 },
+    secuencias: {
+      reserva: 1,
+      reservaHabitacion: 1,
+      huesped: 1,
+      notificacion: 1,
+      pagoEstadia: 1,
+      pagoEstadiaMedio: 1,
+      reservaNoche: 1,
+    },
   };
 
   function clonarTablas(t) {
     return {
       habitacion: t.habitacion.map((r) => ({ ...r })),
+      tipoHabitacion: t.tipoHabitacion.map((r) => ({ ...r })),
+      temporada: t.temporada.map((r) => ({ ...r })),
+      planTarifario: t.planTarifario.map((r) => ({ ...r })),
+      tarifa: t.tarifa.map((r) => ({ ...r })),
+      modificadorDiaSemana: t.modificadorDiaSemana.map((r) => ({ ...r })),
+      reservaNoche: t.reservaNoche.map((r) => ({ ...r })),
       reserva: t.reserva.map((r) => ({ ...r })),
       reservaHabitacion: t.reservaHabitacion.map((r) => ({ ...r })),
       huesped: t.huesped.map((r) => ({ ...r })),
@@ -243,7 +348,10 @@ function altaBase(sufijo, overrides = {}) {
   return {
     fechaDesde: "2027-03-10",
     fechaHasta: "2027-03-12",
-    habitacionIds: [1],
+    habitaciones: [{ habitacionId: 1, adultos: 2, menores: 0 }],
+    planTarifarioId: 1,
+    // 2 noches × 50000 (precioBase de la Tarifa sembrada) = 100000.
+    totalEsperado: 100000,
     huesped: huespedValido(sufijo),
     canalConfirmacion: "Email",
     origen: "RECEPCION",

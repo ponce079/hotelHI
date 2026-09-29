@@ -26,8 +26,8 @@ const HABITACION_101 = {
   capacidad: 2,
   piso: 1,
   equipamiento: null,
-  tarifaPorNoche: 50000,
-  totalEstadia: 150000,
+  planes: [{ codigo: "BAR", nombre: "Best Available Rate", total: 150000, promedioPorNoche: 50000, reembolsable: true }],
+  motivoNoDisponible: null,
 };
 const HABITACION_204 = {
   id: 2,
@@ -37,8 +37,8 @@ const HABITACION_204 = {
   capacidad: 2,
   piso: 2,
   equipamiento: null,
-  tarifaPorNoche: 60000,
-  totalEstadia: 180000,
+  planes: [{ codigo: "BAR", nombre: "Best Available Rate", total: 180000, promedioPorNoche: 60000, reembolsable: true }],
+  motivoNoDisponible: null,
 };
 
 const DISPONIBILIDAD = {
@@ -90,7 +90,14 @@ describe("DisponibilidadPublicaPage — modoInterno (mostrador): tarjetas selecc
 
     expect(mockNavigate).toHaveBeenCalledWith(
       "/reservas?nueva=1&desde=2026-10-10&hasta=2026-10-13",
-      { state: { habitacionIds: [1, 2] } }
+      {
+        state: {
+          habitaciones: [
+            { habitacionId: 1, adultos: 2, menores: 0 },
+            { habitacionId: 2, adultos: 2, menores: 0 },
+          ],
+        },
+      }
     );
   });
 

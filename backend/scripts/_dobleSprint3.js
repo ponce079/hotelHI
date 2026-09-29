@@ -121,6 +121,9 @@ const TABLAS = [
   "tarifa",
   "modificadorDiaSemana",
   "loteActualizacionTarifaria",
+  // Etapa 4A de tarifas por temporada (HU-95/96) — precio por noche
+  // congelado, una fila por ReservaHabitacion y fecha.
+  "reservaNoche",
 ];
 
 // Campos `@default(now())` del schema real que ningún servicio setea a
@@ -273,20 +276,35 @@ function crearBase() {
 
     if (tabla === "reserva") {
       if (include.huesped) salida.huesped = datos.huesped.find((h) => h.id === registro.huespedId) ?? null;
+      // Etapa 4A (HU-95) — un plan tarifario por reserva.
+      if (include.planTarifario) {
+        salida.planTarifario = datos.planTarifario.find((p) => p.id === registro.planTarifarioId) ?? null;
+      }
       if (include.reservaHabitaciones) {
         // HU-89: honra el include anidado hasta tipoHabitacion (INCLUDE_RESERVA
         // en reservas.servicio.js pide reservaHabitaciones.habitacion.tipoHabitacion)
         // en vez del find() plano de antes, que no expandía nada más abajo de
         // habitacion.
-        const incluirHabitacion = desenvolverInclude(include.reservaHabitaciones).habitacion;
+        const incluirRH = desenvolverInclude(include.reservaHabitaciones);
+        const incluirHabitacion = incluirRH.habitacion;
+        // Etapa 4A — reservaHabitaciones.reservaNoches (INCLUDE_RESERVA las
+        // trae con su propia temporada, y ordenadas por fecha).
+        const incluirReservaNoches = incluirRH.reservaNoches;
         salida.reservaHabitaciones = datos.reservaHabitacion
           .filter((rh) => rh.reservaId === registro.id)
           .map((rh) => {
             const habitacion = datos.habitacion.find((h) => h.id === rh.habitacionId) ?? null;
-            return {
+            const expandida = {
               ...rh,
               habitacion: habitacion ? expandir("habitacion", habitacion, desenvolverInclude(incluirHabitacion)) : null,
             };
+            if (incluirReservaNoches) {
+              const propias = datos.reservaNoche.filter((n) => n.reservaHabitacionId === rh.id);
+              expandida.reservaNoches = ordenar(propias, incluirReservaNoches?.orderBy).map((n) =>
+                expandir("reservaNoche", n, desenvolverInclude(incluirReservaNoches))
+              );
+            }
+            return expandida;
           });
       }
       if (include.notificaciones) {
@@ -299,6 +317,24 @@ function crearBase() {
         salida.habitacion = habitacion ? expandir("habitacion", habitacion, desenvolverInclude(include.habitacion)) : null;
       }
       if (include.reserva) salida.reserva = datos.reserva.find((r) => r.id === registro.reservaId) ?? null;
+      // Etapa 4A — usado directo por consolidarCargos (checkOut.servicio.js),
+      // que pide reservaHabitaciones.reservaNoches sin pasar por la reserva.
+      if (include.reservaNoches) {
+        const propias = datos.reservaNoche.filter((n) => n.reservaHabitacionId === registro.id);
+        salida.reservaNoches = ordenar(propias, include.reservaNoches?.orderBy).map((n) =>
+          expandir("reservaNoche", n, desenvolverInclude(include.reservaNoches))
+        );
+      }
+    }
+    // Etapa 4A — ReservaNoche.temporada/tarifa/planTarifario (formatearReserva
+    // en reservas.servicio.js solo pide temporada, pero se enseñan las 3 por
+    // si algún script las necesita).
+    if (tabla === "reservaNoche") {
+      if (include.temporada) salida.temporada = datos.temporada.find((t) => t.id === registro.temporadaId) ?? null;
+      if (include.tarifa) salida.tarifa = datos.tarifa.find((t) => t.id === registro.tarifaId) ?? null;
+      if (include.planTarifario) {
+        salida.planTarifario = datos.planTarifario.find((p) => p.id === registro.planTarifarioId) ?? null;
+      }
     }
     if (tabla === "habitacion") {
       if (include.ordenesMantenimiento) {
@@ -494,6 +530,22 @@ function crearBase() {
         }
         if (tabla === "habitacion" && datos.habitacion.some((h) => h.numero === fila.numero)) {
           throw new PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", meta: { target: ["numero"] } });
+        }
+        // Etapa 4A (HU-95, ajuste C) — @@unique([reservaHabitacionId, fecha])
+        // de ReservaNoche: el alta, la modificación y la migración crean estas
+        // filas por caminos distintos, así que el P2002 real tiene que
+        // reproducirse acá para que un test pueda confirmar que ninguno de
+        // los tres pisa una noche ya congelada.
+        if (
+          tabla === "reservaNoche" &&
+          datos.reservaNoche.some(
+            (n) => n.reservaHabitacionId === fila.reservaHabitacionId && n.fecha?.getTime() === fila.fecha?.getTime()
+          )
+        ) {
+          throw new PrismaClientKnownRequestError("Unique constraint failed", {
+            code: "P2002",
+            meta: { target: ["reservaHabitacionId", "fecha"] },
+          });
         }
         // Etapa 2 de tarifas por temporada — @@unique([tipoHabitacionId,
         // temporadaId, vigenteDesde]) de Tarifa (precios.servicio.js:crearTarifa

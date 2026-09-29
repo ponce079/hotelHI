@@ -28,6 +28,14 @@ function manana() {
   return new Date(hoy.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
+// Etapa 4A (HU-95, regla 6) — "Desde $X por noche" de una habitación: el
+// menor promedio por noche entre los planes que el motor ya devolvió.
+function precioDesde(habitacion) {
+  const planes = habitacion?.planes ?? [];
+  if (planes.length === 0) return null;
+  return Math.min(...planes.map((p) => p.promedioPorNoche));
+}
+
 export function DisponibilidadPublicaPage({ modoInterno = false }) {
   const navigate = useNavigate();
   const [criterio, setCriterio] = useState({
@@ -35,6 +43,11 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
     fechaHasta: manana(),
     tipoHabitacionId: "",
     capacidadMinima: "",
+    // Etapa 4A (HU-95, regla 6) — ocupación buscada, para que el motor
+    // cotice con la misma composición que después va a reservar el
+    // huésped. Default 2 adultos / 0 menores.
+    adultos: 2,
+    menores: 0,
   });
   const [buscado, setBuscado] = useState(null);
 
@@ -69,6 +82,8 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
         fechaHasta: buscado.fechaHasta,
         tipoHabitacionId: buscado.tipoHabitacionId || undefined,
         capacidadMinima: buscado.capacidadMinima || undefined,
+        adultos: buscado.adultos,
+        menores: buscado.menores,
       }),
     enabled: Boolean(buscado),
     staleTime: 0,
@@ -141,10 +156,36 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
               </option>
             ))}
           </Select>
+          <Select
+            label="Adultos"
+            value={criterio.adultos}
+            onChange={(e) => actualizar("adultos", Number(e.target.value))}
+            className="min-w-[110px]"
+          >
+            {[1, 2, 3, 4, 5, 6].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </Select>
+          <Select
+            label="Menores"
+            value={criterio.menores}
+            onChange={(e) => actualizar("menores", Number(e.target.value))}
+            className="min-w-[110px]"
+          >
+            {[0, 1, 2, 3, 4].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </Select>
           <Button type="submit" variante="ok" icono={CalendarRange} disabled={!rangoValido} cargando={disponibilidadQuery.isFetching}>
             Buscar
           </Button>
         </form>
+
+        <p className="-mt-3 text-[11.5px] text-piedra">Menores de 0 a 12 años sin cargo.</p>
 
         {criterio.fechaDesde && criterio.fechaHasta && !rangoValido && (
           <p className="text-[13px] text-error-texto">La fecha de salida tiene que ser posterior a la de entrada.</p>
@@ -192,7 +233,13 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
                   onClick={() =>
                     modoInterno
                       ? navigate(`/reservas?nueva=1&desde=${buscado.fechaDesde}&hasta=${buscado.fechaHasta}`, {
-                          state: { habitacionIds },
+                          state: {
+                            habitaciones: habitacionIds.map((id) => ({
+                              habitacionId: id,
+                              adultos: buscado.adultos,
+                              menores: buscado.menores,
+                            })),
+                          },
                         })
                       : navigate(`/reservar?desde=${buscado.fechaDesde}&hasta=${buscado.fechaHasta}`)
                   }
@@ -240,15 +287,21 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
                       <p className={`text-[12.5px] ${elegida ? "text-hueso/80" : "text-piedra"}`}>{h.equipamiento}</p>
                     )}
                     <div className="mt-auto flex items-end justify-between gap-2 pt-2">
-                      <div>
-                        <p className={`text-[11px] uppercase tracking-wide ${elegida ? "text-hueso/70" : "text-piedra"}`}>
-                          Total estadía
+                      {precioDesde(h) != null ? (
+                        <>
+                          <div>
+                            <p className={`text-[11px] uppercase tracking-wide ${elegida ? "text-hueso/70" : "text-piedra"}`}>
+                              Desde
+                            </p>
+                            <Cifra tamano={21}>{FORMATO_MONEDA.format(precioDesde(h))}</Cifra>
+                          </div>
+                          <p className={`text-[12px] ${elegida ? "text-hueso/80" : "text-piedra"}`}>por noche</p>
+                        </>
+                      ) : (
+                        <p className={`text-[12px] ${elegida ? "text-hueso/80" : "text-piedra"}`}>
+                          {h.motivoNoDisponible ?? "Sin precio disponible"}
                         </p>
-                        <Cifra tamano={21}>{FORMATO_MONEDA.format(h.totalEstadia)}</Cifra>
-                      </div>
-                      <p className={`text-[12px] ${elegida ? "text-hueso/80" : "text-piedra"}`}>
-                        {FORMATO_MONEDA.format(h.tarifaPorNoche)} / noche
-                      </p>
+                      )}
                     </div>
                   </button>
                 );

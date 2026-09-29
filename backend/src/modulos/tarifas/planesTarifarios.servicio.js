@@ -136,9 +136,12 @@ async function cambiarActivoPlanTarifario(id, activo, motivoBaja, usuario) {
   return prisma.planTarifario.update({ where: { id: planId }, data: { activo: true } });
 }
 
-async function listarPlanesTarifarios({ activo } = {}) {
+// `cliente` opcional (Etapa 4A) — mismo motivo que en temporadas.servicio.js:
+// dejar que cotizarReserva la llame dentro de la transacción del alta o la
+// modificación de una reserva.
+async function listarPlanesTarifarios({ activo } = {}, cliente = prisma) {
   const filtro = activo === "todos" ? {} : { activo: activo !== "false" };
-  return prisma.planTarifario.findMany({ where: filtro, orderBy: [{ tipo: "asc" }, { nombre: "asc" }] });
+  return cliente.planTarifario.findMany({ where: filtro, orderBy: [{ tipo: "asc" }, { nombre: "asc" }] });
 }
 
 async function obtenerPlanTarifarioPorId(id) {

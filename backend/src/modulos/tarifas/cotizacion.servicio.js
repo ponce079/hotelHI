@@ -65,8 +65,13 @@ function isoDeFecha(fecha) {
 // del endpoint para que la Etapa 3 (tests) y la Etapa 4 (reservas/web/
 // walk-in) la llamen directo. `fechaVenta` es de uso interno: el endpoint
 // público (postCotizar en tarifas.controlador.js) nunca la lee del body.
+//
+// `cliente` (Etapa 4A) — un `tx` opcional para que cotizarReserva (más
+// abajo) pueda cotizar cada habitación DENTRO de la misma transacción del
+// alta o la modificación de una reserva, en vez de leer contra la
+// conexión suelta mientras esa transacción todavía no cerró.
 // --------------------------------------------------------------
-async function cotizarEstadia(data = {}) {
+async function cotizarEstadia(data = {}, cliente = prisma) {
   const tipoHabitacionId = enteroPositivo(data?.tipoHabitacionId, "tipoHabitacionId");
   const fechaIngreso = parsearFechaSinHora(data?.fechaIngreso, "La fecha de ingreso");
   const fechaEgreso = parsearFechaSinHora(data?.fechaEgreso, "La fecha de egreso");
@@ -85,14 +90,19 @@ async function cotizarEstadia(data = {}) {
   }
   const noches = Math.round((fechaEgreso.getTime() - fechaIngreso.getTime()) / UN_DIA_MS);
   if (noches > MAX_NOCHES_ESTADIA) {
-    throw new ErrorDeNegocio(`La estadía no puede superar las ${MAX_NOCHES_ESTADIA} noches.`);
+    // Etapa 4A: mismo tope y mismo mensaje que reservas.servicio.js/el
+    // frontend — MAX_NOCHES_ESTADIA es ahora la ÚNICA constante de la que
+    // salen los tres (ver tarifas.constantes.js).
+    throw new ErrorDeNegocio(
+      `Las estadías de más de ${MAX_NOCHES_ESTADIA} noches requieren una tarifa de larga estadía: consultá con gerencia.`
+    );
   }
 
-  const tipo = await prisma.tipoHabitacion.findUnique({ where: { id: tipoHabitacionId } });
+  const tipo = await cliente.tipoHabitacion.findUnique({ where: { id: tipoHabitacionId } });
   if (!tipo) throw new ErrorDeNegocio("El tipo de habitación indicado no existe.", 404);
   if (!tipo.activo) throw new ErrorDeNegocio("El tipo de habitación indicado está dado de baja.");
 
-  const habitacionesActivas = await prisma.habitacion.findMany({
+  const habitacionesActivas = await cliente.habitacion.findMany({
     where: { tipoHabitacionId, activo: true },
     select: { capacidad: true },
   });
@@ -110,7 +120,7 @@ async function cotizarEstadia(data = {}) {
   // El rango se pide hasta el día ANTERIOR al egreso — la noche de salida
   // no se cobra, así que ni siquiera entra en la resolución.
   const ultimaNoche = new Date(fechaEgreso.getTime() - UN_DIA_MS);
-  const dias = await resolverTemporadasEfectivasEnRango(fechaIngreso, ultimaNoche);
+  const dias = await resolverTemporadasEfectivasEnRango(fechaIngreso, ultimaNoche, cliente);
 
   // -------- Regla 4: estadía mínima --------
   const estadiaMinimaExigida = dias.reduce((max, d) => Math.max(max, d.estadiaMinima || 0), 0);
@@ -130,7 +140,7 @@ async function cotizarEstadia(data = {}) {
 
   // -------- Regla 6a: tarifa vigente por noche (una sola consulta) --------
   const temporadaIds = dias.map((d) => d.temporadaId);
-  const tarifaPorTemporada = await obtenerTarifasVigentes(tipoHabitacionId, temporadaIds, fechaVenta);
+  const tarifaPorTemporada = await obtenerTarifasVigentes(tipoHabitacionId, temporadaIds, fechaVenta, cliente);
 
   const nochesFaltantes = dias.filter((d) => !tarifaPorTemporada.has(d.temporadaId));
   if (nochesFaltantes.length > 0) {
@@ -138,7 +148,7 @@ async function cotizarEstadia(data = {}) {
     throw new ErrorDeNegocio(`No hay tarifa vigente para: ${detalleFaltantes}.`, 409);
   }
 
-  const modificadores = await listarModificadores();
+  const modificadores = await listarModificadores(cliente);
   const modificadorPorDia = new Map(modificadores.map((m) => [m.diaSemana, new Decimal(m.porcentaje)]));
 
   const ocupacionBase = new Decimal(tipo.ocupacionBase);
@@ -171,7 +181,7 @@ async function cotizarEstadia(data = {}) {
 
   // -------- Regla 8: un plan (activo, y visibleWeb si canal=WEB) por
   // salida, cada uno con su propio detalle/total/promedio. --------
-  const planesActivos = await listarPlanesTarifarios({ activo: "true" });
+  const planesActivos = await listarPlanesTarifarios({ activo: "true" }, cliente);
   const planesEnAlcance = canal === "WEB" ? planesActivos.filter((p) => p.visibleWeb) : planesActivos;
 
   const planes = planesEnAlcance.map((plan) => {
@@ -225,4 +235,127 @@ async function cotizarEstadia(data = {}) {
   };
 }
 
-module.exports = { ErrorDeNegocio, cotizarEstadia };
+// --------------------------------------------------------------
+// cotizarReserva (Etapa 4A, HU-95/96, regla 2) — orquesta cotizarEstadia
+// por cada habitación REAL de una reserva (no por tipo, como el cotizador
+// suelto) y agrupa el resultado por plan: detalle por habitación y noche,
+// total por habitación, total de la reserva. Es la única que usan la
+// vista previa (POST /api/reservas/cotizar), la confirmación del alta
+// (crearReservaEnTransaccion) y la de la modificación — el precio de una
+// reserva nunca se calcula en ningún otro lugar del código.
+//
+// Si viene `planTarifarioId`, el resultado se filtra a ESE plan (y se
+// rechaza si no está disponible para el canal pedido) — pensado para el
+// alta/modificación real, que ya sabe qué plan eligió el usuario y no
+// necesita cotizar el resto. Sin `planTarifarioId` (vista previa/selector
+// de plan) se devuelven todos los planes en alcance.
+// --------------------------------------------------------------
+async function cotizarReserva(
+  { fechaDesde, fechaHasta, planTarifarioId, habitaciones, canal, fechaVenta } = {},
+  cliente = prisma
+) {
+  const lista = Array.isArray(habitaciones) ? habitaciones : [];
+  if (lista.length === 0) throw new ErrorDeNegocio("Hay que elegir al menos una habitación para cotizar.");
+
+  const habitacionesValidadas = [];
+  for (const h of lista) {
+    const habitacionId = enteroPositivo(h?.habitacionId, "habitacionId");
+    const adultos = enteroPositivo(h?.adultos, "adultos");
+    const menores = enteroNoNegativo(h?.menores, "menores");
+    const habitacion = await cliente.habitacion.findUnique({ where: { id: habitacionId } });
+    if (!habitacion) throw new ErrorDeNegocio("Alguna de las habitaciones elegidas no existe.", 404);
+    if (!habitacion.activo) throw new ErrorDeNegocio(`La habitación ${habitacion.numero} está dada de baja.`);
+    if (adultos + menores > habitacion.capacidad) {
+      throw new ErrorDeNegocio(
+        `La ocupación de la habitación ${habitacion.numero} (${adultos + menores}) supera su capacidad (${habitacion.capacidad}).`
+      );
+    }
+    habitacionesValidadas.push({
+      habitacionId,
+      adultos,
+      menores,
+      numero: habitacion.numero,
+      tipoHabitacionId: habitacion.tipoHabitacionId,
+    });
+  }
+
+  // Por cada habitación, cotiza su TIPO con SU propia ocupación —
+  // cotizarEstadia ya devuelve todos los planes en alcance para ese canal;
+  // acá solo se reorganiza el resultado por plan en vez de por habitación.
+  const resultadosPorHabitacion = [];
+  for (const h of habitacionesValidadas) {
+    const resultado = await cotizarEstadia(
+      {
+        tipoHabitacionId: h.tipoHabitacionId,
+        fechaIngreso: fechaDesde,
+        fechaEgreso: fechaHasta,
+        adultos: h.adultos,
+        menores: h.menores,
+        canal,
+        fechaVenta,
+      },
+      cliente
+    );
+    resultadosPorHabitacion.push({ ...h, resultado });
+  }
+
+  // Fecha de venta resuelta, noches y estadía mínima son iguales para
+  // todas las habitaciones (mismo rango de fechas) — se toman de la
+  // primera cotización.
+  const { fechaVenta: fechaVentaResuelta, noches, estadiaMinimaExigida } = resultadosPorHabitacion[0].resultado;
+
+  // Intersección de los códigos de plan presentes en TODAS las
+  // habitaciones — en la práctica los planes solo dependen del canal (no
+  // del tipo de habitación), así que esto suele ser "los planes de
+  // cualquiera de ellas", pero se intersecta por las dudas.
+  let codigosComunes = null;
+  for (const rh of resultadosPorHabitacion) {
+    const codigos = new Set(rh.resultado.planes.map((p) => p.codigo));
+    codigosComunes = codigosComunes ? new Set([...codigosComunes].filter((c) => codigos.has(c))) : codigos;
+  }
+
+  let planes = [...codigosComunes].map((codigo) => {
+    const habitacionesDelPlan = resultadosPorHabitacion.map((rh) => {
+      const planHabitacion = rh.resultado.planes.find((p) => p.codigo === codigo);
+      return {
+        habitacionId: rh.habitacionId,
+        numero: rh.numero,
+        adultos: rh.adultos,
+        menores: rh.menores,
+        detalle: planHabitacion.detalle,
+        total: planHabitacion.total,
+      };
+    });
+    const infoPlan = resultadosPorHabitacion[0].resultado.planes.find((p) => p.codigo === codigo);
+    const totalDecimal = habitacionesDelPlan.reduce((acc, h) => acc.plus(new Decimal(h.total)), new Decimal(0));
+    const promedioDecimal = noches > 0 ? totalDecimal.dividedBy(noches) : new Decimal(0);
+    return {
+      codigo: infoPlan.codigo,
+      nombre: infoPlan.nombre,
+      tipo: infoPlan.tipo,
+      reembolsable: infoPlan.reembolsable,
+      horasCancelacionSinCargo: infoPlan.horasCancelacionSinCargo,
+      penalidadNoShow: infoPlan.penalidadNoShow,
+      visibleWeb: infoPlan.visibleWeb,
+      habitaciones: habitacionesDelPlan,
+      total: totalDecimal.toNumber(),
+      promedioPorNoche: promedioDecimal.toNumber(),
+    };
+  });
+
+  if (planTarifarioId !== undefined && planTarifarioId !== null && planTarifarioId !== "") {
+    const id = enteroPositivo(planTarifarioId, "planTarifarioId");
+    const plan = await cliente.planTarifario.findUnique({ where: { id } });
+    const elegido = plan ? planes.find((p) => p.codigo === plan.codigo) : null;
+    if (!elegido) {
+      throw new ErrorDeNegocio(
+        "El plan tarifario elegido no está disponible para esta cotización (revisá que esté activo y, si el canal es WEB, que sea visible en la web)."
+      );
+    }
+    planes = [elegido];
+  }
+
+  return { fechaVenta: fechaVentaResuelta, noches, estadiaMinimaExigida, planes };
+}
+
+module.exports = { ErrorDeNegocio, cotizarEstadia, cotizarReserva };

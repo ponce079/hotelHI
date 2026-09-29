@@ -74,16 +74,79 @@ async function esperaError(fn, textoEsperado) {
 const HUESPED = { nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
 const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Tarjeta de crédito" };
 
+// --------------------------------------------------------------
+// Fixture mínima de tarifas (Etapa 4A) — crearReserva ahora pasa por el
+// motor de cotización, así que necesita un tipo con tarifa vigente. Una
+// temporada Base + un plan BAR, y una Tarifa por tipo al mismo precio que
+// ya traía `tarifaPorNoche` de cada prueba.
+// --------------------------------------------------------------
+async function asegurarTemporadaYPlanBase() {
+  let temporadaBase = base._datos.temporada.find((t) => t.nivel === "BASE");
+  if (!temporadaBase) {
+    temporadaBase = await base.temporada.create({
+      data: { nombre: "Base", nivel: "BASE", fechaDesde: null, fechaHasta: null, estadiaMinima: null, cierreLlegada: false, activa: true },
+    });
+  }
+  let planBar = base._datos.planTarifario.find((p) => p.codigo === "BAR");
+  if (!planBar) {
+    planBar = await base.planTarifario.create({
+      data: {
+        codigo: "BAR",
+        nombre: "Best Available Rate",
+        tipo: "BASE",
+        planBaseId: null,
+        descuentoPorcentaje: null,
+        reembolsable: true,
+        horasCancelacionSinCargo: 48,
+        penalidadNoShow: "PRIMERA_NOCHE",
+        visibleWeb: true,
+        activo: true,
+      },
+    });
+  }
+  return { temporadaBase, planBar };
+}
+
+async function asegurarTarifaParaTipo(tipoHabitacionId, precioPorNoche) {
+  const { temporadaBase } = await asegurarTemporadaYPlanBase();
+  const yaTiene = base._datos.tarifa.some((t) => t.tipoHabitacionId === tipoHabitacionId && t.temporadaId === temporadaBase.id);
+  if (!yaTiene) {
+    await base.tarifa.create({
+      data: {
+        tipoHabitacionId,
+        temporadaId: temporadaBase.id,
+        precioBase: precioPorNoche,
+        adicionalAdultoExtra: 0,
+        vigenteDesde: new Date(`${enDias(-365)}T00:00:00.000Z`),
+      },
+    });
+  }
+}
+
 // Reserva "En curso" con una habitación propia — mismo camino real que
 // HU-43/47 (crearReserva + confirmarCheckInConReserva), ya probado en
 // pruebas-checkin.js. `numero` tiene que ser único por corrida de
 // `limpiar()` así que cada prueba pasa el suyo.
 async function crearReservaEnCurso({ numero, tarifaPorNoche = 10000, noches = 2 } = {}) {
   const habitacion = base._sembrarHabitacion({ numero, tarifaPorNoche });
+  await asegurarTarifaParaTipo(habitacion.tipoHabitacionId, tarifaPorNoche);
+  const { planBar } = await asegurarTemporadaYPlanBase();
+  const fechaDesde = enDias(0);
+  const fechaHasta = enDias(noches);
+  const habitaciones = [{ habitacionId: habitacion.id, adultos: 2, menores: 0 }];
+  const cotizacion = await reservasServicio.cotizarParaReserva({
+    fechaDesde,
+    fechaHasta,
+    planTarifarioId: planBar.id,
+    habitaciones,
+    canal: "RECEPCION",
+  });
   const reserva = await reservasServicio.crearReserva({
-    fechaDesde: enDias(0),
-    fechaHasta: enDias(noches),
-    habitacionIds: [habitacion.id],
+    fechaDesde,
+    fechaHasta,
+    habitaciones,
+    planTarifarioId: planBar.id,
+    totalEsperado: cotizacion.planes[0]?.total ?? 0,
     huesped: { ...HUESPED },
   });
   await checkInServicio.confirmarCheckInConReserva({
