@@ -1,4 +1,9 @@
 import { useEffect, useRef, useState } from "react";
+import { EstadiaPanel } from '../estadia/EstadiaPanel';
+import { CantidadesOcupantes } from './CantidadesOcupantes';
+import { resumenOcupantes, cantidadesParaEnviar } from './validacionOcupantesIngreso';
+import { api } from '../../lib/api';
+import { useSesion } from '../../lib/sesion';
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ArrowRight, CheckCircle2, LogIn, Search, User } from "lucide-react";
@@ -23,6 +28,7 @@ const FORM_VACIO = {
   garantiaConfirmada: false,
   medioGarantia: MEDIOS_GARANTIA[0],
   referenciaGarantia: undefined,
+  cantidadesOcupantes: {},
 };
 
 function habitacionesDeReserva(reserva) {
@@ -72,6 +78,7 @@ function LlegadasPendientes({ reservas, cargando, onSeleccionar }) {
 // búsqueda por código es el mismo dato que HU-42 le dio al huésped al
 // confirmar la reserva.
 export function CheckInConReserva({ codigoPreseleccionado = "" }) {
+  const { usuario } = useSesion();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [codigo, setCodigo] = useState(codigoPreseleccionado);
@@ -121,6 +128,8 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
   const confirmar = useMutation({
     mutationFn: () =>
       confirmarCheckInConReserva(resultado.reserva.id, {
+        cantidadesOcupantes: cantidadesParaEnviar(resultado.reserva.habitaciones, form.cantidadesOcupantes),
+        operador: usuario,
         numeroDocumentoIngresado: form.documento.trim(),
         garantiaConfirmada: form.garantiaConfirmada,
         medioGarantia: form.medioGarantia,
@@ -141,11 +150,15 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
   }
 
   const reserva = resultado?.reserva;
+  const ocupantes = useQuery({queryKey:['ocupantes',reserva?.id],queryFn:()=>api.get(`/estadia/${reserva.id}/ocupantes`).then(r=>r.data),enabled:Boolean(reserva)});
+  const resumen = resumenOcupantes(reserva?.habitaciones??[],ocupantes.data??[],form.cantidadesOcupantes);
+  const todosRegistrados = ocupantes.isSuccess && !ocupantes.isFetching && resumen.length>0 && resumen.every(h=>h.completo);
   const puedeConfirmar =
-    resultado?.puedeIniciarCheckIn && form.documento.trim() && form.garantiaConfirmada && !confirmar.isPending;
+    resultado?.puedeIniciarCheckIn && todosRegistrados && form.documento.trim() && form.garantiaConfirmada && !confirmar.isPending;
 
   return (
     <div className="flex flex-col gap-5">
+      {reserva && <><CantidadesOcupantes resumen={resumen} cantidades={form.cantidadesOcupantes} onChange={cantidadesOcupantes=>cambiar({cantidadesOcupantes})}/><EstadiaPanel key={reserva.id} reserva={reserva} soloPersonas /></>}
       <div className="flex gap-6">
         <div className="flex flex-[1_1_auto] flex-col gap-5">
           <form
