@@ -155,6 +155,31 @@ async function obtenerTarifaVigente(tipoHabitacionId, temporadaId, fechaVenta, c
 }
 
 // --------------------------------------------------------------
+// obtenerTarifasVigentes (Etapa 3, HU-94) — misma resolución que
+// obtenerTarifaVigente, pero para VARIAS temporadas de un mismo tipo en
+// una sola consulta (ajuste C): el motor de cotización tiene que resolver
+// la tarifa de cada noche de una estadía de hasta 30 noches, y la mayoría
+// de esas noches comparten temporada — llamar obtenerTarifaVigente una vez
+// por noche sería hasta 30 consultas para, en la práctica, un puñado de
+// temporadas distintas. Mismo patrón de "una consulta + Map de primera
+// aparición" que ya usa grillaTarifas.
+// --------------------------------------------------------------
+async function obtenerTarifasVigentes(tipoHabitacionId, temporadaIds, fechaVenta, cliente = prisma) {
+  const idsUnicos = [...new Set(temporadaIds)];
+  const filas = idsUnicos.length
+    ? await cliente.tarifa.findMany({
+        where: { tipoHabitacionId, temporadaId: { in: idsUnicos }, vigenteDesde: { lte: fechaVenta } },
+        orderBy: { vigenteDesde: "desc" },
+      })
+    : [];
+  const porTemporada = new Map();
+  for (const t of filas) {
+    if (!porTemporada.has(t.temporadaId)) porTemporada.set(t.temporadaId, t);
+  }
+  return porTemporada;
+}
+
+// --------------------------------------------------------------
 // Grilla (HU-92) — tipos activos × temporadas activas, con la tarifa
 // vigente HOY de cada celda (o null). Una sola consulta de Tarifa (no
 // tipos×temporadas consultas sueltas) — mismo criterio de lote que
@@ -211,6 +236,7 @@ module.exports = {
   actualizarTarifa,
   eliminarTarifa,
   obtenerTarifaVigente,
+  obtenerTarifasVigentes,
   grillaTarifas,
   historialTarifa,
 };

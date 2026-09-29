@@ -48,4 +48,17 @@ function parsearFechaSinHora(valor, campo) {
   return fecha;
 }
 
-module.exports = { ZONA_ARGENTINA, hoyComoFechaUTC, parsearFechaSinHora };
+// Día de semana (0=domingo … 6=sábado) de una fecha-sin-hora ya normalizada
+// a medianoche UTC (ver parsearFechaSinHora/hoyComoFechaUTC arriba) — SIEMPRE
+// getUTCDay(), nunca getDay(): getDay() lee en la hora local del PROCESO que
+// corre el código, no en la de Argentina, así que en un servidor con otro
+// huso horario correría el día (una fecha guardada como "2027-09-10
+// medianoche UTC" es indiscutiblemente un viernes en el calendario elegido;
+// eso no puede depender de dónde esté físicamente el proceso). Se agrega acá
+// (Etapa 3 de tarifas por temporada, HU-94) porque el motor de cotización lo
+// necesita para resolver el modificador por día de semana de cada noche.
+function diaSemanaDeFecha(fecha) {
+  return fecha.getUTCDay();
+}
+
+module.exports = { ZONA_ARGENTINA, hoyComoFechaUTC, parsearFechaSinHora, diaSemanaDeFecha };

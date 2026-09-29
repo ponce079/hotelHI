@@ -42,3 +42,6 @@ export const LIMITES_TARIFAS = {
 };
 
 export const ESTADO_LOTE = { APLICADO: "Aplicado", ANULADO: "Anulado" };
+
+// Motor de cotización (Etapa 3, HU-94).
+export const EDAD_MAXIMA_MENOR_SIN_CARGO = 12;

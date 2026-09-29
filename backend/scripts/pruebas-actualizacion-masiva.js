@@ -71,6 +71,14 @@ async function main() {
     assert.equal(lotesServicio.redondearAMultiploDe100(87450 * 1.08), 94400);
   });
 
+  await prueba("ajuste A — redondea el límite exacto hacia arriba (102.850 -> 102.900, ROUND_HALF_UP con Decimal)", async () => {
+    assert.equal(lotesServicio.redondearAMultiploDe100(102850).toNumber(), 102900);
+  });
+
+  await prueba("ajuste A — un centavo antes del límite redondea para abajo (102.849,99 -> 102.800)", async () => {
+    assert.equal(lotesServicio.redondearAMultiploDe100(102849.99).toNumber(), 102800);
+  });
+
   seccion("Base de cálculo — acumulativa sobre la fecha de vigencia del lote (ajuste 1)");
 
   await prueba(

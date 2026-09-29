@@ -285,6 +285,39 @@ async function main() {
     assert.equal(ventaAntesDeCualquiera, null, "todavía no hay ninguna versión vigente para esa fecha");
   });
 
+  seccion("obtenerTarifasVigentes (ajuste C, Etapa 3/HU-94) — misma resolución que obtenerTarifaVigente, batcheada");
+
+  await prueba(
+    "para varias temporadas con varias versiones cada una, obtenerTarifasVigentes devuelve exactamente lo mismo que obtenerTarifaVigente celda por celda",
+    async () => {
+      limpiar();
+      const tipo = base._resolverOCrearTipoHabitacion("Doble");
+      const temporadaA = await base.temporada.create({ data: { nombre: "Media", nivel: "MEDIA", fechaDesde: fechaDias(1), fechaHasta: fechaDias(60) } });
+      const temporadaB = await base.temporada.create({ data: { nombre: "Alta", nivel: "ALTA", fechaDesde: fechaDias(1), fechaHasta: fechaDias(60) } });
+      const temporadaC = await base.temporada.create({ data: { nombre: "Base", nivel: "BASE", fechaDesde: null, fechaHasta: null } });
+
+      // A tiene 2 versiones, B tiene 1, C no tiene ninguna (para probar
+      // también el caso "sin tarifa" dentro del mismo batch).
+      await preciosServicio.crearTarifa({ tipoHabitacionId: tipo.id, temporadaId: temporadaA.id, precioBase: 50000, adicionalAdultoExtra: 5000, vigenteDesde: isoDias(10) });
+      await preciosServicio.crearTarifa({ tipoHabitacionId: tipo.id, temporadaId: temporadaA.id, precioBase: 60000, adicionalAdultoExtra: 6000, vigenteDesde: isoDias(40) });
+      await preciosServicio.crearTarifa({ tipoHabitacionId: tipo.id, temporadaId: temporadaB.id, precioBase: 90000, adicionalAdultoExtra: 15000, vigenteDesde: isoDias(5) });
+
+      const fechaVenta = fechaDias(20);
+      const mapa = await preciosServicio.obtenerTarifasVigentes(tipo.id, [temporadaA.id, temporadaB.id, temporadaC.id], fechaVenta);
+
+      const esperadaA = await preciosServicio.obtenerTarifaVigente(tipo.id, temporadaA.id, fechaVenta);
+      const esperadaB = await preciosServicio.obtenerTarifaVigente(tipo.id, temporadaB.id, fechaVenta);
+      const esperadaC = await preciosServicio.obtenerTarifaVigente(tipo.id, temporadaC.id, fechaVenta);
+
+      assert.equal(mapa.get(temporadaA.id).id, esperadaA.id);
+      assert.equal(Number(mapa.get(temporadaA.id).precioBase), Number(esperadaA.precioBase));
+      assert.equal(mapa.get(temporadaB.id).id, esperadaB.id);
+      assert.equal(Number(mapa.get(temporadaB.id).precioBase), Number(esperadaB.precioBase));
+      assert.equal(esperadaC, null, "la temporada C no tiene ninguna tarifa cargada");
+      assert.equal(mapa.has(temporadaC.id), false, "obtenerTarifasVigentes no debe traer una entrada para la celda sin tarifa");
+    }
+  );
+
   await prueba(
     "ajuste C — una tarifa con vigenteDesde=mañana no es la vigente para una venta de 'hoy' (hoyComoFechaUTC resuelve el día calendario en hora argentina, nunca en UTC crudo — por eso una venta tarde a la noche en Argentina no 'salta' al día siguiente)",
     async () => {

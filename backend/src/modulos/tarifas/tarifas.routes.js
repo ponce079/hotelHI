@@ -37,4 +37,7 @@ router.post("/lotes/vista-previa", tarifasControlador.postVistaPrevia);
 router.post("/lotes", tarifasControlador.postLote);
 router.post("/lotes/:id/anular", tarifasControlador.postAnularLote);
 
+// Motor de cotización (HU-94).
+router.post("/cotizar", tarifasControlador.postCotizar);
+
 module.exports = router;

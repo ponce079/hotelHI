@@ -103,3 +103,9 @@ export async function anularLote(id, motivoAnulacion, usuario) {
   const { data } = await api.post(`/tarifas/lotes/${id}/anular`, { motivoAnulacion, usuario });
   return data;
 }
+
+// -------------------- Motor de cotización (HU-94) --------------------
+export async function cotizarEstadia(payload) {
+  const { data } = await api.post("/tarifas/cotizar", payload);
+  return data;
+}

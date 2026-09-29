@@ -25,10 +25,18 @@ class PrismaClientKnownRequestError extends Error {
   }
 }
 
+// Se captura el Decimal REAL de @prisma/client acá arriba, ANTES de que
+// instalarDoble() (más abajo) reemplace cualquier `require("@prisma/client")`
+// posterior por este mismo PrismaFalso — si no, el motor de cotización
+// (Etapa 3, HU-94) y la actualización masiva, que hacen aritmética real con
+// Prisma.Decimal, se quedarían sin la clase.
+const { Prisma: PrismaRealSoloParaDecimal } = require("@prisma/client");
+
 const PrismaFalso = {
   PrismaClientKnownRequestError,
   sql: (strings, ...valores) => ({ strings, valores }),
   join: (valores) => valores,
+  Decimal: PrismaRealSoloParaDecimal.Decimal,
 };
 
 // Prisma real acepta tanto `include: { reserva: { include: {...} } }` como

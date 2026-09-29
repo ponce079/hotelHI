@@ -41,6 +41,10 @@ const LIMITES_TARIFAS = {
 // Modificador por día de semana (HU-92) y descuento de un plan derivado.
 const RANGO_MODIFICADOR_DIA = { min: -50, max: 50 };
 
+// Motor de cotización (Etapa 3, HU-94).
+const MAX_NOCHES_ESTADIA = 30;
+const EDAD_MAXIMA_MENOR_SIN_CARGO = 12;
+
 module.exports = {
   NIVEL_TEMPORADA,
   NIVELES_TEMPORADA,
@@ -52,4 +56,6 @@ module.exports = {
   ESTADO_LOTE,
   LIMITES_TARIFAS,
   RANGO_MODIFICADOR_DIA,
+  MAX_NOCHES_ESTADIA,
+  EDAD_MAXIMA_MENOR_SIN_CARGO,
 };

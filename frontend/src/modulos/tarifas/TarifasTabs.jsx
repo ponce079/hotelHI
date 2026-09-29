@@ -11,6 +11,9 @@ const PESTANAS = [
   { to: "/tarifas/calendario", label: "Calendario" },
   { to: "/tarifas/planes", label: "Planes" },
   { to: "/tarifas/actualizaciones", label: "Actualizaciones" },
+  // Motor de cotización (HU-94, Etapa 3) — de solo lectura para
+  // recepcionista/admin, gatea igual que el resto con verTarifas.
+  { to: "/tarifas/cotizador", label: "Cotizador" },
 ];
 
 export function TarifasTabs({ activa }) {

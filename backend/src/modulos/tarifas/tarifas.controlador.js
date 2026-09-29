@@ -7,6 +7,7 @@ const planesServicio = require("./planesTarifarios.servicio");
 const preciosServicio = require("./precios.servicio");
 const modificadoresServicio = require("./modificadoresDiaSemana.servicio");
 const lotesServicio = require("./lotesActualizacion.servicio");
+const cotizacionServicio = require("./cotizacion.servicio");
 
 function responderError(res, err, contexto, mensaje) {
   if (
@@ -14,7 +15,8 @@ function responderError(res, err, contexto, mensaje) {
     err instanceof planesServicio.ErrorDeNegocio ||
     err instanceof preciosServicio.ErrorDeNegocio ||
     err instanceof modificadoresServicio.ErrorDeNegocio ||
-    err instanceof lotesServicio.ErrorDeNegocio
+    err instanceof lotesServicio.ErrorDeNegocio ||
+    err instanceof cotizacionServicio.ErrorDeNegocio
   ) {
     return res.status(err.statusCode).json({ error: err.message });
   }
@@ -217,6 +219,19 @@ async function postAnularLote(req, res) {
   }
 }
 
+// -------------------- Cotización (HU-94, Etapa 3) --------------------
+// `fechaVenta` es de uso interno (tests/Etapa 4 llamando a cotizarEstadia
+// directo) — el endpoint público NUNCA la toma de req.body, siempre cotiza
+// a la fecha de venta de hoy.
+async function postCotizar(req, res) {
+  try {
+    const { tipoHabitacionId, fechaIngreso, fechaEgreso, adultos, menores, canal } = req.body || {};
+    return res.json(await cotizacionServicio.cotizarEstadia({ tipoHabitacionId, fechaIngreso, fechaEgreso, adultos, menores, canal }));
+  } catch (err) {
+    return responderError(res, err, "Error al cotizar la estadía:", "No se pudo cotizar la estadía.");
+  }
+}
+
 module.exports = {
   getTemporadas,
   getTemporada,
@@ -240,4 +255,5 @@ module.exports = {
   postVistaPrevia,
   postLote,
   postAnularLote,
+  postCotizar,
 };

@@ -6,6 +6,7 @@ const prisma = require("../../lib/prisma");
 const { hoyComoFechaUTC, parsearFechaSinHora: parsearFechaSinHoraBase } = require("../../lib/fechas");
 const { crearConNumeroSecuencial } = require("../../lib/numeracion");
 const { obtenerTarifaVigente } = require("./precios.servicio");
+const { redondearAMultiploDe100 } = require("./redondeo");
 const { LIMITES_TARIFAS, ESTADO_LOTE } = require("./tarifas.constantes");
 
 class ErrorDeNegocio extends Error {
@@ -34,12 +35,6 @@ function enteroPositivo(valor, campo) {
   const numero = Number(valor);
   if (!Number.isInteger(numero) || numero < 1) throw new ErrorDeNegocio(`${campo} debe ser un número entero mayor a 0.`);
   return numero;
-}
-
-// Redondeo al múltiplo de $100 más cercano (regla 9) — local a este
-// módulo, el único que lo necesita.
-function redondearAMultiploDe100(n) {
-  return Math.round(n / 100) * 100;
 }
 
 function normalizarListaIds(valor) {
@@ -121,8 +116,12 @@ async function calcularCeldas({ porcentaje, vigenteDesde, temporadaIds, tipoHabi
       continue;
     }
 
-    const precioBaseNuevo = redondearAMultiploDe100(Number(base.precioBase) * (1 + porcentaje / 100));
-    const adicionalNuevo = redondearAMultiploDe100(Number(base.adicionalAdultoExtra) * (1 + porcentaje / 100));
+    // .toNumber() enseguida: acá abajo sigue siendo aritmética con Number
+    // (a propósito, ver el comentario del ajuste A en redondeo.js — no hace
+    // falta reescribir esta cuenta a Decimal), y un Decimal crudo viajando
+    // por `normales`/la vista previa/el doble de tests no aporta nada.
+    const precioBaseNuevo = redondearAMultiploDe100(Number(base.precioBase) * (1 + porcentaje / 100)).toNumber();
+    const adicionalNuevo = redondearAMultiploDe100(Number(base.adicionalAdultoExtra) * (1 + porcentaje / 100)).toNumber();
     normales.push({
       tipoHabitacionId: tipo.id,
       tipoNombre: tipo.nombre,
