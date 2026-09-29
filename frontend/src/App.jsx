@@ -50,8 +50,9 @@ import { ComprobantesEstadiaPage } from "./modulos/comprobantes-estadia/Comproba
 import { ComprobanteEstadiaDetallePage } from "./modulos/comprobantes-estadia/ComprobanteEstadiaDetallePage";
 import { ReporteCajaDiariaPage } from "./modulos/comprobantes-estadia/ReporteCajaDiariaPage";
 import { MovimientosPagoPage } from "./modulos/pagos-estadia/MovimientosPagoPage";
-// Gatekeeper de rutas: sin sesion (sin rol elegido en el login), redirige
-// a /login. No es autenticacion real contra el backend — ver lib/sesion.jsx.
+import { UsuariosPage } from "./modulos/usuarios/UsuariosPage";
+// Gatekeeper de rutas: sin sesion iniciada (login real con usuario y
+// contraseña, ver lib/sesion.jsx), redirige a /login.
 function RequireSesion() {
   const { rol } = useSesion();
   if (!rol) return <Navigate to="/login" replace />;
@@ -132,6 +133,8 @@ export default function App() {
           <Route path="/comprobantes-estadia/:id" element={<ComprobanteEstadiaDetallePage />} />
           <Route path="/movimientos-pago" element={<MovimientosPagoPage />} />
           <Route path="/reporte-caja-diaria" element={<ReporteCajaDiariaPage />} />
+          {/* Usuarios y Seguridad — gestión de usuarios (solo admin). */}
+          <Route path="/usuarios" element={<UsuariosPage />} />
         </Route>
       </Route>
     </Routes>

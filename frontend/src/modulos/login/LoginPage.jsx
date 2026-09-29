@@ -1,7 +1,18 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSesion, ROLES } from "../../lib/sesion";
+import { CLAVE_AVISO_LOGIN } from "../../lib/sesionClaves";
 import { Button } from "../../componentes/Button";
+import { iniciarSesion as pedirLogin } from "../usuarios/usuarios.api";
+import { mensajeDeError } from "../usuarios/usuarios.constantes";
+
+function leerAviso() {
+  try {
+    return sessionStorage.getItem(CLAVE_AVISO_LOGIN) ?? "";
+  } catch {
+    return "";
+  }
+}
 
 const ORDEN_ROLES = ["admin", "recepcionista", "housekeeping", "deposito", "compras", "gerente"];
 // Sprint 2 sumó Compras y Gastos como pilares del sistema, no solo
@@ -15,14 +26,30 @@ export function LoginPage() {
   const [rolElegido, setRolElegido] = useState(null);
   const [usuario, setUsuario] = useState("");
   const [contrasena, setContrasena] = useState("");
-  const [error, setError] = useState("");
+  // Motivo por el que se cerró la sesión anterior (ej. venció el token):
+  // se muestra en el mismo lugar que los errores.
+  const [error, setError] = useState(leerAviso);
+  const [cargando, setCargando] = useState(false);
+
+  useEffect(() => {
+    try {
+      sessionStorage.removeItem(CLAVE_AVISO_LOGIN);
+    } catch {
+      // nada que limpiar
+    }
+  }, []);
 
   function elegirRol(rol) {
     setRolElegido(rol);
     setError("");
   }
 
-  function handleSubmit(e) {
+  // Usuarios y Seguridad: mismo login de siempre (elegir perfil + usuario y
+  // contraseña), pero ahora se valida de verdad contra la base: el usuario
+  // tiene que existir, la contraseña ser la correcta (5 intentos fallidos =
+  // bloqueo de 15 minutos) y el perfil elegido tiene que ser el que le
+  // asignó el administrador.
+  async function handleSubmit(e) {
     e.preventDefault();
     if (!rolElegido) {
       setError("Elegí un perfil para continuar.");
@@ -32,8 +59,18 @@ export function LoginPage() {
       setError("Usuario y contraseña son obligatorios.");
       return;
     }
-    iniciarSesion(rolElegido, usuario.trim());
-    navigate("/", { replace: true });
+    setCargando(true);
+    setError("");
+    try {
+      const { token, usuario: datos } = await pedirLogin(usuario.trim(), contrasena, rolElegido);
+      iniciarSesion(datos.rol, datos.usuario, { token, perfil: datos });
+      navigate("/", { replace: true });
+    } catch (err) {
+      setError(mensajeDeError(err, "No se pudo iniciar sesión."));
+      setContrasena("");
+    } finally {
+      setCargando(false);
+    }
   }
 
   return (
@@ -143,12 +180,12 @@ export function LoginPage() {
             </div>
           )}
 
-          <Button type="submit" variante="ok" className="h-[46px] w-full justify-center">
+          <Button type="submit" variante="ok" cargando={cargando} className="h-[46px] w-full justify-center">
             Ingresar
           </Button>
           <p className="mt-3.5 text-[11px] leading-relaxed text-piedra">
-            El bloqueo por intentos fallidos y la gestión de roles son parte del Sprint 3; acá el
-            login sólo deriva al panel del perfil.
+            Después de 5 intentos fallidos el usuario se bloquea 15 minutos. Los usuarios los crea
+            el administrador.
           </p>
         </form>
       </div>

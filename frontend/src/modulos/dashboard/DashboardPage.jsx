@@ -5,6 +5,7 @@ import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
 import { useSesion } from "../../lib/sesion";
+import { nombreCompleto } from "../usuarios/usuarios.constantes";
 import { calcularAlertas } from "../../lib/alertas";
 import { listarDepositos } from "../depositos/depositos.api";
 import { listarHabilitaciones } from "../articulo-deposito/articuloDeposito.api";
@@ -32,7 +33,7 @@ export function DashboardPage() {
 
 function PanelStockYCompras() {
   const navigate = useNavigate();
-  const { rol, rolInfo, usuario } = useSesion();
+  const { rol, rolInfo, usuario, perfil } = useSesion();
 
   const { data: depositos } = useQuery({ queryKey: ["depositos"], queryFn: listarDepositos });
   const { data: habilitaciones } = useQuery({ queryKey: ["articulo-depositos"], queryFn: listarHabilitaciones });
@@ -118,7 +119,7 @@ function PanelStockYCompras() {
       </div>
 
       <div>
-        <h3 className="font-heading text-[23px] font-semibold">Hola, {usuario ?? rolInfo?.label}</h3>
+        <h3 className="font-heading text-[23px] font-semibold">Hola, {nombreCompleto(perfil) || usuario || rolInfo?.label}</h3>
         <p className="text-[13.5px] text-piedra">{rolInfo?.descripcion}</p>
       </div>
 

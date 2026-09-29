@@ -898,3 +898,40 @@ model LoteActualizacionTarifaria {
 
   @@map("lotes_actualizacion_tarifaria")
 }
+
+// ────────────────────────────────────────────────────────────
+// Usuarios y Seguridad — login real contra la base (reemplaza el login
+// simulado de "elegí una tarjeta de rol"). La tabla se crea con
+// prisma/crear-tabla-usuarios.sql, mismo criterio que los otros .sql de
+// esta carpeta — o directamente con `node scripts/crear-tabla-usuarios.js`,
+// que además crea el administrador inicial (admin / admin123).
+// ────────────────────────────────────────────────────────────
+
+model Usuario {
+  id               Int       @id @default(autoincrement())
+  // Nombre de login, siempre en minúsculas (ej. "tomi.recepcion"). No se
+  // edita después del alta: queda registrado como "quién lo hizo" en otras
+  // tablas (registradoPor, resueltaPor…).
+  usuario          String    @unique
+  nombre           String
+  apellido         String
+  // Solo números, sin puntos (7 u 8 dígitos).
+  dni              String    @unique
+  email            String?
+  // "scrypt$<sal>$<hash>" — nunca la contraseña en texto plano.
+  passwordHash     String
+  // admin | recepcionista | housekeeping | deposito | compras | gerente
+  rol              String
+  // Foto de perfil como data URL (JPEG/PNG), ya achicada en el navegador.
+  foto             String?   @db.MediumText
+  // Baja lógica: un usuario desactivado no puede entrar, pero no se borra.
+  activo           Boolean   @default(true)
+  // Bloqueo por intentos fallidos: 5 seguidos bloquean 15 minutos.
+  intentosFallidos Int       @default(0)
+  bloqueadoHasta   DateTime?
+  ultimoIngreso    DateTime?
+  creadoEn         DateTime  @default(now())
+  actualizadoEn    DateTime  @updatedAt
+
+  @@map("usuarios")
+}
