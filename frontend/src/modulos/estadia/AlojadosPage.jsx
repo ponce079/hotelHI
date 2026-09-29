@@ -1,0 +1,8 @@
+import {useState} from 'react';
+import {useQuery} from '@tanstack/react-query';
+import {Link} from 'react-router-dom';
+import {api} from '../../lib/api';
+import {Input} from '../../componentes/Input';
+import {useSesion} from '../../lib/sesion';
+import {SinPermiso} from '../../componentes/SinPermiso';
+export function AlojadosPage(){const [q,setQ]=useState('');const {puede}=useSesion();const autorizado=puede('verReservas');const consulta=useQuery({queryKey:['alojados',q],queryFn:()=>api.get('/estadia/alojados',{params:{q}}).then(r=>r.data),enabled:autorizado,refetchInterval:30000});if(!autorizado)return <SinPermiso/>;return <div className="space-y-5"><h1 className="font-heading text-3xl">Personas alojadas</h1><p>Personas con ingreso registrado y sin salida. Máximo 500 resultados por búsqueda.</p><Input label="Buscar por nombre, apellido o documento" value={q} onChange={e=>setQ(e.target.value)}/>{consulta.isLoading&&<p>Cargando…</p>}{consulta.isError&&<p role="alert">No se pudo consultar el listado.</p>}<div className="grid gap-3 md:grid-cols-2">{consulta.data?.map(p=>{const h=p.reserva.reservaHabitaciones.find(h=>h.habitacionId===p.asignaciones.find(a=>!a.hasta)?.habitacionId)?.habitacion;return <Link key={p.id} to={`/reservas/${p.reservaId}`} className="border border-borde bg-white rounded p-4"><strong>{p.nombre} {p.apellido}</strong><p>Habitación {h?.numero||'Sin asignar'} · {p.reserva.codigoConfirmacion}</p><p className="text-sm text-piedra">{p.tipoDocumento} {p.numeroDocumento} · Ingreso {new Date(p.ingresoReal).toLocaleString('es-AR')}</p></Link>;})}</div>{consulta.isSuccess&&!consulta.data.length&&<p>No hay personas alojadas que coincidan.</p>}</div>;}
