@@ -35,6 +35,7 @@ import { anularPagoEstadia, listarPagosEstadia } from "../pagos-estadia/pagoEsta
 import { ESTADO_PAGO_BADGE } from "../pagos-estadia/pagoEstadia.constantes";
 import { PagoEstadiaWizard } from "../pagos-estadia/PagoEstadiaWizard";
 import { CargoVerificacionCheckoutModal } from "./CargoVerificacionCheckoutModal";
+import { Garantias } from '../estadia/EstadiaPanel';
 import { confirmarCheckOut, obtenerCuenta, registrarVerificacion } from "./checkOut.api";
 import { ETIQUETA_TIPO_CARGO, PASOS_CHECKOUT, TIPO_VERIFICACION_SIN_NOVEDADES } from "./checkOut.constantes";
 
@@ -114,8 +115,9 @@ export function CheckOutReservaPage() {
   // `verificacionCompleta` sale directo de `cuenta.verificaciones`, sin
   // estado propio.
   const mutacionSinNovedades = useMutation({
-    mutationFn: () =>
-      registrarVerificacion(reservaId, { tipo: TIPO_VERIFICACION_SIN_NOVEDADES, registradoPor: usuario }),
+    mutationFn: async () => {
+      for(const h of cuentaQuery.data.habitaciones.filter(h=>!h.verificada)) await registrarVerificacion(reservaId,{habitacionId:h.habitacionId,tipo:TIPO_VERIFICACION_SIN_NOVEDADES,registradoPor:usuario});
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["check-out"] });
       setErrorVerificacion("");
@@ -176,13 +178,13 @@ export function CheckOutReservaPage() {
   const cerrada = cuenta.estadoReserva === ESTADO_RESERVA.CERRADA || Boolean(resultado);
   const enCurso = cuenta.estadoReserva === ESTADO_RESERVA.EN_CURSO && !resultado;
   const saldado = Math.round(cuenta.saldo * 100) === 0;
-  const verificacionCompleta = cuenta.verificaciones.length > 0;
+  const verificacionCompleta = cuenta.habitaciones.length>0 && cuenta.habitaciones.every(h=>h.verificada);
   const consumosMinibar = cuenta.consumos.filter((c) => c.tipoServicio === "Minibar");
   const comprobanteVigente = (comprobantesQuery.data ?? []).find((c) => c.tipo === "Comprobante" && !c.anulado);
 
   // PasoAPaso: 0 verificación · 1 confirmación · 2 pago · 3 cierre · 4 cerrado.
   const pasoActual = cerrada ? PASOS_CHECKOUT.length : !verificacionCompleta ? 0 : !cargosValidados ? 1 : !saldado ? 2 : 3;
-  const puedeCerrar = puedeGestionar && enCurso && verificacionCompleta && cargosValidados && saldado;
+  const puedeCerrar = puedeGestionar && enCurso && verificacionCompleta && cargosValidados && saldado && !(cuenta.garantiaPendiente>0);
 
   function alRegistrarCargo(mensaje) {
     setModalCargo(false);
@@ -193,6 +195,7 @@ export function CheckOutReservaPage() {
 
   return (
     <div className="flex flex-col gap-6">
+      <Garantias reservaId={reservaId} garantias={cuenta.garantias||[]} editable={puedeGestionar&&enCurso} onExito={()=>{queryClient.invalidateQueries({queryKey:['check-out']});queryClient.invalidateQueries({queryKey:['pagos-estadia']});}}/>
       <div>
         <Button variante="fantasma" icono={ArrowLeft} onClick={volver}>
           Volver
@@ -537,6 +540,7 @@ export function CheckOutReservaPage() {
 
       {modalCargo && (
         <CargoVerificacionCheckoutModal
+          habitaciones={cuenta.habitaciones}
           reservaId={reservaId}
           consumosMinibar={consumosMinibar}
           onClose={() => setModalCargo(false)}
