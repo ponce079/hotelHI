@@ -56,6 +56,7 @@ app.use("/api/ordenes-compra", require("./src/modulos/ordenes-compra/ordenesComp
 app.use("/api/habitaciones", require("./src/modulos/habitaciones/habitaciones.routes"));
 app.use("/api/reservas", require("./src/modulos/reservas/reservas.routes"));
 app.use("/api/check-in", require("./src/modulos/check-in/checkIn.routes"));
+app.use("/api/estadia", require("./src/modulos/estadia/estadia.routes"));
 app.use("/api/consumos-servicios", require("./src/modulos/servicios-adicionales/serviciosAdicionales.routes"));
 app.use("/api/comprobantes-estadia", require("./src/modulos/comprobantes-estadia/comprobanteEstadia.routes"));
 app.use("/api/pagos-estadia", require("./src/modulos/pagos-estadia/pagoEstadia.routes"));
@@ -98,4 +99,5 @@ require("./src/lib/jobsStockMinimo").iniciarBarridoStockMinimoCentral();
 // Red de seguridad de la reposición automática de centrales — ver
 // src/lib/jobsStockMinimo.js. Se arranca después de levantar el server,
 // no antes: no tiene que bloquear ni condicionar que el servidor escuche.
-require("./src/lib/jobsStockMinimo").iniciarBarridoStockMinimoCentral();
+
+
