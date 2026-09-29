@@ -21,7 +21,7 @@ const adapter = new PrismaMariaDb(
     user: decodeURIComponent(dbUrl.username),
     password: decodeURIComponent(dbUrl.password),
     database: dbUrl.pathname.replace(/^\//, ""),
-    ssl: {
+    ssl: process.env.DATABASE_SSL === "false" ? false : {
       rejectUnauthorized: false,
     },
     // La base remota es compartida por varios integrantes; una conexión
