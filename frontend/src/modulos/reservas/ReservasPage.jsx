@@ -188,6 +188,7 @@ export function ReservasPage() {
           className="min-w-[150px]"
         />
         <div className="ml-auto flex items-center gap-2.5">
+          <Button variante="secundario" onClick={()=>navigate('/personas-alojadas')}>Personas alojadas</Button>
           <Button variante="secundario" icono={Eye} onClick={() => navigate("/reservas/disponibilidad")}>
             Ver disponibilidad
           </Button>
