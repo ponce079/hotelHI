@@ -114,3 +114,31 @@ describe("DashboardPage — despacho por rol", () => {
     expect(screen.queryByText("Llegadas de hoy")).not.toBeInTheDocument();
   });
 });
+
+// Usuarios y Seguridad: el saludo usa el nombre y apellido del perfil del
+// usuario logueado, no su nombre de login.
+describe("DashboardPage — saludo con nombre y apellido", () => {
+  const PERFIL = { nombre: "Ana", apellido: "Pérez", usuario: "ana.recepcion" };
+
+  it("recepcionista: saluda con el nombre y apellido, no con el usuario", async () => {
+    useSesion.mockReturnValue({ rol: "recepcionista", rolInfo: { label: "Recepcionista" }, usuario: "ana.recepcion", perfil: PERFIL });
+    renderDashboard();
+
+    expect(await screen.findByText(/Ana Pérez/)).toBeInTheDocument();
+    expect(screen.queryByText(/ana\.recepcion/)).not.toBeInTheDocument();
+  });
+
+  it("admin: saluda con el nombre y apellido", async () => {
+    useSesion.mockReturnValue({ rol: "admin", rolInfo: { label: "Administrador" }, usuario: "admin", perfil: { ...PERFIL, usuario: "admin" } });
+    renderDashboard();
+
+    expect(await screen.findByText(/Ana Pérez/)).toBeInTheDocument();
+  });
+
+  it("panel genérico (depósito): 'Hola, Nombre Apellido'", async () => {
+    useSesion.mockReturnValue({ rol: "deposito", rolInfo: { label: "Encargado de Depósito" }, usuario: "ana.dep", perfil: { ...PERFIL, usuario: "ana.dep" } });
+    renderDashboard();
+
+    expect(await screen.findByText("Hola, Ana Pérez")).toBeInTheDocument();
+  });
+});
