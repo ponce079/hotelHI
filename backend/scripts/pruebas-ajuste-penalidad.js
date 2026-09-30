@@ -523,7 +523,11 @@ async function main() {
     assert.equal(resultado.detallePorHabitacion.length, 2);
   });
 
-  await prueba("una noche ajustada que cae en la primera noche usa el precio ajustado", async () => {
+  // Corrección de negocio (2026-09-30): un ajuste manual (HU-97) es una
+  // concesión condicionada a que la estadía ocurra — no reduce la
+  // penalidad. Una noche ajustada penaliza por su precioOriginal, no por
+  // el precioNoche ya rebajado.
+  await prueba("una noche ajustada que cae en la primera noche penaliza por precioOriginal, no por el precio ya rebajado", async () => {
     limpiar();
     await sembrarHabitacion({ numero: "101" });
     const reserva = await servicio.crearReserva(await alta("BAR"));
@@ -535,7 +539,35 @@ async function main() {
       motivo: "Cortesía antes del no-show",
     });
     const resultado = await penalidadesServicio.calcularPenalidad({ reservaId: reserva.id, tipo: TIPO_PENALIDAD.NO_SHOW });
-    assert.equal(resultado.monto, 0, "la primera noche ajustada a 0 tiene que reflejarse en la penalidad");
+    assert.equal(
+      resultado.monto,
+      noche.precioNoche,
+      "la penalidad tiene que cobrar el precio de ANTES del ajuste (la cortesía no aplica si no hubo estadía)"
+    );
+  });
+
+  await prueba("un descuento manual tampoco reduce el TOTAL de la estadía (NRF cancelado)", async () => {
+    limpiar();
+    await sembrarHabitacion({ numero: "101" });
+    const reserva = await servicio.crearReserva(await alta("NRF", { fechaDesde: enDias(10), fechaHasta: enDias(13) }));
+    const totalOriginal = reserva.totalEstimadoAlojamiento;
+    const noche = primeraNoche(reserva);
+    await servicio.ajustarPrecioReserva(reserva.id, {
+      nocheIds: [noche.id],
+      modo: MODO_AJUSTE_PRECIO.DESCUENTO_PORCENTAJE,
+      valor: 20,
+      motivo: "Descuento negociado, no debería bajar la penalidad",
+    });
+    const resultado = await penalidadesServicio.calcularPenalidad({
+      reservaId: reserva.id,
+      tipo: TIPO_PENALIDAD.CANCELACION,
+      momento: new Date(),
+    });
+    assert.equal(
+      resultado.monto,
+      totalOriginal,
+      "el total no reembolsable tiene que ser el de ANTES del descuento manual, no el ya rebajado"
+    );
   });
 
   await prueba('calcularPenalidad SOLO funciona para reservas "Confirmada": En curso, Cerrada y Cancelada rechazan', async () => {

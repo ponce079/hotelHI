@@ -1,9 +1,18 @@
 // Cálculo de penalidades por cancelación o no-show (HU-98) — Etapa 4B de
 // tarifas por temporada. Lógica de negocio pura, de solo lectura: no
 // persiste nada, no cobra nada y no conoce HTTP. Reutiliza el precio ya
-// congelado por noche (ReservaNoche.precioNoche, HU-96 — incluye cualquier
-// ajuste manual de HU-97, porque lee la misma columna) en vez de recalcular
-// nada contra el motor de cotización.
+// congelado por noche (ReservaNoche, HU-96) en vez de recalcular nada
+// contra el motor de cotización.
+//
+// Corrección de negocio (2026-09-30): un ajuste manual de precio (HU-97,
+// cortesía o descuento) es una concesión condicionada a que la estadía
+// ocurra de verdad — no reduce lo que correspondería cobrar si el huésped
+// cancela o no se presenta. Por eso, para CADA noche, el monto que entra al
+// cálculo de penalidad es: si la noche está ajustada, `precioOriginal` (el
+// precio de antes del ajuste manual); si no, `precioNoche` tal cual. Aplica
+// igual a la primera noche que al total de la estadía — ver
+// montoPenalizable() más abajo, único punto que lee el precio de una noche
+// para este cálculo.
 //
 // NO se conecta a cancelarReserva (reservas.servicio.js): esa función sigue
 // con su regla fija de 24hs, sin cambios. Este archivo solo expone el
@@ -32,6 +41,14 @@ const INCLUDE_PENALIDAD = {
   },
 };
 
+// Único punto que decide qué precio de una noche entra al cálculo de
+// penalidad: el ajuste manual de HU-97 es una concesión condicionada a que
+// la estadía ocurra, así que una noche ajustada penaliza por su
+// precioOriginal (antes del ajuste), no por el precioNoche ya rebajado.
+function montoPenalizable(noche) {
+  return noche.ajustada ? Number(noche.precioOriginal) : Number(noche.precioNoche);
+}
+
 // La "primera noche" de una reserva de varias habitaciones es la suma de la
 // primera noche DE CADA HABITACIÓN (regla 10.d) — no "la fecha más
 // temprana de toda la reserva" ni "la primera habitación nada más".
@@ -42,14 +59,14 @@ function calcularPrimeraNochePorHabitacion(reservaHabitaciones) {
     return {
       habitacionId: rh.habitacionId,
       numero: rh.habitacion?.numero ?? null,
-      primeraNoche: primera ? Number(primera.precioNoche) : 0,
+      primeraNoche: primera ? montoPenalizable(primera) : 0,
     };
   });
 }
 
 function sumarTotalEstadia(reservaHabitaciones) {
   return reservaHabitaciones.reduce(
-    (acc, rh) => acc + (rh.reservaNoches ?? []).reduce((a, n) => a + Number(n.precioNoche), 0),
+    (acc, rh) => acc + (rh.reservaNoches ?? []).reduce((a, n) => a + montoPenalizable(n), 0),
     0
   );
 }
