@@ -284,7 +284,6 @@ async function anularPago(id, motivo, cliente = prisma) {
   const pago = await cliente.pagoEstadia.findUnique({ where: { id: Number(id) }, include: { reserva: true } });
   if (!pago) throw new ErrorDeNegocio('Pago no encontrado.', 404);
   if (pago.anulado) throw new ErrorDeNegocio('El pago ya está anulado.');
-  if (Number(pago.garantiaAplicada) > 0 || Number(pago.garantiaDevuelta) > 0) throw new ErrorDeNegocio('No se puede anular una garantía ya aplicada o devuelta.', 409);
   // El check-out solo se confirma con la cuenta saldada: anular un pago
   // después dejaría una reserva "Cerrada" con deuda.
   if (pago.reserva.estado === 'Cerrada') {
@@ -308,4 +307,3 @@ module.exports = {
   anularPago,
   ErrorDeNegocio,
 };
-

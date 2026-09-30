@@ -6,6 +6,7 @@ import { Modal } from "../../componentes/Modal";
 import { Input } from "../../componentes/Input";
 import { Button } from "../../componentes/Button";
 import { CodigoClave } from "../../componentes/CodigoClave";
+import { NombreClave } from "../../componentes/NombreClave";
 import { buscarReservaParaCheckIn } from "../check-in/checkIn.api";
 import { TituloSeccion } from "../check-in/TituloSeccion";
 import { listarHabitaciones } from "../habitaciones/habitaciones.api";
@@ -26,7 +27,7 @@ function ReservasEnCurso({ reservas, cargando, onSeleccionar }) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-borde bg-white p-5">
       <TituloSeccion icono={Users} tono="pino">
-        Habitaciones con estadías en curso
+        Huéspedes alojados ahora
       </TituloSeccion>
       {cargando ? (
         <p className="text-[13px] text-piedra">Buscando huéspedes alojados…</p>
@@ -42,8 +43,8 @@ function ReservasEnCurso({ reservas, cargando, onSeleccionar }) {
               className="flex w-full cursor-pointer items-center justify-between gap-3 py-2.5 text-left hover:bg-hueso"
             >
               <div>
-                <p className="font-heading text-lg font-bold">Habitación{r.habitaciones.length>1?'es':''} {r.habitaciones.map(h=>h.numero).join(', ')}</p>
-                <p className="text-xs text-piedra">Titular: {r.huesped?.nombre||'Sin titular informado'}</p>
+                <NombreClave className="block">{r.huesped?.nombre}</NombreClave>
+                <p className="text-[12px] text-piedra">Hab. {r.habitaciones.map((h) => h.numero).join(", ")}</p>
               </div>
               <CodigoClave className="text-[13px]">{r.codigoConfirmacion}</CodigoClave>
             </button>
@@ -191,13 +192,19 @@ export function BuscarConsumoModal({ onClose, onEncontrada }) {
               </p>
             )}
 
-            <div>
+            <div className="grid gap-4 sm:grid-cols-2">
               <div>
-                <p className="font-heading text-lg font-bold">Habitación{resultado.habitaciones.length>1?'es':''} {resultado.habitaciones.map(h=>h.numero).join(', ')}</p>
-                <p className="text-xs text-piedra">Titular: {resultado.huesped?.nombre||'Sin titular informado'}</p>
+                <p className="text-[11px] uppercase tracking-wide text-piedra">Huésped</p>
+                <NombreClave className="text-[14px]">{resultado.huesped?.nombre}</NombreClave>
                 <p className="text-[12.5px] text-piedra">
                   {resultado.huesped?.tipoDocumento} {resultado.huesped?.numeroDocumento}
                 </p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-wide text-piedra">
+                  Habitación{resultado.habitaciones.length > 1 ? "es" : ""}
+                </p>
+                <p className="font-mono text-[13.5px]">{resultado.habitaciones.map((h) => h.numero).join(", ")}</p>
               </div>
             </div>
           </div>

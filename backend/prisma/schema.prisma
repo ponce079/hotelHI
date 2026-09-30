@@ -572,8 +572,6 @@ model Reserva {
 
   @@index([huespedId], map: "reservas_huespedId_fkey")
   @@map("reservas")
-  ocupantes          OcupanteReserva[]
-  historialEstadia   EventoEstadia[]
 }
 
 model ReservaHabitacion {
@@ -586,10 +584,6 @@ model ReservaHabitacion {
   @@unique([reservaId, habitacionId])
   @@index([habitacionId], map: "reservas_habitaciones_habitacionId_fkey")
   @@map("reservas_habitaciones")
-  tarifaPactada      Decimal?   @db.Decimal(12, 2)
-  ocupacionIncluida  Int?
-  precioPersonaExtra Decimal    @default(0) @db.Decimal(12, 2)
-  serviciosIncluidos String?    @db.Text
 }
 
 model Huesped {
@@ -635,15 +629,6 @@ model ConsumoServicioAdicional {
   @@index([habitacionId], map: "consumos_servicio_adicional_habitacionId_fkey")
   @@index([articuloId], map: "consumos_servicio_adicional_articuloId_fkey")
   @@map("consumos_servicio_adicional")
-  descripcion       String?          @db.VarChar(500)
-  precioUnitario    Decimal?         @db.Decimal(12, 2)
-  fechaServicio     DateTime?
-  incluido          Boolean          @default(false)
-  anulado           Boolean          @default(false)
-  motivoAnulacion   String?          @db.VarChar(500)
-  anuladoPor        String?
-  anuladoEn         DateTime?
-  claveOperacion    String?          @unique @db.VarChar(100)
 }
 
 model PagoEstadia {
@@ -665,9 +650,6 @@ model PagoEstadia {
 
   @@index([reservaId], map: "pagos_estadia_reservaId_fkey")
   @@map("pagos_estadia")
-  garantiaDevuelta Decimal            @default(0) @db.Decimal(12, 2)
-  garantiaSeparada Boolean            @default(false)
-  garantiaAplicada Decimal            @default(0) @db.Decimal(12, 2)
 }
 
 model PagoEstadiaMedio {
@@ -747,7 +729,6 @@ model CargoVerificacionCheckout {
 
   @@index([reservaId], map: "cargos_verificacion_checkout_reservaId_fkey")
   @@map("cargos_verificacion_checkout")
-  habitacionId  Int?
 }
 
 // ────────────────────────────────────────────────────────────
@@ -785,63 +766,4 @@ model Usuario {
   actualizadoEn    DateTime  @updatedAt
 
   @@map("usuarios")
-}
-
-
-model OcupanteReserva {
-  id                 Int                            @id @default(autoincrement())
-  reservaId          Int
-  identidadActiva    String?                        @unique @db.VarChar(64)
-  reserva            Reserva                        @relation(fields: [reservaId], references: [id])
-  nombre             String
-  apellido           String
-  tipoDocumento      String?
-  numeroDocumento    String?
-  paisDocumento      String?
-  motivoSinDocumento String?
-  fechaNacimiento    DateTime?                      @db.Date
-  nacionalidad       String?
-  domicilio          String?
-  localidad          String?
-  paisResidencia     String?
-  telefono           String?
-  email              String?
-  responsableId      Int?
-  fechaDesde         DateTime                       @db.Date
-  fechaHasta         DateTime                       @db.Date
-  estado             String                         @default("Previsto")
-  verificadoPor      String?
-  verificadoEn       DateTime?
-  ingresoReal        DateTime?
-  salidaReal         DateTime?
-  asignaciones       AsignacionOcupanteHabitacion[]
-
-  @@index([reservaId])
-  @@map("ocupantes_reserva")
-}
-
-model AsignacionOcupanteHabitacion {
-  id           Int             @id @default(autoincrement())
-  ocupanteId   Int
-  ocupante     OcupanteReserva @relation(fields: [ocupanteId], references: [id])
-  habitacionId Int
-  desde        DateTime        @default(now())
-  hasta        DateTime?
-  motivo       String?
-
-  @@index([habitacionId, hasta])
-  @@map("asignaciones_ocupantes")
-}
-
-model EventoEstadia {
-  id        Int      @id @default(autoincrement())
-  reservaId Int
-  reserva   Reserva  @relation(fields: [reservaId], references: [id])
-  accion    String
-  detalle   String   @db.Text
-  operador  String
-  fecha     DateTime @default(now())
-
-  @@index([reservaId, fecha])
-  @@map("eventos_estadia")
 }

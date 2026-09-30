@@ -11,6 +11,7 @@
 // stock.servicio.js (GET /api/stock) para poblar el selector de artículos.
 
 const prisma = require("../../lib/prisma");
+const reservasServicio = require("../reservas/reservas.servicio");
 const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
 const movimientoSalidaServicio = require("../movimientos-salida/movimientoSalida.servicio");
 const {
@@ -50,8 +51,6 @@ function normalizarTipoServicio(valor) {
 
 function formatearConsumo(c) {
   return {
-    ...c,
-    precioUnitario: c.precioUnitario == null ? null : Number(c.precioUnitario),
     id: c.id,
     reservaId: c.reservaId,
     habitacionId: c.habitacionId,
@@ -119,59 +118,86 @@ async function resolverDepositoMinibar(cliente) {
 // --------------------------------------------------------------
 
 async function registrarConsumo(data) {
-  const reservaId=enteroPositivo(data?.reservaId,'reservaId');
-  const habitacionId=enteroPositivo(data?.habitacionId,'habitacionId');
-  const tipoServicio=normalizarTipoServicio(data?.tipoServicio);
-  const registradoPor=textoObligatorio(data?.registradoPor,'registradoPor',100);
-  const cantidad=Number(data.cantidad ?? 1);
-  const incluido=data.incluido===true;
-  const precioUnitario=Number(data.precioUnitario ?? (Number(data.monto)/cantidad));
-  const decimal=n=>Number.isFinite(n)&&Math.abs(n*100-Math.round(n*100))<0.000001;
-  if(!decimal(cantidad)||cantidad<=0||cantidad>99999999||!decimal(precioUnitario)||precioUnitario<0||(!incluido&&precioUnitario===0))throw new ErrorDeNegocio('Cantidad o precio unitario inválidos.');
-  const monto=incluido?0:Math.round(cantidad*precioUnitario*100)/100;
-  if(monto>9999999999.99)throw new ErrorDeNegocio('El monto supera el máximo permitido.');
-  const descripcion=textoObligatorio(data.descripcion||tipoServicio,'Descripción',500);
-  const claveOperacion=data.claveOperacion?textoObligatorio(data.claveOperacion,'Clave de operación',100):null;
-  const fechaServicio=data.fechaServicio?new Date(data.fechaServicio):new Date();
-  if(!Number.isFinite(fechaServicio.getTime()))throw new ErrorDeNegocio('Fecha del servicio inválida.');
-  if(tipoServicio!=='Minibar'&&data.articuloId)throw new ErrorDeNegocio('El artículo solo corresponde al minibar.');
-  return prisma.$transaction(async tx=>{
-    await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${reservaId} FOR UPDATE`;
-    const reserva=await tx.reserva.findUnique({where:{id:reservaId},include:{reservaHabitaciones:true}});
-    if(!reserva)throw new ErrorDeNegocio('Reserva inexistente.',404);
-    if(reserva.estado!==ESTADO_RESERVA.EN_CURSO)throw new ErrorDeNegocio('Solo se pueden registrar consumos con la reserva "En curso".');
-    if(!reserva.reservaHabitaciones.some(h=>h.habitacionId===habitacionId))throw new ErrorDeNegocio('La habitación no pertenece a esta reserva.');
-    if(claveOperacion){const previo=await tx.consumoServicioAdicional.findUnique({where:{claveOperacion},include:{articulo:true,habitacion:true}});if(previo){if(previo.reservaId!==reservaId||previo.habitacionId!==habitacionId)throw new ErrorDeNegocio('Clave de operación usada en otra habitación.',409);return formatearConsumo(previo);}}
-    let articuloId=null,movimientoStockId=null;
-    if(tipoServicio==='Minibar'){
-      articuloId=enteroPositivo(data.articuloId,'articuloId');
-      const tipoMovStockId=await resolverTipoMovimientoMinibar(tx);
-      const depositoId=await resolverDepositoMinibar(tx);
-      const movimiento=await movimientoSalidaServicio.registrarSalidaEnTransaccion(tx,{depositoId,tipoMovStockId,detalle:'Consumo Minibar - Habitación '+habitacionId+' - Reserva '+reservaId,usuario:registradoPor,items:[{articuloId,cantidad}]});
-      movimientoStockId=movimiento.id;
-    }
-    const consumo=await tx.consumoServicioAdicional.create({data:{reservaId,habitacionId,tipoServicio,registradoPor,cantidad,precioUnitario,monto,incluido,descripcion,fechaServicio,claveOperacion,articuloId,movimientoStockId},include:{articulo:true,habitacion:true}});
-    await require('../estadia/estadia.servicio').evento(tx,reservaId,'Agregar cargo',{consumoId:consumo.id,habitacionId,monto},registradoPor);
-    return formatearConsumo(consumo);
-  },{timeout:15000,maxWait:10000});
-}
+  const reservaId = enteroPositivo(data?.reservaId, "reservaId");
+  const habitacionId = enteroPositivo(data?.habitacionId, "habitacionId");
+  const tipoServicio = normalizarTipoServicio(data?.tipoServicio);
+  const monto = Number(data?.monto);
+  if (!(monto > 0)) throw new ErrorDeNegocio("monto debe ser un número mayor a 0.");
+  const registradoPor = textoObligatorio(data?.registradoPor, "registradoPor", LIMITES_SERVICIOS_ADICIONALES.registradoPor);
 
-async function anularConsumo(id,data) {
-  id=enteroPositivo(id,'id');
-  const motivo=textoObligatorio(data.motivo,'Motivo',500);
-  const operador=textoObligatorio(data.operador,'Operador',191);
-  return prisma.$transaction(async tx=>{
-    const c=await tx.consumoServicioAdicional.findUnique({where:{id}});
-    if(!c)throw new ErrorDeNegocio('Consumo inexistente.',404);
-    await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${c.reservaId} FOR UPDATE`;
-    const r=await tx.reserva.findUnique({where:{id:c.reservaId}});
-    if(r.estado!=='En curso')throw new ErrorDeNegocio('Solo se anulan cargos de estadías en curso.');
-    const actual=await tx.consumoServicioAdicional.findUnique({where:{id}});
-    if(actual.anulado)throw new ErrorDeNegocio('El cargo ya está anulado.');
-    const saved=await tx.consumoServicioAdicional.update({where:{id},data:{anulado:true,anuladoEn:new Date(),anuladoPor:operador,motivoAnulacion:motivo},include:{articulo:true,habitacion:true}});
-    await require('../estadia/estadia.servicio').evento(tx,c.reservaId,'Anular cargo',{consumoId:id,habitacionId:c.habitacionId,motivo},operador);
-    return formatearConsumo(saved);
-  },{timeout:15000});
+  // La reserva tiene que existir y estar "En curso": antes del check-in
+  // (Confirmada) el huésped todavía no llegó, y después del check-out
+  // (Cerrada) ya no hay estadía a la que cargarle un consumo nuevo.
+  const reserva = await reservasServicio.obtenerReserva(reservaId);
+  if (reserva.estado !== ESTADO_RESERVA.EN_CURSO) {
+    throw new ErrorDeNegocio(
+      `Solo se pueden registrar consumos con la reserva "En curso" (ésta está "${reserva.estado}").`
+    );
+  }
+  if (!reserva.habitaciones.some((h) => h.id === habitacionId)) {
+    throw new ErrorDeNegocio("La habitación indicada no pertenece a esta reserva.");
+  }
+
+  if (tipoServicio === "Minibar") {
+    const articuloId = enteroPositivo(data?.articuloId, "articuloId");
+    const cantidad = Number(data?.cantidad);
+    if (!(cantidad > 0)) throw new ErrorDeNegocio("cantidad debe ser un número mayor a 0 para Minibar.");
+
+    const habitacion = await prisma.habitacion.findUnique({ where: { id: habitacionId } });
+
+    return prisma.$transaction(
+      async (tx) => {
+        const tipoMovStockId = await resolverTipoMovimientoMinibar(tx);
+        // Sprint 3 — decisión de negocio: el depósito no se recibe del
+        // caller ni se pide en el formulario, se resuelve acá siempre al
+        // mismo depósito fijo (ver resolverDepositoMinibar arriba).
+        const depositoId = await resolverDepositoMinibar(tx);
+        // No reimplementa el descuento de stock: reusa el mismo servicio
+        // que ya usa el resto del sistema para una Salida (HU-13), dentro
+        // de esta misma transacción — si no hay stock suficiente, todo se
+        // revierte y el consumo tampoco queda registrado (no tiene sentido
+        // cobrar un minibar que no se pudo descontar del stock real). Se
+        // crea PRIMERO para poder guardar su id en el consumo
+        // (movimientoStockId): un mismo artículo puede estar habilitado en
+        // más de un depósito a la vez (encontrado auditando a mano), así que
+        // sin esta referencia no hay forma de saber con certeza de qué
+        // depósito salió un consumo puntual sin parsear el texto libre de
+        // `detalle`.
+        const movimiento = await movimientoSalidaServicio.registrarSalidaEnTransaccion(tx, {
+          depositoId,
+          tipoMovStockId,
+          detalle: `Consumo Minibar - Habitación ${habitacion?.numero ?? habitacionId} - Reserva ${reservaId}`,
+          usuario: registradoPor,
+          items: [{ articuloId, cantidad }],
+        });
+        const consumo = await tx.consumoServicioAdicional.create({
+          data: {
+            reservaId,
+            habitacionId,
+            tipoServicio,
+            articuloId,
+            cantidad,
+            monto,
+            registradoPor,
+            movimientoStockId: movimiento.id,
+          },
+          include: { articulo: true, habitacion: true },
+        });
+        return formatearConsumo(consumo);
+      },
+      { timeout: 15000, maxWait: 10000 }
+    );
+  }
+
+  if (data?.articuloId || data?.cantidad) {
+    throw new ErrorDeNegocio("articuloId y cantidad solo aplican cuando tipoServicio es 'Minibar'.");
+  }
+
+  const consumo = await prisma.consumoServicioAdicional.create({
+    data: { reservaId, habitacionId, tipoServicio, monto, registradoPor },
+    include: { articulo: true, habitacion: true },
+  });
+  return formatearConsumo(consumo);
 }
 
 // --------------------------------------------------------------
@@ -194,7 +220,7 @@ async function listarPorReserva(reservaId, { tipoServicio } = {}) {
 async function resumenPorReserva(reservaId) {
   const items = await listarPorReserva(reservaId);
   const totalPorTipo = TIPOS_SERVICIO.map((tipo) => {
-    const delTipo = items.filter((i) => !i.anulado && i.tipoServicio === tipo);
+    const delTipo = items.filter((i) => i.tipoServicio === tipo);
     return {
       tipoServicio: tipo,
       cantidad: delTipo.length,
@@ -204,7 +230,7 @@ async function resumenPorReserva(reservaId) {
   return {
     items,
     totalPorTipo,
-    totalGeneral: items.filter(i=>!i.anulado).reduce((acc, i) => acc + i.monto, 0),
+    totalGeneral: items.reduce((acc, i) => acc + i.monto, 0),
   };
 }
 
@@ -257,7 +283,7 @@ async function listarConsumosHotel({ desde, hasta, tipoServicio } = {}) {
 async function resumenConsumosHotel(filtros = {}) {
   const items = await listarConsumosHotel(filtros);
   const totalPorTipo = TIPOS_SERVICIO.map((tipo) => {
-    const delTipo = items.filter((i) => !i.anulado && i.tipoServicio === tipo);
+    const delTipo = items.filter((i) => i.tipoServicio === tipo);
     return {
       tipoServicio: tipo,
       cantidad: delTipo.length,
@@ -267,12 +293,11 @@ async function resumenConsumosHotel(filtros = {}) {
   return {
     items,
     totalPorTipo,
-    totalGeneral: items.filter(i=>!i.anulado).reduce((acc, i) => acc + i.monto, 0),
+    totalGeneral: items.reduce((acc, i) => acc + i.monto, 0),
   };
 }
 
 module.exports = {
-  anularConsumo,
   registrarConsumo,
   listarPorReserva,
   resumenPorReserva,

@@ -1,4 +1,3 @@
-import { EstadiaPanel } from '../estadia/EstadiaPanel';
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -160,7 +159,6 @@ export function ReservaDetallePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <EstadiaPanel reserva={reserva} />
       <div>
         <Button variante="fantasma" icono={ArrowLeft} onClick={volver}>
           Volver

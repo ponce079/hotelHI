@@ -1,9 +1,0 @@
-jest.mock('../../lib/prisma',()=>({}));
-const {habitacionDeLaNoche}=require('./condiciones.servicio');
-const {normalizarPersona,validarCompleto}=require('./estadia.servicio');
-const base={estado:'Alojado',fechaDesde:new Date('2026-09-20T00:00:00Z'),fechaHasta:new Date('2026-09-24T00:00:00Z'),asignaciones:[{habitacionId:1,desde:new Date('2026-09-19T15:00:00Z'),hasta:new Date('2026-09-22T15:00:00Z')},{habitacionId:2,desde:new Date('2026-09-22T15:00:00Z'),hasta:null}]};
-test('un cambio de habitación no reasigna los cargos de noches anteriores',()=>{expect(habitacionDeLaNoche(base,'2026-09-21')).toBe(1);expect(habitacionDeLaNoche(base,'2026-09-22')).toBe(2);});
-test('la salida anticipada conserva noches previas y excluye noches posteriores',()=>{const p={...base,estado:'Retirado',salidaReal:new Date('2026-09-23T13:00:00Z')};expect(habitacionDeLaNoche(p,'2026-09-22')).toBe(2);expect(habitacionDeLaNoche(p,'2026-09-23')).toBeNull();});
-test('una cancelación y las fechas fuera de la estadía no generan adicionales',()=>{expect(habitacionDeLaNoche({...base,estado:'Cancelado'},'2026-09-21')).toBeNull();expect(habitacionDeLaNoche(base,'2026-09-19')).toBeNull();expect(habitacionDeLaNoche(base,'2026-09-24')).toBeNull();});
-test('rechaza fechas inexistentes y períodos fuera de la reserva',()=>{expect(()=>normalizarPersona({nombre:'Ana',apellido:'Prueba',fechaDesde:'2026-02-30',fechaHasta:'2026-09-21'},base)).toThrow(/fecha inválida/);expect(()=>normalizarPersona({nombre:'Ana',apellido:'Prueba',fechaDesde:'2026-09-19',fechaHasta:'2026-09-21'},base)).toThrow(/dentro de la reserva/);});
-test('un menor con datos completos requiere un adulto responsable',()=>{expect(()=>validarCompleto({...base,fechaNacimiento:new Date('2015-01-01'),nacionalidad:'AR',paisResidencia:'AR',tipoDocumento:'DNI',numeroDocumento:'1',paisDocumento:'AR'})).toThrow(/adulto responsable/);});

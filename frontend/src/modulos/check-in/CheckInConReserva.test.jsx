@@ -1,8 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
-import { api } from '../../lib/api';
-vi.mock('../../lib/api',()=>({api:{get:vi.fn()}}));
-vi.mock('../../lib/sesion',()=>({useSesion:()=>({usuario:'Recepción',puede:()=>true})}));
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -22,7 +19,7 @@ const RESERVA = {
   estado: "Confirmada",
   cantidadHabitaciones: 1,
   huesped: { nombre: "Marcos Beltrán", tipoDocumento: "DNI", numeroDocumento: "30111222" },
-  habitaciones: [{ id:1, numero: "301", tipo: "Doble", capacidad:2 }],
+  habitaciones: [{ numero: "301", tipo: "Doble" }],
   fechaDesde: "2026-09-21T00:00:00.000Z",
   fechaHasta: "2026-09-22T00:00:00.000Z",
   noches: 1,
@@ -43,7 +40,6 @@ function renderComponente(props = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   listarLlegadasPendientes.mockResolvedValue([]);
-  api.get.mockResolvedValue({data:[{id:1,nombre:'Marcos',apellido:'Beltrán',estado:'Previsto',fechaDesde:'2020-01-01',fechaHasta:'2099-01-01',verificadoEn:'2026-01-01',asignaciones:[{habitacionId:1,hasta:null}]}]});
 });
 
 // RecepcionistaInicio.jsx (Inicio del Recepcionista) linkea a
@@ -194,8 +190,7 @@ describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel
     // El resto del formulario ya estaba OK (mismo documento que la reserva)
     // — con la tarjeta autorizada, "Confirmar check-in" tiene que habilitarse.
     fireEvent.change(screen.getByLabelText(/Documento presentado/), { target: { value: "30111222" } });
-    fireEvent.change(screen.getByLabelText(/Personas que ingresan en habitación/),{target:{value:'1'}});
-    await waitFor(()=>expect(screen.getByRole("button", { name: "Confirmar check-in" })).toBeEnabled());
+    expect(screen.getByRole("button", { name: "Confirmar check-in" })).toBeEnabled();
   });
 
   it("confirmar con Efectivo manda medioGarantia y sin referenciaGarantia al backend (el monto ya no lo manda el cliente)", async () => {
@@ -208,12 +203,9 @@ describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel
 
     fireEvent.change(screen.getByLabelText(/Documento presentado/), { target: { value: "30111222" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    fireEvent.change(screen.getByLabelText(/Personas que ingresan en habitación/),{target:{value:'2'}});
-    expect(screen.getByRole('button',{name:'Confirmar check-in'})).toBeDisabled();
-    fireEvent.change(screen.getByLabelText(/Personas que ingresan en habitación/),{target:{value:'1'}});
 
     const boton = screen.getByRole("button", { name: "Confirmar check-in" });
-    await waitFor(()=>expect(boton).toBeEnabled());
+    expect(boton).toBeEnabled();
     fireEvent.click(boton);
 
     await screen.findAllByText(/Check-in confirmado/);
@@ -221,7 +213,6 @@ describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel
       RESERVA.id,
       expect.objectContaining({
         medioGarantia: "Efectivo",
-        cantidadesOcupantes:[{habitacionId:1,cantidad:1}],
         referenciaGarantia: undefined,
       })
     );
