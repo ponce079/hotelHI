@@ -19,11 +19,11 @@ const { HABITACION_LIBRE, HABITACION_EN_LIMPIEZA } = vi.hoisted(() => ({
     id: 55,
     numero: "55",
     tipo: "Simple",
+    tipoHabitacionId: 1,
     capacidad: 1,
     piso: 0,
     equipamiento: null,
     estado: "libre",
-    tarifaPorNoche: "20000",
     activo: true,
     motivoBloqueo: null,
   },
@@ -31,11 +31,11 @@ const { HABITACION_LIBRE, HABITACION_EN_LIMPIEZA } = vi.hoisted(() => ({
     id: 23,
     numero: "23",
     tipo: "Simple",
+    tipoHabitacionId: 1,
     capacidad: 1,
     piso: 0,
     equipamiento: null,
     estado: "en limpieza",
-    tarifaPorNoche: "20000",
     activo: true,
     motivoBloqueo: null,
   },
@@ -44,8 +44,13 @@ const { HABITACION_LIBRE, HABITACION_EN_LIMPIEZA } = vi.hoisted(() => ({
 vi.mock("./habitaciones.api", () => ({
   listarHabitaciones: vi.fn(),
   listarOrdenesMantenimiento: vi.fn().mockResolvedValue([]),
-  listarTiposHabitacion: vi.fn().mockResolvedValue(["Simple"]),
   actualizarEstadoHabitacion: vi.fn(),
+}));
+
+// HU-89: el filtro de tipo ahora sale del catálogo (tipos-habitacion), no
+// de habitaciones.api.js.
+vi.mock("../tipos-habitacion/tiposHabitacion.api", () => ({
+  listarTiposHabitacion: vi.fn().mockResolvedValue([{ id: 1, codigo: "SIMPLE", nombre: "Simple", activo: true }]),
 }));
 
 vi.mock("../reservas/reservas.api", () => ({

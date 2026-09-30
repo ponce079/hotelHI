@@ -60,7 +60,7 @@ export function ReservasPage() {
   // uso único para precargar el wizard, no algo que tenga sentido que
   // sobreviva a un refresh de la página como sí lo hacen desde/hasta.
   const modalDesdeDisponibilidad = searchParams.get("nueva") === "1"
-    ? { tipo: "alta", valoresIniciales: { fechaDesde: desde, fechaHasta: hasta, habitacionIds: location.state?.habitacionIds ?? [] } }
+    ? { tipo: "alta", valoresIniciales: { fechaDesde: desde, fechaHasta: hasta, habitaciones: location.state?.habitaciones ?? [] } }
     : null;
   const modalVisible = modal ?? modalDesdeDisponibilidad;
 

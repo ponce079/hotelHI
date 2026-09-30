@@ -17,7 +17,7 @@ async function getBuscarReserva(req, res) {
   }
 }
 
-// GET /api/check-in/habitaciones-libres?fechaHasta=&tipo=&capacidadMinima=
+// GET /api/check-in/habitaciones-libres?fechaHasta=&tipoHabitacionId=&capacidadMinima=
 async function getHabitacionesLibres(req, res) {
   try {
     return res.json(await checkInServicio.listarHabitacionesLibresAhora(req.query));

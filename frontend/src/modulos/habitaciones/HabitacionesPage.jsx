@@ -21,9 +21,9 @@ import {
   cambiarActivoHabitacion,
   listarHabitaciones,
   listarOrdenesMantenimiento,
-  listarTiposHabitacion,
   resolverOrdenMantenimiento,
 } from "./habitaciones.api";
+import { listarTiposHabitacion } from "../tipos-habitacion/tiposHabitacion.api";
 import { listarReservas } from "../reservas/reservas.api";
 import { ESTADO_RESERVA } from "../reservas/reservas.constantes";
 import {
@@ -33,8 +33,6 @@ import {
   COLOR_SALE_HOY,
 } from "./habitaciones.constantes";
 import "./HabitacionesPage.css";
-
-const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
 
 // Fecha "solo día" (ver lib/fechas.js) reducida a d/m, formato del mockup
 // ("hasta 24/9") — sin año, porque una estadía siempre es de corto plazo.
@@ -92,13 +90,14 @@ export function HabitacionesPage() {
   }, []);
 
   const q = searchParams.get("q") ?? "";
-  const tipo = searchParams.get("tipo") ?? "";
+  const tipoHabitacionId = searchParams.get("tipoHabitacionId") ?? "";
   const piso = searchParams.get("piso") ?? "";
   const estado = searchParams.get("estado") ?? "";
 
   const habitacionesQuery = useQuery({
-    queryKey: ["habitaciones", { q, tipo, estado }],
-    queryFn: () => listarHabitaciones({ q: q || undefined, tipo: tipo || undefined, estado: estado || undefined, activo: "true" }),
+    queryKey: ["habitaciones", { q, tipoHabitacionId, estado }],
+    queryFn: () =>
+      listarHabitaciones({ q: q || undefined, tipoHabitacionId: tipoHabitacionId || undefined, estado: estado || undefined, activo: "true" }),
     enabled: puedeVer,
     refetchInterval: 10000,
   });
@@ -108,9 +107,12 @@ export function HabitacionesPage() {
     enabled: puedeVer,
     refetchInterval: 10000,
   });
+  // HU-89: pantalla interna — todos los tipos activos del catálogo, tengan
+  // o no habitaciones cargadas hoy (a diferencia de la web pública, que
+  // solo ofrece tipos con al menos una habitación activa).
   const tiposQuery = useQuery({
-    queryKey: ["tipos-habitacion"],
-    queryFn: listarTiposHabitacion,
+    queryKey: ["tipos-habitacion", "activos"],
+    queryFn: () => listarTiposHabitacion({ activo: "true" }),
     enabled: puedeVer,
   });
   // Nombre del huésped + fecha de salida de las tarjetas "ocupada", y la
@@ -250,7 +252,7 @@ export function HabitacionesPage() {
   }
   const grupos = [...gruposPorPiso.entries()].sort((a, b) => a[0] - b[0]);
 
-  const hayFiltrosActivos = Boolean(q || tipo || piso || estado);
+  const hayFiltrosActivos = Boolean(q || tipoHabitacionId || piso || estado);
 
   const segundosDesdeActualizacion = habitacionesQuery.dataUpdatedAt
     ? Math.max(0, Math.floor((ahora - habitacionesQuery.dataUpdatedAt) / 1000))
@@ -326,9 +328,18 @@ export function HabitacionesPage() {
           <option value="">Todos los pisos</option>
           {pisos.map((p) => <option key={p} value={p}>Piso {p}</option>)}
         </Select>
-        <Select aria-label="Filtrar por tipo" value={tipo} onChange={(e) => actualizarFiltro("tipo", e.target.value)} className="min-w-[150px]">
+        <Select
+          aria-label="Filtrar por tipo"
+          value={tipoHabitacionId}
+          onChange={(e) => actualizarFiltro("tipoHabitacionId", e.target.value)}
+          className="min-w-[150px]"
+        >
           <option value="">Todos los tipos</option>
-          {(tiposQuery.data ?? []).map((opcion) => <option key={opcion} value={opcion}>{opcion}</option>)}
+          {(tiposQuery.data ?? []).map((t) => (
+            <option key={t.id} value={t.id}>
+              {t.nombre}
+            </option>
+          ))}
         </Select>
         <div className="ml-auto flex items-center gap-2.5">
           {hayFiltrosActivos && (
@@ -488,9 +499,10 @@ function TarjetaHabitacion({
         </div>
       </div>
 
-      <p className="text-[12.5px]">
-        {habitacion.tipo} · {FORMATO_MONEDA.format(Number(habitacion.tarifaPorNoche))}/noche
-      </p>
+      {/* Etapa 4C — la habitación ya no tiene un precio propio (columna
+          tarifaPorNoche eliminada): el precio depende de fecha/temporada/
+          plan y ya se ve, sin duplicar, en Tarifas (HU-92). */}
+      <p className="text-[12.5px]">{habitacion.tipo}</p>
 
       {habitacion.estado === "ocupada" && (
         <div className="flex flex-col gap-1.5 border-t pt-1.5" style={{ borderColor: color.borde }}>

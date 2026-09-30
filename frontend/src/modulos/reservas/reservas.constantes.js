@@ -1,6 +1,9 @@
 // Mismas listas fijas que backend/src/modulos/reservas/reservas.constantes.js,
 // duplicadas a mano (misma convención que habitaciones y comprobantes: el
-// frontend no importa nada del backend).
+// frontend no importa nada del backend). Excepción explícita: MAX_NOCHES_ESTADIA
+// SÍ se importa del módulo de tarifas — es la misma constante que usa el
+// motor de cotización, no una lista fija propia de Reservas (Etapa 4A).
+import { MAX_NOCHES_ESTADIA } from "../tarifas/tarifas.constantes";
 
 export const ESTADO_RESERVA = {
   CONFIRMADA: "Confirmada",
@@ -57,7 +60,13 @@ export const LIMITES_RESERVA = {
   preferencias: 2000,
   motivoCancelacion: 300,
   habitacionesPorReserva: 20,
+  // Etapa 4A: mismo tope que el motor de cotización (MAX_NOCHES_ESTADIA).
+  nochesPorReserva: MAX_NOCHES_ESTADIA,
 };
+
+// Mismo mensaje que el backend (reservas.servicio.js / cotizacion.servicio.js)
+// para que el frontend frene ANTES de mandar el pedido, con el mismo texto.
+export const MENSAJE_ESTADIA_LARGA = `Las estadías de más de ${MAX_NOCHES_ESTADIA} noches requieren una tarifa de larga estadía: consultá con gerencia.`;
 
 // HU-36/88 — seña obligatoria al confirmar una reserva nueva desde el
 // mostrador: 20% del total estimado de la estadía. Solo vive acá, en el

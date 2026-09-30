@@ -3,6 +3,14 @@
 // schema guarda String suelto, la lista válida vive acá y se duplica a
 // mano en frontend/src/modulos/reservas/reservas.constantes.js).
 
+// Etapa 4A de tarifas por temporada: el tope de noches de una reserva
+// pasa a ser el MISMO que el del motor de cotización (cotizarEstadia ya
+// rechaza cualquier estadía de más de MAX_NOCHES_ESTADIA noches) — antes
+// acá había un tope propio de 365 noches, que quedaba sin efecto real
+// desde que toda reserva pasa por el motor. Import modulos/ -> modulos/
+// (no lib/), sin ciclo: tarifas.constantes.js no importa nada de reservas.
+const { MAX_NOCHES_ESTADIA } = require("../tarifas/tarifas.constantes");
+
 const ESTADO_RESERVA = {
   CONFIRMADA: "Confirmada",
   EN_CURSO: "En curso",
@@ -62,9 +70,10 @@ const LIMITES_RESERVA = {
   // Tope defensivo de una reserva grupal: evita que un payload con 500
   // habitaciones bloquee media tabla dentro de la transacción.
   habitacionesPorReserva: 20,
-  // Tope de la estadía, para que un error de tipeo en el año
-  // (2026 → 2062) no inmovilice una habitación por décadas.
-  nochesPorReserva: 365,
+  // Etapa 4A: mismo tope que el motor de cotización (MAX_NOCHES_ESTADIA,
+  // tarifas.constantes.js) — antes era un valor propio de 365 noches, sin
+  // efecto real desde que toda reserva se cotiza con el motor.
+  nochesPorReserva: MAX_NOCHES_ESTADIA,
 };
 
 // HU-42: código alfanumérico aleatorio, no correlativo — 4 bytes en hex

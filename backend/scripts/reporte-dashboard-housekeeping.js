@@ -10,12 +10,12 @@ async function main() {
   // 1) Habitaciones "en limpieza" ahora mismo
   const enLimpieza = await prisma.habitacion.findMany({
     where: { activo: true, estado: "en limpieza" },
-    select: { id: true, numero: true, tipo: true, piso: true },
+    select: { id: true, numero: true, tipoHabitacion: { select: { nombre: true } }, piso: true },
     orderBy: [{ piso: "asc" }, { numero: "asc" }],
   });
   console.log(`1) Habitaciones "en limpieza": ${enLimpieza.length}`);
   for (const h of enLimpieza) {
-    console.log(`   Hab. ${h.numero} — tipo ${h.tipo} — piso ${h.piso}`);
+    console.log(`   Hab. ${h.numero} — tipo ${h.tipoHabitacion?.nombre ?? "(sin tipo)"} — piso ${h.piso}`);
   }
 
   // 2) Habitaciones "libres" ahora mismo

@@ -25,10 +25,18 @@ class PrismaClientKnownRequestError extends Error {
   }
 }
 
+// Se captura el Decimal REAL de @prisma/client acá arriba, ANTES de que
+// instalarDoble() (más abajo) reemplace cualquier `require("@prisma/client")`
+// posterior por este mismo PrismaFalso — si no, el motor de cotización
+// (Etapa 3, HU-94) y la actualización masiva, que hacen aritmética real con
+// Prisma.Decimal, se quedarían sin la clase.
+const { Prisma: PrismaRealSoloParaDecimal } = require("@prisma/client");
+
 const PrismaFalso = {
   PrismaClientKnownRequestError,
   sql: (strings, ...valores) => ({ strings, valores }),
   join: (valores) => valores,
+  Decimal: PrismaRealSoloParaDecimal.Decimal,
 };
 
 // Prisma real acepta tanto `include: { reserva: { include: {...} } }` como
@@ -80,6 +88,7 @@ function coincideValor(valor, condicion) {
 
 const TABLAS = [
   "habitacion",
+  "tipoHabitacion",
   "ordenMantenimiento",
   "reserva",
   "reservaHabitacion",
@@ -97,8 +106,8 @@ const TABLAS = [
   // Sumadas para pruebas-integracion-mantenimiento-checkout.js: lo mínimo
   // que necesita consolidarCargos (checkOut.servicio.js) para no fallar al
   // leerlas — cargoVerificacionCheckout y pagoEstadiaMedio quedan vacías en
-  // esas pruebas a propósito (tarifaPorNoche = 0 en la habitación sembrada,
-  // así el saldo da 0 sin necesidad de simular un pago real).
+  // esas pruebas a propósito (la Tarifa se siembra a $0 para esas
+  // habitaciones, así el saldo da 0 sin necesidad de simular un pago real).
   "cargoVerificacionCheckout",
   "pagoEstadia",
   "pagoEstadiaMedio",
@@ -106,6 +115,15 @@ const TABLAS = [
   // crearNotaCredito, anularComprobante, reporteCajaDiaria). No la usa
   // ningún otro script hoy.
   "comprobanteEstadia",
+  // Etapa 2 de tarifas por temporada (HU-90 a HU-93).
+  "temporada",
+  "planTarifario",
+  "tarifa",
+  "modificadorDiaSemana",
+  "loteActualizacionTarifaria",
+  // Etapa 4A de tarifas por temporada (HU-95/96) — precio por noche
+  // congelado, una fila por ReservaHabitacion y fecha.
+  "reservaNoche",
 ];
 
 // Campos `@default(now())` del schema real que ningún servicio setea a
@@ -136,6 +154,27 @@ const CAMPO_FECHA_POR_DEFECTO = {
 const CAMPO_BOOLEANO_FALSE_POR_DEFECTO = {
   pagoEstadia: ["anulado"],
   comprobanteEstadia: ["anulado"],
+};
+
+// Mismo problema, para `Boolean @default(true)` — sumado para HU-89:
+// tiposHabitacion.servicio.js no setea `activo` a mano al crear (confía en
+// el default del schema, mismo criterio que crearProveedor en
+// proveedores.servicio.js), así que sin esto quedaba `undefined` en el
+// doble y `listarTiposHabitacion({activo:"true"})` no matcheaba nunca.
+const CAMPO_BOOLEANO_TRUE_POR_DEFECTO = {
+  tipoHabitacion: ["activo"],
+  // Etapa 2 de tarifas por temporada: temporadas.servicio.js/
+  // planesTarifarios.servicio.js tampoco setean `activa`/`activo` a mano
+  // al crear (mismo criterio de arriba).
+  temporada: ["activa"],
+  planTarifario: ["activo"],
+};
+
+// Mismo problema, para un default de tipo texto (`String @default("...")`)
+// — sumado para HU-93: lotesActualizacion.servicio.js no setea `estado` a
+// mano al crear un lote (confía en el default "Aplicado" del schema).
+const CAMPO_STRING_POR_DEFECTO = {
+  loteActualizacionTarifaria: { estado: "Aplicado" },
 };
 
 // Relaciones 1-a-N creadas con la sintaxis anidada de Prisma
@@ -187,6 +226,21 @@ function crearBase() {
         if (condicion.some) return propias.some((rh) => coincide("reservaHabitacion", rh, condicion.some));
         throw new Error("Solo se soporta `some` sobre reservaHabitaciones");
       }
+      // HU-89 — tiposHabitacion.servicio.js (listarTiposHabitacion con
+      // conHabitacionActiva) filtra por la relación inversa Habitacion[].
+      if (tabla === "tipoHabitacion" && campo === "habitaciones") {
+        const propias = datos.habitacion.filter((h) => h.tipoHabitacionId === registro.id);
+        if (condicion.some) return propias.some((h) => coincide("habitacion", h, condicion.some));
+        throw new Error("Solo se soporta `some` sobre habitaciones");
+      }
+      // Etapa 2 de tarifas por temporada — lotesActualizacion.servicio.js
+      // busca conflictos con el índice único compuesto de Tarifa
+      // (@@unique([tipoHabitacionId, temporadaId, vigenteDesde])). Prisma
+      // real nombra esa clave concatenando los 3 campos con "_"; el doble
+      // la desarma y evalúa los 3 como un where plano normal.
+      if (tabla === "tarifa" && campo === "tipoHabitacionId_temporadaId_vigenteDesde") {
+        return coincide(tabla, registro, condicion);
+      }
 
       // --- Relación de checkOut.servicio.js (consolidarCargos: filtra
       // pagoEstadiaMedio por el pagoEstadia al que pertenece) ---
@@ -222,24 +276,76 @@ function crearBase() {
 
     if (tabla === "reserva") {
       if (include.huesped) salida.huesped = datos.huesped.find((h) => h.id === registro.huespedId) ?? null;
+      // Etapa 4A (HU-95) — un plan tarifario por reserva.
+      if (include.planTarifario) {
+        salida.planTarifario = datos.planTarifario.find((p) => p.id === registro.planTarifarioId) ?? null;
+      }
       if (include.reservaHabitaciones) {
+        // HU-89: honra el include anidado hasta tipoHabitacion (INCLUDE_RESERVA
+        // en reservas.servicio.js pide reservaHabitaciones.habitacion.tipoHabitacion)
+        // en vez del find() plano de antes, que no expandía nada más abajo de
+        // habitacion.
+        const incluirRH = desenvolverInclude(include.reservaHabitaciones);
+        const incluirHabitacion = incluirRH.habitacion;
+        // Etapa 4A — reservaHabitaciones.reservaNoches (INCLUDE_RESERVA las
+        // trae con su propia temporada, y ordenadas por fecha).
+        const incluirReservaNoches = incluirRH.reservaNoches;
         salida.reservaHabitaciones = datos.reservaHabitacion
           .filter((rh) => rh.reservaId === registro.id)
-          .map((rh) => ({ ...rh, habitacion: datos.habitacion.find((h) => h.id === rh.habitacionId) ?? null }));
+          .map((rh) => {
+            const habitacion = datos.habitacion.find((h) => h.id === rh.habitacionId) ?? null;
+            const expandida = {
+              ...rh,
+              habitacion: habitacion ? expandir("habitacion", habitacion, desenvolverInclude(incluirHabitacion)) : null,
+            };
+            if (incluirReservaNoches) {
+              const propias = datos.reservaNoche.filter((n) => n.reservaHabitacionId === rh.id);
+              expandida.reservaNoches = ordenar(propias, incluirReservaNoches?.orderBy).map((n) =>
+                expandir("reservaNoche", n, desenvolverInclude(incluirReservaNoches))
+              );
+            }
+            return expandida;
+          });
       }
       if (include.notificaciones) {
         salida.notificaciones = datos.notificacion.filter((n) => n.reservaId === registro.id);
       }
     }
     if (tabla === "reservaHabitacion") {
-      if (include.habitacion) salida.habitacion = datos.habitacion.find((h) => h.id === registro.habitacionId) ?? null;
+      if (include.habitacion) {
+        const habitacion = datos.habitacion.find((h) => h.id === registro.habitacionId) ?? null;
+        salida.habitacion = habitacion ? expandir("habitacion", habitacion, desenvolverInclude(include.habitacion)) : null;
+      }
       if (include.reserva) salida.reserva = datos.reserva.find((r) => r.id === registro.reservaId) ?? null;
+      // Etapa 4A — usado directo por consolidarCargos (checkOut.servicio.js),
+      // que pide reservaHabitaciones.reservaNoches sin pasar por la reserva.
+      if (include.reservaNoches) {
+        const propias = datos.reservaNoche.filter((n) => n.reservaHabitacionId === registro.id);
+        salida.reservaNoches = ordenar(propias, include.reservaNoches?.orderBy).map((n) =>
+          expandir("reservaNoche", n, desenvolverInclude(include.reservaNoches))
+        );
+      }
+    }
+    // Etapa 4A — ReservaNoche.temporada/tarifa/planTarifario (formatearReserva
+    // en reservas.servicio.js solo pide temporada, pero se enseñan las 3 por
+    // si algún script las necesita).
+    if (tabla === "reservaNoche") {
+      if (include.temporada) salida.temporada = datos.temporada.find((t) => t.id === registro.temporadaId) ?? null;
+      if (include.tarifa) salida.tarifa = datos.tarifa.find((t) => t.id === registro.tarifaId) ?? null;
+      if (include.planTarifario) {
+        salida.planTarifario = datos.planTarifario.find((p) => p.id === registro.planTarifarioId) ?? null;
+      }
     }
     if (tabla === "habitacion") {
       if (include.ordenesMantenimiento) {
         salida.ordenesMantenimiento = datos.ordenMantenimiento
           .filter((o) => o.habitacionId === registro.id)
           .map((o) => ({ ...o, notificaciones: datos.notificacion.filter((n) => n.ordenMantenimientoId === o.id) }));
+      }
+      // HU-89 — habitaciones.servicio.js/reservas.servicio.js/checkOut.servicio.js
+      // ahora piden `include: { tipoHabitacion: ... }` para armar `conTipoPlano`.
+      if (include.tipoHabitacion) {
+        salida.tipoHabitacion = datos.tipoHabitacion.find((t) => t.id === registro.tipoHabitacionId) ?? null;
       }
     }
     // Reverso de la relación de arriba — lo usa resolverOrdenMantenimiento
@@ -298,6 +404,14 @@ function crearBase() {
         salida.detalleMovimientos = datos.movimientoStockDetalle
           .filter((d) => d.movStockId === registro.id)
           .map((d) => ({ ...d, articulo: datos.articulo.find((a) => a.id === d.articuloId) ?? null }));
+      }
+    }
+    // Etapa 2 de tarifas por temporada — lotesActualizacion.servicio.js lee
+    // el lote con sus Tarifa asociadas (relación inversa) para reportar el
+    // resultado de confirmarActualizacion y para revisar cada celda al anular.
+    if (tabla === "loteActualizacionTarifaria") {
+      if (include.tarifas) {
+        salida.tarifas = datos.tarifa.filter((t) => t.loteActualizacionId === registro.id);
       }
     }
     return salida;
@@ -400,6 +514,12 @@ function crearBase() {
         for (const campoBool of CAMPO_BOOLEANO_FALSE_POR_DEFECTO[tabla] ?? []) {
           if (fila[campoBool] === undefined) fila[campoBool] = false;
         }
+        for (const campoBool of CAMPO_BOOLEANO_TRUE_POR_DEFECTO[tabla] ?? []) {
+          if (fila[campoBool] === undefined) fila[campoBool] = true;
+        }
+        for (const [campoString, valorDefecto] of Object.entries(CAMPO_STRING_POR_DEFECTO[tabla] ?? {})) {
+          if (fila[campoString] === undefined) fila[campoString] = valorDefecto;
+        }
         // Unicidad real de la base, para probar reintentos (mismo criterio
         // que pruebas-reservas.js).
         if (tabla === "reserva" && datos.reserva.some((r) => r.codigoConfirmacion === fila.codigoConfirmacion)) {
@@ -410,6 +530,39 @@ function crearBase() {
         }
         if (tabla === "habitacion" && datos.habitacion.some((h) => h.numero === fila.numero)) {
           throw new PrismaClientKnownRequestError("Unique constraint failed", { code: "P2002", meta: { target: ["numero"] } });
+        }
+        // Etapa 4A (HU-95, ajuste C) — @@unique([reservaHabitacionId, fecha])
+        // de ReservaNoche: el alta, la modificación y la migración crean estas
+        // filas por caminos distintos, así que el P2002 real tiene que
+        // reproducirse acá para que un test pueda confirmar que ninguno de
+        // los tres pisa una noche ya congelada.
+        if (
+          tabla === "reservaNoche" &&
+          datos.reservaNoche.some(
+            (n) => n.reservaHabitacionId === fila.reservaHabitacionId && n.fecha?.getTime() === fila.fecha?.getTime()
+          )
+        ) {
+          throw new PrismaClientKnownRequestError("Unique constraint failed", {
+            code: "P2002",
+            meta: { target: ["reservaHabitacionId", "fecha"] },
+          });
+        }
+        // Etapa 2 de tarifas por temporada — @@unique([tipoHabitacionId,
+        // temporadaId, vigenteDesde]) de Tarifa (precios.servicio.js:crearTarifa
+        // depende de este P2002 para el mensaje de "ya existe una versión...").
+        if (
+          tabla === "tarifa" &&
+          datos.tarifa.some(
+            (t) =>
+              t.tipoHabitacionId === fila.tipoHabitacionId &&
+              t.temporadaId === fila.temporadaId &&
+              t.vigenteDesde?.getTime() === fila.vigenteDesde?.getTime()
+          )
+        ) {
+          throw new PrismaClientKnownRequestError("Unique constraint failed", {
+            code: "P2002",
+            meta: { target: ["tipoHabitacionId", "temporadaId", "vigenteDesde"] },
+          });
         }
         datos[tabla].push(fila);
         for (const [clave, { tabla: tablaHija, fk }] of Object.entries(relaciones)) {
@@ -476,6 +629,16 @@ function crearBase() {
         const borradas = datos[tabla].length - quedan.length;
         datos[tabla] = quedan;
         return { count: borradas };
+      },
+      // Singular — sumado para HU-92 (precios.servicio.js:eliminarTarifa,
+      // borra una versión futura puntual por id). A diferencia de
+      // deleteMany, Prisma real tira P2025 si no encuentra la fila; acá no
+      // hace falta reproducir ese detalle porque los servicios que llaman
+      // a esto ya validan `findUnique` antes de borrar.
+      delete: async ({ where = {} }) => {
+        const fila = datos[tabla].find((r) => coincide(tabla, r, where));
+        datos[tabla] = datos[tabla].filter((r) => r !== fila);
+        return fila;
       },
     };
   }
@@ -549,17 +712,47 @@ function crearBase() {
     for (const tabla of TABLAS) secuencias[tabla] = 0;
   };
 
+  // HU-89: sigue aceptando `tipo` como string de conveniencia (mínimo
+  // churn en los scripts pruebas-*.js existentes), pero por debajo
+  // resuelve-o-crea un TipoHabitacion real y setea tipoHabitacionId — así
+  // la FK se ejercita de verdad. `tipoHabitacionId` explícito en `extra`
+  // gana si viene (para las pruebas que sí quieren un tipo puntual, ej.
+  // uno ya dado de baja).
+  cliente._resolverOCrearTipoHabitacion = (nombre, extra = {}) => {
+    let tipoRow = datos.tipoHabitacion.find((t) => t.nombre.toLowerCase() === String(nombre).toLowerCase());
+    if (!tipoRow) {
+      const codigo = String(nombre).toUpperCase().replace(/[^A-Z0-9]+/g, "-").slice(0, 10) || "TIPO";
+      tipoRow = {
+        id: siguienteId("tipoHabitacion"),
+        codigo,
+        nombre,
+        descripcion: null,
+        activo: true,
+        // Etapa 2 de tarifas por temporada (HU-92) — default del schema,
+        // overrideable por las pruebas que necesiten un tipo con otra
+        // ocupación puntual.
+        ocupacionBase: 2,
+        creadoEn: ahoraFalso(),
+        actualizadoEn: ahoraFalso(),
+        ...extra,
+      };
+      datos.tipoHabitacion.push(tipoRow);
+    }
+    return tipoRow;
+  };
+
   cliente._sembrarHabitacion = (extra = {}) => {
+    const { tipo = "Doble", tipoHabitacionId, ...resto } = extra;
+    const tipoId = tipoHabitacionId ?? cliente._resolverOCrearTipoHabitacion(tipo).id;
     const fila = {
       id: siguienteId("habitacion"),
       activo: true,
       estado: "libre",
       piso: 1,
       capacidad: 2,
-      tipo: "Doble",
+      tipoHabitacionId: tipoId,
       equipamiento: null,
-      tarifaPorNoche: 50000,
-      ...extra,
+      ...resto,
     };
     datos.habitacion.push(fila);
     return fila;

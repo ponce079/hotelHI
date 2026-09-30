@@ -31,6 +31,13 @@ import { ComprobanteDetalle } from "./modulos/comprobantes/ComprobanteDetalle";
 import { HabitacionesPage } from "./modulos/habitaciones/HabitacionesPage";
 import { HabitacionDetallePage } from "./modulos/habitaciones/HabitacionDetallePage";
 import { HistorialMantenimientoPage } from "./modulos/habitaciones/HistorialMantenimientoPage";
+import { TiposHabitacionPage } from "./modulos/tipos-habitacion/TiposHabitacionPage";
+import { PreciosPage } from "./modulos/tarifas/PreciosPage";
+import { TemporadasPage } from "./modulos/tarifas/TemporadasPage";
+import { CalendarioPage } from "./modulos/tarifas/CalendarioPage";
+import { PlanesPage } from "./modulos/tarifas/PlanesPage";
+import { ActualizacionesPage } from "./modulos/tarifas/ActualizacionesPage";
+import { CotizadorPage } from "./modulos/tarifas/CotizadorPage";
 import { ReservasPage } from "./modulos/reservas/ReservasPage";
 import { ReservaDetallePage } from "./modulos/reservas/ReservaDetallePage";
 import { DisponibilidadPublicaPage } from "./modulos/reservas/DisponibilidadPublicaPage";
@@ -100,6 +107,17 @@ export default function App() {
           <Route path="/habitaciones" element={<HabitacionesPage />} />
           <Route path="/habitaciones/:id" element={<HabitacionDetallePage />} />
           <Route path="/historial-mantenimiento" element={<HistorialMantenimientoPage />} />
+          {/* HU-89 — Catálogo de Tipos de Habitación (Etapa 1 de tarifas por temporada). */}
+          <Route path="/tipos-habitacion" element={<TiposHabitacionPage />} />
+          {/* HU-90 a HU-93 — Tarifas por temporada (Etapa 2): precios es la
+              pestaña de aterrizaje ("/tarifas"), las otras 4 son sus rutas
+              hermanas, mismo patrón de TarifasTabs.jsx. */}
+          <Route path="/tarifas" element={<PreciosPage />} />
+          <Route path="/tarifas/temporadas" element={<TemporadasPage />} />
+          <Route path="/tarifas/calendario" element={<CalendarioPage />} />
+          <Route path="/tarifas/planes" element={<PlanesPage />} />
+          <Route path="/tarifas/actualizaciones" element={<ActualizacionesPage />} />
+          <Route path="/tarifas/cotizador" element={<CotizadorPage />} />
           {/* Sprint 3 académico — Reservas (HU-36 a HU-42). */}
           <Route path="/reservas" element={<ReservasPage />} />
           <Route path="/reservas/disponibilidad" element={<DisponibilidadPublicaPage modoInterno />} />

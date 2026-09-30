@@ -1,19 +1,20 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, X } from "lucide-react";
 import { Modal } from "../../componentes/Modal";
 import { Input } from "../../componentes/Input";
+import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
 import { crearHabitacion, actualizarHabitacion } from "./habitaciones.api";
 import { LIMITES_HABITACION } from "./habitaciones.constantes";
+import { listarTiposHabitacion } from "../tipos-habitacion/tiposHabitacion.api";
 
 const VACIO = {
   numero: "",
-  tipo: "",
+  tipoHabitacionId: "",
   capacidad: "",
   piso: "",
   equipamiento: "",
-  tarifaPorNoche: "",
 };
 
 export function HabitacionModal({ habitacion, onClose, onExito }) {
@@ -22,30 +23,40 @@ export function HabitacionModal({ habitacion, onClose, onExito }) {
     habitacion
       ? {
           numero: habitacion.numero,
-          tipo: habitacion.tipo,
+          tipoHabitacionId: String(habitacion.tipoHabitacionId ?? ""),
           capacidad: String(habitacion.capacidad),
           piso: String(habitacion.piso),
           equipamiento: habitacion.equipamiento ?? "",
-          tarifaPorNoche: String(habitacion.tarifaPorNoche),
         }
       : VACIO
   );
   const [errores, setErrores] = useState({});
   const queryClient = useQueryClient();
 
+  // HU-89: catálogo completo (activos e inactivos) — una habitación cuyo
+  // tipo se dio de baja después de asignado tiene que seguir pudiendo
+  // editarse sin perder ese valor (regla 4). El filtrado de qué opciones
+  // se muestran (activos + el actual aunque esté inactivo) pasa más abajo.
+  const { data: tipos } = useQuery({
+    queryKey: ["tipos-habitacion", "todos"],
+    queryFn: () => listarTiposHabitacion({ activo: "todos" }),
+  });
+  const opcionesTipo = (tipos ?? []).filter(
+    (t) => t.activo || t.id === Number(form.tipoHabitacionId)
+  );
+
   const mutacion = useMutation({
     mutationFn: () => {
       const payload = {
         ...form,
+        tipoHabitacionId: Number(form.tipoHabitacionId),
         capacidad: Number(form.capacidad),
         piso: Number(form.piso),
-        tarifaPorNoche: Number(form.tarifaPorNoche),
       };
       return editando ? actualizarHabitacion(habitacion.id, payload) : crearHabitacion(payload);
     },
     onSuccess: (guardada) => {
       queryClient.invalidateQueries({ queryKey: ["habitaciones"] });
-      queryClient.invalidateQueries({ queryKey: ["tipos-habitacion"] });
       onExito(`Habitación ${guardada.numero} ${editando ? "actualizada" : "creada"} correctamente.`);
     },
     onError: (error) => {
@@ -63,10 +74,9 @@ export function HabitacionModal({ habitacion, onClose, onExito }) {
   function validar() {
     const nuevos = {};
     if (!form.numero.trim()) nuevos.numero = "El número es obligatorio.";
-    if (!form.tipo.trim()) nuevos.tipo = "El tipo es obligatorio.";
+    if (!form.tipoHabitacionId) nuevos.tipoHabitacionId = "Elegí un tipo de habitación.";
     if (!Number.isInteger(Number(form.capacidad)) || Number(form.capacidad) <= 0) nuevos.capacidad = "Ingresá una capacidad mayor a 0.";
     if (!Number.isInteger(Number(form.piso)) || Number(form.piso) < 0) nuevos.piso = "Ingresá un piso mayor o igual a 0.";
-    if (!(Number(form.tarifaPorNoche) > 0)) nuevos.tarifaPorNoche = "Ingresá una tarifa mayor a 0.";
     return nuevos;
   }
 
@@ -83,7 +93,7 @@ export function HabitacionModal({ habitacion, onClose, onExito }) {
   return (
     <Modal
       titulo={editando ? `Editar habitación ${habitacion.numero}` : "Nueva habitación"}
-      subtitulo="Inventario y tarifa de la habitación"
+      subtitulo="Inventario de la habitación"
       onClose={onClose}
       ancho="max-w-2xl"
     >
@@ -98,14 +108,20 @@ export function HabitacionModal({ habitacion, onClose, onExito }) {
             maxLength={LIMITES_HABITACION.numero}
             placeholder="ej. 204"
           />
-          <Input
-            label="Tipo *"
-            value={form.tipo}
-            onChange={(e) => cambiar("tipo", e.target.value)}
-            error={errores.tipo}
-            maxLength={LIMITES_HABITACION.tipo}
-            placeholder="ej. Doble"
-          />
+          <Select
+            label="Tipo de habitación *"
+            value={form.tipoHabitacionId}
+            onChange={(e) => cambiar("tipoHabitacionId", e.target.value)}
+            error={errores.tipoHabitacionId}
+          >
+            <option value="">Elegí un tipo…</option>
+            {opcionesTipo.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.nombre}
+                {!t.activo ? " (dado de baja)" : ""}
+              </option>
+            ))}
+          </Select>
           <Input
             label="Capacidad *"
             type="number"
@@ -123,16 +139,6 @@ export function HabitacionModal({ habitacion, onClose, onExito }) {
             value={form.piso}
             onChange={(e) => cambiar("piso", e.target.value)}
             error={errores.piso}
-          />
-          <Input
-            label="Tarifa por noche *"
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={form.tarifaPorNoche}
-            onChange={(e) => cambiar("tarifaPorNoche", e.target.value)}
-            error={errores.tarifaPorNoche}
-            placeholder="0,00"
           />
           <div className="sm:col-span-2">
             <label className="flex flex-col gap-1.5 font-body text-sm">

@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Ban, BedDouble, Bell, LogIn, Pencil, Plus, User, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, Ban, BedDouble, Bell, ChevronDown, ChevronRight, DollarSign, LogIn, Pencil, Plus, User, UtensilsCrossed } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -23,6 +23,7 @@ import { CONCEPTO_SENIA } from "../pagos-estadia/pagoEstadia.constantes";
 import { ConsumoModal } from "../servicios-adicionales/ConsumoModal";
 import { obtenerResumenPorReserva } from "../servicios-adicionales/serviciosAdicionales.api";
 import { TIPO_SERVICIO_BADGE } from "../servicios-adicionales/serviciosAdicionales.constantes";
+import { AjustePrecioModal } from "./AjustePrecioModal";
 import { ReservaWizard } from "./ReservaWizard";
 import { cancelarReserva, obtenerReserva } from "./reservas.api";
 import {
@@ -53,11 +54,17 @@ export function ReservaDetallePage() {
   const puedeVerPagos = puede("verPagosEstadia");
   const puedeRegistrarConsumo = puede("registrarConsumoServicio");
   const puedeGestionarCheckIn = puede("gestionarCheckIn");
+  const puedeAjustarPrecio = puede("ajustarPrecioReserva");
   const volver = useVolver("/reservas");
   const [editando, setEditando] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [consumoAbierto, setConsumoAbierto] = useState(false);
+  // Etapa 4B (HU-97) — modal de ajuste manual de precio, exclusivo gerente.
+  const [ajustandoPrecio, setAjustandoPrecio] = useState(false);
+  // Etapa 4A (HU-95) — qué habitación tiene el detalle noche por noche
+  // desplegado (una a la vez, para no abrumar la tabla con todo abierto).
+  const [habitacionExpandida, setHabitacionExpandida] = useState(null);
   // Congelado al montar (no en cada render — mismo criterio que `ahora` en
   // HabitacionesPage.jsx): alcanza para decidir la política de 24hs de la
   // seña, no hace falta que tiquee en vivo mientras el diálogo está abierto.
@@ -145,6 +152,10 @@ export function ReservaDetallePage() {
   const { pasos, pasoActual, pasoAlternativo } = construirPasosReserva(reserva);
   const editable = puedeGestionar && reserva.estado === ESTADO_RESERVA.CONFIRMADA;
   const mostrarAccionCheckIn = puedeGestionarCheckIn && reserva.estado === ESTADO_RESERVA.CONFIRMADA;
+  // Etapa 4B (HU-97) — a diferencia de "editable" (solo Confirmada), el
+  // ajuste manual de precio también se permite En curso.
+  const mostrarAjustarPrecio =
+    puedeAjustarPrecio && [ESTADO_RESERVA.CONFIRMADA, ESTADO_RESERVA.EN_CURSO].includes(reserva.estado);
   const puedeIniciarCheckInAhora = vigenciaCheckInQuery.data?.puedeIniciarCheckIn ?? false;
   const motivoAunNoHabilitado = vigenciaCheckInQuery.data?.motivoBloqueo;
 
@@ -178,8 +189,13 @@ export function ReservaDetallePage() {
             {formatearFechaSinHora(reserva.fechaHasta)}
           </p>
         </div>
-        {(mostrarAccionCheckIn || editable) && (
+        {(mostrarAccionCheckIn || editable || mostrarAjustarPrecio) && (
           <div className="flex flex-wrap items-start gap-2">
+            {mostrarAjustarPrecio && (
+              <Button variante="secundario" icono={DollarSign} onClick={() => setAjustandoPrecio(true)}>
+                Ajustar precio
+              </Button>
+            )}
             {mostrarAccionCheckIn && (
               <div className="flex flex-col items-end gap-1">
                 <Button
@@ -247,13 +263,21 @@ export function ReservaDetallePage() {
           <div className="flex flex-col gap-4">
             <Dato etiqueta="Entrada">{formatearFechaSinHora(reserva.fechaDesde)}</Dato>
             <Dato etiqueta="Salida">{formatearFechaSinHora(reserva.fechaHasta)}</Dato>
+            {reserva.planTarifario && (
+              <Dato etiqueta="Plan tarifario">
+                {reserva.planTarifario.nombre}{" "}
+                <Badge variante={reserva.planTarifario.reembolsable ? "ok" : "error"}>
+                  {reserva.planTarifario.reembolsable ? "Reembolsable" : "No reembolsable"}
+                </Badge>
+              </Dato>
+            )}
             <div>
               <p className="text-[11px] uppercase tracking-wide text-piedra">
                 Total estimado · {reserva.noches} noche{reserva.noches === 1 ? "" : "s"}
               </p>
               <Cifra tamano={28}>{FORMATO_MONEDA.format(reserva.totalEstimadoAlojamiento)}</Cifra>
               <p className="mt-1 text-[11px] text-piedra">
-                Solo alojamiento, calculado a la tarifa vigente de cada habitación.
+                Alojamiento: precio congelado por noche al confirmar (HU-96), no la tarifa de hoy.
               </p>
             </div>
 
@@ -285,20 +309,71 @@ export function ReservaDetallePage() {
           <BedDouble size={17} className="text-pino" /> Habitaciones reservadas
         </h2>
         <Table
-          columnas={["Habitación", "Tipo", "Capacidad", "Piso", "Estado actual", "Por noche"]}
+          columnas={["", "Habitación", "Tipo", "Ocupación", "Estado actual", "Promedio/noche", "Subtotal"]}
           filas={reserva.habitaciones}
-          columnasDerecha={["Capacidad", "Piso", "Por noche"]}
+          columnasDerecha={["Promedio/noche", "Subtotal"]}
           vacio="La reserva no tiene habitaciones asociadas."
-          renderFila={(h) => (
-            <tr key={h.id} className="h-12 border-b border-borde last:border-0">
-              <td className="px-3 py-2.5 font-mono text-[13px] font-medium">{h.numero}</td>
-              <td className="px-3 py-2.5 text-[13px]">{h.tipo}</td>
-              <td className="px-3 py-2.5 text-right font-mono text-xs">{h.capacidad}</td>
-              <td className="px-3 py-2.5 text-right font-mono text-xs">{h.piso}</td>
-              <td className="px-3 py-2.5 text-[12.5px] text-piedra">{h.estado}</td>
-              <td className="px-3 py-2.5 text-right font-mono text-xs">{FORMATO_MONEDA.format(h.tarifaPorNoche)}</td>
-            </tr>
-          )}
+          renderFila={(h) => {
+            const expandida = habitacionExpandida === h.id;
+            return (
+              <Fragment key={h.id}>
+                <tr className="h-12 border-b border-borde last:border-0">
+                  <td className="w-8 px-3 py-2.5">
+                    {(h.reservaNoches?.length ?? 0) > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => setHabitacionExpandida(expandida ? null : h.id)}
+                        aria-label={`Ver detalle por noche de la habitación ${h.numero}`}
+                        className="cursor-pointer text-piedra hover:text-tinta"
+                      >
+                        {expandida ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                      </button>
+                    )}
+                  </td>
+                  <td className="px-3 py-2.5 font-mono text-[13px] font-medium">{h.numero}</td>
+                  <td className="px-3 py-2.5 text-[13px]">{h.tipo}</td>
+                  <td className="px-3 py-2.5 text-[12.5px] text-piedra">
+                    {h.adultos} adulto{h.adultos === 1 ? "" : "s"}
+                    {h.menores > 0 ? `, ${h.menores} menor${h.menores === 1 ? "" : "es"}` : ""}
+                  </td>
+                  <td className="px-3 py-2.5 text-[12.5px] text-piedra">{h.estado}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-xs">{FORMATO_MONEDA.format(h.promedioPorNoche)}</td>
+                  <td className="px-3 py-2.5 text-right font-mono text-xs">{FORMATO_MONEDA.format(h.subtotalAlojamiento)}</td>
+                </tr>
+                {expandida && (
+                  <tr className="border-b border-borde bg-hueso last:border-0">
+                    <td colSpan={7} className="px-6 py-3">
+                      <p className="mb-2 text-[11px] uppercase tracking-wide text-piedra">Detalle por noche</p>
+                      <div className="flex flex-col gap-1">
+                        {(h.reservaNoches ?? []).map((n) => (
+                          <div key={n.fecha} className="flex items-center justify-between gap-3 text-[12.5px]">
+                            <span className="text-piedra">
+                              {formatearFechaSinHora(n.fecha)}
+                              {n.temporadaNombre ? ` · ${n.temporadaNombre}` : ""}
+                              {n.origen === "MIGRACION" ? " · migrada" : ""}
+                            </span>
+                            {n.ajustada ? (
+                              <span
+                                className="flex items-center gap-2 font-mono"
+                                title={`Ajuste manual — ${n.motivoAjuste ?? "sin motivo"} · ${n.ajustadoPor ?? "—"} · ${
+                                  n.ajustadoEn ? formatearTimestamp(n.ajustadoEn) : "—"
+                                }`}
+                              >
+                                <span className="text-piedra line-through">{FORMATO_MONEDA.format(n.precioOriginal)}</span>
+                                <Badge variante="alerta">{FORMATO_MONEDA.format(n.precioNoche)}</Badge>
+                              </span>
+                            ) : (
+                              <span className="font-mono">{FORMATO_MONEDA.format(n.precioNoche)}</span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            );
+          }}
         />
       </div>
 
@@ -448,6 +523,17 @@ export function ReservaDetallePage() {
             setConsumoAbierto(false);
             mostrarToast(mensaje);
             queryClient.invalidateQueries({ queryKey: ["consumos-servicios"] });
+          }}
+        />
+      )}
+
+      {ajustandoPrecio && (
+        <AjustePrecioModal
+          reserva={reserva}
+          onClose={() => setAjustandoPrecio(false)}
+          onExito={(mensaje) => {
+            setAjustandoPrecio(false);
+            mostrarToast(mensaje);
           }}
         />
       )}

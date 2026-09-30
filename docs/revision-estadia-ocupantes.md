@@ -152,8 +152,9 @@ aplicando el contrato de la sección 2.
 
 ## 5. Base de datos
 
-Las columnas y tablas de estadía ya existen en la base compartida. Son
-aditivas y pueden quedar hasta que el PR se integre. Las columnas
-`tarifaPactada`, `ocupacionIncluida` y `precioPersonaExtra` (C1/C2) se
-retiran en una migración posterior, después de verificar que ningún dato
-en producción las use.
+**Actualizado 30/9/2026, tras el despliegue de la Etapa 4C de tarifas — cambia lo que este documento asumía:**
+
+- **Ya NO es cierto que las tablas y columnas de estadía puedan quedar en la base compartida hasta que el PR se integre.** El despliegue de la Etapa 4C (`docs/despliegue-tarifas.md`) las elimina de la base compartida como parte de su propio paso de "estructura intermedia", antes de que este PR se reintegre — no después. Se eliminan: `OcupanteReserva`, `AsignacionOcupanteHabitacion`, `EventoEstadia`, las tablas de respaldo internas de `migrar-estadia.js` (`bkp_huespedes`, `bkp_ocupantes`, `bkp_reservas_huesped`), `cargos_verificacion_checkout.habitacionId`, y las columnas `tarifaPactada`/`ocupacionIncluida`/`precioPersonaExtra`/`serviciosIncluidos` de `ReservaHabitacion`, `garantiaAplicada`/`garantiaDevuelta`/`garantiaSeparada` de `PagoEstadia`, y 9 columnas de `ConsumoServicioAdicional` (`anulado`, `anuladoEn`, `anuladoPor`, `claveOperacion`, `descripcion`, `fechaServicio`, `incluido`, `motivoAnulacion`, `precioUnitario`). Lista completa y verificada columna por columna en `docs/despliegue-tarifas.md`.
+- **El trabajo en `feature/estadia-ocupantes` sigue intacto** — nada de esto toca esa rama ni su código. La migración `migrar-estadia.js`, siendo aditiva, vuelve a crear todo esto al integrarse el PR sin cambios de tu parte.
+- Las columnas `tarifaPactada`, `ocupacionIncluida` y `precioPersonaExtra` (C1/C2) **no hace falta retirarlas en una migración posterior "después de verificar que ningún dato en producción las use"** como decía la versión anterior de este párrafo: para cuando este PR se integre, ya no van a existir en la base compartida — no vas a encontrarlas ahí. Si tu diseño todavía necesita un mecanismo de precio pactado por habitación, coordinalo de nuevo con tarifas antes de reintroducirlo: la única fuente de precio hoy es `ReservaNoche.precioNoche` (ver sección 2, regla 1).
+- **`Habitacion.tarifaPorNoche` no quedó "sin uso": se ELIMINÓ del schema y de todo el código** (Etapa 4C, ver `docs/integracion-garantia-tarifas.md` sección 4). No es una columna que puedas leer aunque no la necesites — no existe.

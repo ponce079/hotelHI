@@ -270,11 +270,11 @@ async function confirmarCheckInConReserva({
 // cuando `fechaDesde` es hoy, que es siempre el caso acá — walk-in y
 // asignación manual son "ahora", nunca a futuro. No hay filtro propio que
 // reimplementar: si hubiera dos, correrían el riesgo de desincronizarse.
-async function listarHabitacionesLibresAhora({ fechaHasta, tipo, capacidadMinima }) {
+async function listarHabitacionesLibresAhora({ fechaHasta, tipoHabitacionId, capacidadMinima }) {
   return reservasServicio.consultarDisponibilidad({
     fechaDesde: hoyComoFechaISO(),
     fechaHasta,
-    tipo,
+    tipoHabitacionId,
     capacidadMinima,
   });
 }
@@ -284,9 +284,15 @@ async function listarHabitacionesLibresAhora({ fechaHasta, tipo, capacidadMinima
 // solo paso, reusando el alta de Reservas (HU-36) tal cual.
 // --------------------------------------------------------------
 
+// Etapa 4A (HU-95, ajuste A) — el plan tarifario es UNO por reserva (no por
+// habitación, misma regla que el wizard de HU-36/40): `planTarifarioId` y
+// `totalEsperado` viajan a nivel reserva, `habitaciones` trae solo la
+// ocupación de cada una (adultos/menores).
 async function registrarCheckInWalkIn({
   fechaHasta,
-  habitacionIds,
+  habitaciones,
+  planTarifarioId,
+  totalEsperado,
   huesped,
   garantiaConfirmada,
   medioGarantia,
@@ -297,11 +303,15 @@ async function registrarCheckInWalkIn({
   // Mismo alta que HU-36 (recepcionista) — la "reserva inmediata" que pide
   // la tarea técnica de HU-44 no es un modelo aparte, es una Reserva común
   // que arranca hoy. `normalizarAltaReserva` valida el rango de fechas, el
-  // huésped y las habitaciones exactamente igual que un alta asistida.
+  // huésped, el plan y las habitaciones (con ocupación) exactamente igual
+  // que un alta asistida, y compara el precio contra `totalEsperado` con
+  // el mismo motor (HU-96).
   const datos = reservasServicio.normalizarAltaReserva({
     fechaDesde: hoyComoFechaISO(),
     fechaHasta,
-    habitacionIds,
+    habitaciones,
+    planTarifarioId,
+    totalEsperado,
     huesped,
     origen: "RECEPCION",
   });
@@ -310,8 +320,8 @@ async function registrarCheckInWalkIn({
     async (tx) => {
       const reserva = await reservasServicio.crearReservaEnTransaccion(tx, datos);
       await reservasServicio.marcarEnCurso(reserva.id, tx);
-      for (const habitacionId of datos.habitacionIds) {
-        await ocuparHabitacion(tx, habitacionId);
+      for (const habitacion of datos.habitaciones) {
+        await ocuparHabitacion(tx, habitacion.habitacionId);
       }
       return reserva.id;
     },

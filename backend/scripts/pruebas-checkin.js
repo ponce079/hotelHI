@@ -53,6 +53,77 @@ const HUESPED = { nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "
 // checkIn.constantes.js), así que no hace falta pasarlo acá.
 const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Efectivo" };
 
+// --------------------------------------------------------------
+// Fixture mínima de tarifas (Etapa 4A) — desde que crearReserva/
+// registrarCheckInWalkIn pasan por el motor de cotización, toda habitación
+// necesita un tipo con tarifa vigente. Una temporada Base + un plan BAR, y
+// una Tarifa por tipo al precio que le pase cada prueba (ver
+// sembrarHabitacion más abajo — Etapa 4C: el precio ya no viaja metido en
+// el objeto de la habitación, porque Habitacion.tarifaPorNoche no existe
+// más; se pasa como parámetro aparte).
+// --------------------------------------------------------------
+const PRECIO_BASE_PRUEBA = 50000;
+
+async function asegurarTemporadaYPlanBase() {
+  let temporadaBase = base._datos.temporada.find((t) => t.nivel === "BASE");
+  if (!temporadaBase) {
+    temporadaBase = await base.temporada.create({
+      data: { nombre: "Base", nivel: "BASE", fechaDesde: null, fechaHasta: null, estadiaMinima: null, cierreLlegada: false, activa: true },
+    });
+  }
+  let planBar = base._datos.planTarifario.find((p) => p.codigo === "BAR");
+  if (!planBar) {
+    planBar = await base.planTarifario.create({
+      data: {
+        codigo: "BAR",
+        nombre: "Best Available Rate",
+        tipo: "BASE",
+        planBaseId: null,
+        descuentoPorcentaje: null,
+        reembolsable: true,
+        horasCancelacionSinCargo: 48,
+        penalidadNoShow: "PRIMERA_NOCHE",
+        visibleWeb: true,
+        activo: true,
+      },
+    });
+  }
+  return { temporadaBase, planBar };
+}
+
+async function asegurarTarifaParaTipo(tipoHabitacionId, precioPorNoche = PRECIO_BASE_PRUEBA) {
+  const { temporadaBase } = await asegurarTemporadaYPlanBase();
+  const yaTiene = base._datos.tarifa.some((t) => t.tipoHabitacionId === tipoHabitacionId && t.temporadaId === temporadaBase.id);
+  if (!yaTiene) {
+    await base.tarifa.create({
+      data: {
+        tipoHabitacionId,
+        temporadaId: temporadaBase.id,
+        precioBase: precioPorNoche,
+        adicionalAdultoExtra: 0,
+        vigenteDesde: new Date(`${enDias(-365)}T00:00:00.000Z`),
+      },
+    });
+  }
+}
+
+// Envoltorio de base._sembrarHabitacion que además garantiza tarifa vigente
+// para el tipo recién creado. `precioPorNoche` es un parámetro aparte (no
+// un campo de `extra`): Habitacion ya no tiene tarifaPorNoche, así que acá
+// no hay ningún campo de la fila de donde leer el precio.
+async function sembrarHabitacion(extra = {}, precioPorNoche = PRECIO_BASE_PRUEBA) {
+  const fila = base._sembrarHabitacion(extra);
+  await asegurarTarifaParaTipo(fila.tipoHabitacionId, precioPorNoche);
+  return fila;
+}
+
+function hab(habitacionId, extra = {}) {
+  return { habitacionId, adultos: 2, menores: 0, ...extra };
+}
+function habs(ids) {
+  return ids.map((id) => hab(id));
+}
+
 async function esperaError(fn, textoEsperado) {
   try {
     await fn();
@@ -68,11 +139,48 @@ async function esperaError(fn, textoEsperado) {
 
 // Crea una reserva de verdad (vía reservas.servicio.js, ya probado en
 // pruebas-reservas.js) para usar como fixture en las pruebas de check-in.
+// Etapa 4A — el total ya no lo inventa la prueba: sale de una cotización
+// real contra el motor, mismo criterio que alta() en pruebas-reservas.js.
 async function crearReservaFixture(extra = {}) {
+  const { planBar } = await asegurarTemporadaYPlanBase();
+  const fechaDesde = extra.fechaDesde ?? enDias(0);
+  const fechaHasta = extra.fechaHasta ?? enDias(3);
+  const habitaciones = extra.habitaciones ?? habs([1]);
+  const planTarifarioId = extra.planTarifarioId ?? planBar.id;
+  let totalEsperado = extra.totalEsperado;
+  if (totalEsperado === undefined) {
+    const cotizacion = await reservasServicio.cotizarParaReserva({ fechaDesde, fechaHasta, planTarifarioId, habitaciones, canal: "RECEPCION" });
+    totalEsperado = cotizacion.planes[0]?.total ?? 0;
+  }
   return reservasServicio.crearReserva({
-    fechaDesde: enDias(0),
-    fechaHasta: enDias(3),
-    habitacionIds: [1],
+    fechaDesde,
+    fechaHasta,
+    habitaciones,
+    planTarifarioId,
+    totalEsperado,
+    huesped: { ...HUESPED },
+    ...extra,
+  });
+}
+
+// Etapa 4A (ajuste A) — mismo criterio para el walk-in: planTarifarioId y
+// totalEsperado a nivel reserva, habitaciones solo con ocupación.
+async function walkInFixture(extra = {}) {
+  const { planBar } = await asegurarTemporadaYPlanBase();
+  const fechaDesde = enDias(0);
+  const fechaHasta = extra.fechaHasta ?? enDias(2);
+  const habitaciones = extra.habitaciones ?? habs([1]);
+  const planTarifarioId = extra.planTarifarioId ?? planBar.id;
+  let totalEsperado = extra.totalEsperado;
+  if (totalEsperado === undefined) {
+    const cotizacion = await reservasServicio.cotizarParaReserva({ fechaDesde, fechaHasta, planTarifarioId, habitaciones, canal: "RECEPCION" });
+    totalEsperado = cotizacion.planes[0]?.total ?? 0;
+  }
+  return checkInServicio.registrarCheckInWalkIn({
+    fechaHasta,
+    habitaciones,
+    planTarifarioId,
+    totalEsperado,
     huesped: { ...HUESPED },
     ...extra,
   });
@@ -83,7 +191,7 @@ async function main() {
 
   await prueba("encuentra una reserva vigente por código y habilita el check-in", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture();
     const resultado = await checkInServicio.buscarReservaParaCheckIn({ codigo: reserva.codigoConfirmacion });
     assert.equal(resultado.puedeIniciarCheckIn, true);
@@ -93,7 +201,7 @@ async function main() {
 
   await prueba("encuentra una reserva vigente por el documento del huésped (no solo por código)", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture();
     const resultado = await checkInServicio.buscarReservaParaCheckIn({ codigo: reserva.huesped.numeroDocumento });
     assert.equal(resultado.reserva.id, reserva.id);
@@ -102,7 +210,7 @@ async function main() {
 
   await prueba("la búsqueda por documento no se limita al formato de DNI (pasaporte, por ejemplo)", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture({
       huesped: { nombre: "John Smith", tipoDocumento: "Pasaporte", numeroDocumento: "AB1234567", contacto: "john@mail.com" },
     });
@@ -112,7 +220,7 @@ async function main() {
 
   await prueba("bloquea el check-in antes de la fecha de ingreso", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture({ fechaDesde: enDias(3), fechaHasta: enDias(6) });
     const resultado = await checkInServicio.buscarReservaParaCheckIn({ id: reserva.id });
     assert.equal(resultado.puedeIniciarCheckIn, false);
@@ -121,7 +229,7 @@ async function main() {
 
   await prueba("bloquea una reserva cancelada", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture();
     await reservasServicio.cancelarReserva(reserva.id, { motivoCancelacion: "Se arrepintió" });
     const resultado = await checkInServicio.buscarReservaParaCheckIn({ id: reserva.id });
@@ -131,7 +239,7 @@ async function main() {
 
   await prueba("bloquea una reserva que ya tiene el check-in hecho", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture();
     await reservasServicio.marcarEnCurso(reserva.id);
     const resultado = await checkInServicio.buscarReservaParaCheckIn({ id: reserva.id });
@@ -152,7 +260,7 @@ async function main() {
 
   await prueba("rechaza si el documento ingresado no coincide con el de la reserva", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture();
     await esperaError(
       () =>
@@ -167,7 +275,7 @@ async function main() {
 
   await prueba("acepta el documento sin importar mayúsculas ni espacios", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture();
     const actualizada = await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
@@ -179,7 +287,7 @@ async function main() {
 
   await prueba("HU-46: no confirma sin marcar la garantía como validada", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture();
     await esperaError(
       () =>
@@ -195,7 +303,7 @@ async function main() {
 
   await prueba("HU-46: rechaza un medio de garantía fuera de la lista", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture();
     await esperaError(
       () =>
@@ -211,7 +319,7 @@ async function main() {
 
   await prueba("HU-47: confirma el check-in y actualiza Reserva y Habitacion en la misma operación", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture();
     const actualizada = await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
@@ -224,9 +332,9 @@ async function main() {
 
   await prueba("HU-47: una reserva grupal ocupa TODAS sus habitaciones a la vez", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
-    base._sembrarHabitacion({ numero: "102" });
-    const reserva = await crearReservaFixture({ habitacionIds: [1, 2] });
+    await sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "102" });
+    const reserva = await crearReservaFixture({ habitaciones: habs([1, 2]) });
     await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
       numeroDocumentoIngresado: "30111222",
@@ -240,7 +348,7 @@ async function main() {
 
   await prueba("Efectivo registra un PagoEstadia real por el monto fijo, que se descuenta en el check-out", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 }); // 3 noches = 150000
+    await sembrarHabitacion({ numero: "101" }, 50000); // 3 noches = 150000
     const reserva = await crearReservaFixture();
     await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
@@ -266,7 +374,7 @@ async function main() {
 
   await prueba("Tarjeta crédito/débito también registra el monto fijo como PagoEstadia real, con su referencia", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 }); // 3 noches = 150000
+    await sembrarHabitacion({ numero: "101" }, 50000); // 3 noches = 150000
     const reserva = await crearReservaFixture();
     await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
@@ -288,7 +396,7 @@ async function main() {
 
   await prueba("tarjeta (crédito o débito) sin la referencia de autorización no se puede confirmar", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture();
     await esperaError(
       () =>
@@ -311,7 +419,7 @@ async function main() {
   // pendiente de la estadía.
   await prueba("la garantía se cobra igual aunque supere el saldo pendiente (estadía más barata que el monto fijo)", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101", tarifaPorNoche: 20000 }); // 1 noche = 20000 < 30000 de garantía
+    await sembrarHabitacion({ numero: "101" }, 20000); // 1 noche = 20000 < 30000 de garantía
     const reserva = await crearReservaFixture({ fechaHasta: enDias(1) });
     await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
@@ -329,7 +437,7 @@ async function main() {
 
   await prueba("la garantía se cobra igual con una seña ya pagada de antes (mismo bug, otro camino)", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101", tarifaPorNoche: 20000 }); // 1 noche = 20000
+    await sembrarHabitacion({ numero: "101" }, 20000); // 1 noche = 20000
     const reserva = await crearReservaFixture({ fechaHasta: enDias(1) });
     // Simula la seña (HU-88) que ya se cobró al reservar: 20% de 20000 = 4000.
     await pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo: "Efectivo", importe: 4000 }], concepto: "Seña" });
@@ -348,11 +456,9 @@ async function main() {
 
   await prueba("walk-in con garantía en efectivo también registra el monto fijo como PagoEstadia real", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101", tarifaPorNoche: 20000 });
-    const walkIn = await checkInServicio.registrarCheckInWalkIn({
+    await sembrarHabitacion({ numero: "101" }, 20000);
+    const walkIn = await walkInFixture({
       fechaHasta: enDias(2),
-      habitacionIds: [1],
-      huesped: { ...HUESPED },
       garantiaConfirmada: true,
       medioGarantia: "Efectivo",
     });
@@ -364,7 +470,7 @@ async function main() {
 
   await prueba("rechaza confirmar si la habitación ya no está libre (mantenimiento) y no deja nada a medio hacer", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101", estado: "mantenimiento" });
+    await sembrarHabitacion({ numero: "101", estado: "mantenimiento" });
     const reserva = await crearReservaFixture();
     await esperaError(
       () =>
@@ -381,7 +487,7 @@ async function main() {
 
   await prueba("no permite confirmar el check-in dos veces", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture();
     await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
@@ -403,8 +509,8 @@ async function main() {
 
   await prueba("el resumenPorTipo cuenta 'libre ahora', no 'disponible por fecha' (encontrado probando el flujo real)", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101", tipo: "Doble", estado: "libre" });
-    base._sembrarHabitacion({ numero: "102", tipo: "Doble", estado: "mantenimiento" });
+    await sembrarHabitacion({ numero: "101", tipo: "Doble", estado: "libre" });
+    await sembrarHabitacion({ numero: "102", tipo: "Doble", estado: "mantenimiento" });
     const resultado = await checkInServicio.listarHabitacionesLibresAhora({ fechaHasta: enDias(2) });
     const doble = resultado.resumenPorTipo.find((r) => r.tipo === "Doble");
     assert.equal(doble.total, 2, "el total del universo sigue siendo 2 (eso no cambia)");
@@ -414,8 +520,8 @@ async function main() {
 
   await prueba("lista libres 'ahora' excluyendo una que está en mantenimiento, aunque no tenga reserva encimada", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101", estado: "libre" });
-    base._sembrarHabitacion({ numero: "102", estado: "mantenimiento" });
+    await sembrarHabitacion({ numero: "101", estado: "libre" });
+    await sembrarHabitacion({ numero: "102", estado: "mantenimiento" });
     const resultado = await checkInServicio.listarHabitacionesLibresAhora({ fechaHasta: enDias(2) });
     assert.equal(resultado.habitaciones.length, 1);
     assert.equal(resultado.habitaciones[0].numero, "101");
@@ -423,7 +529,7 @@ async function main() {
 
   await prueba("con entrada a futuro, Reservas NO excluye por estado físico (solo lo informa, HU-38)", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101", estado: "mantenimiento" });
+    await sembrarHabitacion({ numero: "101", estado: "mantenimiento" });
     const deReservas = await reservasServicio.consultarDisponibilidad({ fechaDesde: enDias(5), fechaHasta: enDias(7) });
     assert.equal(deReservas.habitaciones.length, 1, "una entrada a futuro sigue sin bloquearse por el estado de hoy");
     assert.equal(deReservas.habitaciones[0].estadoActual, "mantenimiento", "queda como dato informativo, no excluyente");
@@ -431,17 +537,18 @@ async function main() {
 
   await prueba("con entrada HOY, Reservas y Check-in ya comparten el mismo criterio de 'libre ahora' (corrección posterior)", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101", estado: "mantenimiento" });
+    await sembrarHabitacion({ numero: "101", estado: "mantenimiento" });
     const deReservas = await reservasServicio.consultarDisponibilidad({ fechaDesde: enDias(0), fechaHasta: enDias(2) });
     assert.equal(deReservas.habitaciones.length, 0, "entrada hoy: Reservas también exige estado === 'libre'");
     const deCheckIn = await checkInServicio.listarHabitacionesLibresAhora({ fechaHasta: enDias(2) });
     assert.equal(deCheckIn.habitaciones.length, 0, "Check-in sigue exigiendo 'libre', ahora en paridad con Reservas");
   });
 
-  await prueba("filtra por tipo y devuelve lista vacía si no hay ninguna disponible", async () => {
+  await prueba("filtra por tipoHabitacionId y devuelve lista vacía si no hay ninguna disponible", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101", tipo: "Doble" });
-    const resultado = await checkInServicio.listarHabitacionesLibresAhora({ fechaHasta: enDias(2), tipo: "Suite" });
+    await sembrarHabitacion({ numero: "101", tipo: "Doble" });
+    const suite = base._resolverOCrearTipoHabitacion("Suite");
+    const resultado = await checkInServicio.listarHabitacionesLibresAhora({ fechaHasta: enDias(2), tipoHabitacionId: suite.id });
     assert.equal(resultado.habitaciones.length, 0);
   });
 
@@ -449,11 +556,9 @@ async function main() {
 
   await prueba("crea la reserva, la deja En curso y ocupa la habitación, todo en un paso", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
-    const reserva = await checkInServicio.registrarCheckInWalkIn({
+    await sembrarHabitacion({ numero: "101" });
+    const reserva = await walkInFixture({
       fechaHasta: enDias(2),
-      habitacionIds: [1],
-      huesped: { ...HUESPED },
       ...GARANTIA_OK,
     });
     assert.equal(reserva.estado, ESTADO_RESERVA.EN_CURSO);
@@ -463,11 +568,9 @@ async function main() {
 
   await prueba("la reserva walk-in arranca hoy mismo", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
-    const reserva = await checkInServicio.registrarCheckInWalkIn({
+    await sembrarHabitacion({ numero: "101" });
+    const reserva = await walkInFixture({
       fechaHasta: enDias(1),
-      habitacionIds: [1],
-      huesped: { ...HUESPED },
       ...GARANTIA_OK,
     });
     assert.equal(new Date(reserva.fechaDesde).toISOString().slice(0, 10), enDias(0));
@@ -476,11 +579,10 @@ async function main() {
   await prueba("reusa la validación de Reservas: rechaza sin habitaciones con el mismo mensaje", async () => {
     limpiar();
     await esperaError(
-      () =>
-        checkInServicio.registrarCheckInWalkIn({
+      async () =>
+        walkInFixture({
           fechaHasta: enDias(1),
-          habitacionIds: [],
-          huesped: { ...HUESPED },
+          habitaciones: [],
           ...GARANTIA_OK,
         }),
       "al menos una habitación"
@@ -489,13 +591,11 @@ async function main() {
 
   await prueba("no confirma sin garantía, ni siquiera intenta crear la reserva", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     await esperaError(
-      () =>
-        checkInServicio.registrarCheckInWalkIn({
+      async () =>
+        walkInFixture({
           fechaHasta: enDias(1),
-          habitacionIds: [1],
-          huesped: { ...HUESPED },
           garantiaConfirmada: false,
           medioGarantia: "Tarjeta crédito",
         }),
@@ -506,13 +606,11 @@ async function main() {
 
   await prueba("si la habitación elegida ya no está libre, no queda ni la reserva a medio crear", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101", estado: "bloqueada" });
+    await sembrarHabitacion({ numero: "101", estado: "bloqueada" });
     await esperaError(
-      () =>
-        checkInServicio.registrarCheckInWalkIn({
+      async () =>
+        walkInFixture({
           fechaHasta: enDias(1),
-          habitacionIds: [1],
-          huesped: { ...HUESPED },
           ...GARANTIA_OK,
         }),
       "no está libre"
@@ -523,12 +621,11 @@ async function main() {
 
   await prueba("una reserva grupal walk-in ocupa todas las habitaciones elegidas", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
-    base._sembrarHabitacion({ numero: "102" });
-    await checkInServicio.registrarCheckInWalkIn({
+    await sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "102" });
+    await walkInFixture({
       fechaHasta: enDias(1),
-      habitacionIds: [1, 2],
-      huesped: { ...HUESPED },
+      habitaciones: habs([1, 2]),
       ...GARANTIA_OK,
     });
     assert.equal(base._datos.habitacion.find((h) => h.id === 1).estado, "ocupada");

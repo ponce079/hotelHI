@@ -41,6 +41,14 @@ export async function consultarDisponibilidad(params) {
   return data;
 }
 
+// HU-95 (Etapa 4A) — cotización previa a confirmar un alta o una
+// modificación: mismo payload que crearReserva pero sin totalEsperado, y
+// nunca manda fechaVenta (el backend siempre usa la de hoy).
+export async function cotizarReserva(payload) {
+  const { data } = await api.post("/reservas/cotizar", payload);
+  return data;
+}
+
 // HU-36 (recepcionista, alta SIN seña — ya no la usa el wizard con seña
 // obligatoria, ver crearReservaConSena) y HU-40 (autoservicio web, que
 // nunca cobra seña) usan este mismo alta; solo cambia `origen` en el
@@ -67,5 +75,20 @@ export async function modificarReserva(id, payload) {
 
 export async function cancelarReserva(id, motivoCancelacion) {
   const { data } = await api.post(`/reservas/${id}/cancelar`, { motivoCancelacion });
+  return data;
+}
+
+// Etapa 4B (HU-97) — ajuste manual de precio (gerente). `usuario` no hace
+// falta mandarlo: el backend lo ignora e igual usa el de la sesión
+// autenticada (primer endpoint de reservas con auth real, ver
+// reservas.routes.js).
+export async function ajustarPrecioReserva(id, payload) {
+  const { data } = await api.post(`/reservas/${id}/ajuste-precio`, payload);
+  return data;
+}
+
+// Etapa 4B (HU-98) — cálculo de penalidad de solo lectura, no cobra nada.
+export async function obtenerPenalidadReserva(id, tipo) {
+  const { data } = await api.get(`/reservas/${id}/penalidad`, { params: { tipo } });
   return data;
 }
