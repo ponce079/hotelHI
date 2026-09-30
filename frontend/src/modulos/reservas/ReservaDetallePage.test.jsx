@@ -15,6 +15,10 @@ vi.mock("./reservas.api", () => ({ obtenerReserva: vi.fn(), cancelarReserva: vi.
 vi.mock("../check-in/checkIn.api", () => ({ buscarReservaParaCheckIn: vi.fn() }));
 vi.mock("../pagos-estadia/pagoEstadia.api", () => ({ listarPagosEstadia: vi.fn() }));
 vi.mock("../servicios-adicionales/serviciosAdicionales.api", () => ({ obtenerResumenPorReserva: vi.fn() }));
+// El modal en sí (selección de noches, vista previa, submit) tiene su
+// propio archivo de tests (AjustePrecioModal.test.jsx) — acá solo importa
+// si el botón que lo abre aparece según permiso/estado.
+vi.mock("./AjustePrecioModal", () => ({ AjustePrecioModal: () => <p>AjustePrecioModal abierto</p> }));
 
 const RESERVA_BASE = {
   id: 5,
@@ -233,5 +237,50 @@ describe("ReservaDetallePage — desglose de pago (seña / saldo pendiente)", ()
     expect(screen.queryByText("Seña pagada")).not.toBeInTheDocument();
     expect(screen.queryByText("Saldo pendiente")).not.toBeInTheDocument();
     expect(listarPagosEstadia).not.toHaveBeenCalled();
+  });
+});
+
+// Etapa 4B (HU-97) — el botón "Ajustar precio" es exclusivo de gerente
+// (permiso ajustarPrecioReserva), y solo con la reserva Confirmada o En
+// curso — mismo criterio de estado que ya usa mostrarAjustarPrecio.
+describe("ReservaDetallePage — botón Ajustar precio (HU-97, exclusivo gerente)", () => {
+  it("gerente con una reserva Confirmada: ve el botón y lo abre", async () => {
+    useSesion.mockReturnValue({ rol: "gerente", puede: (accion) => accion === "verReservas" || accion === "ajustarPrecioReserva" });
+    obtenerReserva.mockResolvedValue(RESERVA_BASE);
+
+    renderDetalle();
+
+    const boton = await screen.findByRole("button", { name: "Ajustar precio" });
+    await userEvent.setup().click(boton);
+    expect(await screen.findByText("AjustePrecioModal abierto")).toBeInTheDocument();
+  });
+
+  it("recepcionista (sin el permiso ajustarPrecioReserva): no ve el botón", async () => {
+    useSesion.mockReturnValue({ rol: "recepcionista", puede: (accion) => accion !== "ajustarPrecioReserva" });
+    obtenerReserva.mockResolvedValue(RESERVA_BASE);
+
+    renderDetalle();
+
+    await screen.findByText(RESERVA_BASE.huesped.nombre);
+    expect(screen.queryByRole("button", { name: "Ajustar precio" })).not.toBeInTheDocument();
+  });
+
+  it('gerente con una reserva "Cerrada": el permiso está pero el botón no se muestra (estado no lo admite)', async () => {
+    useSesion.mockReturnValue({ rol: "gerente", puede: (accion) => accion === "verReservas" || accion === "ajustarPrecioReserva" });
+    obtenerReserva.mockResolvedValue({ ...RESERVA_BASE, estado: "Cerrada" });
+
+    renderDetalle();
+
+    await screen.findByText(RESERVA_BASE.huesped.nombre);
+    expect(screen.queryByRole("button", { name: "Ajustar precio" })).not.toBeInTheDocument();
+  });
+
+  it('gerente con una reserva "En curso": el botón SÍ se muestra (a diferencia de Modificar/Cancelar)', async () => {
+    useSesion.mockReturnValue({ rol: "gerente", puede: (accion) => accion === "verReservas" || accion === "ajustarPrecioReserva" });
+    obtenerReserva.mockResolvedValue({ ...RESERVA_BASE, estado: "En curso" });
+
+    renderDetalle();
+
+    expect(await screen.findByRole("button", { name: "Ajustar precio" })).toBeInTheDocument();
   });
 });

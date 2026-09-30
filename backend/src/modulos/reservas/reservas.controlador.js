@@ -93,6 +93,32 @@ async function postCancelar(req, res) {
   }
 }
 
+// Etapa 4B (HU-97) — primer endpoint de reservas con auth en el backend de
+// verdad (ver requiereSesion/requiereRol en la ruta, reservas.routes.js):
+// modifica importes a cobrar, así que `ajustadoPor` sale SIEMPRE de la
+// sesión autenticada (req.usuarioActual), nunca de lo que mande el body —
+// si el body trae `usuario`, se ignora acá mismo, antes de llegar al
+// servicio.
+async function postAjustePrecio(req, res) {
+  try {
+    const payload = { ...req.body, usuario: req.usuarioActual.usuario };
+    return res.json(await reservasServicio.ajustarPrecioReserva(req.params.id, payload));
+  } catch (err) {
+    return responderError(res, err, "Error al ajustar el precio de la reserva:", "No se pudo ajustar el precio.");
+  }
+}
+
+// Etapa 4B (HU-98) — solo lectura, visible para recepcionista/gerente/admin
+// (sin requiereRol acá: a diferencia del ajuste de precio, consultar la
+// penalidad no cobra ni modifica nada).
+async function getPenalidad(req, res) {
+  try {
+    return res.json(await reservasServicio.obtenerPenalidad(req.params.id, req.query.tipo));
+  } catch (err) {
+    return responderError(res, err, "Error al calcular la penalidad:", "No se pudo calcular la penalidad.");
+  }
+}
+
 module.exports = {
   getDisponibilidad,
   getReservas,
@@ -103,4 +129,6 @@ module.exports = {
   postReservaConSenia,
   patchReserva,
   postCancelar,
+  postAjustePrecio,
+  getPenalidad,
 };

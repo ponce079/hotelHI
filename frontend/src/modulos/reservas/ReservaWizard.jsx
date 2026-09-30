@@ -898,6 +898,12 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
               {previaQuery.data.mensajeNoReembolsable && (
                 <p className="mt-1 font-semibold">{previaQuery.data.mensajeNoReembolsable}</p>
               )}
+              {/* Etapa 4B (HU-97) — si esta modificación va a recotizar (y
+                  por lo tanto borrar) el ajuste manual de precio de alguna
+                  noche, se avisa acá, antes de confirmar. */}
+              {previaQuery.data.mensajeAjustePerdido && (
+                <p className="mt-1 font-semibold">{previaQuery.data.mensajeAjustePerdido}</p>
+              )}
             </div>
           )}
           {esEdicion && previaQuery.isError && (

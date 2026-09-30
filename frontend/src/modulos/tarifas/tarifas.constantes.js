@@ -39,6 +39,16 @@ export const LIMITES_TARIFAS = {
   codigoPlanMax: 20,
   motivoLote: 300,
   motivoAnulacionLote: 300,
+  motivoAjusteMin: 10,
+  motivoAjuste: 300,
+};
+
+// Etapa 4B (HU-97) — ajuste manual de precio.
+export const MODO_AJUSTE_PRECIO = { PRECIO_FIJO: "PRECIO_FIJO", DESCUENTO_PORCENTAJE: "DESCUENTO_PORCENTAJE" };
+export const MODOS_AJUSTE_PRECIO = [MODO_AJUSTE_PRECIO.PRECIO_FIJO, MODO_AJUSTE_PRECIO.DESCUENTO_PORCENTAJE];
+export const MODO_AJUSTE_PRECIO_LABEL = {
+  PRECIO_FIJO: "Precio fijo por noche",
+  DESCUENTO_PORCENTAJE: "Descuento porcentual",
 };
 
 export const ESTADO_LOTE = { APLICADO: "Aplicado", ANULADO: "Anulado" };

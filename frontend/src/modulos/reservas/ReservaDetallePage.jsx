@@ -1,7 +1,7 @@
 import { Fragment, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Ban, BedDouble, Bell, ChevronDown, ChevronRight, LogIn, Pencil, Plus, User, UtensilsCrossed } from "lucide-react";
+import { ArrowLeft, Ban, BedDouble, Bell, ChevronDown, ChevronRight, DollarSign, LogIn, Pencil, Plus, User, UtensilsCrossed } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -23,6 +23,7 @@ import { CONCEPTO_SENIA } from "../pagos-estadia/pagoEstadia.constantes";
 import { ConsumoModal } from "../servicios-adicionales/ConsumoModal";
 import { obtenerResumenPorReserva } from "../servicios-adicionales/serviciosAdicionales.api";
 import { TIPO_SERVICIO_BADGE } from "../servicios-adicionales/serviciosAdicionales.constantes";
+import { AjustePrecioModal } from "./AjustePrecioModal";
 import { ReservaWizard } from "./ReservaWizard";
 import { cancelarReserva, obtenerReserva } from "./reservas.api";
 import {
@@ -53,11 +54,14 @@ export function ReservaDetallePage() {
   const puedeVerPagos = puede("verPagosEstadia");
   const puedeRegistrarConsumo = puede("registrarConsumoServicio");
   const puedeGestionarCheckIn = puede("gestionarCheckIn");
+  const puedeAjustarPrecio = puede("ajustarPrecioReserva");
   const volver = useVolver("/reservas");
   const [editando, setEditando] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [motivo, setMotivo] = useState("");
   const [consumoAbierto, setConsumoAbierto] = useState(false);
+  // Etapa 4B (HU-97) — modal de ajuste manual de precio, exclusivo gerente.
+  const [ajustandoPrecio, setAjustandoPrecio] = useState(false);
   // Etapa 4A (HU-95) — qué habitación tiene el detalle noche por noche
   // desplegado (una a la vez, para no abrumar la tabla con todo abierto).
   const [habitacionExpandida, setHabitacionExpandida] = useState(null);
@@ -148,6 +152,10 @@ export function ReservaDetallePage() {
   const { pasos, pasoActual, pasoAlternativo } = construirPasosReserva(reserva);
   const editable = puedeGestionar && reserva.estado === ESTADO_RESERVA.CONFIRMADA;
   const mostrarAccionCheckIn = puedeGestionarCheckIn && reserva.estado === ESTADO_RESERVA.CONFIRMADA;
+  // Etapa 4B (HU-97) — a diferencia de "editable" (solo Confirmada), el
+  // ajuste manual de precio también se permite En curso.
+  const mostrarAjustarPrecio =
+    puedeAjustarPrecio && [ESTADO_RESERVA.CONFIRMADA, ESTADO_RESERVA.EN_CURSO].includes(reserva.estado);
   const puedeIniciarCheckInAhora = vigenciaCheckInQuery.data?.puedeIniciarCheckIn ?? false;
   const motivoAunNoHabilitado = vigenciaCheckInQuery.data?.motivoBloqueo;
 
@@ -181,8 +189,13 @@ export function ReservaDetallePage() {
             {formatearFechaSinHora(reserva.fechaHasta)}
           </p>
         </div>
-        {(mostrarAccionCheckIn || editable) && (
+        {(mostrarAccionCheckIn || editable || mostrarAjustarPrecio) && (
           <div className="flex flex-wrap items-start gap-2">
+            {mostrarAjustarPrecio && (
+              <Button variante="secundario" icono={DollarSign} onClick={() => setAjustandoPrecio(true)}>
+                Ajustar precio
+              </Button>
+            )}
             {mostrarAccionCheckIn && (
               <div className="flex flex-col items-end gap-1">
                 <Button
@@ -339,7 +352,19 @@ export function ReservaDetallePage() {
                               {n.temporadaNombre ? ` · ${n.temporadaNombre}` : ""}
                               {n.origen === "MIGRACION" ? " · migrada" : ""}
                             </span>
-                            <span className="font-mono">{FORMATO_MONEDA.format(n.precioNoche)}</span>
+                            {n.ajustada ? (
+                              <span
+                                className="flex items-center gap-2 font-mono"
+                                title={`Ajuste manual — ${n.motivoAjuste ?? "sin motivo"} · ${n.ajustadoPor ?? "—"} · ${
+                                  n.ajustadoEn ? formatearTimestamp(n.ajustadoEn) : "—"
+                                }`}
+                              >
+                                <span className="text-piedra line-through">{FORMATO_MONEDA.format(n.precioOriginal)}</span>
+                                <Badge variante="alerta">{FORMATO_MONEDA.format(n.precioNoche)}</Badge>
+                              </span>
+                            ) : (
+                              <span className="font-mono">{FORMATO_MONEDA.format(n.precioNoche)}</span>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -498,6 +523,17 @@ export function ReservaDetallePage() {
             setConsumoAbierto(false);
             mostrarToast(mensaje);
             queryClient.invalidateQueries({ queryKey: ["consumos-servicios"] });
+          }}
+        />
+      )}
+
+      {ajustandoPrecio && (
+        <AjustePrecioModal
+          reserva={reserva}
+          onClose={() => setAjustandoPrecio(false)}
+          onExito={(mensaje) => {
+            setAjustandoPrecio(false);
+            mostrarToast(mensaje);
           }}
         />
       )}

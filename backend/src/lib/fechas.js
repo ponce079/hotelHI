@@ -61,4 +61,23 @@ function diaSemanaDeFecha(fecha) {
   return fecha.getUTCDay();
 }
 
-module.exports = { ZONA_ARGENTINA, hoyComoFechaUTC, parsearFechaSinHora, diaSemanaDeFecha };
+// Etapa 4B de tarifas por temporada (HU-98) — combina una fecha-sin-hora ya
+// normalizada a medianoche UTC del día calendario argentino (ver
+// parsearFechaSinHora/hoyComoFechaUTC arriba) con una hora del reloj de
+// Argentina, para calcular el límite de cancelación sin cargo ("la fecha de
+// llegada a la hora de check-in, menos las horas de anticipación del plan").
+// Argentina es UTC-3 fijo (sin horario de verano desde 2009, mismo criterio
+// que el resto de este archivo), así que "14:00 hora argentina" de esa fecha
+// calendario es 17:00 UTC del mismo día — nunca se recalcula el offset a
+// partir de la hora del proceso.
+function combinarFechaConHoraArgentina(fechaSinHora, hora, minuto = 0) {
+  return new Date(fechaSinHora.getTime() + (hora + 3) * 60 * 60 * 1000 + minuto * 60 * 1000);
+}
+
+module.exports = {
+  ZONA_ARGENTINA,
+  hoyComoFechaUTC,
+  parsearFechaSinHora,
+  diaSemanaDeFecha,
+  combinarFechaConHoraArgentina,
+};

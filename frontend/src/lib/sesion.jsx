@@ -249,8 +249,18 @@ export function SesionProvider({ children }) {
         // cancelación; admin entra por ser quien administra la operación
         // completa. Las pantallas de HU-38 y HU-40 son del rol "Huésped" y
         // no pasan por acá: viven fuera de <RequireSesion>, sin sesión.
-        if (accion === "verReservas") return rol === "admin" || rol === "recepcionista";
+        // Etapa 4B (HU-97): gerente se suma a "ver" (antes solo admin +
+        // recepcionista) — necesita abrir la ficha de una reserva para
+        // ajustarle el precio, aunque no gestiona el resto (alta/
+        // modificación/cancelación siguen siendo exclusivas de
+        // admin/recepcionista, gestionarReservas no cambia).
+        if (accion === "verReservas") return ["admin", "recepcionista", "gerente"].includes(rol);
         if (accion === "gestionarReservas") return rol === "admin" || rol === "recepcionista";
+        // Etapa 4B (HU-97) — ajuste manual de precio de una o más noches ya
+        // congeladas: exclusivo de gerente (backend también lo valida, ver
+        // reservas.routes.js — primer endpoint de reservas con
+        // requiereSesion/requiereRol reales, no solo este gate visual).
+        if (accion === "ajustarPrecioReserva") return rol === "gerente";
         // Sprint 3 académico — Check-in (HU-43 a HU-47). El backlog dice
         // "Recepcionista" para las 5 historias, sin matices de rol por
         // acción (a diferencia de Habitaciones) — un solo permiso alcanza.

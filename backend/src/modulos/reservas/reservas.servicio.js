@@ -50,6 +50,23 @@ const { CONCEPTO_SENIA } = require("../pagos-estadia/pagoEstadia.constantes");
 // cotizacion.servicio.js (y todo lo que importa, dentro de tarifas/) no
 // depende de nada de reservas.
 const cotizacionServicio = require("../tarifas/cotizacion.servicio");
+// Etapa 4B (HU-97) — mismo redondeo a múltiplo de $100 que usa el motor de
+// cotización, para que un ajuste manual termine en el mismo formato de
+// precio que cualquier tarifa.
+const { redondearAMultiploDe100 } = require("../tarifas/redondeo");
+const {
+  MODO_AJUSTE_PRECIO,
+  MODOS_AJUSTE_PRECIO,
+  MOTIVO_AJUSTE_MIN,
+  MOTIVO_AJUSTE_MAX,
+  HORA_CHECKIN,
+  TIPO_PENALIDAD,
+  TIPOS_PENALIDAD,
+} = require("../tarifas/tarifas.constantes");
+// Etapa 4B (HU-98) — cálculo de penalidades, en un servicio propio del
+// módulo de tarifas (no reservas): reservas solo expone el endpoint de
+// lectura, la lógica de negocio de la penalidad vive con las tarifas.
+const penalidadesServicio = require("../tarifas/penalidades.servicio");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -255,6 +272,7 @@ function formatearReserva(reserva) {
         .slice()
         .sort((a, b) => new Date(a.fecha).getTime() - new Date(b.fecha).getTime())
         .map((n) => ({
+          id: n.id,
           fecha: n.fecha,
           temporadaId: n.temporadaId,
           temporadaNombre: n.temporada?.nombre ?? null,
@@ -262,6 +280,12 @@ function formatearReserva(reserva) {
           tarifaId: n.tarifaId,
           precioNoche: Number(n.precioNoche),
           origen: n.origen,
+          // Etapa 4B (HU-97) — ajuste manual de precio, si lo hay.
+          ajustada: n.ajustada,
+          precioOriginal: n.precioOriginal != null ? Number(n.precioOriginal) : null,
+          motivoAjuste: n.motivoAjuste ?? null,
+          ajustadoPor: n.ajustadoPor ?? null,
+          ajustadoEn: n.ajustadoEn ?? null,
         }));
       const subtotalAlojamiento = reservaNoches.reduce((acc, n) => acc + n.precioNoche, 0);
       return {
@@ -1295,6 +1319,23 @@ async function modificarReserva(id, data) {
     if (!plan) throw new ErrorDeNegocio("El plan tarifario elegido no está disponible para este canal.");
 
     let huboReduccionNoReembolsable = false;
+    let nochesQuePierdenAjuste = 0;
+    // Etapa 4B (HU-97, decisión corregida por el usuario) — los datos de un
+    // ajuste manual (ajustada/precioOriginal/motivoAjuste/ajustadoPor/
+    // ajustadoEn) viajan siempre junto con el precio que queda: tanto si la
+    // noche conserva su precio congelado sin cambios, como si queda
+    // protegida por el Ajuste B de abajo (en los dos casos el precio que se
+    // guarda es el que la noche ya tenía, ajustado o no). Solo se pierden
+    // cuando la noche se recotiza de verdad con el motor y su precio cambia.
+    function datosDeAjuste(nocheAnterior) {
+      return {
+        precioOriginal: nocheAnterior.precioOriginal,
+        ajustada: nocheAnterior.ajustada,
+        motivoAjuste: nocheAnterior.motivoAjuste,
+        ajustadoPor: nocheAnterior.ajustadoPor,
+        ajustadoEn: nocheAnterior.ajustadoEn,
+      };
+    }
     const nochesPorHabitacion = new Map();
     for (const habitacionPlan of plan.habitaciones) {
       const anterior = snapshotPorHabitacion.get(habitacionPlan.habitacionId);
@@ -1312,11 +1353,13 @@ async function modificarReserva(id, data) {
             tarifaId: nocheAnterior.tarifaId,
             precioNoche: Number(nocheAnterior.precioNoche),
             origen: nocheAnterior.origen,
+            ...datosDeAjuste(nocheAnterior),
           };
         }
         // Ajuste B: ocupación distinta en un plan no reembolsable, y el
         // motor da un precio MENOR al que ya tenía esa noche → no se
-        // aplica la baja, se conserva el precio anterior.
+        // aplica la baja, se conserva el precio anterior (y su ajuste, si
+        // lo tenía: el precio que queda es exactamente ese).
         if (nocheAnterior && !mismaOcupacion && planActualEsNoReembolsable && noche.precioNoche < Number(nocheAnterior.precioNoche)) {
           huboReduccionNoReembolsable = true;
           return {
@@ -1325,14 +1368,23 @@ async function modificarReserva(id, data) {
             tarifaId: nocheAnterior.tarifaId,
             precioNoche: Number(nocheAnterior.precioNoche),
             origen: nocheAnterior.origen,
+            ...datosDeAjuste(nocheAnterior),
           };
         }
+        // Recotización real: el precio cambia, así que cualquier ajuste
+        // manual que tuviera esta noche se pierde.
+        if (nocheAnterior?.ajustada) nochesQuePierdenAjuste += 1;
         return {
           fecha: noche.fecha,
           temporadaId: noche.temporadaId,
           tarifaId: noche.tarifaId,
           precioNoche: noche.precioNoche,
           origen: "MOTOR",
+          precioOriginal: null,
+          ajustada: false,
+          motivoAjuste: null,
+          ajustadoPor: null,
+          ajustadoEn: null,
         };
       });
       nochesPorHabitacion.set(habitacionPlan.habitacionId, noches);
@@ -1351,6 +1403,13 @@ async function modificarReserva(id, data) {
         mensajeNoReembolsable: huboReduccionNoReembolsable
           ? "Tarifa no reembolsable: la reducción de ocupación no modifica el precio."
           : null,
+        // Etapa 4B (HU-97) — avisa ANTES de confirmar si esta modificación va
+        // a recotizar (y por lo tanto borrar) el ajuste manual de alguna
+        // noche, para que el gerente/recepcionista no se lleve una sorpresa.
+        mensajeAjustePerdido:
+          nochesQuePierdenAjuste > 0
+            ? `Se perderá el ajuste manual de ${nochesQuePierdenAjuste} noche${nochesQuePierdenAjuste === 1 ? "" : "s"}.`
+            : null,
       };
     }
 
@@ -1396,6 +1455,13 @@ async function modificarReserva(id, data) {
             planTarifarioId: nuevoPlanTarifarioId,
             precioNoche: noche.precioNoche,
             origen: noche.origen,
+            // Etapa 4B (HU-97) — viaja junto con el precio (ver datosDeAjuste
+            // más arriba): null/false cuando la noche se recotizó de verdad.
+            precioOriginal: noche.precioOriginal,
+            ajustada: noche.ajustada,
+            motivoAjuste: noche.motivoAjuste,
+            ajustadoPor: noche.ajustadoPor,
+            ajustadoEn: noche.ajustadoEn,
           },
         });
       }
@@ -1406,6 +1472,151 @@ async function modificarReserva(id, data) {
 
   const resultado = await prisma.$transaction(ejecutar, { timeout: 15000, maxWait: 10000 });
   return soloPrevia ? resultado : formatearReserva(resultado);
+}
+
+const ESTADOS_QUE_ADMITEN_AJUSTE = [ESTADO_RESERVA.CONFIRMADA, ESTADO_RESERVA.EN_CURSO];
+
+function exigirEstadoParaAjuste(reserva) {
+  if (!ESTADOS_QUE_ADMITEN_AJUSTE.includes(reserva.estado)) {
+    throw new ErrorDeNegocio(
+      `Solo se puede ajustar el precio de una reserva "${ESTADO_RESERVA.CONFIRMADA}" o "${ESTADO_RESERVA.EN_CURSO}" (ésta está "${reserva.estado}").`
+    );
+  }
+}
+
+// Etapa 4B (HU-97) — el gerente pisa a mano el precio de una o más noches YA
+// congeladas (cortesía o descuento negociado), con motivo obligatorio y
+// trazabilidad. A diferencia de modificarReserva: no cambian habitación,
+// fecha, ocupación ni plan, así que las filas de ReservaNoche se actualizan
+// una por una (nunca delete+create), y NO aplica la restricción de "plan no
+// reembolsable" de la regla 9 (modificarReserva) — es una decisión manual
+// explícita del gerente, no una recotización contra el motor.
+//
+// `usuario` viene SIEMPRE de la sesión autenticada (req.usuarioActual.usuario
+// en el controlador, nunca del body) — ver la ruta en reservas.routes.js.
+async function ajustarPrecioReserva(id, data) {
+  const reservaId = enteroPositivo(id, "id");
+  const nocheIds = Array.isArray(data?.nocheIds) ? data.nocheIds.map((n) => enteroPositivo(n, "Cada noche elegida")) : [];
+  if (nocheIds.length === 0) throw new ErrorDeNegocio("Elegí al menos una noche para ajustar.");
+
+  const modo = data?.modo;
+  if (!MODOS_AJUSTE_PRECIO.includes(modo)) {
+    throw new ErrorDeNegocio(`modo debe ser uno de: ${MODOS_AJUSTE_PRECIO.join(", ")}.`);
+  }
+  const valor = Number(data?.valor);
+  if (!Number.isFinite(valor)) throw new ErrorDeNegocio("valor debe ser un número.");
+  if (modo === MODO_AJUSTE_PRECIO.PRECIO_FIJO && valor < 0) {
+    throw new ErrorDeNegocio("El precio fijo debe ser mayor o igual a 0.");
+  }
+  if (modo === MODO_AJUSTE_PRECIO.DESCUENTO_PORCENTAJE && !(valor > 0 && valor <= 100)) {
+    throw new ErrorDeNegocio("El porcentaje de descuento debe ser mayor a 0 y hasta 100.");
+  }
+
+  const motivo = textoObligatorio(data?.motivo, "El motivo del ajuste", MOTIVO_AJUSTE_MAX);
+  if (motivo.length < MOTIVO_AJUSTE_MIN) {
+    throw new ErrorDeNegocio(`El motivo del ajuste debe tener al menos ${MOTIVO_AJUSTE_MIN} caracteres.`);
+  }
+
+  const soloPrevia = data?.soloPrevia === true;
+  // El usuario del body nunca se usa (ver comentario de arriba) salvo en
+  // este único caso: cuando data.usuario ya viene resuelto por el
+  // controlador desde req.usuarioActual, es la única fuente válida.
+  const usuario = typeof data?.usuario === "string" && data.usuario.trim() ? data.usuario.trim() : "sistema";
+
+  const actual = await prisma.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
+  if (!actual) throw new ErrorDeNegocio("La reserva no existe.", 404);
+  exigirEstadoParaAjuste(actual);
+
+  const todasLasNoches = actual.reservaHabitaciones.flatMap((rh) =>
+    rh.reservaNoches.map((n) => ({ ...n, habitacionNumero: rh.habitacion?.numero ?? null }))
+  );
+  const nochePorId = new Map(todasLasNoches.map((n) => [n.id, n]));
+  for (const nocheId of nocheIds) {
+    if (!nochePorId.has(nocheId)) throw new ErrorDeNegocio(`La noche ${nocheId} no pertenece a esta reserva.`);
+  }
+
+  const totalAnterior = todasLasNoches.reduce((acc, n) => acc + Number(n.precioNoche), 0);
+
+  const nochesAjustadas = nocheIds.map((nocheId) => {
+    const noche = nochePorId.get(nocheId);
+    const precioActual = Number(noche.precioNoche);
+    const precioNuevo = Number(
+      modo === MODO_AJUSTE_PRECIO.PRECIO_FIJO
+        ? redondearAMultiploDe100(valor)
+        : redondearAMultiploDe100(precioActual * (1 - valor / 100))
+    );
+    // Regla 1 — un segundo ajuste sobre la misma noche NO pisa
+    // precioOriginal: conserva el precio de antes del PRIMER ajuste.
+    const precioOriginal = noche.ajustada ? Number(noche.precioOriginal) : precioActual;
+    return { id: noche.id, fecha: noche.fecha, habitacionNumero: noche.habitacionNumero, precioActual, precioNuevo, precioOriginal };
+  });
+  const nochesAjustadasPorId = new Map(nochesAjustadas.map((n) => [n.id, n]));
+  const totalNuevo = todasLasNoches.reduce((acc, n) => {
+    const ajuste = nochesAjustadasPorId.get(n.id);
+    return acc + (ajuste ? ajuste.precioNuevo : Number(n.precioNoche));
+  }, 0);
+
+  if (soloPrevia) {
+    return {
+      totalAnterior,
+      totalNuevo,
+      diferencia: Number((totalNuevo - totalAnterior).toFixed(2)),
+      noches: nochesAjustadas.map(({ id: nid, fecha, habitacionNumero, precioActual, precioNuevo }) => ({
+        id: nid,
+        fecha,
+        habitacionNumero,
+        precioActual,
+        precioNuevo,
+      })),
+    };
+  }
+
+  const ejecutar = async (tx) => {
+    // Lock de una sola fila (mismo patrón que checkOut.servicio.js): acá no
+    // se tocan habitaciones/fechas, así que no hace falta el lock de
+    // reservas_habitaciones que sí usa modificarReserva.
+    await tx.$queryRaw(Prisma.sql`SELECT id FROM reservas WHERE id = ${reservaId} FOR UPDATE`);
+    const reservaActual = await tx.reserva.findUnique({ where: { id: reservaId }, select: { estado: true } });
+    if (!reservaActual) throw new ErrorDeNegocio("La reserva no existe.", 404);
+    exigirEstadoParaAjuste(reservaActual);
+
+    const ahora = new Date();
+    for (const ajuste of nochesAjustadas) {
+      await tx.reservaNoche.update({
+        where: { id: ajuste.id },
+        data: {
+          precioNoche: ajuste.precioNuevo,
+          precioOriginal: ajuste.precioOriginal,
+          ajustada: true,
+          motivoAjuste: motivo,
+          ajustadoPor: usuario,
+          ajustadoEn: ahora,
+        },
+      });
+    }
+    return tx.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
+  };
+
+  const resultado = await prisma.$transaction(ejecutar, { timeout: 15000, maxWait: 10000 });
+  return formatearReserva(resultado);
+}
+
+// Etapa 4B (HU-98) — delgado a propósito: la lógica de negocio vive en
+// tarifas/penalidades.servicio.js (el enunciado pide que viva ahí), reservas
+// solo la expone bajo /api/reservas/:id/penalidad. Mismo envoltorio fino que
+// cotizarReservaEnvuelto: penalidades.servicio.js tiene su propia clase
+// ErrorDeNegocio, sin traducirla acá el controlador la trataría como un
+// error inesperado (500) en vez del 400/404 real.
+async function obtenerPenalidad(id, tipo) {
+  const reservaId = enteroPositivo(id, "id");
+  try {
+    return await penalidadesServicio.calcularPenalidad({ reservaId, tipo, momento: new Date() });
+  } catch (err) {
+    if (err instanceof penalidadesServicio.ErrorDeNegocio) {
+      throw new ErrorDeNegocio(err.message, err.statusCode);
+    }
+    throw err;
+  }
 }
 
 // HU-37 — al cancelar, el período vuelve a estar disponible (lo hace solo:
@@ -1531,8 +1742,10 @@ module.exports = {
   crearReservaEnTransaccion,
   normalizarAltaReserva,
   modificarReserva,
+  ajustarPrecioReserva,
   cancelarReserva,
   cotizarParaReserva,
+  obtenerPenalidad,
   // Lectura
   listarReservas,
   obtenerReserva,

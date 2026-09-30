@@ -45,6 +45,21 @@ const RANGO_MODIFICADOR_DIA = { min: -50, max: 50 };
 const MAX_NOCHES_ESTADIA = 30;
 const EDAD_MAXIMA_MENOR_SIN_CARGO = 12;
 
+// Etapa 4B (HU-97/HU-98).
+const MODO_AJUSTE_PRECIO = { PRECIO_FIJO: "PRECIO_FIJO", DESCUENTO_PORCENTAJE: "DESCUENTO_PORCENTAJE" };
+const MODOS_AJUSTE_PRECIO = [MODO_AJUSTE_PRECIO.PRECIO_FIJO, MODO_AJUSTE_PRECIO.DESCUENTO_PORCENTAJE];
+const MOTIVO_AJUSTE_MIN = 10;
+const MOTIVO_AJUSTE_MAX = 300;
+
+// Hora de check-in (HU-98) — no existía ninguna constante para esto todavía;
+// hora del reloj de Argentina, se combina con una fecha-sin-hora vía
+// combinarFechaConHoraArgentina (lib/fechas.js) para calcular el límite de
+// cancelación sin cargo de un plan reembolsable.
+const HORA_CHECKIN = { hora: 14, minuto: 0 };
+
+const TIPO_PENALIDAD = { CANCELACION: "CANCELACION", NO_SHOW: "NO_SHOW" };
+const TIPOS_PENALIDAD = [TIPO_PENALIDAD.CANCELACION, TIPO_PENALIDAD.NO_SHOW];
+
 module.exports = {
   NIVEL_TEMPORADA,
   NIVELES_TEMPORADA,
@@ -58,4 +73,11 @@ module.exports = {
   RANGO_MODIFICADOR_DIA,
   MAX_NOCHES_ESTADIA,
   EDAD_MAXIMA_MENOR_SIN_CARGO,
+  MODO_AJUSTE_PRECIO,
+  MODOS_AJUSTE_PRECIO,
+  MOTIVO_AJUSTE_MIN,
+  MOTIVO_AJUSTE_MAX,
+  HORA_CHECKIN,
+  TIPO_PENALIDAD,
+  TIPOS_PENALIDAD,
 };

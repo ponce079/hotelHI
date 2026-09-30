@@ -77,3 +77,18 @@ export async function cancelarReserva(id, motivoCancelacion) {
   const { data } = await api.post(`/reservas/${id}/cancelar`, { motivoCancelacion });
   return data;
 }
+
+// Etapa 4B (HU-97) — ajuste manual de precio (gerente). `usuario` no hace
+// falta mandarlo: el backend lo ignora e igual usa el de la sesión
+// autenticada (primer endpoint de reservas con auth real, ver
+// reservas.routes.js).
+export async function ajustarPrecioReserva(id, payload) {
+  const { data } = await api.post(`/reservas/${id}/ajuste-precio`, payload);
+  return data;
+}
+
+// Etapa 4B (HU-98) — cálculo de penalidad de solo lectura, no cobra nada.
+export async function obtenerPenalidadReserva(id, tipo) {
+  const { data } = await api.get(`/reservas/${id}/penalidad`, { params: { tipo } });
+  return data;
+}

@@ -83,12 +83,14 @@ export const MENU_GRUPOS = [
       },
       // Sprint 3 académico — Reservas (HU-36 a 42). Las pantallas públicas
       // (/disponibilidad y /reservar) no entran al menú: son del rol
-      // "Huésped" y viven fuera de la sesión de staff.
+      // "Huésped" y viven fuera de la sesión de staff. Etapa 4B (HU-97):
+      // gerente se suma (ver sesion.jsx:verReservas) — necesita llegar a la
+      // ficha de una reserva para ajustarle el precio.
       {
         to: "/reservas",
         label: "Reservas",
         icon: CalendarCheck,
-        roles: ["admin", "recepcionista"],
+        roles: ["admin", "recepcionista", "gerente"],
       },
       // Sprint 3 académico — Check-in (HU-43 a 47).
       {
