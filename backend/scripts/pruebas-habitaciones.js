@@ -19,9 +19,9 @@ const { hoyComoFechaUTC } = require("../src/lib/fechas");
 const UN_DIA_MS = 24 * 60 * 60 * 1000;
 
 // Payload completo válido para crear/actualizar una habitación — normalizarHabitacion
-// exige los 5 campos siempre, no soporta actualización parcial.
+// exige los 4 campos siempre, no soporta actualización parcial.
 function payloadHabitacion(extra = {}) {
-  return { numero: "900", capacidad: 2, piso: 1, tarifaPorNoche: 50000, ...extra };
+  return { numero: "900", capacidad: 2, piso: 1, ...extra };
 }
 
 async function sembrarReservaSobre(habitacionId, { estado, fechaHasta, codigoConfirmacion }) {

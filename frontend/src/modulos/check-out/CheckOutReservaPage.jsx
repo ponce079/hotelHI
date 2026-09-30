@@ -268,7 +268,7 @@ export function CheckOutReservaPage() {
                 <td className="px-3 py-2 font-mono text-[13px] font-medium">{h.numero}</td>
                 <td className="px-3 py-2 text-[13px]">{h.tipo}</td>
                 <td className="px-3 py-2 text-right font-mono text-xs">{h.noches}</td>
-                <td className="px-3 py-2 text-right font-mono text-xs">{moneda(h.tarifaPorNoche)}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs">{moneda(h.promedioPorNoche)}</td>
                 <td className="px-3 py-2 text-right font-mono text-xs">{moneda(h.subtotal)}</td>
               </tr>
             )}

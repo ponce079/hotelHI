@@ -117,8 +117,12 @@ async function consolidarCargos(reservaId, cliente = prisma) {
       ...conTipoPlano(rh.habitacion),
       // Promedio informativo (las noches pueden valer distinto entre sí
       // por temporada/día de semana) — el subtotal real es la suma de
-      // detalleNoches, no noches × este promedio.
-      tarifaPorNoche: redondear(subtotal / nochesHabitacion),
+      // detalleNoches, no noches × este promedio. Etapa 4C: renombrado de
+      // tarifaPorNoche a promedioPorNoche — ya no queda ninguna clave con
+      // el nombre de la columna eliminada de Habitacion, ni siquiera una
+      // que en realidad nunca la leyó (este valor siempre fue un cálculo,
+      // no la columna).
+      promedioPorNoche: redondear(subtotal / nochesHabitacion),
       noches: nochesHabitacion,
       detalleNoches,
       subtotal,

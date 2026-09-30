@@ -499,9 +499,8 @@ model OrdenPagoMedio {
 // ────────────────────────────────────────────────────────────
 
 // Etapa 1 de tarifas por temporada (HU-89) — catálogo formal de tipos de
-// habitación. Sobre esto se van a colgar las tarifas en las próximas
-// etapas: tarifaPorNoche SIGUE viviendo en Habitacion (precio por
-// habitación individual, no por tipo) — no mover ese campo acá.
+// habitación. El precio ya no vive en Habitacion (Etapa 4C eliminó
+// tarifaPorNoche): vive acá, versionado por temporada, en Tarifa.
 model TipoHabitacion {
   id            Int          @id @default(autoincrement())
   // 2-10 chars, MAYÚSCULAS, letras/dígitos/guion — validado en código
@@ -528,12 +527,10 @@ model TipoHabitacion {
 model Habitacion {
   id               Int     @id @default(autoincrement())
   numero           String  @unique
-  // Sin usar por código nuevo desde HU-89 — el tipo real vive en
-  // tipoHabitacionId. Se deja la columna (nullable) hasta el cierre de
-  // Etapa 1 (pasar tipoHabitacionId a NOT NULL + borrar esta columna),
-  // que se pide aparte cuando todo el equipo corrió la migración.
-  tipo             String?
-  tipoHabitacionId Int?
+  // Etapa 1 (HU-89) reemplazó esta columna de texto libre por la FK de
+  // abajo; Etapa 4C cerró la migración: tipoHabitacionId es obligatorio y
+  // la columna vieja (Habitacion.tipo) ya no existe.
+  tipoHabitacionId Int
   capacidad        Int
   piso             Int
   // Texto libre o JSON con el detalle de equipamiento.
@@ -549,11 +546,9 @@ model Habitacion {
   // "libre") cuando la orden se marca "Resuelta", en vez de liberar por error
   // una habitación que seguía ocupada. Se limpia (vuelve a null) al resolver.
   estadoAnterior   String?
-  // Precio por noche propio de la habitación (no una tarifa fija por tipo).
-  tarifaPorNoche   Decimal @db.Decimal(12, 2)
   activo           Boolean @default(true)
 
-  tipoHabitacion            TipoHabitacion?            @relation(fields: [tipoHabitacionId], references: [id])
+  tipoHabitacion            TipoHabitacion             @relation(fields: [tipoHabitacionId], references: [id])
   ordenesMantenimiento      OrdenMantenimiento[]
   reservaHabitaciones       ReservaHabitacion[]
   consumosServicioAdicional ConsumoServicioAdicional[]
@@ -597,12 +592,9 @@ model Reserva {
   codigoConfirmacion String         @unique
   huesped            Huesped        @relation(fields: [huespedId], references: [id])
   // Etapa 4A (HU-95/96) — un plan tarifario por reserva, elegido al
-  // confirmar. Nullable a propósito: no hay "plan por defecto" razonable a
-  // nivel schema (asumir que BAR siempre tiene un id fijo sería frágil).
-  // A nivel de aplicación es obligatorio desde el alta en adelante — pasa a
-  // NOT NULL recién en la Etapa 4C, después de migrar las reservas viejas.
-  planTarifarioId    Int?
-  planTarifario      PlanTarifario? @relation(fields: [planTarifarioId], references: [id])
+  // confirmar. Etapa 4C cerró la migración: obligatorio para toda reserva.
+  planTarifarioId    Int
+  planTarifario      PlanTarifario  @relation(fields: [planTarifarioId], references: [id])
 
   reservaHabitaciones        ReservaHabitacion[]
   consumosServicioAdicional  ConsumoServicioAdicional[]
@@ -621,12 +613,10 @@ model ReservaHabitacion {
   reservaId     Int
   habitacionId  Int
   // Etapa 4A (HU-95) — ocupación de ESTA habitación dentro de la reserva.
-  // `adultos` con default 2 es un bootstrap puntual para que el alta de
-  // esta columna sobre las reservas ya existentes no falle (db push exige
-  // un valor para las filas ya pobladas) — el script de migración lo
-  // corrige enseguida al valor real de cada una. Ese default se retira en
-  // la Etapa 4C: de acá en más toda alta nueva lo manda siempre explícito.
-  adultos       Int            @default(2)
+  // Etapa 4C retiró el default(2) que tenía adultos (era un bootstrap
+  // puntual para la migración de columna): toda alta nueva lo manda
+  // siempre explícito, sin caer en un valor implícito.
+  adultos       Int
   menores       Int            @default(0)
   reserva       Reserva        @relation(fields: [reservaId], references: [id])
   habitacion    Habitacion     @relation(fields: [habitacionId], references: [id])
@@ -975,8 +965,10 @@ model ReservaNoche {
   // Tarifa.vigenteDesde (parsearFechaSinHora / hoyComoFechaUTC, lib/fechas.js).
   fecha               DateTime
   // temporadaId/tarifaId quedan null en las filas creadas por la migración
-  // (origen MIGRACION): esas noches usan el tarifaPorNoche viejo de la
-  // habitación, sin una Tarifa/Temporada real detrás para apuntar.
+  // (origen MIGRACION): esas noches usan el precio viejo que ya tenía la
+  // habitación (Habitacion.tarifaPorNoche, columna eliminada en la Etapa
+  // 4C — este backfill histórico ya corrió, no hay una Tarifa/Temporada
+  // real detrás de esas filas para apuntar).
   temporadaId         Int?
   tarifaId            Int?
   planTarifarioId     Int

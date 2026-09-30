@@ -15,7 +15,6 @@ const VACIO = {
   capacidad: "",
   piso: "",
   equipamiento: "",
-  tarifaPorNoche: "",
 };
 
 export function HabitacionModal({ habitacion, onClose, onExito }) {
@@ -28,7 +27,6 @@ export function HabitacionModal({ habitacion, onClose, onExito }) {
           capacidad: String(habitacion.capacidad),
           piso: String(habitacion.piso),
           equipamiento: habitacion.equipamiento ?? "",
-          tarifaPorNoche: String(habitacion.tarifaPorNoche),
         }
       : VACIO
   );
@@ -54,7 +52,6 @@ export function HabitacionModal({ habitacion, onClose, onExito }) {
         tipoHabitacionId: Number(form.tipoHabitacionId),
         capacidad: Number(form.capacidad),
         piso: Number(form.piso),
-        tarifaPorNoche: Number(form.tarifaPorNoche),
       };
       return editando ? actualizarHabitacion(habitacion.id, payload) : crearHabitacion(payload);
     },
@@ -80,7 +77,6 @@ export function HabitacionModal({ habitacion, onClose, onExito }) {
     if (!form.tipoHabitacionId) nuevos.tipoHabitacionId = "Elegí un tipo de habitación.";
     if (!Number.isInteger(Number(form.capacidad)) || Number(form.capacidad) <= 0) nuevos.capacidad = "Ingresá una capacidad mayor a 0.";
     if (!Number.isInteger(Number(form.piso)) || Number(form.piso) < 0) nuevos.piso = "Ingresá un piso mayor o igual a 0.";
-    if (!(Number(form.tarifaPorNoche) > 0)) nuevos.tarifaPorNoche = "Ingresá una tarifa mayor a 0.";
     return nuevos;
   }
 
@@ -97,7 +93,7 @@ export function HabitacionModal({ habitacion, onClose, onExito }) {
   return (
     <Modal
       titulo={editando ? `Editar habitación ${habitacion.numero}` : "Nueva habitación"}
-      subtitulo="Inventario y tarifa de la habitación"
+      subtitulo="Inventario de la habitación"
       onClose={onClose}
       ancho="max-w-2xl"
     >
@@ -143,16 +139,6 @@ export function HabitacionModal({ habitacion, onClose, onExito }) {
             value={form.piso}
             onChange={(e) => cambiar("piso", e.target.value)}
             error={errores.piso}
-          />
-          <Input
-            label="Tarifa por noche *"
-            type="number"
-            min="0.01"
-            step="0.01"
-            value={form.tarifaPorNoche}
-            onChange={(e) => cambiar("tarifaPorNoche", e.target.value)}
-            error={errores.tarifaPorNoche}
-            placeholder="0,00"
           />
           <div className="sm:col-span-2">
             <label className="flex flex-col gap-1.5 font-body text-sm">

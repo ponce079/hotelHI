@@ -12,6 +12,17 @@
 // migrado. Corre dentro de una única transacción (tabla chica, sin el
 // problema de pool de conexiones que tiene migracion-consolidar-centrales.js
 // con sus decenas de pasos contra tablas grandes).
+//
+// ════════════════════════════════════════════════════════════
+// HISTÓRICO — Etapa 4C (cierre del módulo de tarifas) eliminó
+// Habitacion.tipo, la columna de texto libre que este script lee. Ya no
+// puede correr contra el schema final: solo funciona sobre el schema
+// intermedio (tag de git `etapa4c-schema-intermedio`), en el paso 3 del
+// runbook de despliegue (docs/despliegue-tarifas.md) — antes de sembrar
+// planes/tarifas y de migrar las reservas viejas. Se conserva en el repo
+// como registro de cómo se creó el catálogo TipoHabitacion, no para volver
+// a correr.
+// ════════════════════════════════════════════════════════════
 require("dotenv").config();
 const prisma = require("../src/lib/prisma");
 

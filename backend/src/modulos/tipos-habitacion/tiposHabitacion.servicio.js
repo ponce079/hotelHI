@@ -1,9 +1,8 @@
 // Catálogo de Tipos de Habitación (HU-89) — Etapa 1 de tarifas por
 // temporada. Lógica de negocio pura: no conoce HTTP.
 //
-// Sobre este catálogo se van a colgar las tarifas en las próximas etapas.
-// tarifaPorNoche sigue viviendo en Habitacion (precio por habitación
-// individual) — este módulo no la toca para nada.
+// El precio cuelga de este catálogo (Tarifa, versionada por tipo ×
+// temporada) desde la Etapa 2 — este módulo no calcula ningún importe.
 
 const prisma = require("../../lib/prisma");
 const {

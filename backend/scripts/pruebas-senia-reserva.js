@@ -76,9 +76,9 @@ const HUESPED = { nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "
 // --------------------------------------------------------------
 // Fixture mínima de tarifas (Etapa 4A) — crearReserva ahora pasa por el
 // motor de cotización, así que necesita un tipo con tarifa vigente. Una
-// temporada Base + un plan BAR, y una Tarifa por tipo al mismo precio que
-// ya traía `tarifaPorNoche` — así el total que calcula el motor coincide
-// con el que estas pruebas ya esperaban (150000 = 3 noches × 50000, etc.).
+// temporada Base + un plan BAR, y una Tarifa por tipo al precio que le pase
+// cada prueba (Etapa 4C: Habitacion.tarifaPorNoche no existe más, el precio
+// se pasa como parámetro aparte a sembrarHabitacion, no como campo).
 // --------------------------------------------------------------
 const PRECIO_BASE_PRUEBA = 50000;
 
@@ -125,9 +125,9 @@ async function asegurarTarifaParaTipo(tipoHabitacionId, precioPorNoche = PRECIO_
   }
 }
 
-async function sembrarHabitacion(extra = {}) {
+async function sembrarHabitacion(extra = {}, precioPorNoche = PRECIO_BASE_PRUEBA) {
   const fila = base._sembrarHabitacion(extra);
-  await asegurarTarifaParaTipo(fila.tipoHabitacionId, fila.tarifaPorNoche);
+  await asegurarTarifaParaTipo(fila.tipoHabitacionId, precioPorNoche);
   return fila;
 }
 
@@ -179,7 +179,7 @@ async function main() {
 
   await prueba("cobra la seña (20%) contra la reserva recién creada y queda reflejada en el saldo", async () => {
     limpiar();
-    await sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 });
+    await sembrarHabitacion({ numero: "101" }, 50000);
     const reserva = await crearReserva({
       fechaDesde: enDias(10),
       fechaHasta: enDias(13), // 3 noches = 150000
@@ -201,7 +201,7 @@ async function main() {
 
   await prueba("la seña queda correctamente descontada al llegar al check-out (consolidarCargos)", async () => {
     limpiar();
-    await sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 });
+    await sembrarHabitacion({ numero: "101" }, 50000);
     const reserva = await crearReserva({
       fechaDesde: enDias(0),
       fechaHasta: enDias(3), // 3 noches = 150000
@@ -231,7 +231,7 @@ async function main() {
 
   await prueba("cancelar con 24hs o más de anticipación anula la seña automáticamente", async () => {
     limpiar();
-    await sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 });
+    await sembrarHabitacion({ numero: "101" }, 50000);
     const reserva = await crearReserva({
       fechaDesde: enDias(10),
       fechaHasta: enDias(13),
@@ -250,7 +250,7 @@ async function main() {
 
   await prueba("cancelar con menos de 24hs de anticipación NO anula la seña", async () => {
     limpiar();
-    await sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 });
+    await sembrarHabitacion({ numero: "101" }, 50000);
     // fechaDesde = hoy: a esta hora del día, siempre quedan menos de 24hs
     // de anticipación real respecto al momento de cancelar.
     const reserva = await crearReserva({
@@ -269,7 +269,7 @@ async function main() {
 
   await prueba("no-show (fecha de ingreso ya pasada, nunca hubo check-in) NO anula la seña al cancelar", async () => {
     limpiar();
-    await sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 });
+    await sembrarHabitacion({ numero: "101" }, 50000);
     const reserva = await crearReserva({
       fechaDesde: enDias(0),
       fechaHasta: enDias(3),
@@ -305,8 +305,8 @@ async function main() {
 
   await prueba("lista pagos de todas las reservas, con reserva y huésped incluidos", async () => {
     limpiar();
-    await sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 });
-    await sembrarHabitacion({ numero: "102", tarifaPorNoche: 30000 });
+    await sembrarHabitacion({ numero: "101" }, 50000);
+    await sembrarHabitacion({ numero: "102" }, 30000);
     const reservaA = await crearReserva({
       fechaDesde: enDias(10),
       fechaHasta: enDias(12),
@@ -339,7 +339,7 @@ async function main() {
 
   await prueba("filtra por concepto", async () => {
     limpiar();
-    await sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 });
+    await sembrarHabitacion({ numero: "101" }, 50000);
     const reserva = await crearReserva({
       fechaDesde: enDias(10),
       fechaHasta: enDias(12),

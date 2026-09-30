@@ -57,10 +57,10 @@ const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Efectivo" };
 // Fixture mínima de tarifas (Etapa 4A) — desde que crearReserva/
 // registrarCheckInWalkIn pasan por el motor de cotización, toda habitación
 // necesita un tipo con tarifa vigente. Una temporada Base + un plan BAR, y
-// una Tarifa por tipo al mismo precio que ya usaban las pruebas de acá
-// (tarifaPorNoche, el default de _sembrarHabitacion es 50000) — así el
-// total que calcula el motor coincide con el que estas pruebas ya
-// esperaban de la vieja cuenta noches × tarifaPorNoche.
+// una Tarifa por tipo al precio que le pase cada prueba (ver
+// sembrarHabitacion más abajo — Etapa 4C: el precio ya no viaja metido en
+// el objeto de la habitación, porque Habitacion.tarifaPorNoche no existe
+// más; se pasa como parámetro aparte).
 // --------------------------------------------------------------
 const PRECIO_BASE_PRUEBA = 50000;
 
@@ -108,11 +108,12 @@ async function asegurarTarifaParaTipo(tipoHabitacionId, precioPorNoche = PRECIO_
 }
 
 // Envoltorio de base._sembrarHabitacion que además garantiza tarifa vigente
-// para el tipo recién creado, al mismo precio que ya traía `tarifaPorNoche`
-// (o el default, si no se pasó ninguno).
-async function sembrarHabitacion(extra = {}) {
+// para el tipo recién creado. `precioPorNoche` es un parámetro aparte (no
+// un campo de `extra`): Habitacion ya no tiene tarifaPorNoche, así que acá
+// no hay ningún campo de la fila de donde leer el precio.
+async function sembrarHabitacion(extra = {}, precioPorNoche = PRECIO_BASE_PRUEBA) {
   const fila = base._sembrarHabitacion(extra);
-  await asegurarTarifaParaTipo(fila.tipoHabitacionId, fila.tarifaPorNoche);
+  await asegurarTarifaParaTipo(fila.tipoHabitacionId, precioPorNoche);
   return fila;
 }
 
@@ -347,7 +348,7 @@ async function main() {
 
   await prueba("Efectivo registra un PagoEstadia real por el monto fijo, que se descuenta en el check-out", async () => {
     limpiar();
-    await sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 }); // 3 noches = 150000
+    await sembrarHabitacion({ numero: "101" }, 50000); // 3 noches = 150000
     const reserva = await crearReservaFixture();
     await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
@@ -373,7 +374,7 @@ async function main() {
 
   await prueba("Tarjeta crédito/débito también registra el monto fijo como PagoEstadia real, con su referencia", async () => {
     limpiar();
-    await sembrarHabitacion({ numero: "101", tarifaPorNoche: 50000 }); // 3 noches = 150000
+    await sembrarHabitacion({ numero: "101" }, 50000); // 3 noches = 150000
     const reserva = await crearReservaFixture();
     await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
@@ -418,7 +419,7 @@ async function main() {
   // pendiente de la estadía.
   await prueba("la garantía se cobra igual aunque supere el saldo pendiente (estadía más barata que el monto fijo)", async () => {
     limpiar();
-    await sembrarHabitacion({ numero: "101", tarifaPorNoche: 20000 }); // 1 noche = 20000 < 30000 de garantía
+    await sembrarHabitacion({ numero: "101" }, 20000); // 1 noche = 20000 < 30000 de garantía
     const reserva = await crearReservaFixture({ fechaHasta: enDias(1) });
     await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
@@ -436,7 +437,7 @@ async function main() {
 
   await prueba("la garantía se cobra igual con una seña ya pagada de antes (mismo bug, otro camino)", async () => {
     limpiar();
-    await sembrarHabitacion({ numero: "101", tarifaPorNoche: 20000 }); // 1 noche = 20000
+    await sembrarHabitacion({ numero: "101" }, 20000); // 1 noche = 20000
     const reserva = await crearReservaFixture({ fechaHasta: enDias(1) });
     // Simula la seña (HU-88) que ya se cobró al reservar: 20% de 20000 = 4000.
     await pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo: "Efectivo", importe: 4000 }], concepto: "Seña" });
@@ -455,7 +456,7 @@ async function main() {
 
   await prueba("walk-in con garantía en efectivo también registra el monto fijo como PagoEstadia real", async () => {
     limpiar();
-    await sembrarHabitacion({ numero: "101", tarifaPorNoche: 20000 });
+    await sembrarHabitacion({ numero: "101" }, 20000);
     const walkIn = await walkInFixture({
       fechaHasta: enDias(2),
       garantiaConfirmada: true,

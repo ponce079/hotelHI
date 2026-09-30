@@ -37,7 +37,6 @@ const BASE = {
   capacidad: 2,
   piso: 3,
   equipamiento: "Aire acondicionado, TV smart",
-  tarifaPorNoche: "18500",
   activo: true,
   motivoBloqueo: null,
   ordenesMantenimiento: [],

@@ -44,10 +44,6 @@ function normalizarHabitacion(data) {
   const tipoHabitacionId = enteroPositivo(data?.tipoHabitacionId, "tipoHabitacionId");
   const capacidad = enteroPositivo(data?.capacidad, "capacidad");
   const piso = enteroPositivo(data?.piso, "piso", { permitirCero: true });
-  const tarifaPorNoche = Number(data?.tarifaPorNoche);
-  if (!Number.isFinite(tarifaPorNoche) || tarifaPorNoche <= 0) {
-    throw new ErrorDeNegocio("tarifaPorNoche debe ser un número mayor a 0.");
-  }
 
   const equipamiento = typeof data?.equipamiento === "string" ? data.equipamiento.trim() : "";
   if (equipamiento.length > LIMITES_HABITACION.equipamiento) {
@@ -60,7 +56,6 @@ function normalizarHabitacion(data) {
     capacidad,
     piso,
     equipamiento: equipamiento || null,
-    tarifaPorNoche,
   };
 }
 

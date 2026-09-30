@@ -2,11 +2,11 @@
 // de negocio pura, de solo lectura: no persiste nada y no conoce HTTP.
 //
 // Es la ÚNICA fuente de cálculo de precio por temporada del sistema — la
-// Etapa 4 la va a reutilizar tal cual para reservas, web, walk-in y
-// modificaciones, sin reimplementar nada de esto. No toca
-// Habitacion.tarifaPorNoche ni ningún cálculo de importe existente de
-// reservas/disponibilidad/check-in/check-out/seña (HU-88), ni la regla fija
-// de 24hs de cancelación — nada de eso se conecta acá todavía.
+// Etapa 4 la reutiliza tal cual para reservas, web, walk-in, modificaciones
+// y check-out (vía ReservaNoche). La seña (HU-88) y la regla fija de 24hs
+// de cancelación siguen sin conectarse acá — ver calcularPenalidad
+// (penalidades.servicio.js) para el cálculo de penalidad por cancelación/
+// no-show, tampoco conectado a cancelarReserva todavía.
 //
 // Toda la aritmética de precio (bruto, modificador, descuento, redondeo,
 // total y promedio) se hace con Prisma.Decimal, nunca con Number/float: el

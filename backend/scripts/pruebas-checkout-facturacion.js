@@ -3,9 +3,8 @@
 // consolidarCargos, crearPago (con su lock contra condiciones de carrera),
 // crearComprobante, crearNotaCredito y anularComprobante no tenían NINGÚN
 // test automatizado: el único script que toca el módulo
-// (pruebas-integracion-mantenimiento-checkout.js) siembra las habitaciones
-// con tarifaPorNoche = 0 a propósito para no ejercitar la plata. Este script
-// SÍ la ejercita.
+// (pruebas-integracion-mantenimiento-checkout.js) siembra la Tarifa en $0 a
+// propósito para no ejercitar la plata. Este script SÍ la ejercita.
 //
 // Corre SIN base de datos y sin red — mismo doble en memoria que
 // pruebas-checkin.js / pruebas-servicios-adicionales.js (_dobleSprint3.js,
@@ -77,8 +76,9 @@ const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Tarjeta de créd
 // --------------------------------------------------------------
 // Fixture mínima de tarifas (Etapa 4A) — crearReserva ahora pasa por el
 // motor de cotización, así que necesita un tipo con tarifa vigente. Una
-// temporada Base + un plan BAR, y una Tarifa por tipo al mismo precio que
-// ya traía `tarifaPorNoche` de cada prueba.
+// temporada Base + un plan BAR, y una Tarifa por tipo al precio que le pase
+// cada prueba (Etapa 4C: ya no viaja como campo tarifaPorNoche de la
+// habitación — esa columna no existe más).
 // --------------------------------------------------------------
 async function asegurarTemporadaYPlanBase() {
   let temporadaBase = base._datos.temporada.find((t) => t.nivel === "BASE");
@@ -127,9 +127,9 @@ async function asegurarTarifaParaTipo(tipoHabitacionId, precioPorNoche) {
 // HU-43/47 (crearReserva + confirmarCheckInConReserva), ya probado en
 // pruebas-checkin.js. `numero` tiene que ser único por corrida de
 // `limpiar()` así que cada prueba pasa el suyo.
-async function crearReservaEnCurso({ numero, tarifaPorNoche = 10000, noches = 2 } = {}) {
-  const habitacion = base._sembrarHabitacion({ numero, tarifaPorNoche });
-  await asegurarTarifaParaTipo(habitacion.tipoHabitacionId, tarifaPorNoche);
+async function crearReservaEnCurso({ numero, precioPorNoche = 10000, noches = 2 } = {}) {
+  const habitacion = base._sembrarHabitacion({ numero });
+  await asegurarTarifaParaTipo(habitacion.tipoHabitacionId, precioPorNoche);
   const { planBar } = await asegurarTemporadaYPlanBase();
   const fechaDesde = enDias(0);
   const fechaHasta = enDias(noches);
@@ -164,7 +164,7 @@ async function main() {
   await prueba("alojamiento + servicios adicionales + verificación dan el total, y el pago parcial deja el saldo correcto", async () => {
     limpiar();
     // 2 noches x $10.000 = $20.000 de alojamiento.
-    const { habitacion, reserva } = await crearReservaEnCurso({ numero: "301", tarifaPorNoche: 10000, noches: 2 });
+    const { habitacion, reserva } = await crearReservaEnCurso({ numero: "301", precioPorNoche: 10000, noches: 2 });
 
     await serviciosAdicionalesServicio.registrarConsumo({
       reservaId: reserva.id,
@@ -200,7 +200,7 @@ async function main() {
 
   await prueba("un pago anulado deja de contar para el saldo", async () => {
     limpiar();
-    const { reserva } = await crearReservaEnCurso({ numero: "302", tarifaPorNoche: 5000, noches: 1 });
+    const { reserva } = await crearReservaEnCurso({ numero: "302", precioPorNoche: 5000, noches: 1 });
     const pago = await pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo: "Efectivo", importe: 5000 }] });
     assert.equal((await checkOutServicio.consolidarCargos(reserva.id)).saldo, 0);
 
@@ -238,7 +238,7 @@ async function main() {
 
   await prueba("rechaza si el total de los medios supera el saldo pendiente", async () => {
     limpiar();
-    const { reserva } = await crearReservaEnCurso({ numero: "305", tarifaPorNoche: 5000, noches: 1 });
+    const { reserva } = await crearReservaEnCurso({ numero: "305", precioPorNoche: 5000, noches: 1 });
     await esperaError(
       () => pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo: "Efectivo", importe: 5001 }] }),
       "supera el saldo pendiente"
@@ -247,7 +247,7 @@ async function main() {
 
   await prueba("pago parcial queda 'Parcial'; pago que cubre el saldo exacto queda 'Pagado'", async () => {
     limpiar();
-    const { reserva } = await crearReservaEnCurso({ numero: "306", tarifaPorNoche: 10000, noches: 1 });
+    const { reserva } = await crearReservaEnCurso({ numero: "306", precioPorNoche: 10000, noches: 1 });
 
     const parcial = await pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo: "Efectivo", importe: 4000 }] });
     assert.equal(parcial.estado, "Parcial");
@@ -260,7 +260,7 @@ async function main() {
 
   await prueba("combina medios de pago (efectivo + tarjeta) en un solo pago y suma bien el importe", async () => {
     limpiar();
-    const { reserva } = await crearReservaEnCurso({ numero: "307", tarifaPorNoche: 10000, noches: 1 });
+    const { reserva } = await crearReservaEnCurso({ numero: "307", precioPorNoche: 10000, noches: 1 });
     const pago = await pagoEstadiaServicio.crearPago({
       reservaId: reserva.id,
       medios: [
@@ -275,7 +275,7 @@ async function main() {
 
   await prueba("un pago con tarjeta sin la autorización (referencia) se rechaza en el backend, no solo en la pantalla", async () => {
     limpiar();
-    const { reserva } = await crearReservaEnCurso({ numero: "309", tarifaPorNoche: 10000, noches: 1 });
+    const { reserva } = await crearReservaEnCurso({ numero: "309", precioPorNoche: 10000, noches: 1 });
     for (const tipo of ["Tarjeta crédito", "Tarjeta débito"]) {
       await assert.rejects(
         () => pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo, importe: 10000 }] }),
@@ -313,7 +313,7 @@ async function main() {
       // deuda de $10.000). Con el lock, la segunda transacción en llegar
       // recalcula el saldo YA DESCONTADO por la primera y se rechaza —
       // sin importar cuál de las dos gane la carrera (no se asume orden).
-      const { reserva } = await crearReservaEnCurso({ numero: "308", tarifaPorNoche: 10000, noches: 1 });
+      const { reserva } = await crearReservaEnCurso({ numero: "308", precioPorNoche: 10000, noches: 1 });
 
       const resultados = await Promise.allSettled([
         pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo: "Efectivo", importe: 6000 }] }),
@@ -343,8 +343,8 @@ async function main() {
 
   await prueba("la numeración es correlativa (CE-00001, CE-00002, ...)", async () => {
     limpiar();
-    const { reserva: reservaA } = await crearReservaEnCurso({ numero: "401", tarifaPorNoche: 10000, noches: 1 });
-    const { reserva: reservaB } = await crearReservaEnCurso({ numero: "402", tarifaPorNoche: 10000, noches: 1 });
+    const { reserva: reservaA } = await crearReservaEnCurso({ numero: "401", precioPorNoche: 10000, noches: 1 });
+    const { reserva: reservaB } = await crearReservaEnCurso({ numero: "402", precioPorNoche: 10000, noches: 1 });
 
     const c1 = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reservaA.id, importeTotal: 1000, alicuotaIVA: 21 });
     const c2 = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reservaB.id, importeTotal: 1000, alicuotaIVA: 21 });
@@ -433,7 +433,7 @@ async function main() {
 
   await prueba("reporteCajaDiaria descuenta las notas de crédito del día del total cobrado", async () => {
     limpiar();
-    const { reserva } = await crearReservaEnCurso({ numero: "409", tarifaPorNoche: 10000, noches: 1 });
+    const { reserva } = await crearReservaEnCurso({ numero: "409", precioPorNoche: 10000, noches: 1 });
 
     await pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo: "Efectivo", importe: 10000 }] });
     const comprobante = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: 10000, alicuotaIVA: 21 });

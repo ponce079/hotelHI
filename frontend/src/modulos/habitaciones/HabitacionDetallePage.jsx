@@ -27,8 +27,6 @@ import {
   ESTADO_ORDEN_MANTENIMIENTO_BADGE,
 } from "./habitaciones.constantes";
 
-const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
-
 function Dato({ etiqueta, children }) {
   return (
     <div>
@@ -158,9 +156,7 @@ export function HabitacionDetallePage() {
             {ESTADO_HABITACION_LABEL[habitacion.estado] ?? habitacion.estado}
           </span>
         </div>
-        <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
-          {habitacion.tipo} · {FORMATO_MONEDA.format(Number(habitacion.tarifaPorNoche))}/noche
-        </p>
+        <p className="mt-1.5 font-mono text-[11px] text-hueso/65">{habitacion.tipo}</p>
       </div>
 
       <div className="rounded-lg border border-borde bg-white p-5">
@@ -179,10 +175,12 @@ export function HabitacionDetallePage() {
             {acciones.length > 0 && <MenuAcciones acciones={acciones} />}
           </div>
         </div>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {/* Etapa 4C — sin "Tarifa / noche" (columna Habitacion.tarifaPorNoche
+            eliminada): el precio depende de fecha/temporada/plan, ya está en
+            Tarifas (HU-92), no se duplica acá. */}
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
           <Dato etiqueta="Piso">{habitacion.piso}</Dato>
           <Dato etiqueta="Capacidad">{habitacion.capacidad} personas</Dato>
-          <Dato etiqueta="Tarifa / noche">{FORMATO_MONEDA.format(Number(habitacion.tarifaPorNoche))}</Dato>
           <Dato etiqueta="Equipamiento">{habitacion.equipamiento}</Dato>
         </div>
       </div>

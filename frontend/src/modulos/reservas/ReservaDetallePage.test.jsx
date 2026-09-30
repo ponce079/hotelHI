@@ -31,7 +31,7 @@ const RESERVA_BASE = {
   totalEstimadoAlojamiento: 90000,
   cantidadHabitaciones: 1,
   huesped: { nombre: "Marcos Beltrán", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "", preferencias: "" },
-  habitaciones: [{ id: 1, numero: "301", tipo: "Doble", tipoHabitacionId: 10, capacidad: 2, piso: 3, estado: "libre", tarifaPorNoche: 30000 }],
+  habitaciones: [{ id: 1, numero: "301", tipo: "Doble", tipoHabitacionId: 10, capacidad: 2, piso: 3, estado: "libre" }],
   notificaciones: [],
 };
 

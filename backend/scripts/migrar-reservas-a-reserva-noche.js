@@ -27,6 +27,18 @@
 // migrar dos veces ninguna.
 //
 // Correr con: node scripts/migrar-reservas-a-reserva-noche.js
+//
+// ════════════════════════════════════════════════════════════
+// HISTÓRICO — Etapa 4C (cierre del módulo de tarifas) eliminó
+// Habitacion.tarifaPorNoche, la columna que este script lee (línea de
+// arriba). Ya no puede correr contra el schema final: solo funciona sobre
+// el schema intermedio (tag de git `etapa4c-schema-intermedio`), en el
+// paso 6 del runbook de despliegue (docs/despliegue-tarifas.md) — después
+// de la Etapa 1 (migracion-tipo-habitacion.js) y de sembrar los planes
+// (seed-tarifas.js), y ANTES de aplicar el schema final con las columnas
+// eliminadas/NOT NULL. Se conserva en el repo como registro de cómo se
+// migraron las reservas anteriores a la Etapa 4A, no para volver a correr.
+// ════════════════════════════════════════════════════════════
 
 require("dotenv").config();
 const prisma = require("../src/lib/prisma");

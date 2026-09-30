@@ -106,8 +106,8 @@ const TABLAS = [
   // Sumadas para pruebas-integracion-mantenimiento-checkout.js: lo mínimo
   // que necesita consolidarCargos (checkOut.servicio.js) para no fallar al
   // leerlas — cargoVerificacionCheckout y pagoEstadiaMedio quedan vacías en
-  // esas pruebas a propósito (tarifaPorNoche = 0 en la habitación sembrada,
-  // así el saldo da 0 sin necesidad de simular un pago real).
+  // esas pruebas a propósito (la Tarifa se siembra a $0 para esas
+  // habitaciones, así el saldo da 0 sin necesidad de simular un pago real).
   "cargoVerificacionCheckout",
   "pagoEstadia",
   "pagoEstadiaMedio",
@@ -752,7 +752,6 @@ function crearBase() {
       capacidad: 2,
       tipoHabitacionId: tipoId,
       equipamiento: null,
-      tarifaPorNoche: 50000,
       ...resto,
     };
     datos.habitacion.push(fila);

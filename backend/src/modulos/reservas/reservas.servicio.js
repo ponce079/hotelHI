@@ -295,11 +295,6 @@ function formatearReserva(reserva) {
         capacidad: h.capacidad,
         piso: h.piso,
         estado: h.estado,
-        // Etapa 4A: precio por habitación pasado a HU-95/96 (adultos/
-        // menores + noches congeladas). `tarifaPorNoche` queda como dato
-        // informativo de la habitación en sí (no se usa para ningún
-        // cálculo nuevo) hasta que se retire en la Etapa 4C.
-        tarifaPorNoche: Number(h.tarifaPorNoche),
         adultos: rh.adultos,
         menores: rh.menores,
         reservaNoches,

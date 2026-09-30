@@ -21,7 +21,7 @@
 // en 'en limpieza' y no en 'ocupada'.
 //
 // No es una prueba de facturación (HU-48 a 50, ya cubierta por otros
-// caminos): las habitaciones se siembran con tarifaPorNoche = 0 a propósito,
+// caminos): las habitaciones se siembran con la Tarifa a $0 a propósito,
 // así el saldo da 0 sin tener que simular un PagoEstadia real — el foco acá
 // es exclusivamente la interacción Habitacion.estado/estadoAnterior entre
 // Check-in, Habitaciones y Check-out.
@@ -124,15 +124,15 @@ async function asegurarTarifaParaTipo(tipoHabitacionId, precioPorNoche) {
 
 // Deja una reserva "En curso" con la habitación "ocupada" — mismo camino
 // real que HU-43/47 (reservasServicio.crearReserva + confirmarCheckInConReserva
-// de checkIn.servicio.js, ya probados en pruebas-checkin.js). tarifaPorNoche
-// en 0 (ver nota de arriba) para que el check-out nunca se frene por saldo.
+// de checkIn.servicio.js, ya probados en pruebas-checkin.js). Tarifa en 0
+// (ver nota de arriba) para que el check-out nunca se frene por saldo.
 //
 // También registra la verificación "sin novedades" (HU-87): desde la
 // re-auditoría del 2026-09-21, confirmarCheckOut la exige — sin esto,
 // las 6 pruebas de este archivo (que no son sobre HU-87, son sobre el
 // estado de la habitación) fallarían por un motivo que no les compete.
 async function crearReservaEnCurso(numeroHabitacion) {
-  const habitacion = base._sembrarHabitacion({ numero: numeroHabitacion, tarifaPorNoche: 0 });
+  const habitacion = base._sembrarHabitacion({ numero: numeroHabitacion });
   await asegurarTarifaParaTipo(habitacion.tipoHabitacionId, 0);
   const { planBar } = await asegurarTemporadaYPlanBase();
   const fechaDesde = enDias(0);

@@ -34,8 +34,6 @@ import {
 } from "./habitaciones.constantes";
 import "./HabitacionesPage.css";
 
-const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" });
-
 // Fecha "solo día" (ver lib/fechas.js) reducida a d/m, formato del mockup
 // ("hasta 24/9") — sin año, porque una estadía siempre es de corto plazo.
 function formatoDiaMes(fechaISO) {
@@ -501,9 +499,10 @@ function TarjetaHabitacion({
         </div>
       </div>
 
-      <p className="text-[12.5px]">
-        {habitacion.tipo} · {FORMATO_MONEDA.format(Number(habitacion.tarifaPorNoche))}/noche
-      </p>
+      {/* Etapa 4C — la habitación ya no tiene un precio propio (columna
+          tarifaPorNoche eliminada): el precio depende de fecha/temporada/
+          plan y ya se ve, sin duplicar, en Tarifas (HU-92). */}
+      <p className="text-[12.5px]">{habitacion.tipo}</p>
 
       {habitacion.estado === "ocupada" && (
         <div className="flex flex-col gap-1.5 border-t pt-1.5" style={{ borderColor: color.borde }}>

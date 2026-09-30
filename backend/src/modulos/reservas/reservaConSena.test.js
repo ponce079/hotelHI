@@ -55,7 +55,13 @@ function expandirReserva(t, reserva, include) {
   if (include?.reservaHabitaciones) {
     salida.reservaHabitaciones = t.reservaHabitacion
       .filter((rh) => rh.reservaId === reserva.id)
-      .map((rh) => ({ ...rh, habitacion: t.habitacion.find((h) => h.id === rh.habitacionId) }));
+      .map((rh) => ({
+        ...rh,
+        habitacion: t.habitacion.find((h) => h.id === rh.habitacionId),
+        // Etapa 4C — checkOutFalsoFactory necesita esto para calcular el
+        // total sobre ReservaNoche (ya no hay Habitacion.tarifaPorNoche).
+        reservaNoches: t.reservaNoche.filter((n) => n.reservaHabitacionId === rh.id),
+      }));
   }
   if (include?.notificaciones) {
     salida.notificaciones = t.notificacion.filter((n) => n.reservaId === reserva.id);
@@ -203,11 +209,11 @@ function crearCliente(obtenerTablas) {
 
 function crearDoblePrisma() {
   let tablas = {
-    habitacion: [{ id: 1, numero: "101", tipo: "Doble", tipoHabitacionId: 1, capacidad: 2, piso: 1, tarifaPorNoche: 50000, activo: true }],
+    habitacion: [{ id: 1, numero: "101", tipoHabitacionId: 1, capacidad: 2, piso: 1, activo: true }],
     // Etapa 4A — fixture mínima de tarifas: un tipo con ocupación base 2, la
-    // temporada Base, el plan BAR y una Tarifa vigente hace mucho, al mismo
-    // precio que ya traía tarifaPorNoche — así el total que cotiza el motor
-    // (100000 = 2 noches × 50000) coincide con lo que ya esperaban estos tests.
+    // temporada Base, el plan BAR y una Tarifa vigente hace mucho a $50000 —
+    // así el total que cotiza el motor (100000 = 2 noches × 50000) coincide
+    // con lo que ya esperaban estos tests.
     tipoHabitacion: [{ id: 1, nombre: "Doble", ocupacionBase: 2, activo: true }],
     temporada: [
       {
@@ -318,16 +324,20 @@ function checkOutFalsoFactory() {
   return {
     ErrorDeNegocio: class ErrorDeNegocioFalso extends Error {},
     // Mismo cálculo que consolidarCargos, reducido a lo que necesita esta
-    // reserva recién creada (sin consumos ni garantías todavía): total de
-    // la estadía por noches, menos lo ya pagado (nada, la primera vez).
+    // reserva recién creada (sin consumos ni garantías todavía): suma de
+    // las ReservaNoche ya congeladas, menos lo ya pagado (nada, la primera
+    // vez). Etapa 4C: ya no puede caer a Habitacion.tarifaPorNoche (esa
+    // columna no existe más), así que suma directo de reservaNoches, igual
+    // que la implementación real.
     consolidarCargos: async (reservaId, tx) => {
       const reserva = await tx.reserva.findUnique({
         where: { id: Number(reservaId) },
         include: { reservaHabitaciones: { include: { habitacion: true } } },
       });
-      const habitaciones = (reserva.reservaHabitaciones ?? []).map((rh) => rh.habitacion);
-      const noches = Math.round((new Date(reserva.fechaHasta) - new Date(reserva.fechaDesde)) / 86400000);
-      const totalAdeudado = habitaciones.reduce((acc, h) => acc + Number(h.tarifaPorNoche), 0) * noches;
+      const totalAdeudado = (reserva.reservaHabitaciones ?? []).reduce(
+        (acc, rh) => acc + (rh.reservaNoches ?? []).reduce((a, n) => a + Number(n.precioNoche), 0),
+        0
+      );
       const pagos = await tx.pagoEstadia.findMany({ where: { reservaId: Number(reservaId), anulado: false } });
       const totalPagado = pagos.reduce((acc, p) => acc + p.medios.reduce((a, m) => a + Number(m.importe), 0), 0);
       return { estadoReserva: reserva.estado, totalAdeudado, totalPagado, saldo: totalAdeudado - totalPagado };
