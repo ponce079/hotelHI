@@ -32,12 +32,10 @@ const VACIO = {
 // nada más para saber qué stock mostrarle — el backend lo vuelve a resolver
 // por su cuenta y es la fuente de verdad real (ver resolverDepositoMinibar
 // en serviciosAdicionales.servicio.js); no se manda en el payload.
-export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito }) {
-  const habitacionInicial = habitacionIdInicial ? String(habitacionIdInicial) : reserva.habitaciones.length === 1 ? String(reserva.habitaciones[0].id) : "";
+export function ConsumoModal({ reserva, onClose, onExito }) {
+  const habitacionInicial = reserva.habitaciones.length === 1 ? String(reserva.habitaciones[0].id) : "";
   const [form, setForm] = useState({ ...VACIO, habitacionId: habitacionInicial });
   const [errores, setErrores] = useState({});
-  const [claveOperacion] = useState(()=>crypto.randomUUID());
-  const habitacionSeleccionada = reserva.habitaciones.find(h=>String(h.id)===form.habitacionId);
   const queryClient = useQueryClient();
   const esMinibar = form.tipoServicio === "Minibar";
 
@@ -57,12 +55,7 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
         reservaId: reserva.id,
         habitacionId: Number(form.habitacionId),
         tipoServicio: form.tipoServicio,
-        precioUnitario: form.incluido ? Number(form.monto||0) : Number(form.monto),
-        cantidad: Number(form.cantidad),
-        descripcion: form.descripcion || form.tipoServicio,
-        incluido: form.incluido === true,
-        claveOperacion,
-        ...(form.fechaServicio ? {fechaServicio:new Date(form.fechaServicio).toISOString()} : {}),
+        monto: Number(form.monto),
         registradoPor: form.registradoPor.trim(),
       };
       if (esMinibar) {
@@ -73,8 +66,6 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["consumos-servicios"] });
-      queryClient.invalidateQueries({ queryKey: ["check-out"] });
-      queryClient.invalidateQueries({ queryKey: ["pagos-estadia"] });
       if (esMinibar) queryClient.invalidateQueries({ queryKey: ["stock"] });
       onExito(`Consumo de ${form.tipoServicio} registrado.`);
     },
@@ -97,8 +88,7 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
     evento.preventDefault();
     const nuevos = {};
     if (!form.habitacionId) nuevos.habitacionId = "Elegí la habitación.";
-    if (!form.incluido && !(Number(form.monto) > 0)) nuevos.monto = "Ingresá un monto mayor a 0.";
-    if (!(Number(form.cantidad) > 0)) nuevos.cantidad = "Ingresá una cantidad mayor a 0.";
+    if (!(Number(form.monto) > 0)) nuevos.monto = "Ingresá un monto mayor a 0.";
     if (!form.registradoPor.trim()) nuevos.registradoPor = "Indicá quién registra el consumo.";
     if (esMinibar) {
       if (depositosQuery.isSuccess && !depositoMinibar) {
@@ -121,10 +111,6 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
     <Modal titulo="Registrar consumo" subtitulo={`Reserva ${reserva.codigoConfirmacion}`} onClose={onClose} ancho="max-w-xl">
       <form onSubmit={handleSubmit}>
         <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2">
-          <div className="rounded-lg border border-borde bg-hueso p-4 sm:col-span-2" aria-live="polite">
-            <p className="font-heading text-xl font-bold">{habitacionSeleccionada ? `Habitación ${habitacionSeleccionada.numero}` : 'Elegí una habitación'}</p>
-            <p className="mt-1 text-xs text-piedra">Titular: {reserva.huesped?.nombre || 'Sin titular informado'}</p>
-          </div>
           {errores.general && <p className="sm:col-span-2 text-sm text-error-texto">{errores.general}</p>}
 
           <Select
@@ -184,11 +170,7 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
             </>
           )}
 
-          <Input label="Descripción del cargo" value={form.descripcion||''} onChange={e=>cambiar('descripcion',e.target.value)} maxLength={500}/>
-          <Input label="Fecha del servicio" type="datetime-local" value={form.fechaServicio||''} onChange={e=>cambiar('fechaServicio',e.target.value)}/>
-          {!esMinibar&&<Input label="Cantidad *" type="number" min="0.01" step="0.01" value={form.cantidad} onChange={e=>cambiar('cantidad',e.target.value)} error={errores.cantidad}/>}
-          <label className="text-sm"><input type="checkbox" checked={form.incluido||false} onChange={e=>cambiar('incluido',e.target.checked)}/> Incluido en la tarifa (sin cargo)</label>
-          <MoneyInput label="Precio unitario *" value={form.monto} onChange={(v) => cambiar("monto", v)} error={errores.monto} />
+          <MoneyInput label="Monto *" value={form.monto} onChange={(v) => cambiar("monto", v)} error={errores.monto} />
 
           <div className={esMinibar ? "" : "sm:col-span-2"}>
             <Input

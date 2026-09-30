@@ -1,8 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PersonasWalkIn } from '../estadia/PersonasWalkIn';
-import { CantidadesOcupantes } from './CantidadesOcupantes';
-import { resumenOcupantes, cantidadesParaEnviar } from './validacionOcupantesIngreso';
-import { useSesion } from '../../lib/sesion';
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight, BedDouble, Check, CheckCircle2, User, Users } from "lucide-react";
@@ -50,7 +46,6 @@ const VACIO = {
   tipo: "",
   capacidadMinima: "",
   habitacionIds: [],
-  cantidadesOcupantes: {},
   huesped: { nombre: "", tipoDocumento: TIPOS_DOCUMENTO[0], numeroDocumento: "", contacto: "" },
   garantiaConfirmada: false,
   medioGarantia: MEDIOS_GARANTIA[0],
@@ -62,8 +57,6 @@ const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", curre
 const HUESPED_TOCADO_VACIO = { nombre: false, numeroDocumento: false, contacto: false };
 
 export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
-  const [personas,setPersonas] = useState([]);
-  const {usuario}=useSesion();
   const navigate = useNavigate();
   // Viene del "→ Iniciar check-in" de una tarjeta libre en el Panel de
   // Habitaciones: arranca directo en el paso de asignación (HU-45) en vez
@@ -123,15 +116,10 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
 
   const elegidas = useMemo(() => habitaciones.filter((h) => form.habitacionIds.includes(h.id)), [habitaciones, form.habitacionIds]);
   const capacidadTotal = elegidas.reduce((acc, h) => acc + h.capacidad, 0);
-  const resumen = resumenOcupantes(elegidas,personas,form.cantidadesOcupantes,true);
-  const todosRegistrados = resumen.length>0 && resumen.every(h=>h.completo);
 
   const mutacion = useMutation({
     mutationFn: () =>
       registrarCheckInWalkIn({
-        personas,
-        operador:usuario,
-        cantidadesOcupantes:cantidadesParaEnviar(elegidas,form.cantidadesOcupantes),
         fechaHasta: form.fechaHasta,
         habitacionIds: form.habitacionIds,
         huesped: {
@@ -150,7 +138,6 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
         `Check-in walk-in confirmado — reserva ${reserva.codigoConfirmacion}, habitación${reserva.habitaciones.length > 1 ? "es" : ""} ${reserva.habitaciones.map((h) => h.numero).join(", ")}.`
       );
       setForm(VACIO);
-      setPersonas([]);
       setHuespedTocado(HUESPED_TOCADO_VACIO);
       setIntentoAvanzarHuesped(false);
     },
@@ -182,7 +169,6 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
   }
 
   function confirmar() {
-    if(!todosRegistrados){setErrorGeneral('Declará cuántas personas ingresan y registrá a todas antes de confirmar.');return;}
     // La validación de nombre/documento/contacto ya la garantiza el botón
     // (disabled={!huespedValido}) y el paso 3 al avanzar — acá solo queda
     // el chequeo que ese gate no cubre.
@@ -367,8 +353,6 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
               {form.huesped.numeroDocumento})
             </p>
           </div>
-          <CantidadesOcupantes resumen={resumen} cantidades={form.cantidadesOcupantes} onChange={cantidadesOcupantes=>actualizar({cantidadesOcupantes})}/>
-          <PersonasWalkIn personas={personas} onChange={setPersonas} reserva={{habitaciones:elegidas,fechaDesde:hoyEnHoraLocal(),fechaHasta:form.fechaHasta}}/>
           <GarantiaFieldset
             garantiaConfirmada={form.garantiaConfirmada}
             medioGarantia={form.medioGarantia}
@@ -419,7 +403,7 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
             </Button>
           )}
           {form.paso === 4 && (
-            <Button variante="ok" icono={Check} cargando={mutacion.isPending} disabled={!huespedValido || !todosRegistrados} onClick={confirmar}>
+            <Button variante="ok" icono={Check} cargando={mutacion.isPending} disabled={!huespedValido} onClick={confirmar}>
               Confirmar check-in
             </Button>
           )}

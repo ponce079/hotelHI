@@ -79,7 +79,7 @@ async function consolidarCargos(reservaId, cliente = prisma) {
   const noches = calcularNoches(reserva.fechaDesde, reserva.fechaHasta);
 
   const habitaciones = reserva.reservaHabitaciones.map((rh) => {
-    const tarifaPorNoche = Number(rh.tarifaPactada ?? rh.habitacion.tarifaPorNoche);
+    const tarifaPorNoche = Number(rh.habitacion.tarifaPorNoche);
     return {
       habitacionId: rh.habitacion.id,
       numero: rh.habitacion.numero,
@@ -91,7 +91,7 @@ async function consolidarCargos(reservaId, cliente = prisma) {
   });
 
   const consumosDb = await cliente.consumoServicioAdicional.findMany({
-    where: { reservaId: id, anulado: false },
+    where: { reservaId: id },
     orderBy: { fechaHora: 'asc' },
   });
   const consumos = consumosDb.map((c) => ({
@@ -109,7 +109,6 @@ async function consolidarCargos(reservaId, cliente = prisma) {
     orderBy: { fechaHora: 'asc' },
   });
   const verificaciones = verificacionesDb.map((v) => ({
-    habitacionId: v.habitacionId,
     id: v.id,
     tipo: v.tipo,
     descripcion: v.descripcion,
@@ -119,7 +118,7 @@ async function consolidarCargos(reservaId, cliente = prisma) {
   }));
 
   const pagado = await cliente.pagoEstadiaMedio.aggregate({
-    where: { pagoEstadia: { reservaId: id, anulado: false, NOT: {concepto:'Garantía',garantiaSeparada:true} } },
+    where: { pagoEstadia: { reservaId: id, anulado: false } },
     _sum: { importe: true },
   });
 
@@ -128,11 +127,7 @@ async function consolidarCargos(reservaId, cliente = prisma) {
   const verificacion = redondear(verificaciones.reduce((acc, v) => acc + v.monto, 0));
 
   const totalAdeudado = redondear(alojamiento + serviciosAdicionales + verificacion);
-  const garantiasDb = await cliente.pagoEstadia.findMany({where:{reservaId:id,concepto:'Garantía',garantiaSeparada:true,anulado:false},include:{medios:true}});
-  const garantias = garantiasDb.map(g=>{const total=g.medios.reduce((s,m)=>s+Number(m.importe),0);return {id:g.id,recibida:total,aplicada:Number(g.garantiaAplicada),devuelta:Number(g.garantiaDevuelta),pendiente:redondear(total-Number(g.garantiaAplicada)-Number(g.garantiaDevuelta))};});
-  const garantiaPendiente = redondear(garantias.reduce((s,g)=>s+g.pendiente,0));
-  const totalPagado = redondear(Number(pagado._sum.importe || 0)+garantias.reduce((s,g)=>s+g.aplicada,0));
-  for(const h of habitaciones){h.adicionales=redondear(consumos.filter(c=>c.habitacionId===h.habitacionId).reduce((s,c)=>s+c.monto,0));h.verificacion=redondear(verificaciones.filter(v=>v.habitacionId===h.habitacionId).reduce((s,v)=>s+v.monto,0));h.total=redondear(h.subtotal+h.adicionales+h.verificacion);h.verificada=verificaciones.some(v=>v.habitacionId===h.habitacionId);}
+  const totalPagado = redondear(Number(pagado._sum.importe || 0));
   const saldo = Math.max(0, redondear(totalAdeudado - totalPagado));
 
   return {
@@ -154,8 +149,6 @@ async function consolidarCargos(reservaId, cliente = prisma) {
     consumos,
     verificaciones,
     subtotales: { alojamiento, serviciosAdicionales, verificacion },
-    garantias,
-    garantiaPendiente,
     totalAdeudado,
     totalPagado,
     saldo,
@@ -210,11 +203,8 @@ async function registrarVerificacion(reservaId, data = {}) {
         );
       }
 
-      if(!data.habitacionId)throw new ErrorDeNegocio('Seleccioná la habitación que revisaste.');
-      const habitacionId=idValido(data.habitacionId,'habitacionId');
-      if(!await tx.reservaHabitacion.findFirst({where:{reservaId:id,habitacionId}}))throw new ErrorDeNegocio('La habitación no pertenece a esta reserva.');
       const cargo = await tx.cargoVerificacionCheckout.create({
-        data: { reservaId: id, habitacionId, tipo, descripcion: desc, monto: redondear(importe), registradoPor: quien },
+        data: { reservaId: id, tipo, descripcion: desc, monto: redondear(importe), registradoPor: quien },
       });
       const cuenta = await consolidarCargos(id, tx);
       return { cargo, cuenta };
@@ -274,13 +264,12 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
       // arriba) para no aceptar un registro que se está por perder por un
       // rollback concurrente.
       const huboVerificacion = await tx.cargoVerificacionCheckout.findFirst({ where: { reservaId: id } });
-      if (!huboVerificacion || cuenta.habitaciones.some(h=>!h.verificada)) {
+      if (!huboVerificacion) {
         throw new ErrorDeNegocio(
           'Falta verificar la habitación antes de confirmar el check-out (HU-87): registrá lo que encontraste o marcá "Verificación sin novedades".',
           409
         );
       }
-      if(centavos(cuenta.garantiaPendiente)>0)throw new ErrorDeNegocio('Liquidá la garantía pendiente antes de confirmar el check-out.',409);
       if (centavos(cuenta.saldo) > 0) {
         throw new ErrorDeNegocio(
           `La cuenta tiene un saldo pendiente de ${cuenta.saldo}. Registrá el pago antes de confirmar el check-out.`,
@@ -290,9 +279,6 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
 
       try {
         await reservasServicio.marcarCerrada(id, tx);
-        await tx.asignacionOcupanteHabitacion.updateMany({where:{ocupante:{reservaId:id},hasta:null},data:{hasta:new Date()}});
-        await tx.ocupanteReserva.updateMany({where:{reservaId:id,estado:'Alojado'},data:{estado:'Retirado',salidaReal:new Date(),identidadActiva:null}});
-        await tx.ocupanteReserva.updateMany({where:{reservaId:id,estado:'Previsto'},data:{estado:'Cancelado',identidadActiva:null}});
       } catch (err) {
         throw envolverErrorReservas(err);
       }
@@ -379,14 +365,6 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
     { timeout: 15000, maxWait: 10000 }
   );
 }
-
-module.exports = {
-  consolidarCargos,
-  registrarVerificacion,
-  listarVerificaciones,
-  confirmarCheckOut,
-  ErrorDeNegocio,
-};
 
 module.exports = {
   consolidarCargos,

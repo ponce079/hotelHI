@@ -1,4 +1,3 @@
-import { AlojadosPage } from './modulos/estadia/AlojadosPage';
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { Layout } from "./componentes/Layout";
 import { LoginPage } from "./modulos/login/LoginPage";
@@ -106,7 +105,6 @@ export default function App() {
           <Route path="/reservas/disponibilidad" element={<DisponibilidadPublicaPage modoInterno />} />
           <Route path="/reservas/:id" element={<ReservaDetallePage />} />
           {/* Sprint 3 académico — Check-in (HU-43 a HU-47). */}
-          <Route path="/personas-alojadas" element={<AlojadosPage />} />
           <Route path="/check-in" element={<CheckInPage />} />
           {/* Sprint 3 académico — Servicios Adicionales (HU-61 a HU-64). */}
           <Route path="/servicios-adicionales" element={<ServiciosAdicionalesPage />} />

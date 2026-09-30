@@ -6,12 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "studio": "prisma studio",
-    "test": "jest",
-    "dev": "node --watch --watch-path=index.js --watch-path=src --watch-path=.env index.js",
-    "db:generate": "prisma generate",
-    "db:check": "node scripts/check-db.js",
-    "db:push": "prisma db push",
-    "db:seed": "node scripts/seed-tipos-movimiento.js"
+    "test": "jest"
   },
   "keywords": [],
   "author": "",
