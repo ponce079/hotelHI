@@ -41,7 +41,7 @@ const PLANES = [
   {
     planTarifarioId: 1,
     codigo: "BAR",
-    nombre: "Tarifa flexible",
+    nombre: "Tarifa estándar",
     reembolsable: true,
     horasCancelacionSinCargo: 48,
     penalidadNoShow: "PRIMERA_NOCHE",
@@ -50,7 +50,7 @@ const PLANES = [
   {
     planTarifarioId: 2,
     codigo: "NRF",
-    nombre: "No reembolsable",
+    nombre: "Tarifa no reembolsable",
     reembolsable: false,
     horasCancelacionSinCargo: null,
     penalidadNoShow: "TOTAL_ESTADIA",
@@ -64,7 +64,7 @@ const RESERVA_DEMO = {
   fechaDesde: "2026-11-20",
   fechaHasta: "2026-11-23",
   noches: 3,
-  plan: { codigo: "BAR", nombre: "Tarifa flexible", reembolsable: true, horasCancelacionSinCargo: 48 },
+  plan: { codigo: "BAR", nombre: "Tarifa estándar", reembolsable: true, horasCancelacionSinCargo: 48 },
   total: 75000,
   cobrado: 0,
   habitaciones: [{ tipo: "Doble", adultos: 2, menores: 1 }],

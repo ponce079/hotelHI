@@ -40,7 +40,7 @@ Cada vez que aparece un plan, tiene estos campos:
 {
   "planTarifarioId": 1,
   "codigo": "BAR",
-  "nombre": "Tarifa flexible",
+  "nombre": "Tarifa estándar",
   "reembolsable": true,
   "horasCancelacionSinCargo": 48,
   "penalidadNoShow": "PRIMERA_NOCHE",
@@ -104,12 +104,12 @@ extiende este endpoint; el cambio lo define Gimena.)
       "desdePorNoche": 17000,
       "planes": [
         {
-          "planTarifarioId": 1, "codigo": "BAR", "nombre": "Tarifa flexible",
+          "planTarifarioId": 1, "codigo": "BAR", "nombre": "Tarifa estándar",
           "reembolsable": true, "horasCancelacionSinCargo": 48,
           "penalidadNoShow": "PRIMERA_NOCHE", "total": 40000, "promedioPorNoche": 20000
         },
         {
-          "planTarifarioId": 2, "codigo": "NRF", "nombre": "No reembolsable",
+          "planTarifarioId": 2, "codigo": "NRF", "nombre": "Tarifa no reembolsable",
           "reembolsable": false, "horasCancelacionSinCargo": null,
           "penalidadNoShow": "TOTAL_ESTADIA", "total": 34000, "promedioPorNoche": 17000
         }
@@ -171,7 +171,7 @@ Recotiza una selección concreta (por ejemplo, antes de pagar).
   "promedioPorNoche": 21250,
   "noches": 2,
   "plan": {
-    "planTarifarioId": 2, "codigo": "NRF", "nombre": "No reembolsable",
+    "planTarifarioId": 2, "codigo": "NRF", "nombre": "Tarifa no reembolsable",
     "reembolsable": false, "horasCancelacionSinCargo": null,
     "penalidadNoShow": "TOTAL_ESTADIA", "total": 42500, "promedioPorNoche": 21250
   },
@@ -243,7 +243,7 @@ Validaciones (la 1B las repite todas; el frontend las anticipa):
   "fechaDesde": "2026-10-16",
   "fechaHasta": "2026-10-18",
   "noches": 2,
-  "plan": { "codigo": "BAR", "nombre": "Tarifa flexible", "reembolsable": true, "horasCancelacionSinCargo": 48 },
+  "plan": { "codigo": "BAR", "nombre": "Tarifa estándar", "reembolsable": true, "horasCancelacionSinCargo": 48 },
   "total": 50000,
   "cobradoAhora": 0,
   "garantia": { "tipo": "GARANTIA", "marca": "VISA", "ultimos4": "4242" },
@@ -306,7 +306,7 @@ Consulta de una reserva con código + email. No hay cuentas de huésped.
   "fechaDesde": "2026-11-20",
   "fechaHasta": "2026-11-23",
   "noches": 3,
-  "plan": { "codigo": "BAR", "nombre": "Tarifa flexible", "reembolsable": true, "horasCancelacionSinCargo": 48 },
+  "plan": { "codigo": "BAR", "nombre": "Tarifa estándar", "reembolsable": true, "horasCancelacionSinCargo": 48 },
   "total": 75000,
   "cobrado": 0,
   "habitaciones": [{ "tipo": "Doble", "adultos": 2, "menores": 1 }],

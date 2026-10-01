@@ -51,6 +51,7 @@ import { ComprobanteEstadiaDetallePage } from "./modulos/comprobantes-estadia/Co
 import { ReporteCajaDiariaPage } from "./modulos/comprobantes-estadia/ReporteCajaDiariaPage";
 import { MovimientosPagoPage } from "./modulos/pagos-estadia/MovimientosPagoPage";
 import { UsuariosPage } from "./modulos/usuarios/UsuariosPage";
+import { LayoutEcommerce, GuardaCompra, InicioPage, ResultadosPage, DetalleTipoPage, DatosHuespedPage, PagoPage, ConfirmacionPage, MiReservaPage } from "./modulos/ecommerce";
 // Gatekeeper de rutas: sin sesion iniciada (login real con usuario y
 // contraseña, ver lib/sesion.jsx), redirige a /login.
 function RequireSesion() {
@@ -69,6 +70,19 @@ export default function App() {
           (LayoutPublico), no el menú lateral de <Layout>. */}
       <Route path="/disponibilidad" element={<DisponibilidadPublicaPage />} />
       <Route path="/reservar" element={<ReservaWebPage />} />
+      {/* E-commerce (HU-99 a HU-106): motor de reservas web nuevo, construido al
+          lado de la web vieja (/disponibilidad y /reservar no cambian). Sin
+          sesión de staff, con su propio layout y estilos encapsulados (.ec-raiz).
+          Contrato: docs/ecommerce/CONTRATO.md. */}
+      <Route path="/web" element={<LayoutEcommerce />}>
+        <Route index element={<InicioPage />} />
+        <Route path="resultados" element={<ResultadosPage />} />
+        <Route path="habitacion/:tipoHabitacionId" element={<DetalleTipoPage />} />
+        <Route path="datos" element={<GuardaCompra requiere="seleccion"><DatosHuespedPage /></GuardaCompra>} />
+        <Route path="pago" element={<GuardaCompra requiere="seleccion"><PagoPage /></GuardaCompra>} />
+        <Route path="confirmacion" element={<GuardaCompra requiere="resultado"><ConfirmacionPage /></GuardaCompra>} />
+        <Route path="mi-reserva" element={<MiReservaPage />} />
+      </Route>
       <Route element={<RequireSesion />}>
         <Route element={<Layout />}>
           <Route index element={<DashboardPage />} />

@@ -75,3 +75,13 @@ export function textoCondicionesPlan(plan) {
 }
 
 export const LEYENDA_PRECIO_FINAL = "Precio final en pesos argentinos, IVA incluido";
+
+// Query string de /web/resultados (?desde&hasta&adultos&menores).
+export function busquedaComoQuery({ fechaDesde, fechaHasta, adultos, menores }) {
+  return new URLSearchParams({ desde: fechaDesde, hasta: fechaHasta, adultos: String(adultos), menores: String(menores) }).toString();
+}
+
+// Estado que muestra la confirmación (decisión de diseño 7).
+export function textoEstadoReserva(resultado) {
+  return resultado?.plan?.reembolsable ? "Confirmada · garantizada con tarjeta" : "Pagada";
+}
