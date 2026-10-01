@@ -1,7 +1,11 @@
-// Usa exclusivamente la base local aislada. No carga .env ni envía correos.
+// Corre contra una base LOCAL indicada con ESTADIA_TEST_DATABASE_URL (ver _entornoPruebas.js).
+// No carga backend/.env ni envía correos.
+//
+//   ESTADIA_TEST_DATABASE_URL=mysql://usuario:clave@127.0.0.1:3306/hotelhi_pruebas npm run test:estadia
 const assert = require("node:assert/strict");
-require("../../scripts/entorno-estadia.cjs").cargarEntorno("test");
-process.env.DATABASE_SSL = "false";
+const entorno = require("./_entornoPruebas");
+entorno.cargarEntornoDePruebas();
+entorno.prepararEsquema();
 const p = require("../src/lib/prisma");
 const rutaCorreo = require.resolve("../src/lib/correo");
 require.cache[rutaCorreo] = {
@@ -20,8 +24,22 @@ const {
   cotizarReserva,
 } = require("../src/modulos/tarifas/cotizacion.servicio");
 const { asegurarTitular } = require("../src/modulos/estadia/titular.servicio");
+const { MONTO_GARANTIA } = require("../src/modulos/check-in/checkIn.constantes");
 
-async function main() {
+// Los totales de las pruebas se calculan SIEMPRE con cotizarReserva. Aun así, el recargo por día de
+// la semana cambia el resultado según el día en que se corre, y la base puede tener datos reales:
+// la preparación los deja en 0 y los restituye al terminar.
+async function neutralizarModificadoresDeDiaSemana() {
+  const originales = await p.modificadorDiaSemana.findMany();
+  await p.modificadorDiaSemana.updateMany({ data: { porcentaje: 0 } });
+  return async () => {
+    for (const { id, porcentaje } of originales) {
+      await p.modificadorDiaSemana.update({ where: { id }, data: { porcentaje } });
+    }
+  };
+}
+
+async function pruebas() {
   const marca = Date.now().toString(),
     hoy = reservas.hoyComoFechaUTC();
   const hasta = new Date(hoy.getTime() + 2 * 86400000),
@@ -189,7 +207,7 @@ async function main() {
   });
   let cuenta = await checkout.consolidarCargos(r.id);
   assert.equal(cuenta.totalAdeudado, d.totalEsperado);
-  assert.equal(cuenta.totalPagado, 30000);
+  assert.equal(cuenta.totalPagado, MONTO_GARANTIA);
   const payload = {
     reservaId: r.id,
     habitacionId: h1.id,
@@ -200,6 +218,7 @@ async function main() {
     registradoPor: "Prueba",
     claveOperacion: `test-${marca}`,
   };
+  const importeCargo = payload.cantidad * payload.precioUnitario;
   const cargo = await cargos.registrarConsumo(payload);
   assert.equal((await cargos.registrarConsumo(payload)).id, cargo.id);
   assert.equal(
@@ -213,10 +232,10 @@ async function main() {
     0,
   );
   cuenta = await checkout.consolidarCargos(r.id);
-  assert.equal(cuenta.totalAdeudado, d.totalEsperado + 10000);
+  assert.equal(cuenta.totalAdeudado, d.totalEsperado + importeCargo);
   assert.equal(
     cuenta.habitaciones.find((h) => h.habitacionId === h1.id).adicionales,
-    10000,
+    importeCargo,
   );
   await cargos.anularConsumo(cargo.id, {
     motivo: "Prueba de anulación",
@@ -250,7 +269,7 @@ async function main() {
   });
   await pagos.crearPago({
     reservaId: r.id,
-    medios: [{ tipo: "Efectivo", importe: d.totalEsperado - 30000 }],
+    medios: [{ tipo: "Efectivo", importe: d.totalEsperado - MONTO_GARANTIA }],
   });
   await checkout.confirmarCheckOut(r.id, { cargosValidados: true });
   assert.equal(
@@ -364,7 +383,13 @@ async function main() {
     ...cambios,
     soloPrevia: true,
   });
-  assert.equal(previa.totalNuevo, 330000);
+  const cotizadaNueva = await cotizarReserva({
+    ...dm,
+    habitaciones: cambios.habitaciones,
+    fechaHasta: cambios.fechaHasta,
+    canal: "RECEPCION",
+  });
+  assert.equal(previa.totalNuevo, cotizadaNueva.planes[0].total);
   await reservas.modificarReserva(rm.id, cambios);
   assert.equal(
     (await p.reservaHabitacion.findFirst({ where: { reservaId: rm.id } })).id,
@@ -404,6 +429,34 @@ async function main() {
     }),
     1,
   );
+  // Nacionalidad y residencia son datos de la persona: viven en Huesped y la ficha guarda los
+  // últimos declarados, la vea la estadía que la vea.
+  const personaUnica = await p.huesped.findUnique({
+    where: { id: a.huespedId },
+  });
+  assert.equal(personaUnica.nacionalidad, "AR");
+  assert.equal(personaUnica.paisResidencia, "AR");
+  assert.equal(repetida.nacionalidad, "AR");
+  await s.guardar(
+    rc.id,
+    repetida.id,
+    ficha(hc, d.huesped.numeroDocumento, {
+      paisResidencia: "UY",
+      localidad: "Salto",
+      domicilio: "Calle 1",
+    }),
+  );
+  const actualizada = await p.huesped.findUnique({
+    where: { id: a.huespedId },
+  });
+  assert.equal(actualizada.paisResidencia, "UY");
+  assert.equal(actualizada.localidad, "Salto");
+  assert.equal(actualizada.domicilio, "Calle 1");
+  assert.equal(
+    (await s.listar(r.id)).find((x) => x.id === a.id).paisResidencia,
+    "UY",
+  );
+
 
   // I2 e I4: titulares explícitos y ampliación atómica con precios del motor.
   const ha = await habitacion(2),
@@ -494,6 +547,125 @@ async function main() {
     "OK: I1 ficha única; I2 cero/dos titulares; I4 advertencia, rollback y ampliación recotizada.",
   );
 
+  // Tope de capacidad: nunca se amplía por encima de Habitacion.capacidad.
+  const hk = await habitacion(3),
+    dk = await datos([{ habitacionId: hk.id, adultos: 2, menores: 0 }]);
+  const rk = await reservas.crearReserva(dk),
+    titularK = (await s.listar(rk.id))[0];
+  await s.guardar(
+    rk.id,
+    titularK.id,
+    ficha(hk, dk.huesped.numeroDocumento, { esTitular: true }),
+  );
+  await s.guardar(rk.id, null, ficha(hk));
+  await s.guardar(rk.id, null, ficha(hk));
+  await assert.rejects(
+    () => s.guardar(rk.id, null, ficha(hk)),
+    /supera su capacidad \(3\)/,
+  );
+  await verificar(rk);
+  await p.habitacion.update({
+    where: { id: hk.id },
+    data: { capacidad: 2 },
+  });
+  let porCapacidad;
+  try {
+    await ingresar(rk, dk.huesped.numeroDocumento);
+  } catch (e) {
+    porCapacidad = e;
+  }
+  assert.equal(porCapacidad?.statusCode, 409);
+  assert.match(porCapacidad.message, /supera la capacidad de la habitación/);
+  assert.notEqual(
+    porCapacidad.codigo,
+    "AMPLIACION_OCUPACION_REQUIERE_CONFIRMACION",
+    "por encima de la capacidad no hay ampliación que confirmar",
+  );
+  assert.equal(
+    (await p.reservaHabitacion.findFirst({ where: { reservaId: rk.id } }))
+      .adultos,
+    2,
+  );
+  assert.equal(
+    (await p.reserva.findUnique({ where: { id: rk.id } })).estado,
+    "Confirmada",
+  );
+  console.log(
+    "OK: la ampliación nunca supera la capacidad de la habitación y no deja nada a medias.",
+  );
+
+  // Una persona no puede figurar alojada dos veces a la vez (índice único de identidadActiva),
+  // y puede estar precargada en dos reservas seguidas: se aloja en la segunda al salir de la primera.
+  const hs1 = await habitacion(),
+    hs2 = await habitacion();
+  const dsA = await datos([{ habitacionId: hs1.id, adultos: 1, menores: 0 }]),
+    dsB = await datos([{ habitacionId: hs2.id, adultos: 1, menores: 0 }]);
+  dsB.huesped = { ...dsA.huesped };
+  const documentoComun = dsA.huesped.numeroDocumento;
+  const rsA = await reservas.crearReserva(dsA),
+    rsB = await reservas.crearReserva(dsB);
+  for (const [reserva, hab] of [
+    [rsA, hs1],
+    [rsB, hs2],
+  ]) {
+    const [titular] = await s.listar(reserva.id);
+    await s.guardar(
+      reserva.id,
+      titular.id,
+      ficha(hab, documentoComun, { esTitular: true }),
+    );
+    await verificar(reserva);
+  }
+  const fichasA = await s.listar(rsA.id),
+    fichasB = await s.listar(rsB.id);
+  assert.equal(
+    fichasA[0].huespedId,
+    fichasB[0].huespedId,
+    "una sola ficha de persona con dos estadías",
+  );
+  const simultaneos = await Promise.allSettled([
+    ingresar(rsA, documentoComun),
+    ingresar(rsB, documentoComun),
+  ]);
+  const perdedores = simultaneos.filter((x) => x.status === "rejected");
+  assert.equal(perdedores.length, 1, "dos check-in simultáneos: uno falla");
+  assert.equal(perdedores[0].reason.statusCode, 409);
+  assert.match(perdedores[0].reason.message, /ya figura alojada/);
+  const [ganadora, perdedora, habGanadora] =
+    simultaneos[0].status === "fulfilled"
+      ? [rsA, rsB, hs1]
+      : [rsB, rsA, hs2];
+  const habPerdedora = habGanadora === hs1 ? hs2 : hs1;
+  assert.equal(
+    (await p.reserva.findUnique({ where: { id: perdedora.id } })).estado,
+    "Confirmada",
+    "el ingreso rechazado no queda a medias",
+  );
+  assert.equal(
+    (await p.habitacion.findUnique({ where: { id: habPerdedora.id } })).estado,
+    "libre",
+  );
+  await checkout.registrarVerificacion(ganadora.id, {
+    habitacionId: habGanadora.id,
+    tipo: "SinNovedades",
+    registradoPor: "Prueba",
+  });
+  const cuentaGanadora = await checkout.consolidarCargos(ganadora.id);
+  if (cuentaGanadora.saldo > 0)
+    await pagos.crearPago({
+      reservaId: ganadora.id,
+      medios: [{ tipo: "Efectivo", importe: cuentaGanadora.saldo }],
+    });
+  await checkout.confirmarCheckOut(ganadora.id, { cargosValidados: true });
+  await ingresar(perdedora, documentoComun);
+  assert.equal(
+    (await p.reserva.findUnique({ where: { id: perdedora.id } })).estado,
+    "En curso",
+  );
+  console.log(
+    "OK: una persona no figura alojada dos veces a la vez; precargada en dos reservas seguidas, ingresa en la segunda al salir de la primera.",
+  );
+
   const express = require("express"),
     app = express();
   app.use(express.json());
@@ -526,6 +698,14 @@ async function main() {
   console.log(
     "OK: rutas HTTP y rechazo de ocupación duplicada en contratos anteriores.",
   );
+}
+async function main() {
+  const restituir = await neutralizarModificadoresDeDiaSemana();
+  try {
+    await pruebas();
+  } finally {
+    await restituir();
+  }
 }
 main()
   .catch((e) => {
