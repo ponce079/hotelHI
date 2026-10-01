@@ -59,3 +59,34 @@ test("actualizarResidencia guarda en Huesped los últimos datos declarados y no 
   await actualizarResidencia(tx, 7, { nacionalidad: null });
   expect(tx.huesped.update).not.toHaveBeenCalled();
 });
+
+test("actualizarResidenciaEnLote usa una sola sentencia sin importar cuántas fichas haya", async () => {
+  const { actualizarResidenciaEnLote } = require("./persona.servicio");
+  const tx = { $executeRaw: jest.fn() };
+  const filas = Array.from({ length: 25 }, (_, i) => ({ huespedId: i + 1, residencia: { nacionalidad: "AR" } }));
+  await actualizarResidenciaEnLote(tx, filas);
+  expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+  await actualizarResidenciaEnLote(tx, [{ huespedId: 1, residencia: { nacionalidad: null } }]);
+  expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+});
+
+test("una ficha con identidad provisoria se completa como una sin identidad", async () => {
+  const { esProvisoria, PREFIJO_SIN_DOCUMENTO } = require("./persona.servicio");
+  expect(esProvisoria({ identidadDocumento: null })).toBe(true);
+  expect(esProvisoria({ identidadDocumento: `${PREFIJO_SIN_DOCUMENTO}abc` })).toBe(true);
+  expect(esProvisoria({ identidadDocumento: "a".repeat(64) })).toBe(false);
+  const persona = { nombre: "Ana", apellido: "P", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "123" };
+  const tx = {
+    huesped: {
+      findUnique: jest
+        .fn()
+        .mockResolvedValueOnce({ id: 9, identidadDocumento: `${PREFIJO_SIN_DOCUMENTO}abc` })
+        .mockResolvedValueOnce(null),
+      update: jest.fn(),
+    },
+  };
+  expect(await vincularPersona(tx, {}, persona, { huespedId: 9 })).toBe(9);
+  expect(tx.huesped.update).toHaveBeenCalledWith(
+    expect.objectContaining({ data: expect.objectContaining({ identidadDocumento: expect.any(String) }) }),
+  );
+});

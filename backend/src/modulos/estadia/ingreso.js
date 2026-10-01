@@ -1,4 +1,6 @@
 const s = require("./estadia.servicio");
+const { marcarAlojados } = require("./alojamiento");
+const { cargarPersonasEnLote } = require("./cargaMasiva");
 
 function validarOcupacion(habitaciones, personas) {
   if (!habitaciones.length)
@@ -87,16 +89,7 @@ async function prepararIngreso(tx, reservaId, operador) {
         "El adulto responsable debe ingresar junto con el menor.",
       );
   }
-  for (const p of presentes) {
-    await tx.ocupanteReserva.update({
-      where: { id: p.id },
-      data: {
-        estado: "Alojado",
-        ingresoReal: new Date(),
-        identidadActiva: s.identidad(p),
-      },
-    });
-  }
+  await marcarAlojados(tx, presentes, new Date());
   await s.evento(
     tx,
     reservaId,
@@ -106,34 +99,8 @@ async function prepararIngreso(tx, reservaId, operador) {
   );
 }
 
+// El máximo de personas es la capacidad real de las habitaciones de la reserva.
 async function cargarWalkIn(tx, reservaId, personas, operador) {
-  if (!Array.isArray(personas) || !personas.length || personas.length > 100)
-    throw new s.ErrorDeNegocio(
-      "Registrá las personas que ingresan (máximo 100).",
-    );
-  const ids = new Map();
-  for (const persona of [...personas].sort(
-    (a, b) =>
-      Number(Boolean(a.responsableId)) - Number(Boolean(b.responsableId)),
-  )) {
-    const p = await s.guardar(
-      reservaId,
-      null,
-      {
-        ...persona,
-        responsableId: persona.responsableId
-          ? ids.get(Number(persona.responsableId))
-          : null,
-        operador,
-      },
-      tx,
-    );
-    s.validarCompleto(p);
-    ids.set(Number(persona.id), p.id);
-    await tx.ocupanteReserva.update({
-      where: { id: p.id },
-      data: { verificadoPor: operador, verificadoEn: new Date() },
-    });
-  }
+  await cargarPersonasEnLote(tx, reservaId, personas, operador);
 }
 module.exports = { prepararIngreso, cargarWalkIn, validarOcupacion };

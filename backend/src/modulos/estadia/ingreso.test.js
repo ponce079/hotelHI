@@ -31,6 +31,7 @@ const txPara = (personas) => ({
     findMany: jest.fn().mockResolvedValue(personas),
     update: jest.fn(),
   },
+  $executeRaw: jest.fn(),
   eventoEstadia: { create: jest.fn() },
 });
 test("usa la ocupación reservada y no suma otra plaza por el titular", () => {
@@ -89,16 +90,13 @@ test.each([
 ])("no escribe un ingreso inválido: %j", async (cambio) => {
   const tx = txPara([{ ...adulto, ...cambio }]);
   await expect(prepararIngreso(tx, 1, "Recepción")).rejects.toThrow();
-  expect(tx.ocupanteReserva.update).not.toHaveBeenCalled();
+  expect(tx.$executeRaw).not.toHaveBeenCalled();
 });
 test("ingresa y audita IDs, sin otra declaración de cantidades", async () => {
   const tx = txPara([adulto]);
   await prepararIngreso(tx, 1, "Recepción");
-  expect(tx.ocupanteReserva.update).toHaveBeenCalledWith(
-    expect.objectContaining({
-      data: expect.objectContaining({ estado: "Alojado" }),
-    }),
-  );
+  expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+  expect(tx.ocupanteReserva.update).not.toHaveBeenCalled();
   expect(
     JSON.parse(tx.eventoEstadia.create.mock.calls[0][0].data.detalle),
   ).toEqual({ ocupanteIds: [1] });

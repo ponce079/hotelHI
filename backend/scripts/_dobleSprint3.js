@@ -36,6 +36,7 @@ const PrismaFalso = {
   PrismaClientKnownRequestError,
   sql: (strings, ...valores) => ({ strings, valores }),
   join: (valores) => valores,
+  raw: (texto) => ({ strings: [texto], valores: [] }),
   Decimal: PrismaRealSoloParaDecimal.Decimal,
 };
 
@@ -291,6 +292,9 @@ function crearBase() {
 
     if (tabla === "ocupanteReserva" && include.asignaciones) {
       salida.asignaciones = datos.asignacionOcupanteHabitacion.filter(a => a.ocupanteId === registro.id);
+    }
+    if (tabla === "ocupanteReserva" && include.huesped) {
+      salida.huesped = datos.huesped.find((h) => h.id === registro.huespedId) ?? null;
     }
 
     if (tabla === "reserva") {
@@ -710,7 +714,84 @@ function crearBase() {
     contadorLlamadas[clave] = (contadorLlamadas[clave] ?? 0) + 1;
   }
 
-  const cliente = { $queryRaw: async () => [], _datos: datos, _contadorLlamadas: contadorLlamadas };
+  function contarSentencia(clave) {
+    contadorLlamadas[clave] = (contadorLlamadas[clave] ?? 0) + 1;
+  }
+
+  // Aplana un fragmento de Prisma.sql (con fragmentos y listas anidados) a su texto y a la lista
+  // de valores en el orden en que se enlazan.
+  function aplanarSql(fragmento) {
+    const valores = [];
+    let texto = "";
+    const recorrer = (parte) => {
+      if (parte && Array.isArray(parte.strings)) {
+        parte.strings.forEach((cadena, indice) => {
+          texto += cadena;
+          if (indice < parte.valores.length) recorrer(parte.valores[indice]);
+        });
+      } else if (Array.isArray(parte)) {
+        parte.forEach(recorrer);
+      } else {
+        valores.push(parte);
+        texto += "?";
+      }
+    };
+    recorrer(fragmento);
+    return { texto: texto.replace(/\s+/g, " ").trim(), valores };
+  }
+
+  // Las pocas sentencias crudas que usa el módulo de estadía. Cada una se interpreta según el
+  // orden de sus valores (ver persona.servicio.js y alojamiento.js).
+  function ejecutarSqlCrudo(fragmento) {
+    const { texto, valores } = aplanarSql(fragmento);
+    if (texto.startsWith("UPDATE ocupantes_reserva SET estado = 'Alojado'")) {
+      const [ingresoReal, ...resto] = valores;
+      const n = resto.length / 3;
+      const cambios = Array.from({ length: n }, (_, i) => ({ id: resto[2 * i], identidad: resto[2 * i + 1] }));
+      for (const { id, identidad } of cambios) {
+        const choque =
+          cliente._identidadActivaUnica &&
+          identidad &&
+          datos.ocupanteReserva.some((o) => o.identidadActiva === identidad && o.id !== id);
+        if (choque) throw new PrismaClientKnownRequestError("Duplicate entry for key identidadActiva", { code: "P2010" });
+      }
+      for (const { id, identidad } of cambios) {
+        Object.assign(datos.ocupanteReserva.find((o) => o.id === id), {
+          estado: "Alojado",
+          ingresoReal,
+          identidadActiva: identidad,
+        });
+      }
+      return n;
+    }
+    if (texto.startsWith("UPDATE huespedes SET nacionalidad")) {
+      const campos = ["nacionalidad", "paisResidencia", "domicilio", "localidad"];
+      const n = valores.length / (2 * campos.length + 1);
+      campos.forEach((campo, k) => {
+        for (let i = 0; i < n; i++) {
+          const id = valores[k * 2 * n + 2 * i];
+          const valor = valores[k * 2 * n + 2 * i + 1];
+          const fila = datos.huesped.find((h) => h.id === id);
+          fila[campo] = valor ?? fila[campo] ?? null;
+        }
+      });
+      return n;
+    }
+    throw new Error(`Sentencia cruda no soportada por el doble de Prisma: ${texto}`);
+  }
+
+  const cliente = {
+    $queryRaw: async () => {
+      contarSentencia("$queryRaw");
+      return [];
+    },
+    $executeRaw: async (fragmento) => {
+      contarSentencia("$executeRaw");
+      return ejecutarSqlCrudo(fragmento);
+    },
+    _datos: datos,
+    _contadorLlamadas: contadorLlamadas,
+  };
   for (const tabla of TABLAS) {
     const modeloBase = modelo(tabla);
     cliente[tabla] = Object.fromEntries(

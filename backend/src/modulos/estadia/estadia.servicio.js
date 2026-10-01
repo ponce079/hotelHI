@@ -176,6 +176,10 @@ async function capacidad(tx, r, habitacionId, persona, excluirId) {
       asignaciones: { some: { habitacionId, hasta: null } },
     },
   });
+  verificarCapacidad(rh, persona, otras);
+}
+// Sin consultas: la usa también la carga en lote (cargaMasiva.js).
+function verificarCapacidad(rh, persona, otras) {
   const eventos = [
     { fecha: persona.fechaDesde, delta: 1 },
     { fecha: persona.fechaHasta, delta: -1 },
@@ -522,6 +526,8 @@ module.exports = {
   conResidencia,
   sacarResidencia,
   includePersona,
+  verificarCapacidad,
+  idValido: id,
   ErrorDeNegocio,
   normalizarPersona,
   edad,

@@ -1460,9 +1460,19 @@ async function modificarReserva(id, data, cliente = prisma) {
     }
     await require('../estadia/reservaOcupantes').sincronizarOcupantes(tx, actual, { fechaDesde, fechaHasta, habitacionIds }, ErrorDeNegocio);
     await tx.reservaHabitacion.deleteMany({ where: { reservaId, habitacionId: { notIn: habitacionIds } } });
+    // Una sola updateMany por cada par (adultos, menores) distinto, en vez de un update por
+    // habitación: las consultas dependen de la variedad de ocupaciones (acotada por la capacidad
+    // de las habitaciones), no de cuántas habitaciones tenga la reserva.
+    const idsPorOcupacion = new Map();
     for (const h of habitaciones) {
-      const anterior = actual.reservaHabitaciones.find(rh=>rh.habitacionId===h.habitacionId);
-      if (anterior) await tx.reservaHabitacion.update({where:{id:anterior.id},data:{adultos:h.adultos,menores:h.menores}});
+      const anterior = actual.reservaHabitaciones.find((rh) => rh.habitacionId === h.habitacionId);
+      if (!anterior || (anterior.adultos === h.adultos && anterior.menores === h.menores)) continue;
+      const clave = `${h.adultos}|${h.menores}`;
+      if (!idsPorOcupacion.has(clave)) idsPorOcupacion.set(clave, { adultos: h.adultos, menores: h.menores, ids: [] });
+      idsPorOcupacion.get(clave).ids.push(anterior.id);
+    }
+    for (const { adultos, menores, ids } of idsPorOcupacion.values()) {
+      await tx.reservaHabitacion.updateMany({ where: { id: { in: ids } }, data: { adultos, menores } });
     }
     const actualizada = await tx.reserva.update({
       where: { id: reservaId },

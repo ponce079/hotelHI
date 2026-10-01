@@ -1,4 +1,5 @@
 const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
+const { Prisma } = require('@prisma/client');
 const prisma = require('../../lib/prisma');
 const { redondear } = require('../../lib/comprobantes');
 const { conTipoPlano } = require('../../lib/tipoHabitacion');
@@ -353,30 +354,32 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
       //
       // Se bloquean las filas antes de leerlas para que el estado que se ve
       // sea el mismo que se va a escribir.
+      //
+      // Las escrituras se agrupan por tipo de cambio (una sentencia por cada una) para que
+      // las consultas no crezcan con la cantidad de habitaciones de la reserva.
       const habitacionIds = cuenta.habitaciones.map((h) => h.habitacionId);
-      for (const habitacionId of habitacionIds) {
-        await tx.$queryRaw`SELECT id FROM habitaciones WHERE id = ${habitacionId} FOR UPDATE`;
-      }
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM habitaciones WHERE id IN (${Prisma.join(habitacionIds)}) ORDER BY id FOR UPDATE`
+      );
       const actuales = await tx.habitacion.findMany({ where: { id: { in: habitacionIds } } });
       const actualPorId = new Map(actuales.map((h) => [h.id, h]));
 
       const habitaciones = [];
-      const notificaciones = [];
+      const datosNotificaciones = [];
+      const aLimpiar = [];
+      const reescribirEstadoAnterior = [];
       for (const h of cuenta.habitaciones) {
         const actual = actualPorId.get(h.habitacionId);
         let estadoFinal = actual.estado;
         let observacion = null;
 
         if (actual.estado === 'ocupada') {
-          await tx.habitacion.update({ where: { id: h.habitacionId }, data: { estado: ESTADO_HABITACION_POST_CHECKOUT } });
+          aLimpiar.push(h.habitacionId);
           estadoFinal = ESTADO_HABITACION_POST_CHECKOUT;
           observacion = `quedó ${ESTADO_HABITACION_POST_CHECKOUT}.`;
         } else if (actual.estado === 'mantenimiento') {
           if (!actual.estadoAnterior || actual.estadoAnterior === 'ocupada') {
-            await tx.habitacion.update({
-              where: { id: h.habitacionId },
-              data: { estadoAnterior: ESTADO_HABITACION_POST_CHECKOUT },
-            });
+            reescribirEstadoAnterior.push(h.habitacionId);
           }
           observacion = `sigue en mantenimiento (orden sin resolver). Al resolverla pasa a ${ESTADO_HABITACION_POST_CHECKOUT}.`;
         }
@@ -388,19 +391,40 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
             actual.estado === 'mantenimiento'
               ? `Check-out completado: la habitación ${h.numero} (${h.tipo}) sigue en mantenimiento por una orden sin resolver. Cuando se resuelva, pasa a ${ESTADO_HABITACION_POST_CHECKOUT}.`
               : `Check-out completado: la habitación ${h.numero} (${h.tipo}) quedó pendiente de limpieza.`;
-          notificaciones.push(
-            await tx.notificacion.create({
-              data: {
-                tipo: TIPO_NOTIFICACION_HOUSEKEEPING,
-                habitacionId: h.habitacionId,
-                reservaId: id,
-                destinatarioArea: AREA_HOUSEKEEPING,
-                canal: CANAL_INTERNO,
-                mensaje,
-              },
-            })
-          );
+          datosNotificaciones.push({
+            tipo: TIPO_NOTIFICACION_HOUSEKEEPING,
+            habitacionId: h.habitacionId,
+            reservaId: id,
+            destinatarioArea: AREA_HOUSEKEEPING,
+            canal: CANAL_INTERNO,
+            mensaje,
+          });
         }
+      }
+
+      if (aLimpiar.length > 0) {
+        await tx.habitacion.updateMany({
+          where: { id: { in: aLimpiar } },
+          data: { estado: ESTADO_HABITACION_POST_CHECKOUT },
+        });
+      }
+      if (reescribirEstadoAnterior.length > 0) {
+        await tx.habitacion.updateMany({
+          where: { id: { in: reescribirEstadoAnterior } },
+          data: { estadoAnterior: ESTADO_HABITACION_POST_CHECKOUT },
+        });
+      }
+      let notificaciones = [];
+      if (datosNotificaciones.length > 0) {
+        await tx.notificacion.createMany({ data: datosNotificaciones });
+        notificaciones = await tx.notificacion.findMany({
+          where: {
+            reservaId: id,
+            tipo: TIPO_NOTIFICACION_HOUSEKEEPING,
+            habitacionId: { in: datosNotificaciones.map((n) => n.habitacionId) },
+          },
+          orderBy: { id: 'asc' },
+        });
       }
 
       return {
