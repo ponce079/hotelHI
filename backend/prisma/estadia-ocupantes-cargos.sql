@@ -12,7 +12,11 @@ ALTER TABLE `consumos_servicio_adicional` ADD COLUMN `anulado` BOOLEAN NOT NULL 
 -- AlterTable
 ALTER TABLE `huespedes` ADD COLUMN `fechaNacimiento` DATE NULL,
     ADD COLUMN `paisDocumento` VARCHAR(191) NULL,
-    ADD COLUMN `identidadDocumento` VARCHAR(64) NULL;
+    ADD COLUMN `identidadDocumento` VARCHAR(64) NULL,
+    ADD COLUMN `nacionalidad` VARCHAR(191) NULL,
+    ADD COLUMN `paisResidencia` VARCHAR(191) NULL,
+    ADD COLUMN `domicilio` VARCHAR(191) NULL,
+    ADD COLUMN `localidad` VARCHAR(191) NULL;
 
 -- AlterTable
 ALTER TABLE `cargos_verificacion_checkout` ADD COLUMN `habitacionId` INTEGER NULL;
@@ -29,10 +33,6 @@ CREATE TABLE `ocupantes_reserva` (
     `paisDocumento` VARCHAR(191) NULL,
     `motivoSinDocumento` VARCHAR(191) NULL,
     `fechaNacimiento` DATE NULL,
-    `nacionalidad` VARCHAR(191) NULL,
-    `domicilio` VARCHAR(191) NULL,
-    `localidad` VARCHAR(191) NULL,
-    `paisResidencia` VARCHAR(191) NULL,
     `telefono` VARCHAR(191) NULL,
     `email` VARCHAR(191) NULL,
     `responsableId` INTEGER NULL,

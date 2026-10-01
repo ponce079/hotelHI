@@ -12,7 +12,7 @@ async function ampliarSiCorresponde(tx, reservaId, confirmacion) {
       fechaDesde: { lte: hoy },
       fechaHasta: { gt: hoy },
     },
-    include: { asignaciones: true },
+    include: estadia.includePersona,
   });
   const actuales = await tx.reservaHabitacion.findMany({
     where: { reservaId },

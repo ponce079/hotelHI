@@ -1,5 +1,7 @@
 const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 const prisma = require("../../lib/prisma");
+const { codigoPais } = require("../../lib/paises");
+const { CAMPOS_RESIDENCIA } = require("./persona.servicio");
 function identidad(p) {
   return p.numeroDocumento
     ? require("node:crypto")
@@ -100,6 +102,7 @@ function normalizarPersona(d, reserva) {
     "email",
   ])
     r[k] = texto(d[k], k);
+  for (const k of ["nacionalidad", "paisResidencia"]) r[k] = codigoPais(r[k]) || r[k];
   if (r.numeroDocumento)
     r.numeroDocumento = r.numeroDocumento.toUpperCase().replace(/\s/g, "");
   if (r.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email))
@@ -133,13 +136,33 @@ async function evento(tx, reservaId, accion, detalle, operador) {
     },
   });
 }
-const includePersona = { asignaciones: { orderBy: { desde: "asc" } } };
+const includePersona = {
+  asignaciones: { orderBy: { desde: "asc" } },
+  huesped: { select: { id: true, nacionalidad: true, paisResidencia: true, domicilio: true, localidad: true } },
+};
+// Los datos de residencia viven en Huesped. Hacia afuera (API) siguen viéndose
+// en la ficha del ocupante, con los mismos nombres de siempre.
+function conResidencia(persona) {
+  if (!persona) return persona;
+  const { huesped, ...propios } = persona;
+  for (const campo of CAMPOS_RESIDENCIA) propios[campo] = huesped?.[campo] ?? propios[campo] ?? null;
+  return propios;
+}
+function sacarResidencia(persona) {
+  const residencia = {};
+  for (const campo of CAMPOS_RESIDENCIA) {
+    residencia[campo] = persona[campo];
+    delete persona[campo];
+  }
+  return residencia;
+}
 async function listar(reservaId) {
-  return prisma.ocupanteReserva.findMany({
+  const personas = await prisma.ocupanteReserva.findMany({
     where: { reservaId: id(reservaId) },
     include: includePersona,
     orderBy: { id: "asc" },
   });
+  return personas.map(conResidencia);
 }
 async function capacidad(tx, r, habitacionId, persona, excluirId) {
   const rh = r.reservaHabitaciones.find((h) => h.habitacionId === habitacionId);
@@ -202,6 +225,7 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
     if (actual && ["Retirado", "Cancelado"].includes(actual.estado))
       throw new ErrorDeNegocio("No se modifica un registro finalizado.");
     const p = normalizarPersona(data, r);
+    const residencia = sacarResidencia(p);
     const habitacionId = id(data.habitacionId);
     const { prepararContacto, comparteCorreo } = require("./contactoPersona");
     const { menor, responsable } = await prepararContacto(
@@ -298,12 +322,9 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
       throw new ErrorDeNegocio(
         "El titular de habitacion debe tener 18 años cumplidos.",
       );
-    p.huespedId = await require("./persona.servicio").vincularPersona(
-      tx,
-      r,
-      p,
-      actual,
-    );
+    const personas = require("./persona.servicio");
+    p.huespedId = await personas.vincularPersona(tx, r, p, actual);
+    await personas.actualizarResidencia(tx, p.huespedId, residencia);
     const anterior = actual?.asignaciones.find((a) => !a.hasta);
     const cambio = anterior && anterior.habitacionId !== habitacionId;
     if (cambio && !texto(data.motivo, "Motivo"))
@@ -344,10 +365,12 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
       { ocupanteId: saved.id, habitacionId, cambio: Boolean(cambio) },
       operador,
     );
-    return tx.ocupanteReserva.findUnique({
-      where: { id: saved.id },
-      include: includePersona,
-    });
+    return conResidencia(
+      await tx.ocupanteReserva.findUnique({
+        where: { id: saved.id },
+        include: includePersona,
+      }),
+    );
   };
   return cliente
     ? ejecutar(cliente)
@@ -356,7 +379,8 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
 function validarCompleto(p) {
   if (!String(p.nombre || "").trim() || !String(p.apellido || "").trim())
     throw new ErrorDeNegocio("Completá nombre y apellido del ocupante.");
-  if (!p.fechaNacimiento || !p.nacionalidad || !p.paisResidencia)
+  const { nacionalidad, paisResidencia } = conResidencia(p);
+  if (!p.fechaNacimiento || !nacionalidad || !paisResidencia)
     throw new ErrorDeNegocio(
       "Completá nacimiento, nacionalidad y país de residencia.",
     );
@@ -458,7 +482,7 @@ async function accion(reservaId, ocupanteId, data) {
   }, OPCIONES_TRANSACCION);
 }
 async function alojados(q = "") {
-  return prisma.ocupanteReserva.findMany({
+  const personas = await prisma.ocupanteReserva.findMany({
     where: {
       estado: "Alojado",
       ...(q
@@ -483,6 +507,7 @@ async function alojados(q = "") {
     orderBy: { apellido: "asc" },
     take: 500,
   });
+  return personas.map(conResidencia);
 }
 async function historial(reservaId) {
   return prisma.eventoEstadia.findMany({
@@ -493,6 +518,10 @@ async function historial(reservaId) {
 }
 module.exports = {
   identidad,
+  CAMPOS_RESIDENCIA,
+  conResidencia,
+  sacarResidencia,
+  includePersona,
   ErrorDeNegocio,
   normalizarPersona,
   edad,

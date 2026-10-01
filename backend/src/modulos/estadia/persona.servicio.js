@@ -1,4 +1,5 @@
 const { createHash } = require("node:crypto");
+const { codigoPais } = require("../../lib/paises");
 const normalizar = (v) =>
   String(v || "")
     .trim()
@@ -14,19 +15,14 @@ function claveDocumento(p) {
     )
     .digest("hex");
 }
+// Cualquier país del catálogo ISO se reduce a su código; lo que no está en el
+// catálogo conserva la clave de texto de siempre (mayúsculas, sin tildes ni espacios).
 function normalizarPais(valor) {
-  const clave = normalizar(valor)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
   return (
-    {
-      ARGENTINA: "AR",
-      BRASIL: "BR",
-      CHILE: "CL",
-      URUGUAY: "UY",
-      PARAGUAY: "PY",
-      BOLIVIA: "BO",
-    }[clave] || clave
+    codigoPais(valor) ||
+    normalizar(valor)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
   );
 }
 async function vincularPersona(tx, reserva, persona, actual) {
@@ -111,4 +107,17 @@ async function vincularPersona(tx, reserva, persona, actual) {
   });
   return personaUnica.id;
 }
-module.exports = { claveDocumento, vincularPersona, normalizarPais };
+
+const CAMPOS_RESIDENCIA = ["nacionalidad", "paisResidencia", "domicilio", "localidad"];
+
+// Nacionalidad, país de residencia, domicilio y localidad son datos de la persona:
+// viven en Huesped y la ficha guarda los últimos declarados. Un dato que no se
+// declara (vacío) no borra el que ya estaba.
+async function actualizarResidencia(tx, huespedId, residencia) {
+  const datos = {};
+  for (const campo of CAMPOS_RESIDENCIA) if (residencia[campo]) datos[campo] = residencia[campo];
+  if (!Object.keys(datos).length) return;
+  await tx.huesped.update({ where: { id: huespedId }, data: datos });
+}
+
+module.exports = { claveDocumento, vincularPersona, normalizarPais, actualizarResidencia, CAMPOS_RESIDENCIA };

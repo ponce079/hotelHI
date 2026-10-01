@@ -64,7 +64,7 @@ function validarOcupacion(habitaciones, personas) {
 async function prepararIngreso(tx, reservaId, operador) {
   const personas = await tx.ocupanteReserva.findMany({
     where: { reservaId, estado: "Previsto" },
-    include: { asignaciones: true },
+    include: s.includePersona,
   });
   const hoy = require('../../lib/fechas').hoyComoFechaUTC().toISOString().slice(0, 10);
   const presentes = personas.filter(

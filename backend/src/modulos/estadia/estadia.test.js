@@ -52,3 +52,28 @@ test("un menor con datos completos requiere un adulto responsable", () => {
     }),
   ).toThrow(/adulto responsable/);
 });
+
+test("la residencia sale de la ficha de Huesped, con los mismos nombres hacia la API", () => {
+  const { conResidencia } = require("./estadia.servicio");
+  const persona = conResidencia({
+    id: 1,
+    huespedId: 5,
+    huesped: { id: 5, nacionalidad: "AR", paisResidencia: "UY", domicilio: "Calle 1", localidad: "Salto" },
+  });
+  expect(persona).toMatchObject({ nacionalidad: "AR", paisResidencia: "UY", domicilio: "Calle 1", localidad: "Salto" });
+  expect(persona).not.toHaveProperty("huesped");
+});
+
+test("validarCompleto exige nacionalidad y residencia desde la ficha de Huesped", () => {
+  const completo = {
+    ...base,
+    nombre: "Ana",
+    apellido: "Prueba",
+    fechaNacimiento: new Date("1990-01-01"),
+    tipoDocumento: "DNI",
+    numeroDocumento: "1",
+    paisDocumento: "AR",
+  };
+  expect(() => validarCompleto({ ...completo, huesped: { nacionalidad: "AR" } })).toThrow(/nacionalidad y país de residencia/);
+  expect(() => validarCompleto({ ...completo, huesped: { nacionalidad: "AR", paisResidencia: "AR" } })).not.toThrow();
+});

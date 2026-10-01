@@ -4,7 +4,7 @@ const { operaciones, pendientes } = require('./actualizar-esquema-estadia');
 const sql = fs.readFileSync(path.resolve(__dirname, '../prisma/estadia-ocupantes-cargos.sql'), 'utf8');
 test('la actualización preserva los decimales y no reintroduce precios antiguos de habitación', () => {
   const pasos = operaciones(sql);
-  expect(pasos).toHaveLength(24);
+  expect(pasos).toHaveLength(28);
   expect(pasos.filter(p => p.tipo === 'tabla')).toHaveLength(3);
   expect(pasos.some(p => p.tabla === 'reservas_habitaciones')).toBe(false);
   expect(pasos.find(p => p.nombre === 'precioUnitario').sql).toContain('DECIMAL(12, 2) NULL');
