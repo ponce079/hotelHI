@@ -1,16 +1,16 @@
 import { expect, it } from 'vitest';
-import { resumenOcupantes, cantidadesParaEnviar } from './validacionOcupantesIngreso';
-const habitaciones = [{id:1,numero:'101',capacidad:2}];
-const persona = {habitacionId:'1',estado:'Previsto',fechaDesde:'2020-01-01',fechaHasta:'2099-01-01',asignaciones:[{habitacionId:1,hasta:null}],verificadoEn:'2026-01-01'};
-it('requiere declaración explícita y todos los registros en ingreso sin reserva', () => {
-  expect(resumenOcupantes(habitaciones,[persona],{},true)[0].completo).toBe(false);
-  expect(resumenOcupantes(habitaciones,[persona],{1:'2'},true)[0].completo).toBe(false);
-  expect(resumenOcupantes(habitaciones,[persona,persona],{1:'2'},true)[0].completo).toBe(true);
-  expect(cantidadesParaEnviar(habitaciones,{1:'2'})).toEqual([{habitacionId:1,cantidad:2}]);
+import { render, screen } from '@testing-library/react';
+import { resumenOcupantes } from './validacionOcupantesIngreso';
+import { CantidadesOcupantes } from './CantidadesOcupantes';
+const habitaciones=[{id:1,numero:'101',capacidad:2,adultos:1,menores:0}];
+const persona={habitacionId:1,estado:'Previsto',fechaNacimiento:'1990-01-01',fechaDesde:'2020-01-01',fechaHasta:'2099-01-01',asignaciones:[{habitacionId:1,hasta:null}],verificadoEn:'2026-01-01'};
+it('muestra la ocupación de la reserva sin pedirla otra vez',()=>{
+  const resumen=resumenOcupantes(habitaciones,[persona]);
+  expect(resumen[0].completo).toBe(true);
+  render(<CantidadesOcupantes resumen={resumen}/>);
+  expect(screen.queryByRole('spinbutton')).not.toBeInTheDocument();
+  expect(screen.getByText(/1 adultos y 0 menores reservados/)).toBeInTheDocument();
 });
-it('excluye cancelados, fechas futuras y personas sin verificar del ingreso completo', () => {
-  for (const cambio of [{estado:'Cancelado'},{fechaDesde:'2099-01-01'},{verificadoEn:null},{asignaciones:[{habitacionId:2,hasta:null}]}]) {
-    expect(resumenOcupantes(habitaciones,[{...persona,...cambio}],{1:'1'})[0].completo).toBe(false);
-  }
-  expect(resumenOcupantes(habitaciones,[persona],{1:'1'})[0].completo).toBe(true);
+it('bloquea fichas faltantes, sobrantes, futuras, sin verificar o con edades incompatibles',()=>{
+  for(const personas of [[],[persona,persona],[{...persona,estado:'Cancelado'}],[{...persona,fechaDesde:'2099-01-01'}],[{...persona,verificadoEn:null}],[{...persona,fechaNacimiento:'2015-01-01'}]])expect(resumenOcupantes(habitaciones,personas)[0].completo).toBe(false);
 });

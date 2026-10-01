@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -92,6 +92,8 @@ export function CheckOutReservaPage() {
     queryFn: () => obtenerCuenta(reservaId),
     enabled: puedeVer,
   });
+  const firmaCargos = JSON.stringify([cuentaQuery.data?.totalAdeudado, cuentaQuery.data?.consumos, cuentaQuery.data?.verificaciones]);
+  useEffect(() => { setCargosValidados(false); }, [firmaCargos]);
   const pagosQuery = useQuery({
     queryKey: ["check-out", "pagos", reservaId],
     queryFn: () => listarPagosEstadia(reservaId),
@@ -174,7 +176,7 @@ export function CheckOutReservaPage() {
   }
 
   const cuenta = cuentaQuery.data;
-  const pagos = pagosQuery.data?.pagos ?? [];
+  const pagos = (pagosQuery.data?.pagos ?? []).filter(p => !p.garantiaSeparada);
   const cerrada = cuenta.estadoReserva === ESTADO_RESERVA.CERRADA || Boolean(resultado);
   const enCurso = cuenta.estadoReserva === ESTADO_RESERVA.EN_CURSO && !resultado;
   const saldado = Math.round(cuenta.saldo * 100) === 0;
@@ -183,7 +185,7 @@ export function CheckOutReservaPage() {
   const comprobanteVigente = (comprobantesQuery.data ?? []).find((c) => c.tipo === "Comprobante" && !c.anulado);
 
   // PasoAPaso: 0 verificación · 1 confirmación · 2 pago · 3 cierre · 4 cerrado.
-  const pasoActual = cerrada ? PASOS_CHECKOUT.length : !verificacionCompleta ? 0 : !cargosValidados ? 1 : !saldado ? 2 : 3;
+  const pasoActual = cerrada ? PASOS_CHECKOUT.length : !verificacionCompleta ? 0 : !cargosValidados ? 1 : cuenta.garantiaPendiente > 0 ? 2 : !saldado ? 3 : 4;
   const puedeCerrar = puedeGestionar && enCurso && verificacionCompleta && cargosValidados && saldado && !(cuenta.garantiaPendiente>0);
 
   function alRegistrarCargo(mensaje) {
@@ -195,7 +197,6 @@ export function CheckOutReservaPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <Garantias reservaId={reservaId} garantias={cuenta.garantias||[]} editable={puedeGestionar&&enCurso} onExito={()=>{queryClient.invalidateQueries({queryKey:['check-out']});queryClient.invalidateQueries({queryKey:['pagos-estadia']});}}/>
       <div>
         <Button variante="fantasma" icono={ArrowLeft} onClick={volver}>
           Volver
@@ -271,7 +272,7 @@ export function CheckOutReservaPage() {
                 <td className="px-3 py-2 font-mono text-[13px] font-medium">{h.numero}</td>
                 <td className="px-3 py-2 text-[13px]">{h.tipo}</td>
                 <td className="px-3 py-2 text-right font-mono text-xs">{h.noches}</td>
-                <td className="px-3 py-2 text-right font-mono text-xs">{moneda(h.tarifaPorNoche)}</td>
+                <td className="px-3 py-2 text-right font-mono text-xs">{moneda(h.promedioPorNoche)}</td>
                 <td className="px-3 py-2 text-right font-mono text-xs">{moneda(h.subtotal)}</td>
               </tr>
             )}
@@ -407,19 +408,25 @@ export function CheckOutReservaPage() {
         )}
       </Tarjeta>
 
-      <Tarjeta icono={Wallet} titulo="3. Pago" hu="HU 50 — se pueden combinar medios de pago">
+      <Tarjeta icono={Wallet} titulo="3. Resolución de la garantía">
+        <p className="my-3 text-sm text-piedra">Cargos de verificación: {moneda(cuenta.subtotales.verificacion)}. Saldo pendiente: {moneda(cuenta.saldo)}. Aplicá el importe acordado con el huésped y registrá la devolución del resto.</p>
+        {(!verificacionCompleta || !cargosValidados) && <p className="mb-3 text-sm">Primero verificá todas las habitaciones y confirmá los cargos con el huésped.</p>}
+        <Garantias reservaId={reservaId} garantias={cuenta.garantias||[]} editable={puedeGestionar&&enCurso&&verificacionCompleta&&cargosValidados} cargosValidados={cargosValidados} totalConfirmado={cuenta.totalAdeudado} onExito={()=>{queryClient.invalidateQueries({queryKey:['check-out']});queryClient.invalidateQueries({queryKey:['pagos-estadia']});}}/>
+      </Tarjeta>
+      <Tarjeta icono={Wallet} titulo="4. Pago" hu="HU 50 — se pueden combinar medios de pago">
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
             {puedeGestionar && (
               <Button
                 variante="secundario"
                 icono={Wallet}
-                disabled={!enCurso || !cargosValidados || saldado}
+                disabled={!enCurso || !cargosValidados || cuenta.garantiaPendiente > 0 || saldado}
                 onClick={() => setModalPago(true)}
               >
                 Registrar pago
               </Button>
             )}
+            {cuenta.garantiaPendiente > 0 && <p className="text-sm text-piedra">Resolvé primero la garantía para cobrar el saldo restante.</p>}
             {saldado && <Badge variante="ok">Cuenta saldada</Badge>}
             {puedeGestionar && !cargosValidados && enCurso && !saldado && (
               <span className="text-[12px] text-piedra">Se habilita cuando el huésped confirma los cargos.</span>
@@ -474,7 +481,7 @@ export function CheckOutReservaPage() {
         </div>
       </Tarjeta>
 
-      <Tarjeta icono={DoorClosed} titulo="4. Cierre del check-out" hu="HU 51 y 52 — reserva cerrada, habitaciones a limpieza y aviso a Housekeeping">
+      <Tarjeta icono={DoorClosed} titulo="5. Cierre del check-out" hu="HU 51 y 52 — reserva cerrada, habitaciones a limpieza y aviso a Housekeeping">
         <div className="flex flex-col gap-3">
           <p className="text-[13px] text-piedra">
             Al confirmar, la reserva pasa a <strong className="text-tinta">Cerrada</strong>, cada habitación queda{" "}
@@ -504,7 +511,7 @@ export function CheckOutReservaPage() {
       </Tarjeta>
 
       {cerrada && (
-        <Tarjeta icono={Receipt} titulo="5. Comprobante" hu="HU 53 y 55 — comprobante de la estadía">
+        <Tarjeta icono={Receipt} titulo="6. Comprobante" hu="HU 53 y 55 — comprobante de la estadía">
           {comprobantesQuery.isLoading ? (
             <p className="text-sm text-piedra">Buscando comprobantes…</p>
           ) : comprobanteVigente ? (

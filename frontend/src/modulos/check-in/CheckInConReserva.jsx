@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { EstadiaPanel } from '../estadia/EstadiaPanel';
 import { CantidadesOcupantes } from './CantidadesOcupantes';
-import { resumenOcupantes, cantidadesParaEnviar } from './validacionOcupantesIngreso';
+import { resumenOcupantes } from './validacionOcupantesIngreso';
+import { bloqueosCheckIn } from './bloqueosCheckIn';
+import { reintentarLecturaEstadia } from '../estadia/recuperacionEstadia';
 import { api } from '../../lib/api';
 import { useSesion } from '../../lib/sesion';
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -28,7 +30,6 @@ const FORM_VACIO = {
   garantiaConfirmada: false,
   medioGarantia: MEDIOS_GARANTIA[0],
   referenciaGarantia: undefined,
-  cantidadesOcupantes: {},
 };
 
 function habitacionesDeReserva(reserva) {
@@ -83,6 +84,7 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
   const queryClient = useQueryClient();
   const [codigo, setCodigo] = useState(codigoPreseleccionado);
   const [resultado, setResultado] = useState(null);
+  const [titularPreparadoPara, setTitularPreparadoPara] = useState(null);
   const [form, setForm] = useState(FORM_VACIO);
   const { toast, mostrarToast } = useToast();
   const preseleccionAplicada = useRef(false);
@@ -128,7 +130,6 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
   const confirmar = useMutation({
     mutationFn: () =>
       confirmarCheckInConReserva(resultado.reserva.id, {
-        cantidadesOcupantes: cantidadesParaEnviar(resultado.reserva.habitaciones, form.cantidadesOcupantes),
         operador: usuario,
         numeroDocumentoIngresado: form.documento.trim(),
         garantiaConfirmada: form.garantiaConfirmada,
@@ -150,15 +151,17 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
   }
 
   const reserva = resultado?.reserva;
-  const ocupantes = useQuery({queryKey:['ocupantes',reserva?.id],queryFn:()=>api.get(`/estadia/${reserva.id}/ocupantes`).then(r=>r.data),enabled:Boolean(reserva)});
-  const resumen = resumenOcupantes(reserva?.habitaciones??[],ocupantes.data??[],form.cantidadesOcupantes);
-  const todosRegistrados = ocupantes.isSuccess && !ocupantes.isFetching && resumen.length>0 && resumen.every(h=>h.completo);
-  const puedeConfirmar =
-    resultado?.puedeIniciarCheckIn && todosRegistrados && form.documento.trim() && form.garantiaConfirmada && !confirmar.isPending;
+  const ocupantes = useQuery({queryKey:['ocupantes',reserva?.id],queryFn:()=>api.get(`/estadia/${reserva.id}/ocupantes`).then(r=>r.data),enabled:Boolean(reserva),retry:reintentarLecturaEstadia});
+  const resumen = resumenOcupantes(reserva?.habitaciones??[],ocupantes.data??[]);
+  const motivosBloqueo = bloqueosCheckIn({
+    resultado, titularPreparado: titularPreparadoPara != null && String(titularPreparadoPara) === String(reserva?.id),
+    ocupantes, resumen, form,
+  });
+  const puedeConfirmar = motivosBloqueo.length === 0 && !confirmar.isPending;
 
   return (
     <div className="flex flex-col gap-5">
-      {reserva && <><CantidadesOcupantes resumen={resumen} cantidades={form.cantidadesOcupantes} onChange={cantidadesOcupantes=>cambiar({cantidadesOcupantes})}/><EstadiaPanel key={reserva.id} reserva={reserva} soloPersonas /></>}
+      {reserva && <><CantidadesOcupantes resumen={resumen}/><EstadiaPanel key={reserva.id} reserva={reserva} soloPersonas onTitularPreparado={setTitularPreparadoPara}/></>}
       <div className="flex gap-6">
         <div className="flex flex-[1_1_auto] flex-col gap-5">
           <form
@@ -312,7 +315,8 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
           medioGarantia={form.medioGarantia}
           puedeConfirmar={Boolean(puedeConfirmar)}
           cargando={confirmar.isPending}
-          onConfirmar={() => confirmar.mutate()}
+          motivosBloqueo={motivosBloqueo}
+          onConfirmar={() => { if (puedeConfirmar) confirmar.mutate(); }}
         />
       </div>
 

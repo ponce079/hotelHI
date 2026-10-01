@@ -3,7 +3,6 @@ const TIPOS_TAREA_MANTENIMIENTO = ["Correctivo", "Preventivo"];
 
 const LIMITES_HABITACION = {
   numero: 20,
-  tipo: 60,
   equipamiento: 2000,
   responsable: 100,
   // Mismo límite que Reserva.motivoCancelacion (reservas.constantes.js).

@@ -4,6 +4,7 @@ const {
   MEDIOS_CON_TARJETA,
   CONCEPTOS_PAGO_ESTADIA,
   CONCEPTO_PAGO_FINAL,
+  CONCEPTO_SENIA,
 } = require('./pagoEstadia.constantes');
 const checkOutServicio = require('../check-out/checkOut.servicio');
 
@@ -117,6 +118,23 @@ async function crearPagoEnTransaccion(tx, { reservaId, medios, concepto = CONCEP
   const totalMedios = totalDeMedios(medios, concepto);
 
   const { saldo, estadoReserva } = await calcularSaldoReserva(reservaId, tx);
+  return guardarPagoConSaldo(tx, { reservaId, medios, concepto, totalMedios, saldo, estadoReserva });
+}
+
+// Exclusivo del alta atómica: recibe la reserva que acaba de insertar la misma
+// transacción, nunca un saldo del navegador ni una reserva ya existente.
+// Todavía no tiene consumos, verificaciones ni pagos; su saldo es alojamiento.
+async function crearSeniaReservaNuevaEnTransaccion(tx, reserva, medios) {
+  if (!reserva?.id || reserva.estado !== 'Confirmada' || !reserva.reservaHabitaciones?.length) {
+    throw new ErrorDeNegocio('Se requiere una reserva recién creada para registrar la seña.');
+  }
+  const totalMedios = totalDeMedios(medios, CONCEPTO_SENIA);
+  const { totalEstimadoAlojamiento: saldo } = require('../reservas/reservas.servicio').formatearReserva(reserva);
+  if (!Number.isFinite(saldo) || saldo < 0) throw new ErrorDeNegocio('No se pudo calcular el importe de la reserva.');
+  return guardarPagoConSaldo(tx, { reservaId: reserva.id, medios, concepto: CONCEPTO_SENIA, totalMedios, saldo, estadoReserva: reserva.estado });
+}
+
+async function guardarPagoConSaldo(tx, { reservaId, medios, concepto, totalMedios, saldo, estadoReserva }) {
   validarReservaCobrable(estadoReserva);
   if (centavos(totalMedios) > centavos(saldo)) {
     throw new ErrorDeNegocio(
@@ -299,6 +317,7 @@ async function anularPago(id, motivo, cliente = prisma) {
 }
 
 module.exports = {
+  crearSeniaReservaNuevaEnTransaccion,
   calcularSaldoReserva,
   crearPago,
   crearPagoEnTransaccion,
@@ -308,4 +327,3 @@ module.exports = {
   anularPago,
   ErrorDeNegocio,
 };
-

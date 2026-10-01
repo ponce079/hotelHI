@@ -1,0 +1,20 @@
+{
+  "name": "hotelhi-local",
+  "private": true,
+  "scripts": {
+    "setup": "npm --prefix backend ci && npm --prefix frontend ci && npm --prefix backend run db:generate",
+    "dev": "node scripts/dev.cjs",
+    "setup:estadia": "node scripts/estadia-local.cjs setup",
+    "dev:estadia": "node scripts/estadia-local.cjs dev",
+    "test:estadia": "node backend/scripts/pruebas-estadia-integracion.js",
+    "db:start": "node scripts/db-local.cjs",
+    "db:stop": "node scripts/db-local.cjs stop",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build": "npm --prefix frontend run build",
+    "test": "npm --prefix backend test -- --runInBand && npm --prefix frontend test",
+    "db:check": "npm --prefix backend run db:check",
+    "db:push": "npm --prefix backend run db:push",
+    "db:seed": "npm --prefix backend run db:seed"
+  }
+}

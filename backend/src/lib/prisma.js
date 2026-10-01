@@ -13,6 +13,10 @@ if (!process.env.DATABASE_URL) {
 }
 
 const dbUrl = new URL(process.env.DATABASE_URL);
+const connectionLimit = Number(process.env.DATABASE_CONNECTION_LIMIT ?? 2);
+if (!Number.isSafeInteger(connectionLimit) || connectionLimit < 1 || connectionLimit > 10) {
+  throw new Error("DATABASE_CONNECTION_LIMIT debe ser un entero entre 1 y 10.");
+}
 
 const adapter = new PrismaMariaDb(
   {
@@ -24,9 +28,14 @@ const adapter = new PrismaMariaDb(
     ssl: process.env.DATABASE_SSL === "false" ? false : {
       rejectUnauthorized: false,
     },
-    // La base remota es compartida por varios integrantes; una conexión
-    // por proceso evita agotar el cupo global del plan de Clever Cloud.
-    connectionLimit: 1,
+    // Una transacción ocupa una conexión hasta finalizar. Permitimos una
+    // segunda para lecturas concurrentes; el límite sigue siendo por proceso.
+    // Puede bajarse a 1 si el cupo compartido lo requiere.
+    connectionLimit,
+    // El driver que incluye este adapter necesita un mínimo positivo para
+    // crear conexiones; no usar 0 aunque otras versiones lo soporten.
+    minimumIdle: 1,
+    idleTimeout: 60,
     connectTimeout: 30000,
     acquireTimeout: 30000,
   },
@@ -48,6 +57,6 @@ const adapter = new PrismaMariaDb(
   }
 );
 
-const prisma = new PrismaClient({ adapter });
+const prisma = new PrismaClient({ adapter, transactionOptions: { maxWait: 10000 } });
 
 module.exports = prisma;

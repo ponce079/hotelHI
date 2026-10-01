@@ -18,7 +18,7 @@ async function getBuscarReserva(req, res) {
   }
 }
 
-// GET /api/check-in/habitaciones-libres?fechaHasta=&tipo=&capacidadMinima=
+// GET /api/check-in/habitaciones-libres?fechaHasta=&tipoHabitacionId=&capacidadMinima=
 async function getHabitacionesLibres(req, res) {
   try {
     return res.json(await checkInServicio.listarHabitacionesLibresAhora(req.query));
@@ -30,6 +30,7 @@ async function getHabitacionesLibres(req, res) {
 // POST /api/check-in/:reservaId/confirmar
 async function postConfirmarConReserva(req, res) {
   try {
+    if (Object.hasOwn(req.body, 'cantidadesOcupantes')) return res.status(400).json({error:'La ocupación se obtiene de la reserva. Actualizá la pantalla; no se admite una segunda declaración de cantidades.'});
     const resultado = await checkInServicio.confirmarCheckInConReserva({
       reservaId: req.params.reservaId,
       ...req.body,
@@ -43,18 +44,12 @@ async function postConfirmarConReserva(req, res) {
 // POST /api/check-in/walk-in
 async function postCheckInWalkIn(req, res) {
   try {
+    if (Object.hasOwn(req.body, 'cantidadesOcupantes')) return res.status(400).json({error:'Indicá adultos y menores en las habitaciones de la reserva, sin una segunda declaración de cantidades.'});
     return res.status(201).json(await checkInServicio.registrarCheckInWalkIn(req.body));
   } catch (err) {
     return responderError(res, err, "Error al registrar el check-in walk-in:", "No se pudo registrar el check-in.");
   }
 }
-
-module.exports = {
-  getBuscarReserva,
-  getHabitacionesLibres,
-  postConfirmarConReserva,
-  postCheckInWalkIn,
-};
 
 module.exports = {
   getBuscarReserva,

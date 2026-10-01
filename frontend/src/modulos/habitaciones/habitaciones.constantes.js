@@ -60,7 +60,6 @@ export const ESTADO_ORDEN_MANTENIMIENTO_BADGE = {
 
 export const LIMITES_HABITACION = {
   numero: 20,
-  tipo: 60,
   equipamiento: 2000,
   responsable: 100,
   // Mismo límite que Reserva.motivoCancelacion (reservas.constantes.js).

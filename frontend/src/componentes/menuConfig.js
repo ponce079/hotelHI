@@ -21,6 +21,7 @@ import {
   Receipt,
   Wrench,
   ArrowLeftRight,
+  DollarSign,
   Users,
 } from "lucide-react";
 
@@ -62,14 +63,35 @@ export const MENU_GRUPOS = [
         icon: Wrench,
         roles: ["admin", "recepcionista", "housekeeping"],
       },
+      // HU-89 — Catálogo de Tipos de Habitación (Etapa 1 de tarifas por
+      // temporada). Mismos roles que verTiposHabitacion (sesion.jsx):
+      // admin gestiona, recepcionista y gerente ven de solo lectura.
+      {
+        to: "/tipos-habitacion",
+        label: "Tipos de Habitación",
+        icon: Tag,
+        roles: ["admin", "recepcionista", "gerente"],
+      },
+      // Etapa 2 de tarifas por temporada (HU-90 a HU-93). Mismos roles que
+      // verTarifas (sesion.jsx): admin y recepcionista consultan, gerente
+      // además gestiona (verTarifas alcanza para mostrar el ítem; el botón
+      // de escritura de cada pantalla ya se gatea con gestionarTarifas).
+      {
+        to: "/tarifas",
+        label: "Tarifas",
+        icon: DollarSign,
+        roles: ["admin", "recepcionista", "gerente"],
+      },
       // Sprint 3 académico — Reservas (HU-36 a 42). Las pantallas públicas
       // (/disponibilidad y /reservar) no entran al menú: son del rol
-      // "Huésped" y viven fuera de la sesión de staff.
+      // "Huésped" y viven fuera de la sesión de staff. Etapa 4B (HU-97):
+      // gerente se suma (ver sesion.jsx:verReservas) — necesita llegar a la
+      // ficha de una reserva para ajustarle el precio.
       {
         to: "/reservas",
         label: "Reservas",
         icon: CalendarCheck,
-        roles: ["admin", "recepcionista"],
+        roles: ["admin", "recepcionista", "gerente"],
       },
       // Sprint 3 académico — Check-in (HU-43 a 47).
       {

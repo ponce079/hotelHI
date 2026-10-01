@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { validarFechaConsumo } from './validarFechaConsumo';
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, X } from "lucide-react";
 import { Modal } from "../../componentes/Modal";
@@ -96,6 +97,8 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
   function handleSubmit(evento) {
     evento.preventDefault();
     const nuevos = {};
+    const errorFecha = validarFechaConsumo(reserva, form.fechaServicio);
+    if (errorFecha) nuevos.fechaServicio = errorFecha;
     if (!form.habitacionId) nuevos.habitacionId = "Elegí la habitación.";
     if (!form.incluido && !(Number(form.monto) > 0)) nuevos.monto = "Ingresá un monto mayor a 0.";
     if (!(Number(form.cantidad) > 0)) nuevos.cantidad = "Ingresá una cantidad mayor a 0.";
@@ -185,7 +188,7 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
           )}
 
           <Input label="Descripción del cargo" value={form.descripcion||''} onChange={e=>cambiar('descripcion',e.target.value)} maxLength={500}/>
-          <Input label="Fecha del servicio" type="datetime-local" value={form.fechaServicio||''} onChange={e=>cambiar('fechaServicio',e.target.value)}/>
+          <Input label="Fecha del servicio" type="datetime-local" value={form.fechaServicio||''} error={errores.fechaServicio || validarFechaConsumo(reserva, form.fechaServicio)} onChange={e=>cambiar('fechaServicio',e.target.value)}/>
           {!esMinibar&&<Input label="Cantidad *" type="number" min="0.01" step="0.01" value={form.cantidad} onChange={e=>cambiar('cantidad',e.target.value)} error={errores.cantidad}/>}
           <label className="text-sm"><input type="checkbox" checked={form.incluido||false} onChange={e=>cambiar('incluido',e.target.checked)}/> Incluido en la tarifa (sin cargo)</label>
           <MoneyInput label="Precio unitario *" value={form.monto} onChange={(v) => cambiar("monto", v)} error={errores.monto} />

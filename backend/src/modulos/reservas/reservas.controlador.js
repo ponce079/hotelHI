@@ -2,7 +2,7 @@ const reservasServicio = require("./reservas.servicio");
 
 function responderError(res, err, contexto, mensaje) {
   if (err instanceof reservasServicio.ErrorDeNegocio) {
-    return res.status(err.statusCode).json({ error: err.message });
+    return res.status(err.statusCode).json({ error: err.message, ...(err.codigo ? { codigo: err.codigo } : {}) });
   }
   console.error(contexto, err);
   return res.status(500).json({ error: mensaje });
@@ -47,6 +47,16 @@ async function getReservaPorId(req, res) {
 // mismo endpoint y la misma validación de disponibilidad para los dos
 // canales, sin duplicar lógica — la pantalla pública manda origen: "WEB"
 // y eso solo cambia el texto de la confirmación.
+// HU-95 (regla 5) — cotización previa a confirmar un alta o una
+// modificación (mostrador o web), sin persistir nada.
+async function postCotizar(req, res) {
+  try {
+    return res.json(await reservasServicio.cotizarParaReserva(req.body));
+  } catch (err) {
+    return responderError(res, err, "Error al cotizar la reserva:", "No se pudo cotizar la reserva.");
+  }
+}
+
 async function postReserva(req, res) {
   try {
     return res.status(201).json(await reservasServicio.crearReserva(req.body));
@@ -83,13 +93,42 @@ async function postCancelar(req, res) {
   }
 }
 
+// Etapa 4B (HU-97) — primer endpoint de reservas con auth en el backend de
+// verdad (ver requiereSesion/requiereRol en la ruta, reservas.routes.js):
+// modifica importes a cobrar, así que `ajustadoPor` sale SIEMPRE de la
+// sesión autenticada (req.usuarioActual), nunca de lo que mande el body —
+// si el body trae `usuario`, se ignora acá mismo, antes de llegar al
+// servicio.
+async function postAjustePrecio(req, res) {
+  try {
+    const payload = { ...req.body, usuario: req.usuarioActual.usuario };
+    return res.json(await reservasServicio.ajustarPrecioReserva(req.params.id, payload));
+  } catch (err) {
+    return responderError(res, err, "Error al ajustar el precio de la reserva:", "No se pudo ajustar el precio.");
+  }
+}
+
+// Etapa 4B (HU-98) — solo lectura, visible para recepcionista/gerente/admin
+// (sin requiereRol acá: a diferencia del ajuste de precio, consultar la
+// penalidad no cobra ni modifica nada).
+async function getPenalidad(req, res) {
+  try {
+    return res.json(await reservasServicio.obtenerPenalidad(req.params.id, req.query.tipo));
+  } catch (err) {
+    return responderError(res, err, "Error al calcular la penalidad:", "No se pudo calcular la penalidad.");
+  }
+}
+
 module.exports = {
   getDisponibilidad,
   getReservas,
   getReservaPorCodigo,
   getReservaPorId,
+  postCotizar,
   postReserva,
   postReservaConSenia,
   patchReserva,
   postCancelar,
+  postAjustePrecio,
+  getPenalidad,
 };

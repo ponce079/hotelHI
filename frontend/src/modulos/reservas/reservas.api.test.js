@@ -18,7 +18,7 @@ function reserva(id, fechaDesde) {
     estado: "Confirmada",
     fechaDesde,
     huesped: { nombre: `Huésped ${id}` },
-    habitaciones: [{ numero: "101", tipo: "Doble" }],
+    habitaciones: [{ numero: "101", tipo: "Doble", tipoHabitacionId: 10 }],
   };
 }
 

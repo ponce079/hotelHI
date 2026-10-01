@@ -21,7 +21,7 @@
 // en 'en limpieza' y no en 'ocupada'.
 //
 // No es una prueba de facturación (HU-48 a 50, ya cubierta por otros
-// caminos): las habitaciones se siembran con tarifaPorNoche = 0 a propósito,
+// caminos): las habitaciones se siembran con la Tarifa a $0 a propósito,
 // así el saldo da 0 sin tener que simular un PagoEstadia real — el foco acá
 // es exclusivamente la interacción Habitacion.estado/estadoAnterior entre
 // Check-in, Habitaciones y Check-out.
@@ -73,24 +73,77 @@ function enDias(dias) {
   return new Date(hoy.getTime() + dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-const HUESPED = { nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
+const HUESPED = { fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
 const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Tarjeta de crédito" };
+
+// Etapa 4A — crearReserva ahora pasa por el motor de cotización: hace falta
+// una temporada Base + un plan BAR + una Tarifa vigente por tipo, aunque
+// sea a precio 0 (ver nota de arriba: acá no importa la plata).
+async function asegurarTemporadaYPlanBase() {
+  let temporadaBase = base._datos.temporada.find((t) => t.nivel === "BASE");
+  if (!temporadaBase) {
+    temporadaBase = await base.temporada.create({
+      data: { nombre: "Base", nivel: "BASE", fechaDesde: null, fechaHasta: null, estadiaMinima: null, cierreLlegada: false, activa: true },
+    });
+  }
+  let planBar = base._datos.planTarifario.find((p) => p.codigo === "BAR");
+  if (!planBar) {
+    planBar = await base.planTarifario.create({
+      data: {
+        codigo: "BAR",
+        nombre: "Best Available Rate",
+        tipo: "BASE",
+        planBaseId: null,
+        descuentoPorcentaje: null,
+        reembolsable: true,
+        horasCancelacionSinCargo: 48,
+        penalidadNoShow: "PRIMERA_NOCHE",
+        visibleWeb: true,
+        activo: true,
+      },
+    });
+  }
+  return { temporadaBase, planBar };
+}
+
+async function asegurarTarifaParaTipo(tipoHabitacionId, precioPorNoche) {
+  const { temporadaBase } = await asegurarTemporadaYPlanBase();
+  const yaTiene = base._datos.tarifa.some((t) => t.tipoHabitacionId === tipoHabitacionId && t.temporadaId === temporadaBase.id);
+  if (!yaTiene) {
+    await base.tarifa.create({
+      data: {
+        tipoHabitacionId,
+        temporadaId: temporadaBase.id,
+        precioBase: precioPorNoche,
+        adicionalAdultoExtra: 0,
+        vigenteDesde: new Date(`${enDias(-365)}T00:00:00.000Z`),
+      },
+    });
+  }
+}
 
 // Deja una reserva "En curso" con la habitación "ocupada" — mismo camino
 // real que HU-43/47 (reservasServicio.crearReserva + confirmarCheckInConReserva
-// de checkIn.servicio.js, ya probados en pruebas-checkin.js). tarifaPorNoche
-// en 0 (ver nota de arriba) para que el check-out nunca se frene por saldo.
+// de checkIn.servicio.js, ya probados en pruebas-checkin.js). Tarifa en 0
+// (ver nota de arriba) para que el check-out nunca se frene por saldo.
 //
 // También registra la verificación "sin novedades" (HU-87): desde la
 // re-auditoría del 2026-09-21, confirmarCheckOut la exige — sin esto,
 // las 6 pruebas de este archivo (que no son sobre HU-87, son sobre el
 // estado de la habitación) fallarían por un motivo que no les compete.
 async function crearReservaEnCurso(numeroHabitacion) {
-  const habitacion = base._sembrarHabitacion({ numero: numeroHabitacion, tarifaPorNoche: 0 });
+  const habitacion = base._sembrarHabitacion({ numero: numeroHabitacion });
+  await asegurarTarifaParaTipo(habitacion.tipoHabitacionId, 0);
+  const { planBar } = await asegurarTemporadaYPlanBase();
+  const fechaDesde = enDias(0);
+  const fechaHasta = enDias(2);
+  const habitaciones = [{ habitacionId: habitacion.id, adultos: 2, menores: 0 }];
   const reserva = await reservasServicio.crearReserva({
-    fechaDesde: enDias(0),
-    fechaHasta: enDias(2),
-    habitacionIds: [habitacion.id],
+    fechaDesde,
+    fechaHasta,
+    habitaciones,
+    planTarifarioId: planBar.id,
+    totalEsperado: 0,
     huesped: { ...HUESPED },
   });
   await checkInServicio.confirmarCheckInConReserva({

@@ -45,7 +45,7 @@ function enDias(dias) {
   return new Date(hoy.getTime() + dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-const HUESPED = { nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
+const HUESPED = { fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
 
 async function esperaError(fn, textoEsperado) {
   try {
@@ -60,13 +60,79 @@ async function esperaError(fn, textoEsperado) {
   throw new Error(`Se esperaba un error que mencionara "${textoEsperado}", pero no falló`);
 }
 
+// Etapa 4A — crearReserva ahora pasa por el motor de cotización: hace falta
+// una temporada Base + un plan BAR + una Tarifa vigente por tipo. Esta suite
+// no ejercita montos de alojamiento (solo consumos), así que el precio
+// exacto no importa — cualquier valor fijo alcanza.
+async function asegurarTemporadaYPlanBase() {
+  let temporadaBase = base._datos.temporada.find((t) => t.nivel === "BASE");
+  if (!temporadaBase) {
+    temporadaBase = await base.temporada.create({
+      data: { nombre: "Base", nivel: "BASE", fechaDesde: null, fechaHasta: null, estadiaMinima: null, cierreLlegada: false, activa: true },
+    });
+  }
+  let planBar = base._datos.planTarifario.find((p) => p.codigo === "BAR");
+  if (!planBar) {
+    planBar = await base.planTarifario.create({
+      data: {
+        codigo: "BAR",
+        nombre: "Best Available Rate",
+        tipo: "BASE",
+        planBaseId: null,
+        descuentoPorcentaje: null,
+        reembolsable: true,
+        horasCancelacionSinCargo: 48,
+        penalidadNoShow: "PRIMERA_NOCHE",
+        visibleWeb: true,
+        activo: true,
+      },
+    });
+  }
+  return { temporadaBase, planBar };
+}
+
+async function asegurarTarifaParaTipo(tipoHabitacionId) {
+  const { temporadaBase } = await asegurarTemporadaYPlanBase();
+  const yaTiene = base._datos.tarifa.some((t) => t.tipoHabitacionId === tipoHabitacionId && t.temporadaId === temporadaBase.id);
+  if (!yaTiene) {
+    await base.tarifa.create({
+      data: {
+        tipoHabitacionId,
+        temporadaId: temporadaBase.id,
+        precioBase: 50000,
+        adicionalAdultoExtra: 0,
+        vigenteDesde: new Date(`${enDias(-365)}T00:00:00.000Z`),
+      },
+    });
+  }
+}
+
+async function sembrarHabitacion(extra = {}) {
+  const fila = base._sembrarHabitacion(extra);
+  await asegurarTarifaParaTipo(fila.tipoHabitacionId);
+  return fila;
+}
+
 // Reserva "En curso" con una habitación — el estado en el que HU-61 permite
 // cargar consumos. Reusa Reservas + marcarEnCurso, ya probados.
 async function reservaEnCurso(habitacionId = 1) {
+  const { planBar } = await asegurarTemporadaYPlanBase();
+  const fechaDesde = enDias(0);
+  const fechaHasta = enDias(3);
+  const habitaciones = [{ habitacionId, adultos: 2, menores: 0 }];
+  const cotizacion = await reservasServicio.cotizarParaReserva({
+    fechaDesde,
+    fechaHasta,
+    planTarifarioId: planBar.id,
+    habitaciones,
+    canal: "RECEPCION",
+  });
   const reserva = await reservasServicio.crearReserva({
-    fechaDesde: enDias(0),
-    fechaHasta: enDias(3),
-    habitacionIds: [habitacionId],
+    fechaDesde,
+    fechaHasta,
+    habitaciones,
+    planTarifarioId: planBar.id,
+    totalEsperado: cotizacion.planes[0]?.total ?? 0,
     huesped: { ...HUESPED },
   });
   await reservasServicio.marcarEnCurso(reserva.id);
@@ -78,7 +144,7 @@ async function main() {
 
   await prueba("registra un consumo de Restaurante con reserva En curso", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await reservaEnCurso();
     const consumo = await serviciosAdicionalesServicio.registrarConsumo({
       reservaId: reserva.id,
@@ -94,7 +160,7 @@ async function main() {
 
   await prueba("HU-62: guarda fechaHora, habitacionId y tipoServicio para trazabilidad", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await reservaEnCurso();
     const consumo = await serviciosAdicionalesServicio.registrarConsumo({
       reservaId: reserva.id,
@@ -109,7 +175,7 @@ async function main() {
 
   await prueba("rechaza un tipoServicio fuera de la lista", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await reservaEnCurso();
     await esperaError(
       () =>
@@ -126,7 +192,7 @@ async function main() {
 
   await prueba("rechaza monto cero o negativo", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await reservaEnCurso();
     await esperaError(
       () =>
@@ -143,7 +209,7 @@ async function main() {
 
   await prueba("exige quién registra el consumo", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await reservaEnCurso();
     await esperaError(
       () =>
@@ -160,11 +226,22 @@ async function main() {
 
   await prueba("rechaza un consumo si la reserva todavía no hizo check-in (Confirmada)", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
+    const { planBar } = await asegurarTemporadaYPlanBase();
+    const habitaciones = [{ habitacionId: 1, adultos: 2, menores: 0 }];
+    const cotizacion = await reservasServicio.cotizarParaReserva({
+      fechaDesde: enDias(0),
+      fechaHasta: enDias(3),
+      planTarifarioId: planBar.id,
+      habitaciones,
+      canal: "RECEPCION",
+    });
     const reserva = await reservasServicio.crearReserva({
       fechaDesde: enDias(0),
       fechaHasta: enDias(3),
-      habitacionIds: [1],
+      habitaciones,
+      planTarifarioId: planBar.id,
+      totalEsperado: cotizacion.planes[0]?.total ?? 0,
       huesped: { ...HUESPED },
     });
     await esperaError(
@@ -182,7 +259,7 @@ async function main() {
 
   await prueba("rechaza un consumo si la reserva ya hizo check-out (Cerrada)", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await reservaEnCurso();
     await reservasServicio.marcarCerrada(reserva.id);
     await esperaError(
@@ -200,8 +277,8 @@ async function main() {
 
   await prueba("rechaza si la habitación no pertenece a esta reserva", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
-    base._sembrarHabitacion({ numero: "999" });
+    await sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "999" });
     const reserva = await reservaEnCurso(1);
     await esperaError(
       () =>
@@ -218,7 +295,7 @@ async function main() {
 
   await prueba("rechaza articuloId/cantidad si el tipo no es Minibar", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await reservaEnCurso();
     await esperaError(
       () =>
@@ -238,7 +315,7 @@ async function main() {
 
   await prueba("registra el consumo Y descuenta stock real en la misma operación", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const deposito = base._sembrarDeposito({ nombre: "Minibar" });
     base._sembrarTipoMovimiento();
     const articulo = base._sembrarArticulo({ nombre: "Vino Malbec" });
@@ -266,7 +343,7 @@ async function main() {
 
   await prueba("un consumo que no es Minibar no queda asociado a ningún MovimientoStock", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await reservaEnCurso();
     const consumo = await serviciosAdicionalesServicio.registrarConsumo({
       reservaId: reserva.id,
@@ -280,7 +357,7 @@ async function main() {
 
   await prueba("el movimientoStockId identifica el depósito real, aunque el artículo esté habilitado en más de uno a la vez (el bug encontrado auditando a mano)", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const bar = base._sembrarDeposito({ nombre: "Bar" });
     const minibar = base._sembrarDeposito({ nombre: "Minibar" });
     base._sembrarTipoMovimiento();
@@ -317,7 +394,7 @@ async function main() {
 
   await prueba("usa el tipo de movimiento 'Salida por Consumo Interno' sin que el usuario tenga que elegirlo", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const deposito = base._sembrarDeposito({ nombre: "Minibar" });
     // Dos tipos activos: uno de Entrada (no debería usarse nunca) y el de
     // Salida por Consumo Interno — confirma que resuelve el correcto por
@@ -342,7 +419,7 @@ async function main() {
 
   await prueba("una Salida de Minibar SIEMPRE va contra el depósito fijo Minibar, no contra Bar (bug ya pisado una vez)", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const bar = base._sembrarDeposito({ nombre: "Bar" });
     const minibar = base._sembrarDeposito({ nombre: "Minibar" });
     base._sembrarTipoMovimiento();
@@ -371,7 +448,7 @@ async function main() {
 
   await prueba("no reimplementa las validaciones de Salida: rechaza un artículo no habilitado en el depósito Minibar", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     base._sembrarDeposito({ nombre: "Minibar" });
     base._sembrarTipoMovimiento();
     const articulo = base._sembrarArticulo(); // nunca habilitado en el depósito Minibar
@@ -394,7 +471,7 @@ async function main() {
 
   await prueba("rechaza registrar un consumo de Minibar si no existe el depósito Minibar", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     base._sembrarTipoMovimiento();
     const articulo = base._sembrarArticulo();
     const reserva = await reservaEnCurso();
@@ -416,7 +493,7 @@ async function main() {
 
   await prueba("rechaza consumir más de lo que hay en stock, y no deja el consumo cargado a medias", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const deposito = base._sembrarDeposito({ nombre: "Minibar" });
     base._sembrarTipoMovimiento();
     const articulo = base._sembrarArticulo();
@@ -445,7 +522,7 @@ async function main() {
 
   await prueba("exige articuloId y cantidad cuando el tipo es Minibar", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await reservaEnCurso();
     await esperaError(
       () =>
@@ -462,7 +539,7 @@ async function main() {
 
   await prueba("no descuenta stock de un artículo dado de baja", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const deposito = base._sembrarDeposito({ nombre: "Minibar" });
     base._sembrarTipoMovimiento();
     const articulo = base._sembrarArticulo({ activo: false });
@@ -488,7 +565,7 @@ async function main() {
 
   await prueba("lista los consumos de una reserva ordenados del más reciente al más viejo", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await reservaEnCurso();
     await serviciosAdicionalesServicio.registrarConsumo({
       reservaId: reserva.id,
@@ -511,7 +588,7 @@ async function main() {
 
   await prueba("filtra por tipoServicio (para HU-87 de Integrante 4: minibar no registrado)", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const deposito = base._sembrarDeposito({ nombre: "Minibar" });
     base._sembrarTipoMovimiento();
     const articulo = base._sembrarArticulo();
@@ -540,7 +617,7 @@ async function main() {
 
   await prueba("el contrato con Integrante 4 (HU-48) trae los campos documentados", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await reservaEnCurso();
     await serviciosAdicionalesServicio.registrarConsumo({
       reservaId: reserva.id,
@@ -557,7 +634,7 @@ async function main() {
 
   await prueba("HU-63: el resumen totaliza por tipo y en general", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await reservaEnCurso();
     await serviciosAdicionalesServicio.registrarConsumo({
       reservaId: reserva.id,
@@ -592,7 +669,7 @@ async function main() {
 
   await prueba("una reserva sin consumos da un resumen en cero, no un error", async () => {
     limpiar();
-    base._sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "101" });
     const reserva = await reservaEnCurso();
     const resumen = await serviciosAdicionalesServicio.resumenPorReserva(reserva.id);
     assert.equal(resumen.totalGeneral, 0);

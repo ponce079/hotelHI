@@ -5,11 +5,6 @@ export async function listarHabitaciones(params = {}) {
   return data;
 }
 
-export async function listarTiposHabitacion() {
-  const { data } = await api.get("/habitaciones/tipos");
-  return data;
-}
-
 export async function obtenerHabitacion(id) {
   const { data } = await api.get(`/habitaciones/${id}`);
   return data;

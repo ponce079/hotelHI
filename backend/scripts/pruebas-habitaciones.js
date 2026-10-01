@@ -14,6 +14,26 @@ const base = crearBase();
 instalarDoble(base);
 
 const habitacionesServicio = require("../src/modulos/habitaciones/habitaciones.servicio");
+const { hoyComoFechaUTC } = require("../src/lib/fechas");
+
+const UN_DIA_MS = 24 * 60 * 60 * 1000;
+
+// Payload completo válido para crear/actualizar una habitación — normalizarHabitacion
+// exige los 4 campos siempre, no soporta actualización parcial.
+function payloadHabitacion(extra = {}) {
+  return { numero: "900", capacidad: 2, piso: 1, ...extra };
+}
+
+async function sembrarReservaSobre(habitacionId, { estado, fechaHasta, codigoConfirmacion }) {
+  const huesped = await base.huesped.create({
+    data: { nombre: "Huésped de prueba", tipoDocumento: "DNI", numeroDocumento: String(Math.random()), contacto: "x@x.com" },
+  });
+  const reserva = await base.reserva.create({
+    data: { huespedId: huesped.id, fechaDesde: new Date("2026-01-01T00:00:00.000Z"), fechaHasta, estado, codigoConfirmacion },
+  });
+  await base.reservaHabitacion.create({ data: { reservaId: reserva.id, habitacionId } });
+  return reserva;
+}
 
 let pasaron = 0;
 const fallaron = [];
@@ -143,6 +163,127 @@ async function main() {
     limpiar();
     const h = base._sembrarHabitacion({ numero: "101", estado: "en limpieza" });
     await esperaError(() => habitacionesServicio.cambiarEstadoHabitacion(h.id, "ocupada"), "check-in");
+  });
+
+  seccion("HU-89 — tipoHabitacionId al crear/editar una habitación");
+
+  await prueba("rechaza crear con tipoHabitacionId inexistente", async () => {
+    limpiar();
+    await esperaError(
+      () => habitacionesServicio.crearHabitacion(payloadHabitacion({ tipoHabitacionId: 999 })),
+      "no existe"
+    );
+  });
+
+  await prueba("rechaza crear con tipoHabitacionId de un tipo dado de baja", async () => {
+    limpiar();
+    const tipo = base._resolverOCrearTipoHabitacion("Suite");
+    tipo.activo = false;
+    await esperaError(
+      () => habitacionesServicio.crearHabitacion(payloadHabitacion({ tipoHabitacionId: tipo.id })),
+      "dado de baja"
+    );
+  });
+
+  await prueba("permite editar otro campo sin tocar tipoHabitacionId aunque el tipo actual esté dado de baja", async () => {
+    limpiar();
+    const tipo = base._resolverOCrearTipoHabitacion("Doble");
+    const h = base._sembrarHabitacion({ numero: "700", tipoHabitacionId: tipo.id });
+    tipo.activo = false; // se da de baja DESPUÉS de que la habitación ya la tenía asignada
+    const actualizada = await habitacionesServicio.actualizarHabitacion(
+      h.id,
+      payloadHabitacion({ numero: "700", tipoHabitacionId: tipo.id, piso: 3 })
+    );
+    assert.equal(actualizada.piso, 3, "el campo que sí cambió se tiene que haber guardado");
+  });
+
+  seccion("HU-89 — bloqueo de cambio de tipoHabitacionId con reservas vigentes (regla 5)");
+
+  await prueba('bloquea el cambio de tipo con una reserva "En curso" sobre la habitación', async () => {
+    limpiar();
+    const tipoOrigen = base._resolverOCrearTipoHabitacion("Doble");
+    const tipoDestino = base._resolverOCrearTipoHabitacion("Suite");
+    const h = base._sembrarHabitacion({ numero: "701", tipoHabitacionId: tipoOrigen.id });
+    await sembrarReservaSobre(h.id, {
+      estado: "En curso",
+      fechaHasta: new Date(hoyComoFechaUTC().getTime() - 5 * UN_DIA_MS), // vencida, pero "En curso" bloquea igual
+      codigoConfirmacion: "ABC111",
+    });
+    const err = await esperaError(
+      () => habitacionesServicio.actualizarHabitacion(h.id, payloadHabitacion({ numero: "701", tipoHabitacionId: tipoDestino.id })),
+      "reservas vigentes"
+    );
+    assert.ok(err.message.includes("ABC111"), "el mensaje tiene que listar el código de confirmación que bloquea");
+  });
+
+  await prueba('bloquea el cambio de tipo con una reserva "Confirmada" cuya fechaHasta es >= hoy', async () => {
+    limpiar();
+    const tipoOrigen = base._resolverOCrearTipoHabitacion("Doble");
+    const tipoDestino = base._resolverOCrearTipoHabitacion("Suite");
+    const h = base._sembrarHabitacion({ numero: "702", tipoHabitacionId: tipoOrigen.id });
+    await sembrarReservaSobre(h.id, {
+      estado: "Confirmada",
+      fechaHasta: new Date(hoyComoFechaUTC().getTime() + 2 * UN_DIA_MS),
+      codigoConfirmacion: "ABC222",
+    });
+    await esperaError(
+      () => habitacionesServicio.actualizarHabitacion(h.id, payloadHabitacion({ numero: "702", tipoHabitacionId: tipoDestino.id })),
+      "reservas vigentes"
+    );
+  });
+
+  await prueba(
+    'NO bloquea el cambio de tipo con una reserva "Confirmada" cuya fechaHasta es anterior a hoy (no-show nunca procesado)',
+    async () => {
+      limpiar();
+      const tipoOrigen = base._resolverOCrearTipoHabitacion("Doble");
+      const tipoDestino = base._resolverOCrearTipoHabitacion("Suite");
+      const h = base._sembrarHabitacion({ numero: "703", tipoHabitacionId: tipoOrigen.id });
+      await sembrarReservaSobre(h.id, {
+        estado: "Confirmada",
+        fechaHasta: new Date(hoyComoFechaUTC().getTime() - 2 * UN_DIA_MS),
+        codigoConfirmacion: "ABC333",
+      });
+      const actualizada = await habitacionesServicio.actualizarHabitacion(
+        h.id,
+        payloadHabitacion({ numero: "703", tipoHabitacionId: tipoDestino.id })
+      );
+      assert.equal(actualizada.tipoHabitacionId, tipoDestino.id);
+    }
+  );
+
+  await prueba('NO bloquea el cambio de tipo si las únicas reservas de la habitación están "Cerrada" o "Cancelada"', async () => {
+    limpiar();
+    const tipoOrigen = base._resolverOCrearTipoHabitacion("Doble");
+    const tipoDestino = base._resolverOCrearTipoHabitacion("Suite");
+    const h = base._sembrarHabitacion({ numero: "704", tipoHabitacionId: tipoOrigen.id });
+    await sembrarReservaSobre(h.id, {
+      estado: "Cerrada",
+      fechaHasta: new Date(hoyComoFechaUTC().getTime() + 2 * UN_DIA_MS),
+      codigoConfirmacion: "ABC444",
+    });
+    await sembrarReservaSobre(h.id, {
+      estado: "Cancelada",
+      fechaHasta: new Date(hoyComoFechaUTC().getTime() + 2 * UN_DIA_MS),
+      codigoConfirmacion: "ABC555",
+    });
+    const actualizada = await habitacionesServicio.actualizarHabitacion(
+      h.id,
+      payloadHabitacion({ numero: "704", tipoHabitacionId: tipoDestino.id })
+    );
+    assert.equal(actualizada.tipoHabitacionId, tipoDestino.id);
+  });
+
+  await prueba("NO bloquea el cambio de tipo si la habitación no tiene ninguna reserva", async () => {
+    limpiar();
+    const tipoOrigen = base._resolverOCrearTipoHabitacion("Doble");
+    const tipoDestino = base._resolverOCrearTipoHabitacion("Suite");
+    const h = base._sembrarHabitacion({ numero: "705", tipoHabitacionId: tipoOrigen.id });
+    const actualizada = await habitacionesServicio.actualizarHabitacion(
+      h.id,
+      payloadHabitacion({ numero: "705", tipoHabitacionId: tipoDestino.id })
+    );
+    assert.equal(actualizada.tipoHabitacionId, tipoDestino.id);
   });
 
   // ------------------------------------------------------------

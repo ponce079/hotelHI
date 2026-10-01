@@ -1,10 +1,4 @@
 -- AlterTable
-ALTER TABLE `reservas_habitaciones` ADD COLUMN `ocupacionIncluida` INTEGER NULL,
-    ADD COLUMN `precioPersonaExtra` DECIMAL(12, 2) NOT NULL DEFAULT 0,
-    ADD COLUMN `serviciosIncluidos` TEXT NULL,
-    ADD COLUMN `tarifaPactada` DECIMAL(12, 2) NULL;
-
--- AlterTable
 ALTER TABLE `consumos_servicio_adicional` ADD COLUMN `anulado` BOOLEAN NOT NULL DEFAULT false,
     ADD COLUMN `anuladoEn` DATETIME(3) NULL,
     ADD COLUMN `anuladoPor` VARCHAR(191) NULL,

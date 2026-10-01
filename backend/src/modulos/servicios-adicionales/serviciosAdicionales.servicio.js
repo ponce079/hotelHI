@@ -139,9 +139,16 @@ async function registrarConsumo(data) {
     await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${reservaId} FOR UPDATE`;
     const reserva=await tx.reserva.findUnique({where:{id:reservaId},include:{reservaHabitaciones:true}});
     if(!reserva)throw new ErrorDeNegocio('Reserva inexistente.',404);
+    if(reserva.estado===ESTADO_RESERVA.CERRADA)throw new ErrorDeNegocio('No se pueden registrar cargos sobre una reserva cerrada.',409);
     if(reserva.estado!==ESTADO_RESERVA.EN_CURSO)throw new ErrorDeNegocio('Solo se pueden registrar consumos con la reserva "En curso".');
     if(!reserva.reservaHabitaciones.some(h=>h.habitacionId===habitacionId))throw new ErrorDeNegocio('La habitación no pertenece a esta reserva.');
     if(claveOperacion){const previo=await tx.consumoServicioAdicional.findUnique({where:{claveOperacion},include:{articulo:true,habitacion:true}});if(previo){if(previo.reservaId!==reservaId||previo.habitacionId!==habitacionId)throw new ErrorDeNegocio('Clave de operación usada en otra habitación.',409);return formatearConsumo(previo);}}
+    // Las fechas de reserva son días calendario; el instante del servicio
+    // se compara en Argentina. Se admite el día de salida antes del cierre.
+    const diaServicio=fechaServicio.toLocaleDateString('en-CA',{timeZone:'America/Argentina/Buenos_Aires'});
+    const desde=reserva.fechaDesde.toISOString().slice(0,10);
+    const hasta=reserva.fechaHasta.toISOString().slice(0,10);
+    if(diaServicio<desde||diaServicio>hasta)throw new ErrorDeNegocio(`La fecha del servicio debe estar dentro de la estadía (${desde} al ${hasta}).`);
     let articuloId=null,movimientoStockId=null;
     if(tipoServicio==='Minibar'){
       articuloId=enteroPositivo(data.articuloId,'articuloId');
@@ -224,12 +231,19 @@ async function listarConsumosHotel({ desde, hasta, tipoServicio } = {}) {
   if (tipoServicio) normalizarTipoServicio(tipoServicio);
 
   const fechaHora = {};
-  if (desde) fechaHora.gte = new Date(desde);
+  // Los filtros representan días del hotel, no medianoches UTC.
+  const { parsearFechaSinHora, combinarFechaConHoraArgentina } = require('../../lib/fechas');
+  const inicioDia = (valor, campo) => {
+    try { return combinarFechaConHoraArgentina(parsearFechaSinHora(valor, campo), 0); }
+    catch (error) { throw new ErrorDeNegocio(error.message); }
+  };
+  if (desde) fechaHora.gte = inicioDia(desde, 'Desde');
   if (hasta) {
-    const siguienteDia = new Date(hasta);
+    const siguienteDia = inicioDia(hasta, 'Hasta');
     siguienteDia.setUTCDate(siguienteDia.getUTCDate() + 1);
     fechaHora.lt = siguienteDia;
   }
+  if (fechaHora.gte && fechaHora.lt && fechaHora.gte >= fechaHora.lt) throw new ErrorDeNegocio('Desde no puede ser posterior a Hasta.');
 
   const consumos = await prisma.consumoServicioAdicional.findMany({
     where: {
