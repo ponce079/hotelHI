@@ -10,8 +10,8 @@ import { reiniciarMock } from "./ecommerce.mock";
 vi.mock("../../lib/sesion", () => ({ useSesion: () => ({ rol: null }) }));
 
 const DOBLE = { tipoHabitacionId: 2, nombre: "Doble", capacidadMaxima: 4 };
-const BAR = { planTarifarioId: 1, codigo: "BAR", nombre: "Tarifa estándar", reembolsable: true, horasCancelacionSinCargo: 48, penalidadNoShow: "PRIMERA_NOCHE", total: 50000, promedioPorNoche: 25000 };
-const NRF = { planTarifarioId: 2, codigo: "NRF", nombre: "Tarifa no reembolsable", reembolsable: false, horasCancelacionSinCargo: null, penalidadNoShow: "TOTAL_ESTADIA", total: 42500, promedioPorNoche: 21250 };
+const BAR = { planTarifarioId: 1, codigo: "BAR", nombre: "Best Available Rate", reembolsable: true, horasCancelacionSinCargo: 48, penalidadNoShow: "PRIMERA_NOCHE", total: 50000, promedioPorNoche: 25000 };
+const NRF = { planTarifarioId: 2, codigo: "NRF", nombre: "No Reembolsable", reembolsable: false, horasCancelacionSinCargo: null, penalidadNoShow: "TOTAL_ESTADIA", total: 42500, promedioPorNoche: 21250 };
 
 function guardarProceso(estado) {
   sessionStorage.setItem(
@@ -65,7 +65,7 @@ describe("las siete rutas /web renderizan", () => {
     expect(screen.getByRole("heading", { name: "Doble" })).toBeInTheDocument();
     expect(screen.getAllByText("Tarifa flexible · Cancelación sin cargo hasta 48 h antes de la llegada")).toHaveLength(2);
     expect(screen.getAllByText("No reembolsable · Se cobra el total al reservar · Sin devolución")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Elegir Tarifa no reembolsable por $ 42.500" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Elegir No Reembolsable por $ 42.500" })).toBeInTheDocument();
     expect(screen.getByText("Últimas disponibles")).toBeInTheDocument();
     // Nunca número de habitación, piso ni cantidad de libres.
     expect(screen.queryByText(/habitación \d|piso|libres/i)).not.toBeInTheDocument();
@@ -119,7 +119,7 @@ describe("las siete rutas /web renderizan", () => {
         fechaDesde: "2026-10-16",
         fechaHasta: "2026-10-18",
         noches: 2,
-        plan: { codigo: "BAR", nombre: "Tarifa estándar", reembolsable: true, horasCancelacionSinCargo: 48 },
+        plan: { codigo: "BAR", nombre: "Best Available Rate", reembolsable: true, horasCancelacionSinCargo: 48 },
         total: 50000,
         cobradoAhora: 0,
         garantia: { tipo: "GARANTIA", marca: "VISA", ultimos4: "4242" },

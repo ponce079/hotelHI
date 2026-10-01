@@ -5,8 +5,8 @@ import { CODIGO_ERROR, MAX_HABITACIONES_WEB } from "./ecommerce.constantes";
 
 const SIMPLE = { tipoHabitacionId: 1, nombre: "Simple", capacidadMaxima: 2 };
 const DOBLE = { tipoHabitacionId: 2, nombre: "Doble", capacidadMaxima: 4 };
-const BAR = { planTarifarioId: 1, codigo: "BAR", nombre: "Tarifa estándar", reembolsable: true, horasCancelacionSinCargo: 48, penalidadNoShow: "PRIMERA_NOCHE", total: 50000, promedioPorNoche: 25000 };
-const NRF = { planTarifarioId: 2, codigo: "NRF", nombre: "Tarifa no reembolsable", reembolsable: false, horasCancelacionSinCargo: null, penalidadNoShow: "TOTAL_ESTADIA", total: 42500, promedioPorNoche: 21250 };
+const BAR = { planTarifarioId: 1, codigo: "BAR", nombre: "Best Available Rate", reembolsable: true, horasCancelacionSinCargo: 48, penalidadNoShow: "PRIMERA_NOCHE", total: 50000, promedioPorNoche: 25000 };
+const NRF = { planTarifarioId: 2, codigo: "NRF", nombre: "No Reembolsable", reembolsable: false, horasCancelacionSinCargo: null, penalidadNoShow: "TOTAL_ESTADIA", total: 42500, promedioPorNoche: 21250 };
 const TARJETA = { titular: "MARIA", numero: "4242424242424242", vencimientoMes: 12, vencimientoAnio: 2030, cvv: "123" };
 
 function montar() {

@@ -37,11 +37,13 @@ const TIPOS = [
   { tipoHabitacionId: 2, nombre: "Doble", capacidadMaxima: 4, precioNoche: 25000, ultimasDisponibles: true },
 ];
 
+// Mismos códigos, nombres y condiciones que backend/scripts/seed-tarifas.js
+// (BAR base; NRF derivado de BAR con −15 %).
 const PLANES = [
   {
     planTarifarioId: 1,
     codigo: "BAR",
-    nombre: "Tarifa estándar",
+    nombre: "Best Available Rate",
     reembolsable: true,
     horasCancelacionSinCargo: 48,
     penalidadNoShow: "PRIMERA_NOCHE",
@@ -50,7 +52,7 @@ const PLANES = [
   {
     planTarifarioId: 2,
     codigo: "NRF",
-    nombre: "Tarifa no reembolsable",
+    nombre: "No Reembolsable",
     reembolsable: false,
     horasCancelacionSinCargo: null,
     penalidadNoShow: "TOTAL_ESTADIA",
@@ -64,7 +66,7 @@ const RESERVA_DEMO = {
   fechaDesde: "2026-11-20",
   fechaHasta: "2026-11-23",
   noches: 3,
-  plan: { codigo: "BAR", nombre: "Tarifa estándar", reembolsable: true, horasCancelacionSinCargo: 48 },
+  plan: { codigo: "BAR", nombre: "Best Available Rate", reembolsable: true, horasCancelacionSinCargo: 48 },
   total: 75000,
   cobrado: 0,
   habitaciones: [{ tipo: "Doble", adultos: 2, menores: 1 }],
