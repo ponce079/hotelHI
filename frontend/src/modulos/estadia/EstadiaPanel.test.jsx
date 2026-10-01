@@ -4,6 +4,8 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, it, expect, beforeEach } from "vitest";
 import { EstadiaPanel, PersonaFormulario } from "./EstadiaPanel";
 import { api } from "../../lib/api";
+import { PAISES } from "../../lib/paises";
+import { PersonasWalkIn } from "./PersonasWalkIn";
 vi.mock("../../lib/api", () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
 }));
@@ -433,4 +435,72 @@ it("permite cargar ocupantes de distintas habitaciones y no copia al titular aut
       }),
     ),
   );
+});
+
+const CAMPOS_DE_PAIS = ["País emisor", "Nacionalidad", "País de residencia"];
+const opcionesDePais = (select) =>
+  within(select)
+    .getAllByRole("option")
+    .filter((o) => o.value && o.value !== "__otro__");
+
+function verificarCatalogoCompleto(select) {
+  const opciones = opcionesDePais(select);
+  expect(opciones).toHaveLength(PAISES.length);
+  expect(opciones.map((o) => o.value).sort()).toEqual(PAISES.map(([codigo]) => codigo).sort());
+  expect(opciones[0]).toHaveValue("AR");
+  expect(opciones[0]).toHaveTextContent("Argentina");
+  const nombres = opciones.slice(1).map((o) => o.textContent);
+  expect(nombres).toEqual([...nombres].sort((a, b) => a.localeCompare(b, "es")));
+  expect(within(select).getByRole("option", { name: "Japón" })).toHaveValue("JP");
+  expect(within(select).getByRole("option", { name: "Otro país" })).toBeInTheDocument();
+}
+
+it("la ficha de ocupante ofrece el catálogo completo de países, con Argentina primero y el resto por nombre", () => {
+  render(
+    <PersonaFormulario
+      reserva={reserva}
+      persona={{ nombre: "Ana", apellido: "Prueba" }}
+      onGuardar={() => {}}
+      onClose={() => {}}
+    />,
+  );
+  for (const etiqueta of CAMPOS_DE_PAIS) verificarCatalogoCompleto(screen.getByLabelText(etiqueta));
+});
+
+it("el alta de personas del walk-in ofrece el mismo catálogo completo", async () => {
+  render(<PersonasWalkIn reserva={reserva} personas={[]} onChange={() => {}} />);
+  await userEvent.click(screen.getByRole("button", { name: "Agregar persona" }));
+  for (const etiqueta of CAMPOS_DE_PAIS) verificarCatalogoCompleto(screen.getByLabelText(etiqueta));
+});
+
+it("guarda la nacionalidad elegida y pide escribir la localidad cuando el país no tiene sugerencias", async () => {
+  const onGuardar = vi.fn();
+  render(
+    <PersonaFormulario
+      reserva={reserva}
+      persona={{ nombre: "Ana", apellido: "Prueba" }}
+      onGuardar={onGuardar}
+      onClose={() => {}}
+    />,
+  );
+  await userEvent.selectOptions(screen.getByLabelText("Nacionalidad"), "JP");
+  await userEvent.selectOptions(screen.getByLabelText("País de residencia"), "JP");
+  expect(screen.queryByLabelText("Localidad")).not.toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText("Nombre de la localidad"), "Kioto");
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalledWith(
+    expect.objectContaining({ nacionalidad: "JP", paisResidencia: "JP", localidad: "Kioto" }),
+  );
+});
+
+it("conserva una nacionalidad histórica escrita a mano que no figura en el catálogo", () => {
+  render(
+    <PersonaFormulario
+      reserva={reserva}
+      persona={{ nombre: "Ana", apellido: "Prueba", nacionalidad: "Atlántida" }}
+      onGuardar={() => {}}
+      onClose={() => {}}
+    />,
+  );
+  expect(screen.getByLabelText("Nombre del país de la nacionalidad")).toHaveValue("Atlántida");
 });

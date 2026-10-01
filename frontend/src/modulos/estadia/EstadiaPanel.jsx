@@ -8,7 +8,7 @@ import { Select } from "../../componentes/Select";
 import { Modal } from "../../componentes/Modal";
 import { ConsumoModal } from "../servicios-adicionales/ConsumoModal";
 import { obtenerCuenta } from "../check-out/checkOut.api";
-import { PAISES_OCUPANTES, buscarPaisOcupante } from "./ocupantesUbicacion";
+import { PAISES_SELECTOR, buscarPaisOcupante } from "./ocupantesUbicacion";
 import { validarOcupante, pendientesParaIngreso } from "./validarOcupante";
 import { titularRegistrado } from "./titularRegistrado";
 import {
@@ -53,6 +53,13 @@ const ETIQUETAS_NUMERO_DOCUMENTO = {
   NIE: "Número de NIE",
   TIE: "Número de TIE",
 };
+// Campos que se eligen del catálogo de países (con "Otro país" para valores que no figuren en él).
+const CAMPOS_PAIS = ["paisDocumento", "nacionalidad", "paisResidencia"];
+const ETIQUETAS_PAIS_MANUAL = {
+  paisDocumento: "Nombre del país emisor",
+  nacionalidad: "Nombre del país de la nacionalidad",
+  paisResidencia: "Nombre del país de residencia",
+};
 const campos = [
   ["nombre", "Nombre", "text", true],
   ["apellido", "Apellido", "text", true],
@@ -94,8 +101,11 @@ export function PersonaFormulario({
   const [paisManual, setPaisManual] = useState(() => ({
     paisDocumento: Boolean(persona.paisDocumento && !buscarPaisOcupante(persona.paisDocumento)),
     paisResidencia: Boolean(persona.paisResidencia && !buscarPaisOcupante(persona.paisResidencia)),
+    nacionalidad: Boolean(persona.nacionalidad && !buscarPaisOcupante(persona.nacionalidad)),
   }));
   const paisResidencia = buscarPaisOcupante(form.paisResidencia);
+  // Solo algunos países tienen localidades sugeridas: en los demás la localidad se escribe.
+  const localidadLibre = Boolean(paisResidencia && !paisResidencia.localidades.length);
   const [tocados, setTocados] = useState({});
   const [intentoGuardar, setIntentoGuardar] = useState(false);
   const esMenor = Boolean(
@@ -124,7 +134,7 @@ export function PersonaFormulario({
     personas,
     persona,
     paisManual,
-    otraLocalidad,
+    otraLocalidad || localidadLibre,
     esTitular || form.esTitular,
   );
   for (const [campo, dato] of Object.entries(erroresServidor)) {
@@ -146,9 +156,9 @@ export function PersonaFormulario({
           motivo: "Motivo del cambio de habitación",
         }[campo];
     if (campo === "numeroDocumento") etiqueta = ETIQUETAS_NUMERO_DOCUMENTO[form.tipoDocumento] || etiqueta;
-    if (campo === "localidad" && (otraLocalidad || paisManual.paisResidencia)) etiqueta = "Nombre de la localidad";
-    if (paisManual[campo])
-      etiqueta = campo === "paisDocumento" ? "Nombre del país emisor" : "Nombre del país de residencia";
+    if (campo === "localidad" && (otraLocalidad || localidadLibre || paisManual.paisResidencia))
+      etiqueta = "Nombre de la localidad";
+    if (paisManual[campo]) etiqueta = ETIQUETAS_PAIS_MANUAL[campo];
     return {
       name: campo,
       error: visible ? errores[campo] : undefined,
@@ -168,7 +178,7 @@ export function PersonaFormulario({
   }
 
   function renderCampo([k, label, type, required]) {
-    if (k === "paisDocumento" || k === "paisResidencia") {
+    if (CAMPOS_PAIS.includes(k)) {
       const pais = buscarPaisOcupante(form[k]);
       return (
         <div key={k} className="space-y-2">
@@ -183,7 +193,7 @@ export function PersonaFormulario({
             }}
           >
             <option value="">Seleccionar país</option>
-            {PAISES_OCUPANTES.map((p) => (
+            {PAISES_SELECTOR.map((p) => (
               <option key={p.codigo} value={p.codigo}>
                 {p.nombre}
               </option>
@@ -193,7 +203,7 @@ export function PersonaFormulario({
           {paisManual[k] && (
             <Input
               {...propsCampo(k)}
-              label={k === "paisDocumento" ? "Nombre del país emisor" : "Nombre del país de residencia"}
+              label={ETIQUETAS_PAIS_MANUAL[k]}
               required
               pattern={".*\\S.*"}
               maxLength={191}
@@ -206,7 +216,7 @@ export function PersonaFormulario({
       );
     }
     if (k === "localidad") {
-      if (paisManual.paisResidencia) {
+      if (paisManual.paisResidencia || localidadLibre) {
         return (
           <Input
             key={k}

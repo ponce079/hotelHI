@@ -71,7 +71,7 @@ export function validarOcupante(
     )
   )
     errores.numeroDocumento = "Este documento ya está registrado en la reserva.";
-  for (const campo of ["paisDocumento", "paisResidencia"])
+  for (const campo of ["paisDocumento", "paisResidencia", "nacionalidad"])
     if (paisManual[campo] && !texto(form[campo])) errores[campo] = "Escribí el nombre del país.";
   if ((paisManual.paisResidencia || otraLocalidad) && !texto(form.localidad))
     errores.localidad = "Escribí el nombre de la localidad.";

@@ -1,4 +1,5 @@
-// Catálogo inicial: Argentina y sus cinco países limítrofes.
+import { PAISES, codigoPais } from "../../lib/paises";
+
 // Localidades sugeridas, no un padrón exhaustivo. El formulario permite otra localidad.
 export const PAISES_OCUPANTES = [
   {
@@ -143,14 +144,24 @@ export const PAISES_OCUPANTES = [
   },
 ];
 
-const clave = (valor) =>
-  String(valor || "")
-    .trim()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toUpperCase();
+// Países que ofrecen los selectores de nacionalidad, país de residencia y país emisor: el catálogo
+// ISO completo (lib/paises.js), con Argentina primero y el resto por nombre. Los países con
+// localidades sugeridas (arriba) las conservan; en los demás la localidad se escribe.
+const LOCALIDADES_SUGERIDAS = new Map(PAISES_OCUPANTES.map((p) => [p.codigo, p.localidades]));
 
-// Reconoce nombres históricos sin reescribir la identidad guardada del ocupante.
+export const PAISES_SELECTOR = PAISES.map(([codigo, nombre]) => ({
+  codigo,
+  nombre,
+  localidades: LOCALIDADES_SUGERIDAS.get(codigo) || [],
+})).sort((a, b) => {
+  if (a.codigo === "AR") return -1;
+  if (b.codigo === "AR") return 1;
+  return a.nombre.localeCompare(b.nombre, "es");
+});
+
+// Reconoce el país por código o por nombre (también valores históricos), sin reescribir la identidad
+// guardada del ocupante.
 export function buscarPaisOcupante(valor) {
-  return PAISES_OCUPANTES.find((p) => clave(p.codigo) === clave(valor) || clave(p.nombre) === clave(valor));
+  const codigo = codigoPais(valor);
+  return codigo ? PAISES_SELECTOR.find((p) => p.codigo === codigo) : undefined;
 }
