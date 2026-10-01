@@ -67,6 +67,31 @@ El mismo criterio ya aplicado y verificado en `migrar-reservas-a-reserva-noche.j
 
 4. **Revisar si Clever Cloud (plan compartido, latencia variable) es el entorno real de producción**, o si esto se resuelve solo al migrar a una base con mejor latencia — si el entorno final tiene latencia de datacenter normal (no un plan gratuito/compartido), el margen de 15 segundos probablemente alcance sin tocar nada más; igual conviene aplicar el `createMany` porque es estrictamente mejor (menos carga en cualquier entorno) y no tiene contras.
 
-## Para la rama `fix/`
+## Qué se corrigió (rama `fix/timeout-transacciones`, 2026-09-30)
 
-Alcance sugerido: puntos 1 (createMany en los 3 lugares que lo permiten) y 3 (timeout en `cancelarReserva`) del listado de arriba, más los tests existentes de `pruebas-reservas.js`/`pruebas-reserva-precio.js` corridos de nuevo para confirmar que no cambia ningún resultado (el `createMany` no debería alterar el contenido de las filas creadas, solo cómo se envían). El punto 2 (verificación posterior) y la decisión sobre `ajustarPrecioReserva` quedan a criterio del equipo — no son correcciones de una línea.
+**Escrituras — `createMany` en vez de `create`/`update` por noche:**
+- `crearReservaEnTransaccion` (y por lo tanto el walk-in, que la reutiliza) y `modificarReserva`: ambas arman todas las filas de `ReservaNoche` en memoria y las insertan con **una sola** `tx.reservaNoche.createMany({ data: [...] })`, para todas las habitaciones de la reserva juntas — no una por habitación.
+- `ajustarPrecioReserva`: se dejó **sin cambios**, con `update` individual por noche, por decisión explícita — el caso de uso típico (cortesía/descuento de 1 a 3 noches) nunca se acerca al límite, y no vale la complejidad de un `$executeRaw` con `CASE WHEN` para un riesgo bajo. Queda anotado como posible mejora futura si en algún momento se usa para ajustar estadías largas completas.
+- `cancelarReserva`: ahora usa la misma constante de timeout que el resto (antes: default de Prisma, 5000ms).
+
+**Timeout — una sola constante compartida.** Los 5 `$transaction` de `reservas.servicio.js` (incluido `crearReservaConSena`, que no estaba en el análisis original pero tiene el mismo literal repetido) pasaron a usar `OPCIONES_TRANSACCION` de `backend/src/lib/constantes.js` (`{ timeout: 20000, maxWait: 10000 }`) — ya existía, usada en `presupuestos.servicio.js`/`proveedores.servicio.js`/`requerimientos.servicio.js`; no hizo falta crear una nueva.
+
+**Lecturas — deduplicadas dentro de la misma transacción (sin mover nada afuera, la regla del 409 sigue intacta: el precio se recalcula con `tx` y se compara contra lo que vio el usuario).** En `cotizacion.servicio.js`, `cotizarReserva` ahora pide **una sola vez por reserva** (no una vez por habitación) lo que es idéntico para todas sus habitaciones: el rango de temporadas (`resolverTemporadasEfectivasEnRango`), los modificadores por día de semana y los planes activos; y pide las tarifas de **todos los tipos de habitación presentes en una sola consulta** (`obtenerTarifasVigentesParaTipos`, nueva, en `precios.servicio.js`) en vez de una consulta por habitación. `tipoHabitacion`/`habitacionesActivas` se cachean por tipo (no por habitación), así que dos habitaciones del mismo tipo tampoco las piden dos veces. `cotizarEstadia` ahora acepta un 3er parámetro opcional `precargado` con cualquiera de estos datos ya resueltos — si no viene, lee todo solo, exactamente como antes (el cotizador de pantalla, que cotiza un tipo suelto sin pasar por `cotizarReserva`, sigue sin tocarse).
+
+Además, `buscarConflictos` (llamada dos veces por alta: chequeo rápido + chequeo protegido con lock) dejó de pedir el `include` completo (habitación + reserva, para el mensaje de error) cuando no hay ningún conflicto — Prisma emitía esas 2 consultas igual aunque el resultado base viniera vacío. Ahora el camino feliz (sin conflictos, la gran mayoría de las altas) hace 1 consulta en vez de 3; el detalle completo para el mensaje de error solo se pide si de verdad hay algo que reportar.
+
+**Medición de consultas dentro del alta, antes y después (contra `sgh_gimena`, log de queries de Prisma):**
+
+| Caso | Antes | Después |
+|---|---|---|
+| 2 noches × 1 habitación | 40 | 33 |
+| 15 noches × 2 habitaciones | 103 | 34 |
+| 5 noches × 4 habitaciones | — (no medido antes) | 39 |
+
+La cantidad **ya no crece con las noches** (33 → 34 al pasar de 2 a 15 noches, con 1 habitación más de por medio) y crece muy poco con las habitaciones (33 → 39 de 1 a 4 habitaciones). Con la estimación de ~150ms por consulta contra Clever Cloud (la que dio el fallo real del 30/9), el caso de 15×2 queda en **~5,1 segundos** — muy por debajo de los ~15,5s originales, prácticamente en el objetivo de 5s pero no estrictamente por debajo; el número real depende de la latencia efectiva, no medida con precisión en este cierre.
+
+**Tests nuevos** (`backend/scripts/pruebas-reservas.js`):
+- Integridad: si `ReservaNoche.createMany` falla a mitad de camino, no queda ninguna `Reserva`, `ReservaHabitacion`, `ReservaNoche` ni un huésped nuevo huérfano (transacción revertida por completo).
+- Rendimiento: la cantidad de consultas de cotización no crece entre una reserva de 2 noches y una de 15 (misma habitación), y las lecturas compartidas (temporadas/planes/modificadores) se piden una sola vez con 3 habitaciones, no una por habitación. Se apoyan en un contador de llamadas por tabla.método agregado al doble de Prisma compartido (`_dobleSprint3.js`, expuesto como `base._contadorLlamadas`), reseteado en cada `_limpiar()`.
+
+Suite completa verificada en verde después del cambio (incluidos los tests existentes de `pruebas-reservas.js`, `pruebas-reserva-precio.js`, `pruebas-ajuste-penalidad.js`, `pruebas-checkin.js`, `pruebas-cotizacion.js`, `pruebas-precios.js` y el Jest de `reservaConSena.test.js`), salvo los 3 fallos preexistentes y ajenos ya documentados (typo `"Tarjeta de crédito"` en 3 fixtures de garantía).

@@ -20,7 +20,7 @@ const { Decimal } = Prisma;
 const prisma = require("../../lib/prisma");
 const { hoyComoFechaUTC, parsearFechaSinHora: parsearFechaSinHoraBase, diaSemanaDeFecha } = require("../../lib/fechas");
 const { resolverTemporadasEfectivasEnRango } = require("./temporadas.servicio");
-const { obtenerTarifasVigentes } = require("./precios.servicio");
+const { obtenerTarifasVigentes, obtenerTarifasVigentesParaTipos } = require("./precios.servicio");
 const { listarPlanesTarifarios } = require("./planesTarifarios.servicio");
 const { listarModificadores } = require("./modificadoresDiaSemana.servicio");
 const { redondearAMultiploDe100 } = require("./redondeo");
@@ -70,8 +70,17 @@ function isoDeFecha(fecha) {
 // abajo) pueda cotizar cada habitación DENTRO de la misma transacción del
 // alta o la modificación de una reserva, en vez de leer contra la
 // conexión suelta mientras esa transacción todavía no cerró.
+//
+// `precargado` (Etapa 4C) — opcional, con cualquier combinación de
+// { tipo, habitacionesActivas, dias, tarifaPorTemporada, modificadores,
+// planesActivos } ya resueltos por el llamador. Si no vienen, cada uno se
+// lee acá adentro como siempre (el cotizador de pantalla, que cotiza un
+// solo tipo suelto, nunca pasa este argumento). cotizarReserva lo usa para
+// pedir UNA sola vez, para TODA la reserva, lo que es idéntico para
+// cualquier habitación (rango de fechas, modificadores, planes) o idéntico
+// por tipo (tarifas) — ver el comentario grande en cotizarReserva.
 // --------------------------------------------------------------
-async function cotizarEstadia(data = {}, cliente = prisma) {
+async function cotizarEstadia(data = {}, cliente = prisma, precargado = {}) {
   const tipoHabitacionId = enteroPositivo(data?.tipoHabitacionId, "tipoHabitacionId");
   const fechaIngreso = parsearFechaSinHora(data?.fechaIngreso, "La fecha de ingreso");
   const fechaEgreso = parsearFechaSinHora(data?.fechaEgreso, "La fecha de egreso");
@@ -98,14 +107,16 @@ async function cotizarEstadia(data = {}, cliente = prisma) {
     );
   }
 
-  const tipo = await cliente.tipoHabitacion.findUnique({ where: { id: tipoHabitacionId } });
+  const tipo = precargado.tipo ?? (await cliente.tipoHabitacion.findUnique({ where: { id: tipoHabitacionId } }));
   if (!tipo) throw new ErrorDeNegocio("El tipo de habitación indicado no existe.", 404);
   if (!tipo.activo) throw new ErrorDeNegocio("El tipo de habitación indicado está dado de baja.");
 
-  const habitacionesActivas = await cliente.habitacion.findMany({
-    where: { tipoHabitacionId, activo: true },
-    select: { capacidad: true },
-  });
+  const habitacionesActivas =
+    precargado.habitacionesActivas ??
+    (await cliente.habitacion.findMany({
+      where: { tipoHabitacionId, activo: true },
+      select: { capacidad: true },
+    }));
   if (habitacionesActivas.length === 0) {
     throw new ErrorDeNegocio("El tipo de habitación no tiene habitaciones activas para cotizar.", 409);
   }
@@ -120,7 +131,7 @@ async function cotizarEstadia(data = {}, cliente = prisma) {
   // El rango se pide hasta el día ANTERIOR al egreso — la noche de salida
   // no se cobra, así que ni siquiera entra en la resolución.
   const ultimaNoche = new Date(fechaEgreso.getTime() - UN_DIA_MS);
-  const dias = await resolverTemporadasEfectivasEnRango(fechaIngreso, ultimaNoche, cliente);
+  const dias = precargado.dias ?? (await resolverTemporadasEfectivasEnRango(fechaIngreso, ultimaNoche, cliente));
 
   // -------- Regla 4: estadía mínima --------
   const estadiaMinimaExigida = dias.reduce((max, d) => Math.max(max, d.estadiaMinima || 0), 0);
@@ -140,7 +151,8 @@ async function cotizarEstadia(data = {}, cliente = prisma) {
 
   // -------- Regla 6a: tarifa vigente por noche (una sola consulta) --------
   const temporadaIds = dias.map((d) => d.temporadaId);
-  const tarifaPorTemporada = await obtenerTarifasVigentes(tipoHabitacionId, temporadaIds, fechaVenta, cliente);
+  const tarifaPorTemporada =
+    precargado.tarifaPorTemporada ?? (await obtenerTarifasVigentes(tipoHabitacionId, temporadaIds, fechaVenta, cliente));
 
   const nochesFaltantes = dias.filter((d) => !tarifaPorTemporada.has(d.temporadaId));
   if (nochesFaltantes.length > 0) {
@@ -148,7 +160,7 @@ async function cotizarEstadia(data = {}, cliente = prisma) {
     throw new ErrorDeNegocio(`No hay tarifa vigente para: ${detalleFaltantes}.`, 409);
   }
 
-  const modificadores = await listarModificadores(cliente);
+  const modificadores = precargado.modificadores ?? (await listarModificadores(cliente));
   const modificadorPorDia = new Map(modificadores.map((m) => [m.diaSemana, new Decimal(m.porcentaje)]));
 
   const ocupacionBase = new Decimal(tipo.ocupacionBase);
@@ -181,7 +193,7 @@ async function cotizarEstadia(data = {}, cliente = prisma) {
 
   // -------- Regla 8: un plan (activo, y visibleWeb si canal=WEB) por
   // salida, cada uno con su propio detalle/total/promedio. --------
-  const planesActivos = await listarPlanesTarifarios({ activo: "true" }, cliente);
+  const planesActivos = precargado.planesActivos ?? (await listarPlanesTarifarios({ activo: "true" }, cliente));
   const planesEnAlcance = canal === "WEB" ? planesActivos.filter((p) => p.visibleWeb) : planesActivos;
 
   const planes = planesEnAlcance.map((plan) => {
@@ -279,11 +291,56 @@ async function cotizarReserva(
     });
   }
 
+  // -------- Deduplicación (Etapa 4C, bug de timeout contra Clever Cloud)
+  // --------
+  // Todas las habitaciones de ESTA reserva comparten el mismo rango de
+  // fechas → el mismo rango de temporadas, los mismos modificadores por
+  // día de semana y los mismos planes activos. Antes, cotizarEstadia los
+  // volvía a leer, idénticos, una vez por habitación — con una reserva de
+  // varias habitaciones eso es trabajo repetido que no depende para nada
+  // de CUÁL habitación se está cotizando. Acá se leen una sola vez para
+  // toda la reserva y se le pasan ya cargados a cada cotizarEstadia (que
+  // sigue pudiendo leerlos solo si no se los pasan — el cotizador de
+  // pantalla, que cotiza un tipo suelto sin pasar por acá, sigue igual).
+  // Las tarifas sí dependen del tipo de habitación (no son iguales entre
+  // una Doble y una Simple), así que se piden en una sola consulta para
+  // TODOS los tipos presentes en la reserva (antes: una consulta por
+  // habitación, aunque dos compartieran tipo).
+  const fechaIngresoComun = parsearFechaSinHora(fechaDesde, "La fecha de entrada");
+  const fechaEgresoComun = parsearFechaSinHora(fechaHasta, "La fecha de salida");
+  const ultimaNocheComun = new Date(fechaEgresoComun.getTime() - UN_DIA_MS);
+  const diasComunes = await resolverTemporadasEfectivasEnRango(fechaIngresoComun, ultimaNocheComun, cliente);
+  const temporadaIdsComunes = diasComunes.map((d) => d.temporadaId);
+  const fechaVentaParaTarifas = fechaVenta ? parsearFechaSinHora(fechaVenta, "fechaVenta") : hoyComoFechaUTC();
+
+  const tiposHabitacionIds = [...new Set(habitacionesValidadas.map((h) => h.tipoHabitacionId))];
+  const [modificadoresComunes, planesActivosComunes, tarifaPorTipoYTemporada] = await Promise.all([
+    listarModificadores(cliente),
+    listarPlanesTarifarios({ activo: "true" }, cliente),
+    obtenerTarifasVigentesParaTipos(tiposHabitacionIds, temporadaIdsComunes, fechaVentaParaTarifas, cliente),
+  ]);
+
+  // tipo/habitacionesActivas sí dependen del tipo (no de la fecha), así
+  // que se cachean por tipo — dos habitaciones del mismo tipo (el caso más
+  // común: "2 Dobles") comparten la misma entrada sin leerla dos veces.
+  const tipoCache = new Map();
+  async function tipoPrecargado(tipoHabitacionId) {
+    if (!tipoCache.has(tipoHabitacionId)) {
+      const [tipo, habitacionesActivas] = await Promise.all([
+        cliente.tipoHabitacion.findUnique({ where: { id: tipoHabitacionId } }),
+        cliente.habitacion.findMany({ where: { tipoHabitacionId, activo: true }, select: { capacidad: true } }),
+      ]);
+      tipoCache.set(tipoHabitacionId, { tipo, habitacionesActivas });
+    }
+    return tipoCache.get(tipoHabitacionId);
+  }
+
   // Por cada habitación, cotiza su TIPO con SU propia ocupación —
   // cotizarEstadia ya devuelve todos los planes en alcance para ese canal;
   // acá solo se reorganiza el resultado por plan en vez de por habitación.
   const resultadosPorHabitacion = [];
   for (const h of habitacionesValidadas) {
+    const { tipo, habitacionesActivas } = await tipoPrecargado(h.tipoHabitacionId);
     const resultado = await cotizarEstadia(
       {
         tipoHabitacionId: h.tipoHabitacionId,
@@ -294,7 +351,15 @@ async function cotizarReserva(
         canal,
         fechaVenta,
       },
-      cliente
+      cliente,
+      {
+        tipo,
+        habitacionesActivas,
+        dias: diasComunes,
+        tarifaPorTemporada: tarifaPorTipoYTemporada.get(h.tipoHabitacionId) ?? new Map(),
+        modificadores: modificadoresComunes,
+        planesActivos: planesActivosComunes,
+      }
     );
     resultadosPorHabitacion.push({ ...h, resultado });
   }

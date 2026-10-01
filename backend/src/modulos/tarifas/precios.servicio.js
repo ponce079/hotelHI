@@ -180,6 +180,37 @@ async function obtenerTarifasVigentes(tipoHabitacionId, temporadaIds, fechaVenta
 }
 
 // --------------------------------------------------------------
+// obtenerTarifasVigentesParaTipos (Etapa 4C) — mismo patrón que
+// obtenerTarifasVigentes, pero batcheando además por TIPO de habitación:
+// una reserva de varias habitaciones (de uno o más tipos) necesitaba antes
+// una consulta de Tarifa por habitación (cotizarReserva llamaba a
+// cotizarEstadia, y esta a obtenerTarifasVigentes, una vez por cada
+// habitación real de la reserva, aunque dos habitaciones del mismo tipo
+// pidieran exactamente lo mismo). Devuelve un Map de
+// tipoHabitacionId -> Map(temporadaId -> tarifa), para que cotizarReserva
+// lo pida una sola vez para TODOS los tipos presentes y se lo pase ya
+// armado a cada cotizarEstadia.
+// --------------------------------------------------------------
+async function obtenerTarifasVigentesParaTipos(tipoHabitacionIds, temporadaIds, fechaVenta, cliente = prisma) {
+  const idsTipoUnicos = [...new Set(tipoHabitacionIds)];
+  const idsTemporadaUnicos = [...new Set(temporadaIds)];
+  const filas =
+    idsTipoUnicos.length && idsTemporadaUnicos.length
+      ? await cliente.tarifa.findMany({
+          where: { tipoHabitacionId: { in: idsTipoUnicos }, temporadaId: { in: idsTemporadaUnicos }, vigenteDesde: { lte: fechaVenta } },
+          orderBy: { vigenteDesde: "desc" },
+        })
+      : [];
+  const porTipo = new Map();
+  for (const t of filas) {
+    if (!porTipo.has(t.tipoHabitacionId)) porTipo.set(t.tipoHabitacionId, new Map());
+    const porTemporada = porTipo.get(t.tipoHabitacionId);
+    if (!porTemporada.has(t.temporadaId)) porTemporada.set(t.temporadaId, t);
+  }
+  return porTipo;
+}
+
+// --------------------------------------------------------------
 // Grilla (HU-92) — tipos activos × temporadas activas, con la tarifa
 // vigente HOY de cada celda (o null). Una sola consulta de Tarifa (no
 // tipos×temporadas consultas sueltas) — mismo criterio de lote que
@@ -237,6 +268,7 @@ module.exports = {
   eliminarTarifa,
   obtenerTarifaVigente,
   obtenerTarifasVigentes,
+  obtenerTarifasVigentesParaTipos,
   grillaTarifas,
   historialTarifa,
 };

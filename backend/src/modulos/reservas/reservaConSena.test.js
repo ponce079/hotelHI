@@ -111,6 +111,17 @@ function crearCliente(obtenerTablas) {
         t.reservaNoche.push(fila);
         return fila;
       },
+      // Etapa 4C — crearReservaEnTransaccion pasó a usar createMany (una
+      // sola operación para todas las noches) en vez de un create por
+      // noche.
+      createMany: async ({ data }) => {
+        const t = obtenerTablas();
+        const filas = Array.isArray(data) ? data : [data];
+        for (const propios of filas) {
+          t.reservaNoche.push({ id: t.secuencias.reservaNoche++, ...propios });
+        }
+        return { count: filas.length };
+      },
     },
     reservaHabitacion: {
       findMany: async ({ where }) => {
