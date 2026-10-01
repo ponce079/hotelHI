@@ -1,6 +1,7 @@
 // Actualización aditiva y reejecutable. Sin --aplicar solo muestra el plan.
 const fs = require("node:fs");
 const path = require("node:path");
+const { exigirBaseLocal } = require("./_baseLocal");
 
 function operaciones(sql) {
   const sentencias = sql
@@ -86,15 +87,7 @@ async function pendientes(conn, pasos) {
 }
 
 async function main() {
-  if (!process.env.DATABASE_URL)
-    throw new Error(
-      "Definí explícitamente DATABASE_URL para la base local antes de ejecutar la migración.",
-    );
-  const u = new URL(process.env.DATABASE_URL);
-  if (!["127.0.0.1", "localhost", "[::1]"].includes(u.hostname))
-    throw new Error(
-      "Esta ejecución solo admite una base local. El despliegue compartido debe coordinarse por separado.",
-    );
+  const u = exigirBaseLocal(process.env, "la migración");
   const conn = await require("mariadb").createConnection({
     host: u.hostname,
     port: Number(u.port) || 3306,
