@@ -42,8 +42,10 @@ function ReservasEnCurso({ reservas, cargando, onSeleccionar }) {
               className="flex w-full cursor-pointer items-center justify-between gap-3 py-2.5 text-left hover:bg-hueso"
             >
               <div>
-                <p className="font-heading text-lg font-bold">Habitación{r.habitaciones.length>1?'es':''} {r.habitaciones.map(h=>h.numero).join(', ')}</p>
-                <p className="text-xs text-piedra">Titular: {r.huesped?.nombre||'Sin titular informado'}</p>
+                <p className="font-heading text-lg font-bold">
+                  Habitación{r.habitaciones.length > 1 ? "es" : ""} {r.habitaciones.map((h) => h.numero).join(", ")}
+                </p>
+                <p className="text-xs text-piedra">Titular: {r.huesped?.nombre || "Sin titular informado"}</p>
               </div>
               <CodigoClave className="text-[13px]">{r.codigoConfirmacion}</CodigoClave>
             </button>
@@ -193,8 +195,11 @@ export function BuscarConsumoModal({ onClose, onEncontrada }) {
 
             <div>
               <div>
-                <p className="font-heading text-lg font-bold">Habitación{resultado.habitaciones.length>1?'es':''} {resultado.habitaciones.map(h=>h.numero).join(', ')}</p>
-                <p className="text-xs text-piedra">Titular: {resultado.huesped?.nombre||'Sin titular informado'}</p>
+                <p className="font-heading text-lg font-bold">
+                  Habitación{resultado.habitaciones.length > 1 ? "es" : ""}{" "}
+                  {resultado.habitaciones.map((h) => h.numero).join(", ")}
+                </p>
+                <p className="text-xs text-piedra">Titular: {resultado.huesped?.nombre || "Sin titular informado"}</p>
                 <p className="text-[12.5px] text-piedra">
                   {resultado.huesped?.tipoDocumento} {resultado.huesped?.numeroDocumento}
                 </p>

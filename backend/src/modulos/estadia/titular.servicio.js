@@ -19,32 +19,17 @@ function tienePlaza(r, habitacionId, capacidad, personas) {
       !p.asignaciones.some((a) => a.habitacionId === habitacionId && !a.hasta)
     )
       continue;
-    eventos.push(
-      { fecha: p.fechaDesde, delta: 1 },
-      { fecha: p.fechaHasta, delta: -1 },
-    );
+    eventos.push({ fecha: p.fechaDesde, delta: 1 }, { fecha: p.fechaHasta, delta: -1 });
   }
-  eventos.sort(
-    (a, b) => new Date(a.fecha) - new Date(b.fecha) || a.delta - b.delta,
-  );
+  eventos.sort((a, b) => new Date(a.fecha) - new Date(b.fecha) || a.delta - b.delta);
   let cantidad = 0;
   return !eventos.some((e) => (cantidad += e.delta) > capacidad);
 }
 
 // La reserva debe estar recién creada en esta transacción o bloqueada FOR UPDATE.
 // El vínculo persistente es huespedId; el evento conserva únicamente la auditoría.
-async function incorporarEnTransaccion(
-  tx,
-  reserva,
-  huesped,
-  operador,
-  nueva = false,
-) {
-  if (!huesped)
-    throw new estadia.ErrorDeNegocio(
-      "La reserva no tiene un titular disponible.",
-      409,
-    );
+async function incorporarEnTransaccion(tx, reserva, huesped, operador, nueva = false) {
+  if (!huesped) throw new estadia.ErrorDeNegocio("La reserva no tiene un titular disponible.", 409);
   const personas = nueva
     ? []
     : await tx.ocupanteReserva.findMany({
@@ -56,17 +41,14 @@ async function incorporarEnTransaccion(
     (p) =>
       documento(p.numeroDocumento) === documento(huesped.numeroDocumento) &&
       documento(p.tipoDocumento) === documento(huesped.tipoDocumento) &&
-      (!huesped.paisDocumento ||
-        !p.paisDocumento ||
-        documento(p.paisDocumento) === documento(huesped.paisDocumento)),
+      (!huesped.paisDocumento || !p.paisDocumento || documento(p.paisDocumento) === documento(huesped.paisDocumento)),
   );
   if (coincidencias.length > 1)
     throw new estadia.ErrorDeNegocio(
       "Hay varios ocupantes con el documento del titular. Revisá sus datos antes de incorporarlo.",
       409,
     );
-  let ocupante =
-    personas.find((p) => p.huespedId === huesped.id) || coincidencias[0];
+  let ocupante = personas.find((p) => p.huespedId === huesped.id) || coincidencias[0];
   let creado = false;
   let aviso = null;
   if (ocupante && !ocupante.huespedId) {
@@ -78,12 +60,11 @@ async function incorporarEnTransaccion(
   if (!ocupante) {
     const rh = [...reserva.reservaHabitaciones]
       .sort((a, b) => a.habitacionId - b.habitacionId)
-      .find((h) =>
-        tienePlaza(reserva, h.habitacionId, h.habitacion.capacidad, personas),
-      );
+      .find((h) => tienePlaza(reserva, h.habitacionId, h.habitacion.capacidad, personas));
     if (!rh)
       throw new estadia.ErrorDeNegocio(
-        "No hay una plaza disponible para el titular. Revisá las asignaciones de los ocupantes; no se puede superar la capacidad.",
+        "No hay una plaza disponible para el titular. Revisá las asignaciones de los ocupantes; " +
+          "no se puede superar la capacidad.",
         409,
       );
     const contacto = String(huesped.contacto || "").trim();
@@ -98,8 +79,7 @@ async function incorporarEnTransaccion(
             .toLowerCase() === email.toLowerCase(),
       )
     ) {
-      aviso =
-        "El correo del titular ya está usado por otro ocupante. Revisá el contacto al completar sus datos.";
+      aviso = "El correo del titular ya está usado por otro ocupante. Revisá el contacto al completar sus datos.";
       email = null;
     }
     ocupante = await tx.ocupanteReserva.create({
@@ -109,13 +89,9 @@ async function incorporarEnTransaccion(
         esTitular: true,
         nombre: huesped.nombre,
         apellido: "",
-        ...(huesped.fechaNacimiento
-          ? { fechaNacimiento: huesped.fechaNacimiento }
-          : {}),
+        ...(huesped.fechaNacimiento ? { fechaNacimiento: huesped.fechaNacimiento } : {}),
         tipoDocumento: huesped.tipoDocumento,
-        ...(huesped.paisDocumento
-          ? { paisDocumento: huesped.paisDocumento }
-          : {}),
+        ...(huesped.paisDocumento ? { paisDocumento: huesped.paisDocumento } : {}),
         numeroDocumento: documento(huesped.numeroDocumento),
         email,
         telefono: !contacto.includes("@") && contacto ? contacto : null,
@@ -145,8 +121,7 @@ async function incorporarEnTransaccion(
 
 async function asegurarTitular(reservaId, operador) {
   const id = Number(reservaId);
-  if (!Number.isSafeInteger(id) || id < 1)
-    throw new estadia.ErrorDeNegocio("Reserva inválida.");
+  if (!Number.isSafeInteger(id) || id < 1) throw new estadia.ErrorDeNegocio("Reserva inválida.");
   return prisma.$transaction(async (tx) => {
     const reserva = await estadia.bloquear(tx, id);
     const huesped = await tx.huesped.findUnique({

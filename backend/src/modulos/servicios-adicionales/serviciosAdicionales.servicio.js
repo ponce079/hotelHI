@@ -1,4 +1,4 @@
-const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
+const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 // Servicios Adicionales (HU-61 a HU-64).
 //
 // Consumo de restaurante/spa/lavandería/minibar durante la estadía. Cuando
@@ -120,66 +120,131 @@ async function resolverDepositoMinibar(cliente) {
 // --------------------------------------------------------------
 
 async function registrarConsumo(data) {
-  const reservaId=enteroPositivo(data?.reservaId,'reservaId');
-  const habitacionId=enteroPositivo(data?.habitacionId,'habitacionId');
-  const tipoServicio=normalizarTipoServicio(data?.tipoServicio);
-  const registradoPor=textoObligatorio(data?.registradoPor,'registradoPor',100);
-  const cantidad=Number(data.cantidad ?? 1);
-  const incluido=data.incluido===true;
-  const precioUnitario=Number(data.precioUnitario ?? (Number(data.monto)/cantidad));
-  const decimal=n=>Number.isFinite(n)&&Math.abs(n*100-Math.round(n*100))<0.000001;
-  if(!decimal(cantidad)||cantidad<=0||cantidad>99999999||!decimal(precioUnitario)||precioUnitario<0||(!incluido&&precioUnitario===0))throw new ErrorDeNegocio('Cantidad o precio unitario inválidos.');
-  const monto=incluido?0:new (require('@prisma/client').Prisma.Decimal)(cantidad).times(precioUnitario).toDecimalPlaces(2).toNumber();
-  if(monto>9999999999.99)throw new ErrorDeNegocio('El monto supera el máximo permitido.');
-  const descripcion=textoObligatorio(data.descripcion||tipoServicio,'Descripción',500);
-  const claveOperacion=data.claveOperacion?textoObligatorio(data.claveOperacion,'Clave de operación',100):null;
-  const fechaServicio=data.fechaServicio?new Date(data.fechaServicio):new Date();
-  if(!Number.isFinite(fechaServicio.getTime()))throw new ErrorDeNegocio('Fecha del servicio inválida.');
-  if(tipoServicio!=='Minibar'&&data.articuloId)throw new ErrorDeNegocio('El artículo solo corresponde al minibar.');
-  return prisma.$transaction(async tx=>{
+  const reservaId = enteroPositivo(data?.reservaId, "reservaId");
+  const habitacionId = enteroPositivo(data?.habitacionId, "habitacionId");
+  const tipoServicio = normalizarTipoServicio(data?.tipoServicio);
+  const registradoPor = textoObligatorio(data?.registradoPor, "registradoPor", 100);
+  const cantidad = Number(data.cantidad ?? 1);
+  const incluido = data.incluido === true;
+  const precioUnitario = Number(data.precioUnitario ?? Number(data.monto) / cantidad);
+  const decimal = (n) => Number.isFinite(n) && Math.abs(n * 100 - Math.round(n * 100)) < 0.000001;
+  if (
+    !decimal(cantidad) ||
+    cantidad <= 0 ||
+    cantidad > 99999999 ||
+    !decimal(precioUnitario) ||
+    precioUnitario < 0 ||
+    (!incluido && precioUnitario === 0)
+  )
+    throw new ErrorDeNegocio("Cantidad o precio unitario inválidos.");
+  const monto = incluido
+    ? 0
+    : new (require("@prisma/client").Prisma.Decimal)(cantidad).times(precioUnitario).toDecimalPlaces(2).toNumber();
+  if (monto > 9999999999.99) throw new ErrorDeNegocio("El monto supera el máximo permitido.");
+  const descripcion = textoObligatorio(data.descripcion || tipoServicio, "Descripción", 500);
+  const claveOperacion = data.claveOperacion ? textoObligatorio(data.claveOperacion, "Clave de operación", 100) : null;
+  const fechaServicio = data.fechaServicio ? new Date(data.fechaServicio) : new Date();
+  if (!Number.isFinite(fechaServicio.getTime())) throw new ErrorDeNegocio("Fecha del servicio inválida.");
+  if (tipoServicio !== "Minibar" && data.articuloId)
+    throw new ErrorDeNegocio("El artículo solo corresponde al minibar.");
+  return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${reservaId} FOR UPDATE`;
-    const reserva=await tx.reserva.findUnique({where:{id:reservaId},include:{reservaHabitaciones:true}});
-    if(!reserva)throw new ErrorDeNegocio('Reserva inexistente.',404);
-    if(reserva.estado===ESTADO_RESERVA.CERRADA)throw new ErrorDeNegocio('No se pueden registrar cargos sobre una reserva cerrada.',409);
-    if(reserva.estado!==ESTADO_RESERVA.EN_CURSO)throw new ErrorDeNegocio('Solo se pueden registrar consumos con la reserva "En curso".');
-    if(!reserva.reservaHabitaciones.some(h=>h.habitacionId===habitacionId))throw new ErrorDeNegocio('La habitación no pertenece a esta reserva.');
-    if(claveOperacion){const previo=await tx.consumoServicioAdicional.findUnique({where:{claveOperacion},include:{articulo:true,habitacion:true}});if(previo){if(previo.reservaId!==reservaId||previo.habitacionId!==habitacionId)throw new ErrorDeNegocio('Clave de operación usada en otra habitación.',409);return formatearConsumo(previo);}}
+    const reserva = await tx.reserva.findUnique({ where: { id: reservaId }, include: { reservaHabitaciones: true } });
+    if (!reserva) throw new ErrorDeNegocio("Reserva inexistente.", 404);
+    if (reserva.estado === ESTADO_RESERVA.CERRADA)
+      throw new ErrorDeNegocio("No se pueden registrar cargos sobre una reserva cerrada.", 409);
+    if (reserva.estado !== ESTADO_RESERVA.EN_CURSO)
+      throw new ErrorDeNegocio('Solo se pueden registrar consumos con la reserva "En curso".');
+    if (!reserva.reservaHabitaciones.some((h) => h.habitacionId === habitacionId))
+      throw new ErrorDeNegocio("La habitación no pertenece a esta reserva.");
+    if (claveOperacion) {
+      const previo = await tx.consumoServicioAdicional.findUnique({
+        where: { claveOperacion },
+        include: { articulo: true, habitacion: true },
+      });
+      if (previo) {
+        if (previo.reservaId !== reservaId || previo.habitacionId !== habitacionId)
+          throw new ErrorDeNegocio("Clave de operación usada en otra habitación.", 409);
+        return formatearConsumo(previo);
+      }
+    }
     // Las fechas de reserva son días calendario; el instante del servicio
     // se compara en Argentina. Se admite el día de salida antes del cierre.
-    const diaServicio=fechaServicio.toLocaleDateString('en-CA',{timeZone:'America/Argentina/Buenos_Aires'});
-    const desde=reserva.fechaDesde.toISOString().slice(0,10);
-    const hasta=reserva.fechaHasta.toISOString().slice(0,10);
-    if(diaServicio<desde||diaServicio>hasta)throw new ErrorDeNegocio(`La fecha del servicio debe estar dentro de la estadía (${desde} al ${hasta}).`);
-    let articuloId=null,movimientoStockId=null;
-    if(tipoServicio==='Minibar'){
-      articuloId=enteroPositivo(data.articuloId,'articuloId');
-      const tipoMovStockId=await resolverTipoMovimientoMinibar(tx);
-      const depositoId=await resolverDepositoMinibar(tx);
-      const movimiento=await movimientoSalidaServicio.registrarSalidaEnTransaccion(tx,{depositoId,tipoMovStockId,detalle:'Consumo Minibar - Habitación '+habitacionId+' - Reserva '+reservaId,usuario:registradoPor,items:[{articuloId,cantidad}]});
-      movimientoStockId=movimiento.id;
+    const diaServicio = fechaServicio.toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
+    const desde = reserva.fechaDesde.toISOString().slice(0, 10);
+    const hasta = reserva.fechaHasta.toISOString().slice(0, 10);
+    if (diaServicio < desde || diaServicio > hasta)
+      throw new ErrorDeNegocio(`La fecha del servicio debe estar dentro de la estadía (${desde} al ${hasta}).`);
+    let articuloId = null,
+      movimientoStockId = null;
+    if (tipoServicio === "Minibar") {
+      articuloId = enteroPositivo(data.articuloId, "articuloId");
+      const tipoMovStockId = await resolverTipoMovimientoMinibar(tx);
+      const depositoId = await resolverDepositoMinibar(tx);
+      const movimiento = await movimientoSalidaServicio.registrarSalidaEnTransaccion(tx, {
+        depositoId,
+        tipoMovStockId,
+        detalle: "Consumo Minibar - Habitación " + habitacionId + " - Reserva " + reservaId,
+        usuario: registradoPor,
+        items: [{ articuloId, cantidad }],
+      });
+      movimientoStockId = movimiento.id;
     }
-    const consumo=await tx.consumoServicioAdicional.create({data:{reservaId,habitacionId,tipoServicio,registradoPor,cantidad,precioUnitario,monto,incluido,descripcion,fechaServicio,claveOperacion,articuloId,movimientoStockId},include:{articulo:true,habitacion:true}});
-    await require('../estadia/estadia.servicio').evento(tx,reservaId,'Agregar cargo',{consumoId:consumo.id,habitacionId,monto},registradoPor);
+    const consumo = await tx.consumoServicioAdicional.create({
+      data: {
+        reservaId,
+        habitacionId,
+        tipoServicio,
+        registradoPor,
+        cantidad,
+        precioUnitario,
+        monto,
+        incluido,
+        descripcion,
+        fechaServicio,
+        claveOperacion,
+        articuloId,
+        movimientoStockId,
+      },
+      include: { articulo: true, habitacion: true },
+    });
+    await require("../estadia/estadia.servicio").evento(
+      tx,
+      reservaId,
+      "Agregar cargo",
+      { consumoId: consumo.id, habitacionId, monto },
+      registradoPor,
+    );
     return formatearConsumo(consumo);
-  },OPCIONES_TRANSACCION);
+  }, OPCIONES_TRANSACCION);
 }
 
-async function anularConsumo(id,data) {
-  id=enteroPositivo(id,'id');
-  const motivo=textoObligatorio(data.motivo,'Motivo',500);
-  const operador=textoObligatorio(data.operador,'Operador',191);
-  return prisma.$transaction(async tx=>{
-    const c=await tx.consumoServicioAdicional.findUnique({where:{id}});
-    if(!c)throw new ErrorDeNegocio('Consumo inexistente.',404);
+async function anularConsumo(id, data) {
+  id = enteroPositivo(id, "id");
+  const motivo = textoObligatorio(data.motivo, "Motivo", 500);
+  const operador = textoObligatorio(data.operador, "Operador", 191);
+  return prisma.$transaction(async (tx) => {
+    const c = await tx.consumoServicioAdicional.findUnique({ where: { id } });
+    if (!c) throw new ErrorDeNegocio("Consumo inexistente.", 404);
     await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${c.reservaId} FOR UPDATE`;
-    const r=await tx.reserva.findUnique({where:{id:c.reservaId}});
-    if(r.estado!=='En curso')throw new ErrorDeNegocio('Solo se anulan cargos de estadías en curso.');
-    const actual=await tx.consumoServicioAdicional.findUnique({where:{id}});
-    if(actual.anulado)throw new ErrorDeNegocio('El cargo ya está anulado.');
-    const saved=await tx.consumoServicioAdicional.update({where:{id},data:{anulado:true,anuladoEn:new Date(),anuladoPor:operador,motivoAnulacion:motivo},include:{articulo:true,habitacion:true}});
-    await require('../estadia/estadia.servicio').evento(tx,c.reservaId,'Anular cargo',{consumoId:id,habitacionId:c.habitacionId,motivo},operador);
+    const r = await tx.reserva.findUnique({ where: { id: c.reservaId } });
+    if (r.estado !== "En curso") throw new ErrorDeNegocio("Solo se anulan cargos de estadías en curso.");
+    const actual = await tx.consumoServicioAdicional.findUnique({ where: { id } });
+    if (actual.anulado) throw new ErrorDeNegocio("El cargo ya está anulado.");
+    const saved = await tx.consumoServicioAdicional.update({
+      where: { id },
+      data: { anulado: true, anuladoEn: new Date(), anuladoPor: operador, motivoAnulacion: motivo },
+      include: { articulo: true, habitacion: true },
+    });
+    await require("../estadia/estadia.servicio").evento(
+      tx,
+      c.reservaId,
+      "Anular cargo",
+      { consumoId: id, habitacionId: c.habitacionId, motivo },
+      operador,
+    );
     return formatearConsumo(saved);
-  },OPCIONES_TRANSACCION);
+  }, OPCIONES_TRANSACCION);
 }
 
 // --------------------------------------------------------------
@@ -212,7 +277,7 @@ async function resumenPorReserva(reservaId) {
   return {
     items,
     totalPorTipo,
-    totalGeneral: items.filter(i=>!i.anulado).reduce((acc, i) => acc + i.monto, 0),
+    totalGeneral: items.filter((i) => !i.anulado).reduce((acc, i) => acc + i.monto, 0),
   };
 }
 
@@ -233,18 +298,22 @@ async function listarConsumosHotel({ desde, hasta, tipoServicio } = {}) {
 
   const fechaHora = {};
   // Los filtros representan días del hotel, no medianoches UTC.
-  const { parsearFechaSinHora, combinarFechaConHoraArgentina } = require('../../lib/fechas');
+  const { parsearFechaSinHora, combinarFechaConHoraArgentina } = require("../../lib/fechas");
   const inicioDia = (valor, campo) => {
-    try { return combinarFechaConHoraArgentina(parsearFechaSinHora(valor, campo), 0); }
-    catch (error) { throw new ErrorDeNegocio(error.message); }
+    try {
+      return combinarFechaConHoraArgentina(parsearFechaSinHora(valor, campo), 0);
+    } catch (error) {
+      throw new ErrorDeNegocio(error.message);
+    }
   };
-  if (desde) fechaHora.gte = inicioDia(desde, 'Desde');
+  if (desde) fechaHora.gte = inicioDia(desde, "Desde");
   if (hasta) {
-    const siguienteDia = inicioDia(hasta, 'Hasta');
+    const siguienteDia = inicioDia(hasta, "Hasta");
     siguienteDia.setUTCDate(siguienteDia.getUTCDate() + 1);
     fechaHora.lt = siguienteDia;
   }
-  if (fechaHora.gte && fechaHora.lt && fechaHora.gte >= fechaHora.lt) throw new ErrorDeNegocio('Desde no puede ser posterior a Hasta.');
+  if (fechaHora.gte && fechaHora.lt && fechaHora.gte >= fechaHora.lt)
+    throw new ErrorDeNegocio("Desde no puede ser posterior a Hasta.");
 
   const consumos = await prisma.consumoServicioAdicional.findMany({
     where: {
@@ -282,7 +351,7 @@ async function resumenConsumosHotel(filtros = {}) {
   return {
     items,
     totalPorTipo,
-    totalGeneral: items.filter(i=>!i.anulado).reduce((acc, i) => acc + i.monto, 0),
+    totalGeneral: items.filter((i) => !i.anulado).reduce((acc, i) => acc + i.monto, 0),
   };
 }
 

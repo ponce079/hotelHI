@@ -11,8 +11,7 @@ function personasFixture(habitaciones, huesped, fechaDesde, fechaHasta) {
         nombre: "Persona",
         apellido: "Prueba",
         tipoDocumento: id === 1 ? huesped.tipoDocumento : "DNI",
-        numeroDocumento:
-          id === 1 ? huesped.numeroDocumento : String(80000000 + id),
+        numeroDocumento: id === 1 ? huesped.numeroDocumento : String(80000000 + id),
         paisDocumento: "AR",
         nacionalidad: "AR",
         paisResidencia: "AR",
@@ -29,25 +28,14 @@ function personasFixture(habitaciones, huesped, fechaDesde, fechaHasta) {
 async function completarFixture(reserva, habitaciones) {
   const s = require("../src/modulos/estadia/estadia.servicio");
   const existentes = await s.listar(reserva.id);
-  const personas = personasFixture(
-    habitaciones,
-    reserva.huesped,
-    reserva.fechaDesde,
-    reserva.fechaHasta,
-  );
+  const personas = personasFixture(habitaciones, reserva.huesped, reserva.fechaDesde, reserva.fechaHasta);
   const ids = new Map();
   for (const persona of personas) {
-    const guardada = await s.guardar(
-      reserva.id,
-      persona.id === 1 ? existentes[0].id : null,
-      {
-        ...persona,
-        responsableId: persona.responsableId
-          ? ids.get(persona.responsableId)
-          : null,
-        operador: "Prueba",
-      },
-    );
+    const guardada = await s.guardar(reserva.id, persona.id === 1 ? existentes[0].id : null, {
+      ...persona,
+      responsableId: persona.responsableId ? ids.get(persona.responsableId) : null,
+      operador: "Prueba",
+    });
     ids.set(persona.id, guardada.id);
     await s.accion(reserva.id, guardada.id, {
       accion: "verificar",

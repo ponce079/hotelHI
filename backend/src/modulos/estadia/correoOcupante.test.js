@@ -5,9 +5,7 @@ const reserva = {
   estado: "Confirmada",
   fechaDesde: new Date("2026-10-01"),
   fechaHasta: new Date("2026-10-03"),
-  reservaHabitaciones: [
-    { habitacionId: 10, habitacion: { capacidad: 2, numero: "101" } },
-  ],
+  reservaHabitaciones: [{ habitacionId: 10, habitacion: { capacidad: 2, numero: "101" } }],
 };
 const persona = {
   id: 5,
@@ -28,11 +26,7 @@ function cliente(correos = []) {
     reserva: { findUnique: jest.fn().mockResolvedValue(reserva) },
     ocupanteReserva: {
       findFirst: jest.fn().mockResolvedValue(persona),
-      findMany: jest
-        .fn()
-        .mockImplementation((q) =>
-          Promise.resolve(q.select?.email ? correos : []),
-        ),
+      findMany: jest.fn().mockImplementation((q) => Promise.resolve(q.select?.email ? correos : [])),
       count: jest.fn().mockResolvedValue(0),
       create: jest.fn().mockResolvedValue(persona),
       update: jest.fn().mockResolvedValue(persona),
@@ -76,15 +70,11 @@ test("editar el propio ocupante excluye su correo de la búsqueda", async () => 
 });
 test("correo opcional y formato inválido diferenciado", async () => {
   const tx = cliente();
-  await expect(
-    guardar(1, null, { ...datos, email: "mal@" }, tx),
-  ).rejects.toMatchObject({
+  await expect(guardar(1, null, { ...datos, email: "mal@" }, tx)).rejects.toMatchObject({
     statusCode: 400,
     campos: { email: expect.any(String) },
   });
   await guardar(1, null, { ...datos, email: "" }, tx);
-  expect(
-    tx.ocupanteReserva.findMany.mock.calls.every(([q]) => !q.select?.email),
-  ).toBe(true);
+  expect(tx.ocupanteReserva.findMany.mock.calls.every(([q]) => !q.select?.email)).toBe(true);
   expect(tx.ocupanteReserva.create).toHaveBeenCalled();
 });

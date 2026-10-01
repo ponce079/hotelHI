@@ -20,9 +20,7 @@ const cargos = require("../src/modulos/servicios-adicionales/serviciosAdicionale
 const checkin = require("../src/modulos/check-in/checkIn.servicio");
 const checkout = require("../src/modulos/check-out/checkOut.servicio");
 const pagos = require("../src/modulos/pagos-estadia/pagoEstadia.servicio");
-const {
-  cotizarReserva,
-} = require("../src/modulos/tarifas/cotizacion.servicio");
+const { cotizarReserva } = require("../src/modulos/tarifas/cotizacion.servicio");
 const { asegurarTitular } = require("../src/modulos/estadia/titular.servicio");
 const { MONTO_GARANTIA } = require("../src/modulos/check-in/checkIn.constantes");
 
@@ -61,8 +59,7 @@ async function pruebas() {
     },
   });
   let secuencia = 0;
-  const documento = () =>
-    String(20000000 + Number(marca.slice(-6)) * 10 + secuencia++);
+  const documento = () => String(20000000 + Number(marca.slice(-6)) * 10 + secuencia++);
   async function habitacion(capacidad = 2, precioBase = 100000) {
     const codigo = `T${marca}-${secuencia++}`;
     const tipo = await p.tipoHabitacion.create({
@@ -97,9 +94,7 @@ async function pruebas() {
       },
       origen: "RECEPCION",
     };
-    d.totalEsperado = (
-      await cotizarReserva({ ...d, canal: "RECEPCION" })
-    ).planes[0].total;
+    d.totalEsperado = (await cotizarReserva({ ...d, canal: "RECEPCION" })).planes[0].total;
     return d;
   }
   const ficha = (h, doc = documento(), extra = {}) => ({
@@ -141,21 +136,10 @@ async function pruebas() {
     inicial = await s.listar(r.id);
   assert.equal(inicial.length, 1);
   assert.equal(iso(inicial[0].fechaNacimiento), d.huesped.fechaNacimiento);
-  assert.equal(
-    iso(new Date(r.huesped.fechaNacimiento)),
-    d.huesped.fechaNacimiento,
-  );
+  assert.equal(iso(new Date(r.huesped.fechaNacimiento)), d.huesped.fechaNacimiento);
+  await assert.rejects(() => ingresar(r, d.huesped.numeroDocumento), /nombre y apellido|registradas/);
   await assert.rejects(
-    () => ingresar(r, d.huesped.numeroDocumento),
-    /nombre y apellido|registradas/,
-  );
-  await assert.rejects(
-    () =>
-      s.guardar(
-        r.id,
-        inicial[0].id,
-        ficha(h1, d.huesped.numeroDocumento, { fechaNacimiento: "2015-01-01" }),
-      ),
+    () => s.guardar(r.id, inicial[0].id, ficha(h1, d.huesped.numeroDocumento, { fechaNacimiento: "2015-01-01" })),
     /18 años/,
   );
   const a = await s.guardar(
@@ -166,10 +150,7 @@ async function pruebas() {
       telefono: "123456789",
     }),
   );
-  await assert.rejects(
-    () => s.guardar(r.id, null, ficha(h1, d.huesped.numeroDocumento)),
-    /ya está registrada/,
-  );
+  await assert.rejects(() => s.guardar(r.id, null, ficha(h1, d.huesped.numeroDocumento)), /ya está registrada/);
   const hijo = await s.guardar(
     r.id,
     null,
@@ -183,24 +164,12 @@ async function pruebas() {
   assert.equal(hijo.telefono, a.telefono);
   await assert.rejects(() => s.guardar(r.id, null, ficha(h1)), /capacidad/);
   await s.guardar(r.id, null, ficha(h2, undefined, { esTitular: true }));
-  await assert.rejects(
-    () => ingresar(r, d.huesped.numeroDocumento),
-    /Verificá/,
-  );
-  assert.equal(
-    (await p.reserva.findUnique({ where: { id: r.id } })).estado,
-    "Confirmada",
-  );
+  await assert.rejects(() => ingresar(r, d.huesped.numeroDocumento), /Verificá/);
+  assert.equal((await p.reserva.findUnique({ where: { id: r.id } })).estado, "Confirmada");
   await verificar(r);
   await ingresar(r, d.huesped.numeroDocumento);
-  assert.equal(
-    (await s.listar(r.id)).filter((x) => x.estado === "Alojado").length,
-    3,
-  );
-  await assert.rejects(
-    () => s.accion(r.id, a.id, { accion: "retirar", operador: "Prueba" }),
-    /menores/,
-  );
+  assert.equal((await s.listar(r.id)).filter((x) => x.estado === "Alojado").length, 3);
+  await assert.rejects(() => s.accion(r.id, a.id, { accion: "retirar", operador: "Prueba" }), /menores/);
   await p.tarifa.updateMany({
     where: { tipoHabitacionId: h1.tipoHabitacionId },
     data: { precioBase: 900000 },
@@ -233,18 +202,12 @@ async function pruebas() {
   );
   cuenta = await checkout.consolidarCargos(r.id);
   assert.equal(cuenta.totalAdeudado, d.totalEsperado + importeCargo);
-  assert.equal(
-    cuenta.habitaciones.find((h) => h.habitacionId === h1.id).adicionales,
-    importeCargo,
-  );
+  assert.equal(cuenta.habitaciones.find((h) => h.habitacionId === h1.id).adicionales, importeCargo);
   await cargos.anularConsumo(cargo.id, {
     motivo: "Prueba de anulación",
     operador: "Prueba",
   });
-  assert.equal(
-    (await checkout.consolidarCargos(r.id)).totalAdeudado,
-    d.totalEsperado,
-  );
+  assert.equal((await checkout.consolidarCargos(r.id)).totalAdeudado, d.totalEsperado);
   await assert.rejects(
     () =>
       checkout.registrarVerificacion(r.id, {
@@ -258,10 +221,7 @@ async function pruebas() {
     tipo: "SinNovedades",
     registradoPor: "Prueba",
   });
-  await assert.rejects(
-    () => checkout.confirmarCheckOut(r.id, { cargosValidados: true }),
-    /verificar/,
-  );
+  await assert.rejects(() => checkout.confirmarCheckOut(r.id, { cargosValidados: true }), /verificar/);
   await checkout.registrarVerificacion(r.id, {
     habitacionId: h2.id,
     tipo: "SinNovedades",
@@ -272,14 +232,8 @@ async function pruebas() {
     medios: [{ tipo: "Efectivo", importe: d.totalEsperado - MONTO_GARANTIA }],
   });
   await checkout.confirmarCheckOut(r.id, { cargosValidados: true });
-  assert.equal(
-    (await s.listar(r.id)).filter((x) => x.estado === "Retirado").length,
-    3,
-  );
-  assert.equal(
-    (await p.habitacion.findUnique({ where: { id: h1.id } })).estado,
-    "en limpieza",
-  );
+  assert.equal((await s.listar(r.id)).filter((x) => x.estado === "Retirado").length, 3);
+  assert.equal((await p.habitacion.findUnique({ where: { id: h1.id } })).estado, "en limpieza");
   await assert.rejects(
     () =>
       cargos.registrarConsumo({
@@ -299,20 +253,12 @@ async function pruebas() {
     garantiaConfirmada: true,
     medioGarantia: "Efectivo",
     operador: "Prueba",
-    personas: [
-      { ...ficha(hw, dw.huesped.numeroDocumento, { esTitular: true }), id: 1 },
-    ],
+    personas: [{ ...ficha(hw, dw.huesped.numeroDocumento, { esTitular: true }), id: 1 }],
   };
   const antes = await p.reserva.count();
-  await assert.rejects(
-    () => checkin.registrarCheckInWalkIn(walk),
-    /registradas/,
-  );
+  await assert.rejects(() => checkin.registrarCheckInWalkIn(walk), /registradas/);
   assert.equal(await p.reserva.count(), antes);
-  assert.equal(
-    (await p.habitacion.findUnique({ where: { id: hw.id } })).estado,
-    "libre",
-  );
+  assert.equal((await p.habitacion.findUnique({ where: { id: hw.id } })).estado, "libre");
   walk.personas.push({
     ...ficha(hw, undefined, {
       fechaNacimiento: "2015-01-01",
@@ -321,13 +267,8 @@ async function pruebas() {
     id: 2,
   });
   const rw = await checkin.registrarCheckInWalkIn(walk);
-  assert.equal(
-    (await s.listar(rw.id)).filter((x) => x.estado === "Alojado").length,
-    2,
-  );
-  console.log(
-    "OK: walk-in, rollback si falta una persona y garantías históricas.",
-  );
+  assert.equal((await s.listar(rw.id)).filter((x) => x.estado === "Alojado").length, 2);
+  console.log("OK: walk-in, rollback si falta una persona y garantías históricas.");
 
   for (const tipo of ["Efectivo", "Transferencia"]) {
     const h = await habitacion(),
@@ -347,20 +288,12 @@ async function pruebas() {
       medios: [{ tipo, importe: 40000 }],
     });
     assert.equal(Number(rs.pagoSenia.medios[0].importe), 40000);
-    const [auto1, auto2] = await Promise.all([
-      asegurarTitular(rs.id, "Prueba"),
-      asegurarTitular(rs.id, "Prueba"),
-    ]);
+    const [auto1, auto2] = await Promise.all([asegurarTitular(rs.id, "Prueba"), asegurarTitular(rs.id, "Prueba")]);
     assert.equal(auto1.ocupanteId, auto2.ocupanteId);
     assert.equal((await s.listar(rs.id)).length, 1);
-    assert.equal(
-      (await checkout.consolidarCargos(rs.id)).saldo,
-      ds.totalEsperado - 40000,
-    );
+    assert.equal((await checkout.consolidarCargos(rs.id)).saldo, ds.totalEsperado - 40000);
   }
-  console.log(
-    "OK: señas en efectivo/transferencia, rollback y titular concurrente sin duplicación.",
-  );
+  console.log("OK: señas en efectivo/transferencia, rollback y titular concurrente sin duplicación.");
 
   const hm = await habitacion(3),
     dm = await datos([{ habitacionId: hm.id, adultos: 1, menores: 0 }]);
@@ -369,11 +302,7 @@ async function pruebas() {
       where: { reservaId: rm.id },
     }),
     titularAntes = (await s.listar(rm.id))[0];
-  await s.guardar(
-    rm.id,
-    titularAntes.id,
-    ficha(hm, dm.huesped.numeroDocumento),
-  );
+  await s.guardar(rm.id, titularAntes.id, ficha(hm, dm.huesped.numeroDocumento));
   await verificar(rm);
   const cambios = {
     habitaciones: [{ habitacionId: hm.id, adultos: 2, menores: 0 }],
@@ -391,40 +320,27 @@ async function pruebas() {
   });
   assert.equal(previa.totalNuevo, cotizadaNueva.planes[0].total);
   await reservas.modificarReserva(rm.id, cambios);
-  assert.equal(
-    (await p.reservaHabitacion.findFirst({ where: { reservaId: rm.id } })).id,
-    rhAntes.id,
-  );
+  assert.equal((await p.reservaHabitacion.findFirst({ where: { reservaId: rm.id } })).id, rhAntes.id);
   const titularDespues = (await s.listar(rm.id))[0];
   assert.equal(titularDespues.id, titularAntes.id);
   assert.equal(iso(titularDespues.fechaHasta), cambios.fechaHasta);
   assert.equal(titularDespues.verificadoEn, null);
-  assert.equal(
-    (await checkout.consolidarCargos(rm.id)).totalAdeudado,
-    previa.totalNuevo,
-  );
+  assert.equal((await checkout.consolidarCargos(rm.id)).totalAdeudado, previa.totalNuevo);
   await s.guardar(rm.id, null, ficha(hm));
   await verificar(rm);
   await ingresar(rm, dm.huesped.numeroDocumento);
-  console.log(
-    "OK: modificación recotizada, habitación/titular conservados, fechas sincronizadas y check-in.",
-  );
+  console.log("OK: modificación recotizada, habitación/titular conservados, fechas sincronizadas y check-in.");
 
   // I1: una persona conserva su ficha en otra reserva.
   const hc = await habitacion(2),
     dc = await datos([{ habitacionId: hc.id, adultos: 2, menores: 0 }]);
   const rc = await reservas.crearReserva(dc);
-  const repetida = await s.guardar(
-    rc.id,
-    null,
-    ficha(hc, d.huesped.numeroDocumento),
-  );
+  const repetida = await s.guardar(rc.id, null, ficha(hc, d.huesped.numeroDocumento));
   assert.equal(repetida.huespedId, a.huespedId);
   assert.equal(
     await p.huesped.count({
       where: {
-        identidadDocumento:
-          require("../src/modulos/estadia/persona.servicio").claveDocumento(a),
+        identidadDocumento: require("../src/modulos/estadia/persona.servicio").claveDocumento(a),
       },
     }),
     1,
@@ -452,37 +368,18 @@ async function pruebas() {
   assert.equal(actualizada.paisResidencia, "UY");
   assert.equal(actualizada.localidad, "Salto");
   assert.equal(actualizada.domicilio, "Calle 1");
-  assert.equal(
-    (await s.listar(r.id)).find((x) => x.id === a.id).paisResidencia,
-    "UY",
-  );
-
+  assert.equal((await s.listar(r.id)).find((x) => x.id === a.id).paisResidencia, "UY");
 
   // I2 e I4: titulares explícitos y ampliación atómica con precios del motor.
   const ha = await habitacion(2),
     da = await datos([{ habitacionId: ha.id, adultos: 1, menores: 0 }]);
   const ra = await reservas.crearReserva(da),
     titularA = (await s.listar(ra.id))[0];
-  await s.guardar(
-    ra.id,
-    titularA.id,
-    ficha(ha, da.huesped.numeroDocumento, { esTitular: false }),
-  );
+  await s.guardar(ra.id, titularA.id, ficha(ha, da.huesped.numeroDocumento, { esTitular: false }));
   await verificar(ra);
-  await assert.rejects(
-    () => ingresar(ra, da.huesped.numeroDocumento),
-    /exactamente un titular/,
-  );
-  await s.guardar(
-    ra.id,
-    titularA.id,
-    ficha(ha, da.huesped.numeroDocumento, { esTitular: true }),
-  );
-  const extra = await s.guardar(
-    ra.id,
-    null,
-    ficha(ha, undefined, { esTitular: true }),
-  );
+  await assert.rejects(() => ingresar(ra, da.huesped.numeroDocumento), /exactamente un titular/);
+  await s.guardar(ra.id, titularA.id, ficha(ha, da.huesped.numeroDocumento, { esTitular: true }));
+  const extra = await s.guardar(ra.id, null, ficha(ha, undefined, { esTitular: true }));
   await verificar(ra);
   let advertencia;
   try {
@@ -491,10 +388,7 @@ async function pruebas() {
     advertencia = e;
   }
   assert.equal(advertencia?.statusCode, 409);
-  assert.equal(
-    advertencia.codigo,
-    "AMPLIACION_OCUPACION_REQUIERE_CONFIRMACION",
-  );
+  assert.equal(advertencia.codigo, "AMPLIACION_OCUPACION_REQUIERE_CONFIRMACION");
   const confirmarAmpliacion = (token) =>
     checkin.confirmarCheckInConReserva({
       reservaId: ra.id,
@@ -504,24 +398,10 @@ async function pruebas() {
       operador: "Prueba",
       confirmacionAmpliacion: token,
     });
-  await assert.rejects(
-    () => confirmarAmpliacion(advertencia.detalle.token),
-    /exactamente un titular/,
-  );
-  assert.equal(
-    (await p.reservaHabitacion.findFirst({ where: { reservaId: ra.id } }))
-      .adultos,
-    1,
-  );
-  assert.equal(
-    (await checkout.consolidarCargos(ra.id)).totalAdeudado,
-    da.totalEsperado,
-  );
-  await s.guardar(
-    ra.id,
-    extra.id,
-    ficha(ha, extra.numeroDocumento, { esTitular: false }),
-  );
+  await assert.rejects(() => confirmarAmpliacion(advertencia.detalle.token), /exactamente un titular/);
+  assert.equal((await p.reservaHabitacion.findFirst({ where: { reservaId: ra.id } })).adultos, 1);
+  assert.equal((await checkout.consolidarCargos(ra.id)).totalAdeudado, da.totalEsperado);
+  await s.guardar(ra.id, extra.id, ficha(ha, extra.numeroDocumento, { esTitular: false }));
   await verificar(ra);
   const cotizada = await cotizarReserva({
     ...da,
@@ -534,35 +414,19 @@ async function pruebas() {
     (await checkout.consolidarCargos(ra.id)).totalAdeudado - da.totalEsperado,
     advertencia.detalle.diferencia,
   );
-  assert.equal(
-    (await p.reservaHabitacion.findFirst({ where: { reservaId: ra.id } }))
-      .adultos,
-    2,
-  );
-  assert.equal(
-    (await s.listar(ra.id)).filter((x) => x.estado === "Alojado").length,
-    2,
-  );
-  console.log(
-    "OK: I1 ficha única; I2 cero/dos titulares; I4 advertencia, rollback y ampliación recotizada.",
-  );
+  assert.equal((await p.reservaHabitacion.findFirst({ where: { reservaId: ra.id } })).adultos, 2);
+  assert.equal((await s.listar(ra.id)).filter((x) => x.estado === "Alojado").length, 2);
+  console.log("OK: I1 ficha única; I2 cero/dos titulares; I4 advertencia, rollback y ampliación recotizada.");
 
   // Tope de capacidad: nunca se amplía por encima de Habitacion.capacidad.
   const hk = await habitacion(3),
     dk = await datos([{ habitacionId: hk.id, adultos: 2, menores: 0 }]);
   const rk = await reservas.crearReserva(dk),
     titularK = (await s.listar(rk.id))[0];
-  await s.guardar(
-    rk.id,
-    titularK.id,
-    ficha(hk, dk.huesped.numeroDocumento, { esTitular: true }),
-  );
+  await s.guardar(rk.id, titularK.id, ficha(hk, dk.huesped.numeroDocumento, { esTitular: true }));
   await s.guardar(rk.id, null, ficha(hk));
   await s.guardar(rk.id, null, ficha(hk));
-  await assert.rejects(
-    () => s.guardar(rk.id, null, ficha(hk)),
-    /supera su capacidad \(3\)/,
-  );
+  await assert.rejects(() => s.guardar(rk.id, null, ficha(hk)), /supera su capacidad \(3\)/);
   await verificar(rk);
   await p.habitacion.update({
     where: { id: hk.id },
@@ -581,18 +445,9 @@ async function pruebas() {
     "AMPLIACION_OCUPACION_REQUIERE_CONFIRMACION",
     "por encima de la capacidad no hay ampliación que confirmar",
   );
-  assert.equal(
-    (await p.reservaHabitacion.findFirst({ where: { reservaId: rk.id } }))
-      .adultos,
-    2,
-  );
-  assert.equal(
-    (await p.reserva.findUnique({ where: { id: rk.id } })).estado,
-    "Confirmada",
-  );
-  console.log(
-    "OK: la ampliación nunca supera la capacidad de la habitación y no deja nada a medias.",
-  );
+  assert.equal((await p.reservaHabitacion.findFirst({ where: { reservaId: rk.id } })).adultos, 2);
+  assert.equal((await p.reserva.findUnique({ where: { id: rk.id } })).estado, "Confirmada");
+  console.log("OK: la ampliación nunca supera la capacidad de la habitación y no deja nada a medias.");
 
   // Una persona no puede figurar alojada dos veces a la vez (índice único de identidadActiva),
   // y puede estar precargada en dos reservas seguidas: se aloja en la segunda al salir de la primera.
@@ -609,42 +464,25 @@ async function pruebas() {
     [rsB, hs2],
   ]) {
     const [titular] = await s.listar(reserva.id);
-    await s.guardar(
-      reserva.id,
-      titular.id,
-      ficha(hab, documentoComun, { esTitular: true }),
-    );
+    await s.guardar(reserva.id, titular.id, ficha(hab, documentoComun, { esTitular: true }));
     await verificar(reserva);
   }
   const fichasA = await s.listar(rsA.id),
     fichasB = await s.listar(rsB.id);
-  assert.equal(
-    fichasA[0].huespedId,
-    fichasB[0].huespedId,
-    "una sola ficha de persona con dos estadías",
-  );
-  const simultaneos = await Promise.allSettled([
-    ingresar(rsA, documentoComun),
-    ingresar(rsB, documentoComun),
-  ]);
+  assert.equal(fichasA[0].huespedId, fichasB[0].huespedId, "una sola ficha de persona con dos estadías");
+  const simultaneos = await Promise.allSettled([ingresar(rsA, documentoComun), ingresar(rsB, documentoComun)]);
   const perdedores = simultaneos.filter((x) => x.status === "rejected");
   assert.equal(perdedores.length, 1, "dos check-in simultáneos: uno falla");
   assert.equal(perdedores[0].reason.statusCode, 409);
   assert.match(perdedores[0].reason.message, /ya figura alojada/);
-  const [ganadora, perdedora, habGanadora] =
-    simultaneos[0].status === "fulfilled"
-      ? [rsA, rsB, hs1]
-      : [rsB, rsA, hs2];
+  const [ganadora, perdedora, habGanadora] = simultaneos[0].status === "fulfilled" ? [rsA, rsB, hs1] : [rsB, rsA, hs2];
   const habPerdedora = habGanadora === hs1 ? hs2 : hs1;
   assert.equal(
     (await p.reserva.findUnique({ where: { id: perdedora.id } })).estado,
     "Confirmada",
     "el ingreso rechazado no queda a medias",
   );
-  assert.equal(
-    (await p.habitacion.findUnique({ where: { id: habPerdedora.id } })).estado,
-    "libre",
-  );
+  assert.equal((await p.habitacion.findUnique({ where: { id: habPerdedora.id } })).estado, "libre");
   await checkout.registrarVerificacion(ganadora.id, {
     habitacionId: habGanadora.id,
     tipo: "SinNovedades",
@@ -658,22 +496,17 @@ async function pruebas() {
     });
   await checkout.confirmarCheckOut(ganadora.id, { cargosValidados: true });
   await ingresar(perdedora, documentoComun);
-  assert.equal(
-    (await p.reserva.findUnique({ where: { id: perdedora.id } })).estado,
-    "En curso",
-  );
+  assert.equal((await p.reserva.findUnique({ where: { id: perdedora.id } })).estado, "En curso");
   console.log(
-    "OK: una persona no figura alojada dos veces a la vez; precargada en dos reservas seguidas, ingresa en la segunda al salir de la primera.",
+    "OK: una persona no figura alojada dos veces a la vez; precargada en dos reservas seguidas, " +
+      "ingresa en la segunda al salir de la primera.",
   );
 
   const express = require("express"),
     app = express();
   app.use(express.json());
   app.use("/api/estadia", require("../src/modulos/estadia/estadia.routes"));
-  app.use(
-    "/api/consumos-servicios",
-    require("../src/modulos/servicios-adicionales/serviciosAdicionales.routes"),
-  );
+  app.use("/api/consumos-servicios", require("../src/modulos/servicios-adicionales/serviciosAdicionales.routes"));
   app.use("/api/check-in", require("../src/modulos/check-in/checkIn.routes"));
   const server = await new Promise((resolve) => {
     const server = app.listen(0, "127.0.0.1", () => resolve(server));
@@ -695,9 +528,7 @@ async function pruebas() {
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
-  console.log(
-    "OK: rutas HTTP y rechazo de ocupación duplicada en contratos anteriores.",
-  );
+  console.log("OK: rutas HTTP y rechazo de ocupación duplicada en contratos anteriores.");
 }
 async function main() {
   const restituir = await neutralizarModificadoresDeDiaSemana();

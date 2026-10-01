@@ -216,6 +216,14 @@ function normalizarHabitacionesConOcupacion(valor) {
   return habitaciones;
 }
 
+// El titular de la reserva tiene que ser adulto en la fecha de ingreso.
+function validarTitularAdulto(nacimiento, fechaIngreso) {
+  const { edad } = require("../estadia/estadia.servicio");
+  if (nacimiento > hoyComoFechaUTC() || edad(nacimiento, fechaIngreso) < 18) {
+    throw new ErrorDeNegocio("El titular debe tener al menos 18 años en la fecha de ingreso.");
+  }
+}
+
 // HU-39: los campos obligatorios de la ficha del huésped se validan antes
 // de confirmar la reserva, no después.
 function normalizarHuesped(data, fechaIngreso = hoyComoFechaUTC()) {
@@ -223,9 +231,9 @@ function normalizarHuesped(data, fechaIngreso = hoyComoFechaUTC()) {
     throw new ErrorDeNegocio("Faltan los datos del huésped.");
   }
   const tipoDocumento = typeof data.tipoDocumento === "string" ? data.tipoDocumento.trim() : "";
-  if(data.fechaNacimiento){
-    const nacimiento=parsearFechaSinHora(data.fechaNacimiento,'La fecha de nacimiento del titular');
-    if(nacimiento>hoyComoFechaUTC()||require('../estadia/estadia.servicio').edad(nacimiento,fechaIngreso)<18) throw new ErrorDeNegocio('El titular debe tener al menos 18 años en la fecha de ingreso.');
+  if (data.fechaNacimiento) {
+    const nacimiento = parsearFechaSinHora(data.fechaNacimiento, "La fecha de nacimiento del titular");
+    validarTitularAdulto(nacimiento, fechaIngreso);
   }
   if (!TIPOS_DOCUMENTO.includes(tipoDocumento)) {
     throw new ErrorDeNegocio(`tipoDocumento debe ser uno de: ${TIPOS_DOCUMENTO.join(", ")}.`);
@@ -236,9 +244,17 @@ function normalizarHuesped(data, fechaIngreso = hoyComoFechaUTC()) {
   }
   return {
     nombre: textoObligatorio(data.nombre, "El nombre del huésped", LIMITES_RESERVA.nombre),
-    ...(data.fechaNacimiento ? {fechaNacimiento:parsearFechaSinHora(data.fechaNacimiento,'La fecha de nacimiento del titular')} : {}),
+    ...(data.fechaNacimiento
+      ? { fechaNacimiento: parsearFechaSinHora(data.fechaNacimiento, "La fecha de nacimiento del titular") }
+      : {}),
     tipoDocumento,
-    ...(data.paisDocumento ? { paisDocumento: require('../estadia/persona.servicio').normalizarPais(textoObligatorio(data.paisDocumento, 'El país emisor', 191)) } : {}),
+    ...(data.paisDocumento
+      ? {
+          paisDocumento: require("../estadia/persona.servicio").normalizarPais(
+            textoObligatorio(data.paisDocumento, "El país emisor", 191)
+          ),
+        }
+      : {}),
     numeroDocumento: textoObligatorio(data.numeroDocumento, "El número de documento", LIMITES_RESERVA.numeroDocumento),
     contacto: email,
     preferencias: textoOpcional(data.preferencias, "Las preferencias del huésped", LIMITES_RESERVA.preferencias),
@@ -727,9 +743,13 @@ async function reservarCodigoLibre(tx) {
 // y nadie lo toca sin avisar al grupo — así que la búsqueda es por findFirst
 // y la unicidad es best-effort, no una garantía del motor.
 async function resolverHuesped(tx, datos) {
-  const identidadDocumento = require('../estadia/persona.servicio').claveDocumento(datos);
+  const identidadDocumento = require("../estadia/persona.servicio").claveDocumento(datos);
   if (identidadDocumento) {
-    return tx.huesped.upsert({ where: { identidadDocumento }, update: datos, create: { ...datos, identidadDocumento } });
+    return tx.huesped.upsert({
+      where: { identidadDocumento },
+      update: datos,
+      create: { ...datos, identidadDocumento },
+    });
   }
   const existente = await tx.huesped.findFirst({
     where: { tipoDocumento: datos.tipoDocumento, numeroDocumento: datos.numeroDocumento, paisDocumento: null },
@@ -742,7 +762,7 @@ async function resolverHuesped(tx, datos) {
     where: { id: existente.id },
     data: {
       nombre: datos.nombre,
-      ...(datos.fechaNacimiento ? {fechaNacimiento:datos.fechaNacimiento} : {}),
+      ...(datos.fechaNacimiento ? { fechaNacimiento: datos.fechaNacimiento } : {}),
       contacto: datos.contacto ?? existente.contacto,
       preferencias: datos.preferencias ?? existente.preferencias,
     },
@@ -813,9 +833,9 @@ function normalizarAltaReserva(data) {
   const fechaDesde = parsearFechaSinHora(data?.fechaDesde, "La fecha de entrada");
   const fechaHasta = parsearFechaSinHora(data?.fechaHasta, "La fecha de salida");
   validarRango(fechaDesde, fechaHasta);
-  const nacimiento = parsearFechaSinHora(data?.huesped?.fechaNacimiento,'La fecha de nacimiento del titular');
-  textoObligatorio(data?.huesped?.paisDocumento, 'El país emisor del documento', 191);
-  if(nacimiento>hoyComoFechaUTC() || require('../estadia/estadia.servicio').edad(nacimiento,fechaDesde)<18) throw new ErrorDeNegocio('El titular debe tener al menos 18 años en la fecha de ingreso.');
+  const nacimiento = parsearFechaSinHora(data?.huesped?.fechaNacimiento, "La fecha de nacimiento del titular");
+  textoObligatorio(data?.huesped?.paisDocumento, "El país emisor del documento", 191);
+  validarTitularAdulto(nacimiento, fechaDesde);
   return {
     fechaDesde,
     fechaHasta,
@@ -825,7 +845,7 @@ function normalizarAltaReserva(data) {
     habitaciones: normalizarHabitacionesConOcupacion(data?.habitaciones),
     planTarifarioId: enteroPositivo(data?.planTarifarioId, "planTarifarioId"),
     totalEsperado: numeroNoNegativo(data?.totalEsperado, "totalEsperado"),
-    huesped: normalizarHuesped(data?.huesped,fechaDesde),
+    huesped: normalizarHuesped(data?.huesped, fechaDesde),
     canalConfirmacion: validarCanal(data?.canalConfirmacion),
     // HU-40: el canal web reutiliza este mismo alta sin duplicar lógica.
     // No hay columna para el origen (el schema está congelado), así que
@@ -981,7 +1001,20 @@ async function crearReservaEnTransaccion(tx, datos, { incluirTitular = true } = 
   });
 
   if (incluirTitular) {
-    await require('../estadia/titular.servicio').incorporarEnTransaccion(tx, {...reserva, reservaHabitaciones:reserva.reservaHabitaciones.map(rh=>({...rh,habitacion:habitacionesDb.find(h=>h.id===rh.habitacionId)}))}, huespedGuardado, 'Sistema: alta de reserva', true);
+    const reservaConHabitaciones = {
+      ...reserva,
+      reservaHabitaciones: reserva.reservaHabitaciones.map((rh) => ({
+        ...rh,
+        habitacion: habitacionesDb.find((h) => h.id === rh.habitacionId),
+      })),
+    };
+    await require("../estadia/titular.servicio").incorporarEnTransaccion(
+      tx,
+      reservaConHabitaciones,
+      huespedGuardado,
+      "Sistema: alta de reserva",
+      true
+    );
   }
 
   // Etapa 4C: la relectura con include (INCLUDE_RESERVA son ~9 consultas,
@@ -1107,10 +1140,10 @@ async function crearReservaConSena(data) {
         // Solo una consulta sobre una transacción ya expirada garantiza
         // que este intento no llegó al commit. Otros P2028 no se etiquetan
         // como seguros para reintentar (p. ej. errores durante el commit).
-        if (err.code === "P2028" && err.meta?.operation === "query" &&
-            /expired transaction/i.test(err.message)) {
+        if (err.code === "P2028" && err.meta?.operation === "query" && /expired transaction/i.test(err.message)) {
           const vencido = new ErrorDeNegocio(
-            "Se terminó el tiempo de guardado (1 minuto). La reserva y la seña no se guardaron. Actualizá la disponibilidad para volver a intentarlo.",
+            "Se terminó el tiempo de guardado (1 minuto). La reserva y la seña no se guardaron. " +
+              "Actualizá la disponibilidad para volver a intentarlo.",
             408
           );
           vencido.codigo = "RESERVA_TIEMPO_AGOTADO";
@@ -1309,7 +1342,7 @@ async function modificarReserva(id, data, cliente = prisma) {
   // la reserva pasa a apuntar a otra ficha (un documento distinto es otra
   // persona) en vez de renombrar la del huésped original, que puede tener
   // otras reservas colgando.
-  const huesped = data?.huesped === undefined ? null : normalizarHuesped(data.huesped,fechaDesde);
+  const huesped = data?.huesped === undefined ? null : normalizarHuesped(data.huesped, fechaDesde);
   const soloPrevia = data?.soloPrevia === true;
 
   // Snapshot de lo que la reserva YA tenía congelado (por habitación y por
@@ -1469,7 +1502,12 @@ async function modificarReserva(id, data, cliente = prisma) {
     if (reservaHabitacionIdsViejos.length > 0) {
       await tx.reservaNoche.deleteMany({ where: { reservaHabitacionId: { in: reservaHabitacionIdsViejos } } });
     }
-    await require('../estadia/reservaOcupantes').sincronizarOcupantes(tx, actual, { fechaDesde, fechaHasta, habitacionIds }, ErrorDeNegocio);
+    await require("../estadia/reservaOcupantes").sincronizarOcupantes(
+      tx,
+      actual,
+      { fechaDesde, fechaHasta, habitacionIds },
+      ErrorDeNegocio
+    );
     await tx.reservaHabitacion.deleteMany({ where: { reservaId, habitacionId: { notIn: habitacionIds } } });
     // Una sola updateMany por cada par (adultos, menores) distinto, en vez de un update por
     // habitación: las consultas dependen de la variedad de ocupaciones (acotada por la capacidad
@@ -1493,7 +1531,9 @@ async function modificarReserva(id, data, cliente = prisma) {
         planTarifarioId: nuevoPlanTarifarioId,
         ...(huespedGuardado ? { huespedId: huespedGuardado.id } : {}),
         reservaHabitaciones: {
-          create: habitaciones.filter(h=>!actual.reservaHabitaciones.some(rh=>rh.habitacionId===h.habitacionId)).map((h) => ({ habitacionId: h.habitacionId, adultos: h.adultos, menores: h.menores })),
+          create: habitaciones
+            .filter((h) => !actual.reservaHabitaciones.some((rh) => rh.habitacionId === h.habitacionId))
+            .map((h) => ({ habitacionId: h.habitacionId, adultos: h.adultos, menores: h.menores })),
         },
       },
       include: { reservaHabitaciones: true },

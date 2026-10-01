@@ -55,7 +55,15 @@ async function asegurarPlan() {
   let temporada = base._datos.temporada.find((t) => t.nivel === "BASE");
   if (!temporada) {
     temporada = await base.temporada.create({
-      data: { nombre: "Base", nivel: "BASE", fechaDesde: null, fechaHasta: null, estadiaMinima: null, cierreLlegada: false, activa: true },
+      data: {
+        nombre: "Base",
+        nivel: "BASE",
+        fechaDesde: null,
+        fechaHasta: null,
+        estadiaMinima: null,
+        cierreLlegada: false,
+        activa: true,
+      },
     });
   }
   let plan = base._datos.planTarifario.find((p) => p.codigo === "BAR");
@@ -99,13 +107,18 @@ async function habitacion(numero, capacidad = 2) {
 
 async function habitaciones(cantidad, capacidad = 2) {
   const filas = [];
-  for (let i = 0; i < cantidad; i++) filas.push(await habitacion(`${100 + base._datos.habitacion.length + 1}`, capacidad));
+  for (let i = 0; i < cantidad; i++)
+    filas.push(await habitacion(`${100 + base._datos.habitacion.length + 1}`, capacidad));
   return filas.map((h) => ({ habitacionId: h.id, adultos: 2, menores: 0 }));
 }
 
 async function totalDe(datos) {
   const { plan } = await asegurarPlan();
-  const cotizacion = await reservasServicio.cotizarParaReserva({ ...datos, planTarifarioId: plan.id, canal: "RECEPCION" });
+  const cotizacion = await reservasServicio.cotizarParaReserva({
+    ...datos,
+    planTarifarioId: plan.id,
+    canal: "RECEPCION",
+  });
   return { planTarifarioId: plan.id, totalEsperado: cotizacion.planes[0]?.total ?? 0 };
 }
 
@@ -135,7 +148,11 @@ async function medir(prefijos, fn) {
 }
 
 function igual(chica, grande, descripcion) {
-  assert.deepEqual(grande, chica, `${descripcion}: ${JSON.stringify(chica)} (chico) contra ${JSON.stringify(grande)} (grande)`);
+  assert.deepEqual(
+    grande,
+    chica,
+    `${descripcion}: ${JSON.stringify(chica)} (chico) contra ${JSON.stringify(grande)} (grande)`,
+  );
 }
 
 const TABLAS_ESTADIA = [
@@ -183,47 +200,55 @@ async function reservaSinOcupantes(habs) {
 async function cargarWalkIn(habs, ajustar = (personas) => personas) {
   const reserva = await reservaSinOcupantes(habs);
   const personas = ajustar(personasFixture(habs, HUESPED, enDias(0), enDias(2)));
-  return medir(TABLAS_ESTADIA, () => base.$transaction((tx) => ingreso.cargarWalkIn(tx, reserva.id, personas, "Prueba")));
+  return medir(TABLAS_ESTADIA, () =>
+    base.$transaction((tx) => ingreso.cargarWalkIn(tx, reserva.id, personas, "Prueba")),
+  );
 }
 
 async function main() {
   console.log("\nLas consultas no crecen con la cantidad de personas ni de habitaciones");
 
-  await prueba("walk-in: 2 personas en 1 habitación y 10 personas en 5 habitaciones hacen las mismas consultas", async () => {
-    base._limpiar();
-    const chica = await cargarWalkIn(await habitaciones(1));
-    base._limpiar();
-    const grande = await cargarWalkIn(await habitaciones(5));
-    igual(chica.cuenta, grande.cuenta, "carga del walk-in");
-    assert.equal(grande.cuenta["ocupanteReserva.update"] ?? 0, 0, "ningún update por ocupante");
-    assert.equal(grande.cuenta["ocupanteReserva.create"] ?? 0, 0, "ningún create por ocupante");
-    assert.equal(base._datos.ocupanteReserva.length, 10);
-    assert.equal(base._datos.asignacionOcupanteHabitacion.length, 10);
-    assert.equal(base._datos.eventoEstadia.length, 10);
-  });
+  await prueba(
+    "walk-in: 2 personas en 1 habitación y 10 personas en 5 habitaciones hacen las mismas consultas",
+    async () => {
+      base._limpiar();
+      const chica = await cargarWalkIn(await habitaciones(1));
+      base._limpiar();
+      const grande = await cargarWalkIn(await habitaciones(5));
+      igual(chica.cuenta, grande.cuenta, "carga del walk-in");
+      assert.equal(grande.cuenta["ocupanteReserva.update"] ?? 0, 0, "ningún update por ocupante");
+      assert.equal(grande.cuenta["ocupanteReserva.create"] ?? 0, 0, "ningún create por ocupante");
+      assert.equal(base._datos.ocupanteReserva.length, 10);
+      assert.equal(base._datos.asignacionOcupanteHabitacion.length, 10);
+      assert.equal(base._datos.eventoEstadia.length, 10);
+    },
+  );
 
-  await prueba("walk-in con adultos y menores: igual cantidad de consultas y el menor queda a cargo de su adulto", async () => {
-    base._limpiar();
-    const una = [{ ...(await habitaciones(1, 4))[0], adultos: 2, menores: 2 }];
-    const chica = await cargarWalkIn(una);
-    const menores = base._datos.ocupanteReserva.filter((o) => o.fechaNacimiento.getUTCFullYear() > 2000);
-    assert.equal(menores.length, 2);
-    for (const menor of menores) {
-      const responsable = base._datos.ocupanteReserva.find((o) => o.id === menor.responsableId);
-      assert.ok(responsable && responsable.responsableId === null, "el responsable es un adulto del mismo lote");
-    }
-    base._limpiar();
-    const varias = await habitaciones(3, 4);
-    const grande = await cargarWalkIn(varias.map((h) => ({ ...h, adultos: 2, menores: 2 })));
-    igual(chica.cuenta, grande.cuenta, "walk-in con menores");
-  });
+  await prueba(
+    "walk-in con adultos y menores: igual cantidad de consultas y el menor queda a cargo de su adulto",
+    async () => {
+      base._limpiar();
+      const una = [{ ...(await habitaciones(1, 4))[0], adultos: 2, menores: 2 }];
+      const chica = await cargarWalkIn(una);
+      const menores = base._datos.ocupanteReserva.filter((o) => o.fechaNacimiento.getUTCFullYear() > 2000);
+      assert.equal(menores.length, 2);
+      for (const menor of menores) {
+        const responsable = base._datos.ocupanteReserva.find((o) => o.id === menor.responsableId);
+        assert.ok(responsable && responsable.responsableId === null, "el responsable es un adulto del mismo lote");
+      }
+      base._limpiar();
+      const varias = await habitaciones(3, 4);
+      const grande = await cargarWalkIn(varias.map((h) => ({ ...h, adultos: 2, menores: 2 })));
+      igual(chica.cuenta, grande.cuenta, "walk-in con menores");
+    },
+  );
 
   await prueba("preparar el ingreso de una reserva: 2 personas y 10 personas hacen las mismas consultas", async () => {
     const consultas = async (cantidad) => {
       base._limpiar();
       const reserva = await reservaCompleta(await habitaciones(cantidad));
       return medir(TABLAS_ESTADIA.concat("reservaHabitacion."), () =>
-        base.$transaction((tx) => ingreso.prepararIngreso(tx, reserva.id, "Prueba"))
+        base.$transaction((tx) => ingreso.prepararIngreso(tx, reserva.id, "Prueba")),
       );
     };
     const chica = await consultas(1);
@@ -233,72 +258,84 @@ async function main() {
     assert.equal(base._datos.ocupanteReserva.filter((o) => o.estado === "Alojado").length, 10);
   });
 
-  await prueba("check-in de una reserva: ocupar 1 o 5 habitaciones hace las mismas consultas sobre habitaciones", async () => {
-    const consultas = async (cantidad) => {
-      base._limpiar();
-      const reserva = await reservaCompleta(await habitaciones(cantidad));
-      return medir(["habitacion."], () =>
-        checkInServicio.confirmarCheckInConReserva({
+  await prueba(
+    "check-in de una reserva: ocupar 1 o 5 habitaciones hace las mismas consultas sobre habitaciones",
+    async () => {
+      const consultas = async (cantidad) => {
+        base._limpiar();
+        const reserva = await reservaCompleta(await habitaciones(cantidad));
+        return medir(["habitacion."], () =>
+          checkInServicio.confirmarCheckInConReserva({
+            reservaId: reserva.id,
+            numeroDocumentoIngresado: HUESPED.numeroDocumento,
+            operador: "Prueba",
+            ...GARANTIA_OK,
+          }),
+        );
+      };
+      const chica = await consultas(1);
+      const grande = await consultas(5);
+      igual(chica.cuenta, grande.cuenta, "check-in");
+      assert.equal(grande.cuenta["habitacion.updateMany"], 1);
+      assert.equal(grande.cuenta["habitacion.update"] ?? 0, 0);
+      assert.ok(base._datos.habitacion.every((h) => h.estado === "ocupada"));
+    },
+  );
+
+  await prueba(
+    "check-out: cerrar 1 o 5 habitaciones hace las mismas consultas sobre habitaciones y notificaciones",
+    async () => {
+      const consultas = async (cantidad) => {
+        base._limpiar();
+        const habs = await habitaciones(cantidad);
+        const reserva = await reservaCompleta(habs);
+        await checkInServicio.confirmarCheckInConReserva({
           reservaId: reserva.id,
           numeroDocumentoIngresado: HUESPED.numeroDocumento,
           operador: "Prueba",
           ...GARANTIA_OK,
-        })
-      );
-    };
-    const chica = await consultas(1);
-    const grande = await consultas(5);
-    igual(chica.cuenta, grande.cuenta, "check-in");
-    assert.equal(grande.cuenta["habitacion.updateMany"], 1);
-    assert.equal(grande.cuenta["habitacion.update"] ?? 0, 0);
-    assert.ok(base._datos.habitacion.every((h) => h.estado === "ocupada"));
-  });
-
-  await prueba("check-out: cerrar 1 o 5 habitaciones hace las mismas consultas sobre habitaciones y notificaciones", async () => {
-    const consultas = async (cantidad) => {
-      base._limpiar();
-      const habs = await habitaciones(cantidad);
-      const reserva = await reservaCompleta(habs);
-      await checkInServicio.confirmarCheckInConReserva({
-        reservaId: reserva.id,
-        numeroDocumentoIngresado: HUESPED.numeroDocumento,
-        operador: "Prueba",
-        ...GARANTIA_OK,
-      });
-      for (const h of habs) {
-        await checkOutServicio.registrarVerificacion(reserva.id, {
-          tipo: "SinNovedades",
-          habitacionId: h.habitacionId,
-          registradoPor: "Ana",
         });
-      }
-      return medir(["habitacion.", "notificacion.", "$queryRaw", "ocupanteReserva.", "asignacionOcupanteHabitacion."], () =>
-        checkOutServicio.confirmarCheckOut(reserva.id, { cargosValidados: true })
-      );
-    };
-    const chica = await consultas(1);
-    const grande = await consultas(5);
-    igual(chica.cuenta, grande.cuenta, "check-out");
-    assert.equal(grande.resultado.notificaciones.length, 5);
-    assert.ok(base._datos.habitacion.every((h) => h.estado === "en limpieza"));
-    assert.ok(base._datos.ocupanteReserva.every((o) => o.estado === "Retirado" && o.identidadActiva === null));
-  });
+        for (const h of habs) {
+          await checkOutServicio.registrarVerificacion(reserva.id, {
+            tipo: "SinNovedades",
+            habitacionId: h.habitacionId,
+            registradoPor: "Ana",
+          });
+        }
+        return medir(
+          ["habitacion.", "notificacion.", "$queryRaw", "ocupanteReserva.", "asignacionOcupanteHabitacion."],
+          () => checkOutServicio.confirmarCheckOut(reserva.id, { cargosValidados: true }),
+        );
+      };
+      const chica = await consultas(1);
+      const grande = await consultas(5);
+      igual(chica.cuenta, grande.cuenta, "check-out");
+      assert.equal(grande.resultado.notificaciones.length, 5);
+      assert.ok(base._datos.habitacion.every((h) => h.estado === "en limpieza"));
+      assert.ok(base._datos.ocupanteReserva.every((o) => o.estado === "Retirado" && o.identidadActiva === null));
+    },
+  );
 
-  await prueba("modificar la ocupación de 1 o 4 habitaciones usa una sola updateMany y ningún update por habitación", async () => {
-    const consultas = async (cantidad) => {
-      base._limpiar();
-      const habs = await habitaciones(cantidad, 3);
-      const reserva = await reservaCompleta(habs.map((h) => ({ ...h, adultos: 1, menores: 0 })));
-      const nuevas = habs.map((h) => ({ ...h, adultos: 2, menores: 0 }));
-      return medir(["reservaHabitacion."], () => reservasServicio.modificarReserva(reserva.id, { habitaciones: nuevas }));
-    };
-    const chica = await consultas(1);
-    const grande = await consultas(4);
-    igual(chica.cuenta, grande.cuenta, "modificarReserva");
-    assert.equal(grande.cuenta["reservaHabitacion.updateMany"], 1);
-    assert.equal(grande.cuenta["reservaHabitacion.update"] ?? 0, 0);
-    assert.ok(base._datos.reservaHabitacion.every((rh) => rh.adultos === 2));
-  });
+  await prueba(
+    "modificar la ocupación de 1 o 4 habitaciones usa una sola updateMany y ningún update por habitación",
+    async () => {
+      const consultas = async (cantidad) => {
+        base._limpiar();
+        const habs = await habitaciones(cantidad, 3);
+        const reserva = await reservaCompleta(habs.map((h) => ({ ...h, adultos: 1, menores: 0 })));
+        const nuevas = habs.map((h) => ({ ...h, adultos: 2, menores: 0 }));
+        return medir(["reservaHabitacion."], () =>
+          reservasServicio.modificarReserva(reserva.id, { habitaciones: nuevas }),
+        );
+      };
+      const chica = await consultas(1);
+      const grande = await consultas(4);
+      igual(chica.cuenta, grande.cuenta, "modificarReserva");
+      assert.equal(grande.cuenta["reservaHabitacion.updateMany"], 1);
+      assert.equal(grande.cuenta["reservaHabitacion.update"] ?? 0, 0);
+      assert.ok(base._datos.reservaHabitacion.every((rh) => rh.adultos === 2));
+    },
+  );
 
   console.log("\nLa carga en lote conserva las reglas de la carga persona por persona");
 
@@ -329,7 +366,7 @@ async function main() {
           huesped: { ...HUESPED },
           ...GARANTIA_OK,
         }),
-      /como máximo 2 personas/
+      /como máximo 2 personas/,
     );
     assert.equal(base._datos.ocupanteReserva.length, 0, "el rechazo no deja nada a medias");
   });
@@ -351,35 +388,38 @@ async function main() {
           huesped: { ...HUESPED },
           ...GARANTIA_OK,
         }),
-      /ya está registrada/
+      /ya está registrada/,
     );
   });
 
-  await prueba("un menor sin documento queda con una ficha propia, con identidad provisoria y sin número inventado", async () => {
-    base._limpiar();
-    const habs = [{ ...(await habitaciones(1, 3))[0], adultos: 2, menores: 1 }];
-    const personas = personasFixture(habs, HUESPED, enDias(0), enDias(2));
-    Object.assign(personas[2], {
-      tipoDocumento: undefined,
-      numeroDocumento: undefined,
-      paisDocumento: undefined,
-      motivoSinDocumento: "Menor sin documento",
-    });
-    const precio = await totalDe({ fechaDesde: enDias(0), fechaHasta: enDias(2), habitaciones: habs });
-    await checkInServicio.registrarCheckInWalkIn({
-      operador: "Prueba",
-      personas,
-      fechaHasta: enDias(2),
-      habitaciones: habs,
-      ...precio,
-      huesped: { ...HUESPED },
-      ...GARANTIA_OK,
-    });
-    const sinDocumento = base._datos.huesped.find((h) => h.tipoDocumento === "Sin documento");
-    assert.equal(sinDocumento.numeroDocumento, "");
-    assert.ok(sinDocumento.identidadDocumento.startsWith("SIN-DOC:"));
-    assert.equal(sinDocumento.nacionalidad, "AR");
-  });
+  await prueba(
+    "un menor sin documento queda con una ficha propia, con identidad provisoria y sin número inventado",
+    async () => {
+      base._limpiar();
+      const habs = [{ ...(await habitaciones(1, 3))[0], adultos: 2, menores: 1 }];
+      const personas = personasFixture(habs, HUESPED, enDias(0), enDias(2));
+      Object.assign(personas[2], {
+        tipoDocumento: undefined,
+        numeroDocumento: undefined,
+        paisDocumento: undefined,
+        motivoSinDocumento: "Menor sin documento",
+      });
+      const precio = await totalDe({ fechaDesde: enDias(0), fechaHasta: enDias(2), habitaciones: habs });
+      await checkInServicio.registrarCheckInWalkIn({
+        operador: "Prueba",
+        personas,
+        fechaHasta: enDias(2),
+        habitaciones: habs,
+        ...precio,
+        huesped: { ...HUESPED },
+        ...GARANTIA_OK,
+      });
+      const sinDocumento = base._datos.huesped.find((h) => h.tipoDocumento === "Sin documento");
+      assert.equal(sinDocumento.numeroDocumento, "");
+      assert.ok(sinDocumento.identidadDocumento.startsWith("SIN-DOC:"));
+      assert.equal(sinDocumento.nacionalidad, "AR");
+    },
+  );
 
   console.log("\nUna persona no puede figurar alojada dos veces a la vez");
 
@@ -397,8 +437,15 @@ async function main() {
         ...GARANTIA_OK,
       });
     await ingresar(a);
-    await assert.rejects(() => ingresar(b), (error) => error.statusCode === 409 && /ya figura alojada/.test(error.message));
-    assert.equal(base._datos.reserva.find((r) => r.id === b.id).estado, "Confirmada", "el ingreso rechazado no deja nada a medias");
+    await assert.rejects(
+      () => ingresar(b),
+      (error) => error.statusCode === 409 && /ya figura alojada/.test(error.message),
+    );
+    assert.equal(
+      base._datos.reserva.find((r) => r.id === b.id).estado,
+      "Confirmada",
+      "el ingreso rechazado no deja nada a medias",
+    );
     assert.equal(base._datos.habitacion.find((h) => h.id === hs[1].habitacionId).estado, "libre");
     // Lo que hace el check-out de la primera estadía: libera la identidad.
     await base.ocupanteReserva.updateMany({
@@ -409,19 +456,25 @@ async function main() {
     assert.equal(base._datos.reserva.find((r) => r.id === b.id).estado, "En curso");
   });
 
-  await prueba("la misma persona en dos reservas consecutivas, con la ficha precargada en las dos, se guarda en ambas", async () => {
-    base._limpiar();
-    const hs = await habitaciones(2);
-    const a = await reservaCompleta([{ ...hs[0], adultos: 1, menores: 0 }]);
-    const b = await reservaCompleta([{ ...hs[1], adultos: 1, menores: 0 }], {
-      fechaDesde: enDias(2),
-      fechaHasta: enDias(4),
-    });
-    const fichas = [...(await estadia.listar(a.id)), ...(await estadia.listar(b.id))];
-    assert.equal(fichas.length, 2);
-    assert.equal(fichas[0].huespedId, fichas[1].huespedId, "una sola ficha de persona con dos estadías");
-    assert.ok(fichas.every((f) => f.identidadActiva == null), "la identidad activa solo existe mientras está alojada");
-  });
+  await prueba(
+    "la misma persona en dos reservas consecutivas, con la ficha precargada en las dos, se guarda en ambas",
+    async () => {
+      base._limpiar();
+      const hs = await habitaciones(2);
+      const a = await reservaCompleta([{ ...hs[0], adultos: 1, menores: 0 }]);
+      const b = await reservaCompleta([{ ...hs[1], adultos: 1, menores: 0 }], {
+        fechaDesde: enDias(2),
+        fechaHasta: enDias(4),
+      });
+      const fichas = [...(await estadia.listar(a.id)), ...(await estadia.listar(b.id))];
+      assert.equal(fichas.length, 2);
+      assert.equal(fichas[0].huespedId, fichas[1].huespedId, "una sola ficha de persona con dos estadías");
+      assert.ok(
+        fichas.every((f) => f.identidadActiva == null),
+        "la identidad activa solo existe mientras está alojada",
+      );
+    },
+  );
 
   console.log(`\n${pasaron} pruebas OK, ${fallaron.length} con error.`);
   if (fallaron.length) process.exitCode = 1;

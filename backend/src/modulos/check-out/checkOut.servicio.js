@@ -172,7 +172,9 @@ async function consolidarCargos(reservaId, cliente = prisma) {
   const totalPagado = redondear(Number(pagado._sum.importe || 0));
   const saldo = Math.max(0, redondear(totalAdeudado - totalPagado));
   for (const h of habitaciones) {
-    h.adicionales = redondear(consumos.filter(c => c.habitacionId === h.habitacionId).reduce((total, c) => total + c.monto, 0));
+    h.adicionales = redondear(
+      consumos.filter((c) => c.habitacionId === h.habitacionId).reduce((total, c) => total + c.monto, 0)
+    );
   }
 
   return {
@@ -249,8 +251,14 @@ async function registrarVerificacion(reservaId, data = {}) {
       }
 
       const habitaciones = await tx.reservaHabitacion.findMany({ where: { reservaId: id } });
-      const habitacionId = data.habitacionId ? idValido(data.habitacionId, 'habitacionId') : habitaciones.length === 1 ? habitaciones[0].habitacionId : null;
-      if (!habitaciones.some(h => h.habitacionId === habitacionId)) throw new ErrorDeNegocio('Seleccioná una habitación de la reserva.');
+      const habitacionId = data.habitacionId
+        ? idValido(data.habitacionId, 'habitacionId')
+        : habitaciones.length === 1
+          ? habitaciones[0].habitacionId
+          : null;
+      if (!habitaciones.some((h) => h.habitacionId === habitacionId)) {
+        throw new ErrorDeNegocio('Seleccioná una habitación de la reserva.');
+      }
       const cargo = await tx.cargoVerificacionCheckout.create({
         data: { reservaId: id, habitacionId, tipo, descripcion: desc, monto: redondear(importe), registradoPor: quien },
       });
@@ -311,7 +319,11 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
       // cierre. Se re-consulta con `tx` (mismo lock de la reserva de
       // arriba) para no aceptar un registro que se está por perder por un
       // rollback concurrente.
-      const huboVerificacion = cuenta.habitaciones.every(h => cuenta.verificaciones.some(v => v.habitacionId === h.habitacionId || (!v.habitacionId && cuenta.habitaciones.length === 1)));
+      const huboVerificacion = cuenta.habitaciones.every((h) =>
+        cuenta.verificaciones.some(
+          (v) => v.habitacionId === h.habitacionId || (!v.habitacionId && cuenta.habitaciones.length === 1)
+        )
+      );
       if (!huboVerificacion) {
         throw new ErrorDeNegocio(
           'Falta verificar la habitación antes de confirmar el check-out (HU-87): registrá lo que encontraste o marcá "Verificación sin novedades".',
@@ -331,8 +343,14 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
         throw envolverErrorReservas(err);
       }
       const salidaReal = new Date();
-      await tx.ocupanteReserva.updateMany({ where: { reservaId: id, estado: 'Alojado' }, data: { estado: 'Retirado', salidaReal, identidadActiva: null } });
-      await tx.asignacionOcupanteHabitacion.updateMany({ where: { ocupante: { reservaId: id }, hasta: null }, data: { hasta: salidaReal } });
+      await tx.ocupanteReserva.updateMany({
+        where: { reservaId: id, estado: 'Alojado' },
+        data: { estado: 'Retirado', salidaReal, identidadActiva: null },
+      });
+      await tx.asignacionOcupanteHabitacion.updateMany({
+        where: { ocupante: { reservaId: id }, hasta: null },
+        data: { hasta: salidaReal },
+      });
 
       // Estado de las habitaciones al salir el huésped.
       //

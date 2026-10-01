@@ -9,11 +9,7 @@ const normalizar = (v) =>
 function claveDocumento(p) {
   if (!p.tipoDocumento || !p.paisDocumento || !p.numeroDocumento) return null;
   return createHash("sha256")
-    .update(
-      [p.tipoDocumento, normalizarPais(p.paisDocumento), p.numeroDocumento]
-        .map(normalizar)
-        .join("|"),
-    )
+    .update([p.tipoDocumento, normalizarPais(p.paisDocumento), p.numeroDocumento].map(normalizar).join("|"))
     .digest("hex");
 }
 // Cualquier país del catálogo ISO se reduce a su código; lo que no está en el
@@ -78,10 +74,8 @@ async function vincularPersona(tx, reserva, persona, actual) {
   if (
     titular &&
     normalizar(titular.tipoDocumento) === normalizar(persona.tipoDocumento) &&
-    normalizar(titular.numeroDocumento) ===
-      normalizar(persona.numeroDocumento) &&
-    (!titular.paisDocumento ||
-      normalizarPais(titular.paisDocumento) === datos.paisDocumento)
+    normalizar(titular.numeroDocumento) === normalizar(persona.numeroDocumento) &&
+    (!titular.paisDocumento || normalizarPais(titular.paisDocumento) === datos.paisDocumento)
   ) {
     const existente = await tx.huesped.findUnique({
       where: { identidadDocumento },

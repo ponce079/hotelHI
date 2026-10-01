@@ -41,8 +41,7 @@ function validarLote(reserva, entradas, existentes) {
       normalizar(p.tipoDocumento) === normalizar(titularDeReserva.tipoDocumento);
     if ((esTitular || comoTitularDeReserva) && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < 18))
       throw new ErrorDeNegocio("El titular debe tener al menos 18 años al ingresar.", 400, {
-        fechaNacimiento:
-          "Completá una fecha de nacimiento válida: el titular debe tener al menos 18 años al ingresar.",
+        fechaNacimiento: "Completá una fecha de nacimiento válida: el titular debe tener al menos 18 años al ingresar.",
       });
     if (entrada.usarContactoResponsable === true) {
       if (!menor || !responsable?.fechaNacimiento || edad(responsable.fechaNacimiento, p.fechaDesde) < 18)

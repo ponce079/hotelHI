@@ -1,10 +1,10 @@
-import { PaisDocumentoReserva } from '../estadia/PaisDocumentoReserva';
-import { validarNacimientoTitular } from '../reservas/validarNacimientoTitular';
+import { PaisDocumentoReserva } from "../estadia/PaisDocumentoReserva";
+import { validarNacimientoTitular } from "../reservas/validarNacimientoTitular";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { PersonasWalkIn } from '../estadia/PersonasWalkIn';
-import { CantidadesOcupantes } from './CantidadesOcupantes';
-import { resumenOcupantes } from './validacionOcupantesIngreso';
-import { useSesion } from '../../lib/sesion';
+import { PersonasWalkIn } from "../estadia/PersonasWalkIn";
+import { CantidadesOcupantes } from "./CantidadesOcupantes";
+import { resumenOcupantes } from "./validacionOcupantesIngreso";
+import { useSesion } from "../../lib/sesion";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, ArrowRight, BedDouble, Check, CheckCircle2, User, Users } from "lucide-react";
@@ -85,8 +85,8 @@ const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", curre
 const HUESPED_TOCADO_VACIO = { nombre: false, numeroDocumento: false, contacto: false };
 
 export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
-  const [personas,setPersonas] = useState([]);
-  const {usuario}=useSesion();
+  const [personas, setPersonas] = useState([]);
+  const { usuario } = useSesion();
   const navigate = useNavigate();
   // Viene del "→ Iniciar check-in" de una tarjeta libre en el Panel de
   // Habitaciones: arranca directo en el paso de asignación (HU-45) en vez
@@ -105,9 +105,12 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
   // campo (onBlur) o intentó avanzar con el paso de huésped incompleto —
   // así no arranca la pantalla en rojo apenas se abre, vacía.
   const erroresHuesped = validarHuesped(form.huesped);
-  const errorNacimiento = validarNacimientoTitular(form.huesped.fechaNacimiento, form.fechaDesde || new Date().toLocaleDateString('en-CA',{timeZone:'America/Argentina/Buenos_Aires'}));
-  if(errorNacimiento) erroresHuesped.fechaNacimiento = errorNacimiento;
-  if (!form.huesped.paisDocumento?.trim()) erroresHuesped.paisDocumento = 'Selecciona el pais emisor del documento.';
+  const errorNacimiento = validarNacimientoTitular(
+    form.huesped.fechaNacimiento,
+    form.fechaDesde || new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }),
+  );
+  if (errorNacimiento) erroresHuesped.fechaNacimiento = errorNacimiento;
+  if (!form.huesped.paisDocumento?.trim()) erroresHuesped.paisDocumento = "Selecciona el pais emisor del documento.";
   const huespedValido = Object.keys(erroresHuesped).length === 0;
   function errorHuesped(campo) {
     return huespedTocado[campo] || intentoAvanzarHuesped ? erroresHuesped[campo] : undefined;
@@ -166,9 +169,9 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
     () => form.habitaciones.map((h) => ({ ...h, info: habitacionPorId.get(h.habitacionId) })),
     [form.habitaciones, habitacionPorId]
   );
-  const habitacionesPersonas = elegidas.map(h => ({...h.info, adultos:h.adultos, menores:h.menores}));
-  const resumen = resumenOcupantes(habitacionesPersonas,personas,true);
-  const todosRegistrados = resumen.length > 0 && resumen.every(h=>h.completo);
+  const habitacionesPersonas = elegidas.map((h) => ({ ...h.info, adultos: h.adultos, menores: h.menores }));
+  const resumen = resumenOcupantes(habitacionesPersonas, personas, true);
+  const todosRegistrados = resumen.length > 0 && resumen.every((h) => h.completo);
   const capacidadTotal = elegidas.reduce((acc, h) => acc + (h.info?.capacidad ?? 0), 0);
   const ocupacionValida = form.habitaciones.every((h) => {
     const capacidad = habitacionPorId.get(h.habitacionId)?.capacidad;
@@ -206,7 +209,7 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
     mutationFn: () =>
       registrarCheckInWalkIn({
         personas,
-        operador:usuario,
+        operador: usuario,
         fechaHasta: form.fechaHasta,
         habitaciones: form.habitaciones,
         planTarifarioId: form.planTarifarioId,
@@ -215,8 +218,8 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
           nombre: form.huesped.nombre.trim(),
           tipoDocumento: form.huesped.tipoDocumento,
           numeroDocumento: form.huesped.numeroDocumento.trim(),
-      fechaNacimiento: form.huesped.fechaNacimiento,
-      paisDocumento: form.huesped.paisDocumento,
+          fechaNacimiento: form.huesped.fechaNacimiento,
+          paisDocumento: form.huesped.paisDocumento,
           contacto: form.huesped.contacto.trim() || undefined,
         },
         garantiaConfirmada: form.garantiaConfirmada,
@@ -280,7 +283,10 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
   }
 
   function confirmar() {
-    if(!todosRegistrados){setErrorGeneral('Registrá las identidades de todos los adultos y menores reservados antes de confirmar.');return;}
+    if (!todosRegistrados) {
+      setErrorGeneral("Registrá las identidades de todos los adultos y menores reservados antes de confirmar.");
+      return;
+    }
     // La validación de nombre/documento/contacto ya la garantiza el botón
     // (disabled={!huespedValido}) y el paso de huésped al avanzar — acá
     // solo queda el chequeo que ese gate no cubre.
@@ -543,8 +549,20 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
               error={errorHuesped("nombre")}
               placeholder="Ana Pérez"
             />
-            <PaisDocumentoReserva value={form.huesped.paisDocumento} onChange={value=>actualizarHuesped('paisDocumento',value)} onBlur={()=>tocarHuesped('paisDocumento')} error={errorHuesped('paisDocumento')} />
-            <Input label="Fecha de nacimiento del titular *" type="date" value={form.huesped.fechaNacimiento || ''} onChange={e=>actualizarHuesped('fechaNacimiento',e.target.value)} onBlur={()=>tocarHuesped('fechaNacimiento')} error={errorHuesped('fechaNacimiento')} />
+            <PaisDocumentoReserva
+              value={form.huesped.paisDocumento}
+              onChange={(value) => actualizarHuesped("paisDocumento", value)}
+              onBlur={() => tocarHuesped("paisDocumento")}
+              error={errorHuesped("paisDocumento")}
+            />
+            <Input
+              label="Fecha de nacimiento del titular *"
+              type="date"
+              value={form.huesped.fechaNacimiento || ""}
+              onChange={(e) => actualizarHuesped("fechaNacimiento", e.target.value)}
+              onBlur={() => tocarHuesped("fechaNacimiento")}
+              error={errorHuesped("fechaNacimiento")}
+            />
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3">
               <Select label="Documento *" value={form.huesped.tipoDocumento} onChange={(e) => actualizarHuesped("tipoDocumento", e.target.value)}>
                 {TIPOS_DOCUMENTO.map((t) => (
@@ -589,8 +607,12 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
               {form.huesped.numeroDocumento})
             </p>
           </div>
-          <CantidadesOcupantes resumen={resumen}/>
-          <PersonasWalkIn personas={personas} onChange={setPersonas} reserva={{habitaciones:habitacionesPersonas,fechaDesde:hoyEnHoraLocal(),fechaHasta:form.fechaHasta}}/>
+          <CantidadesOcupantes resumen={resumen} />
+          <PersonasWalkIn
+            personas={personas}
+            onChange={setPersonas}
+            reserva={{ habitaciones: habitacionesPersonas, fechaDesde: hoyEnHoraLocal(), fechaHasta: form.fechaHasta }}
+          />
           <GarantiaFieldset
             garantiaConfirmada={form.garantiaConfirmada}
             medioGarantia={form.medioGarantia}

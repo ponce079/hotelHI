@@ -73,15 +73,21 @@ function crearCliente(obtenerTablas) {
   return {
     ocupanteReserva: {
       create: async ({ data }) => {
-        const t=obtenerTablas();
-        const { asignaciones, ...resto }=data;
-        const fila={ id:t.ocupanteReserva.length+1,...resto };
+        const t = obtenerTablas();
+        const { asignaciones, ...resto } = data;
+        const fila = { id: t.ocupanteReserva.length + 1, ...resto };
         t.ocupanteReserva.push(fila);
-        t.asignacionOcupanteHabitacion.push({ocupanteId:fila.id,...asignaciones.create});
+        t.asignacionOcupanteHabitacion.push({ ocupanteId: fila.id, ...asignaciones.create });
         return fila;
       },
     },
-    eventoEstadia: { create: async ({data}) => { const t=obtenerTablas();t.eventoEstadia.push(data);return data; } },
+    eventoEstadia: {
+      create: async ({ data }) => {
+        const t = obtenerTablas();
+        t.eventoEstadia.push(data);
+        return data;
+      },
+    },
     habitacion: {
       findMany: async ({ where }) => obtenerTablas().habitacion.filter((h) => coincide(obtenerTablas(), "habitacion", h, where)),
       findUnique: async ({ where }) => obtenerTablas().habitacion.find((h) => h.id === where.id) ?? null,
@@ -116,7 +122,11 @@ function crearCliente(obtenerTablas) {
       findMany: async () => obtenerTablas().modificadorDiaSemana,
     },
     reservaNoche: {
-      createMany: async ({data}) => { const t=obtenerTablas(); for(const fila of data)t.reservaNoche.push({id:t.secuencias.reservaNoche++,...fila}); return {count:data.length}; },
+      createMany: async ({ data }) => {
+        const t = obtenerTablas();
+        for (const fila of data) t.reservaNoche.push({ id: t.secuencias.reservaNoche++, ...fila });
+        return { count: data.length };
+      },
       create: async ({ data }) => {
         const t = obtenerTablas();
         const fila = { id: t.secuencias.reservaNoche++, ...data };
@@ -137,7 +147,17 @@ function crearCliente(obtenerTablas) {
       },
     },
     huesped: {
-      upsert: async ({where,create,update}) => {const t=obtenerTablas();let fila=t.huesped.find(h=>h.identidadDocumento===where.identidadDocumento);if(fila){Object.assign(fila,update);return fila;}fila={id:t.secuencias.huesped++,...create};t.huesped.push(fila);return fila;},
+      upsert: async ({ where, create, update }) => {
+        const t = obtenerTablas();
+        let fila = t.huesped.find((h) => h.identidadDocumento === where.identidadDocumento);
+        if (fila) {
+          Object.assign(fila, update);
+          return fila;
+        }
+        fila = { id: t.secuencias.huesped++, ...create };
+        t.huesped.push(fila);
+        return fila;
+      },
       findFirst: async ({ where }) => {
         const t = obtenerTablas();
         return t.huesped.find((h) => coincide(t, "huesped", h, where)) ?? null;
@@ -302,9 +322,9 @@ function crearDoblePrisma() {
       notificacion: t.notificacion.map((r) => ({ ...r })),
       pagoEstadia: t.pagoEstadia.map((r) => ({ ...r })),
       pagoEstadiaMedio: t.pagoEstadiaMedio.map((r) => ({ ...r })),
-      ocupanteReserva: t.ocupanteReserva.map(r=>({...r})),
-      asignacionOcupanteHabitacion: t.asignacionOcupanteHabitacion.map(r=>({...r})),
-      eventoEstadia: t.eventoEstadia.map(r=>({...r})),
+      ocupanteReserva: t.ocupanteReserva.map((r) => ({ ...r })),
+      asignacionOcupanteHabitacion: t.asignacionOcupanteHabitacion.map((r) => ({ ...r })),
+      eventoEstadia: t.eventoEstadia.map((r) => ({ ...r })),
       secuencias: { ...t.secuencias },
     };
   }
@@ -369,7 +389,8 @@ function huespedValido(sufijo) {
     paisDocumento: "AR",
     nombre: "Huésped de Prueba",
     tipoDocumento: "DNI",
-    numeroDocumento: `3000000${sufijo}`, fechaNacimiento:'1990-01-01',
+    numeroDocumento: `3000000${sufijo}`,
+    fechaNacimiento: "1990-01-01",
     contacto: `huesped${sufijo}@ejemplo.com`,
   };
 }

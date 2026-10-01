@@ -101,4 +101,3 @@ require("./src/lib/jobsStockMinimo").iniciarBarridoStockMinimoCentral();
 // Red de seguridad de la reposición automática de centrales — ver
 // src/lib/jobsStockMinimo.js. Se arranca después de levantar el server,
 // no antes: no tiene que bloquear ni condicionar que el servidor escuche.
-

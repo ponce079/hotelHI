@@ -216,12 +216,14 @@ function crearBase() {
     return Object.entries(where).every(([campo, condicion]) => {
       if (campo === "OR") return condicion.some((sub) => coincide(tabla, registro, sub));
       if (campo === "AND") return condicion.every((sub) => coincide(tabla, registro, sub));
-      if (tabla === 'ocupanteReserva' && campo === 'asignaciones') {
-        return datos.asignacionOcupanteHabitacion.filter(a => a.ocupanteId === registro.id).some(a => coincide('asignacionOcupanteHabitacion', a, condicion.some));
+      if (tabla === "ocupanteReserva" && campo === "asignaciones") {
+        return datos.asignacionOcupanteHabitacion
+          .filter((a) => a.ocupanteId === registro.id)
+          .some((a) => coincide("asignacionOcupanteHabitacion", a, condicion.some));
       }
-      if (tabla === 'asignacionOcupanteHabitacion' && campo === 'ocupante') {
-        const ocupante = datos.ocupanteReserva.find(p => p.id === registro.ocupanteId);
-        return ocupante ? coincide('ocupanteReserva', ocupante, condicion) : false;
+      if (tabla === "asignacionOcupanteHabitacion" && campo === "ocupante") {
+        const ocupante = datos.ocupanteReserva.find((p) => p.id === registro.ocupanteId);
+        return ocupante ? coincide("ocupanteReserva", ocupante, condicion) : false;
       }
 
       // --- Relaciones de Reservas (idénticas a pruebas-reservas.js) ---
@@ -291,7 +293,7 @@ function crearBase() {
     const salida = { ...registro };
 
     if (tabla === "ocupanteReserva" && include.asignaciones) {
-      salida.asignaciones = datos.asignacionOcupanteHabitacion.filter(a => a.ocupanteId === registro.id);
+      salida.asignaciones = datos.asignacionOcupanteHabitacion.filter((a) => a.ocupanteId === registro.id);
     }
     if (tabla === "ocupanteReserva" && include.huesped) {
       salida.huesped = datos.huesped.find((h) => h.id === registro.huespedId) ?? null;
@@ -592,7 +594,7 @@ function crearBase() {
           const anidado = data[clave];
           if (anidado?.create) {
             for (const hijo of Array.isArray(anidado.create) ? anidado.create : [anidado.create]) {
-              await modelo(tablaHija).create({data:{[fk]:fila.id,...hijo}});
+              await modelo(tablaHija).create({ data: { [fk]: fila.id, ...hijo } });
             }
           }
         }
@@ -654,7 +656,7 @@ function crearBase() {
           const anidado = data[clave];
           if (anidado?.create) {
             for (const hijo of Array.isArray(anidado.create) ? anidado.create : [anidado.create]) {
-              await modelo(tablaHija).create({data:{[fk]:fila.id,...hijo}});
+              await modelo(tablaHija).create({ data: { [fk]: fila.id, ...hijo } });
             }
           }
         }
@@ -753,14 +755,18 @@ function crearBase() {
           cliente._identidadActivaUnica &&
           identidad &&
           datos.ocupanteReserva.some((o) => o.identidadActiva === identidad && o.id !== id);
-        if (choque) throw new PrismaClientKnownRequestError("Duplicate entry for key identidadActiva", { code: "P2010" });
+        if (choque)
+          throw new PrismaClientKnownRequestError("Duplicate entry for key identidadActiva", { code: "P2010" });
       }
       for (const { id, identidad } of cambios) {
-        Object.assign(datos.ocupanteReserva.find((o) => o.id === id), {
-          estado: "Alojado",
-          ingresoReal,
-          identidadActiva: identidad,
-        });
+        Object.assign(
+          datos.ocupanteReserva.find((o) => o.id === id),
+          {
+            estado: "Alojado",
+            ingresoReal,
+            identidadActiva: identidad,
+          },
+        );
       }
       return n;
     }

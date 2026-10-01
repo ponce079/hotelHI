@@ -21,15 +21,10 @@ async function ampliarSiCorresponde(tx, reservaId, confirmacion) {
   let ampliar = false;
   const habitaciones = actuales.map((rh) => {
     const presentes = personas.filter((p) =>
-      p.asignaciones.some(
-        (a) => !a.hasta && a.habitacionId === rh.habitacionId,
-      ),
+      p.asignaciones.some((a) => !a.hasta && a.habitacionId === rh.habitacionId),
     );
     if (presentes.length > rh.habitacion.capacidad)
-      throw new estadia.ErrorDeNegocio(
-        "La cantidad de personas supera la capacidad de la habitación.",
-        409,
-      );
+      throw new estadia.ErrorDeNegocio("La cantidad de personas supera la capacidad de la habitación.", 409);
     if (presentes.length <= rh.adultos + rh.menores)
       return {
         habitacionId: rh.habitacionId,
@@ -38,9 +33,7 @@ async function ampliarSiCorresponde(tx, reservaId, confirmacion) {
       };
     ampliar = true;
     for (const persona of presentes) estadia.validarCompleto(persona);
-    const menores = presentes.filter(
-      (p) => estadia.edad(p.fechaNacimiento, p.fechaDesde) < 18,
-    ).length;
+    const menores = presentes.filter((p) => estadia.edad(p.fechaNacimiento, p.fechaDesde) < 18).length;
     return {
       habitacionId: rh.habitacionId,
       adultos: presentes.length - menores,
@@ -48,14 +41,8 @@ async function ampliarSiCorresponde(tx, reservaId, confirmacion) {
     };
   });
   if (!ampliar) return;
-  const previa = await reservas.modificarReserva(
-    reservaId,
-    { habitaciones, soloPrevia: true },
-    tx,
-  );
-  const token = createHash("sha256")
-    .update(JSON.stringify({ reservaId, habitaciones, previa }))
-    .digest("hex");
+  const previa = await reservas.modificarReserva(reservaId, { habitaciones, soloPrevia: true }, tx);
+  const token = createHash("sha256").update(JSON.stringify({ reservaId, habitaciones, previa })).digest("hex");
   if (confirmacion !== token) {
     const error = new estadia.ErrorDeNegocio(
       "Ingresan más personas que las reservadas. Revisá y confirmá la nueva cotización para continuar.",

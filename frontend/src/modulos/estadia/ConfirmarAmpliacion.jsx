@@ -2,14 +2,10 @@ import { Button } from "../../componentes/Button";
 import { formatearMonto } from "../../lib/moneda";
 
 export function ConfirmarAmpliacion({ respuesta, pendiente, onConfirmar }) {
-  if (respuesta?.codigo !== "AMPLIACION_OCUPACION_REQUIERE_CONFIRMACION")
-    return null;
+  if (respuesta?.codigo !== "AMPLIACION_OCUPACION_REQUIERE_CONFIRMACION") return null;
   const { detalle } = respuesta;
   return (
-    <div
-      role="alert"
-      className="space-y-3 rounded-lg border border-borde bg-hueso p-4"
-    >
+    <div role="alert" className="space-y-3 rounded-lg border border-borde bg-hueso p-4">
       <p>La cantidad registrada supera la ocupación reservada.</p>
       <dl className="grid grid-cols-2 gap-2 text-sm">
         <dt>Total anterior</dt>

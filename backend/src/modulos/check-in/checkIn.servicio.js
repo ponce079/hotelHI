@@ -213,7 +213,8 @@ async function ocuparHabitaciones(tx, habitacionIds) {
     if (!habitacion) throw new ErrorDeNegocio("La habitación indicada no existe.", 404);
     if (habitacion.estado !== "libre") {
       throw new ErrorDeNegocio(
-        `La habitación ${habitacion.numero} no está libre (estado actual: "${habitacion.estado}") — no se puede completar el check-in.`
+        `La habitación ${habitacion.numero} no está libre (estado actual: "${habitacion.estado}") — ` +
+          "no se puede completar el check-in."
       );
     }
   }
@@ -258,10 +259,10 @@ async function confirmarCheckInConReserva({
   await prisma.$transaction(
     async (tx) => {
       await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${id} FOR UPDATE`;
-      const vigente = await tx.reserva.findUnique({where:{id}});
+      const vigente = await tx.reserva.findUnique({ where: { id } });
       validarReservaVigente(vigente);
-      await require('../estadia/ampliacion.servicio').ampliarSiCorresponde(tx, id, confirmacionAmpliacion);
-      await require('../estadia/ingreso').prepararIngreso(tx, id, operador);
+      await require("../estadia/ampliacion.servicio").ampliarSiCorresponde(tx, id, confirmacionAmpliacion);
+      await require("../estadia/ingreso").prepararIngreso(tx, id, operador);
       await reservasServicio.marcarEnCurso(id, tx);
       await ocuparHabitaciones(
         tx,
@@ -339,8 +340,8 @@ async function registrarCheckInWalkIn({
     async (tx) => {
       // El walk-in ya trae todos los ocupantes completos; no crear un borrador adicional.
       const reserva = await reservasServicio.crearReservaEnTransaccion(tx, datos, { incluirTitular: false });
-      await require('../estadia/ingreso').cargarWalkIn(tx,reserva.id,personas,operador);
-      await require('../estadia/ingreso').prepararIngreso(tx,reserva.id,operador);
+      await require("../estadia/ingreso").cargarWalkIn(tx, reserva.id, personas, operador);
+      await require("../estadia/ingreso").prepararIngreso(tx, reserva.id, operador);
       await reservasServicio.marcarEnCurso(reserva.id, tx);
       await ocuparHabitaciones(
         tx,

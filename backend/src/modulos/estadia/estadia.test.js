@@ -74,6 +74,8 @@ test("validarCompleto exige nacionalidad y residencia desde la ficha de Huesped"
     numeroDocumento: "1",
     paisDocumento: "AR",
   };
-  expect(() => validarCompleto({ ...completo, huesped: { nacionalidad: "AR" } })).toThrow(/nacionalidad y país de residencia/);
+  expect(() => validarCompleto({ ...completo, huesped: { nacionalidad: "AR" } })).toThrow(
+    /nacionalidad y país de residencia/,
+  );
   expect(() => validarCompleto({ ...completo, huesped: { nacionalidad: "AR", paisResidencia: "AR" } })).not.toThrow();
 });

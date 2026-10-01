@@ -1,5 +1,5 @@
-import { PaisDocumentoReserva } from '../estadia/PaisDocumentoReserva';
-import { validarNacimientoTitular } from '../reservas/validarNacimientoTitular';
+import { PaisDocumentoReserva } from "../estadia/PaisDocumentoReserva";
+import { validarNacimientoTitular } from "../reservas/validarNacimientoTitular";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, BedDouble, Check, CreditCard, Search, Users } from "lucide-react";
@@ -146,7 +146,7 @@ function estadoInicial(reserva, valoresIniciales) {
       nombre: reserva.huesped?.nombre ?? "",
       tipoDocumento: reserva.huesped?.tipoDocumento ?? TIPOS_DOCUMENTO[0],
       numeroDocumento: reserva.huesped?.numeroDocumento ?? "",
-      fechaNacimiento: reserva.huesped?.fechaNacimiento?.slice(0,10) ?? "",
+      fechaNacimiento: reserva.huesped?.fechaNacimiento?.slice(0, 10) ?? "",
       paisDocumento: reserva.huesped?.paisDocumento ?? "",
       contacto: reserva.huesped?.contacto ?? "",
       preferencias: reserva.huesped?.preferencias ?? "",
@@ -197,9 +197,12 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   // criterio que CheckInWalkIn.jsx, para no arrancar el paso de huésped en
   // rojo apenas se muestra vacío.
   const erroresHuesped = validarHuesped(form.huesped);
-  const errorNacimiento = validarNacimientoTitular(form.huesped.fechaNacimiento, form.fechaDesde || new Date().toLocaleDateString('en-CA',{timeZone:'America/Argentina/Buenos_Aires'}));
-  if(errorNacimiento) erroresHuesped.fechaNacimiento = errorNacimiento;
-  if (!form.huesped.paisDocumento?.trim()) erroresHuesped.paisDocumento = 'Selecciona el pais emisor del documento.';
+  const errorNacimiento = validarNacimientoTitular(
+    form.huesped.fechaNacimiento,
+    form.fechaDesde || new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }),
+  );
+  if (errorNacimiento) erroresHuesped.fechaNacimiento = errorNacimiento;
+  if (!form.huesped.paisDocumento?.trim()) erroresHuesped.paisDocumento = "Selecciona el pais emisor del documento.";
   const huespedValido = Object.keys(erroresHuesped).length === 0;
   function errorHuesped(campo) {
     return huespedTocado[campo] || intentoConfirmarHuesped ? erroresHuesped[campo] : undefined;
@@ -412,7 +415,10 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
         setTiempoAgotado(true);
       } else if (requiereSenia && (!error?.response || error.response.status >= 500 || error.response.status === 408)) {
         setResultadoIncierto(true);
-        setErrorGeneral("No pudimos confirmar el resultado. Revisá el listado de reservas y sus pagos antes de volver a cargarla, para evitar duplicados.");
+        setErrorGeneral(
+          "No pudimos confirmar el resultado. Revisá el listado de reservas y sus pagos " +
+            "antes de volver a cargarla, para evitar duplicados.",
+        );
         return;
       }
       setErrorGeneral(error?.response?.data?.error ?? "No se pudo guardar la reserva.");
@@ -440,10 +446,16 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       setTiempoAgotado(false);
       mutacion.reset();
       if (!siguenDisponibles) {
-        setForm((f) => ({ ...f, paso: 2, habitaciones: f.habitaciones.filter((h) => disponibles.has(h.habitacionId)), planTarifarioId: '', planCodigo: '' }));
+        setForm((f) => ({
+          ...f,
+          paso: 2,
+          habitaciones: f.habitaciones.filter((h) => disponibles.has(h.habitacionId)),
+          planTarifarioId: "",
+          planCodigo: "",
+        }));
         setErrorGeneral("La disponibilidad cambió. Revisá las habitaciones antes de confirmar nuevamente.");
       } else {
-        setForm((f) => ({ ...f, paso: 3, planTarifarioId: '', planCodigo: '' }));
+        setForm((f) => ({ ...f, paso: 3, planTarifarioId: "", planCodigo: "" }));
         setErrorGeneral("");
       }
     } catch {
@@ -849,8 +861,20 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
               error={errorHuesped("nombre")}
               placeholder="Ana Pérez"
             />
-            <PaisDocumentoReserva value={form.huesped.paisDocumento} onChange={value=>actualizarHuesped('paisDocumento',value)} onBlur={()=>tocarHuesped('paisDocumento')} error={errorHuesped('paisDocumento')} />
-            <Input label="Fecha de nacimiento del titular *" type="date" value={form.huesped.fechaNacimiento || ''} onChange={e=>actualizarHuesped('fechaNacimiento',e.target.value)} onBlur={()=>tocarHuesped('fechaNacimiento')} error={errorHuesped('fechaNacimiento')} />
+            <PaisDocumentoReserva
+              value={form.huesped.paisDocumento}
+              onChange={(value) => actualizarHuesped("paisDocumento", value)}
+              onBlur={() => tocarHuesped("paisDocumento")}
+              error={errorHuesped("paisDocumento")}
+            />
+            <Input
+              label="Fecha de nacimiento del titular *"
+              type="date"
+              value={form.huesped.fechaNacimiento || ""}
+              onChange={(e) => actualizarHuesped("fechaNacimiento", e.target.value)}
+              onBlur={() => tocarHuesped("fechaNacimiento")}
+              error={errorHuesped("fechaNacimiento")}
+            />
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3">
               <Select
                 label="Documento *"
@@ -1048,20 +1072,29 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
         </p>
       )}
       {errorGeneral && (
-        <p role="alert" className="rounded-md border border-error bg-error-suave px-4 py-2.5 text-[12.5px] text-error-texto">
+        <p
+          role="alert"
+          className="rounded-md border border-error bg-error-suave px-4 py-2.5 text-[12.5px] text-error-texto"
+        >
           {errorGeneral}
         </p>
       )}
       {tiempoAgotado && (
         <div className="rounded-md border border-laton-300 bg-laton-100 p-4 text-sm">
-          <p className="mb-3">El intento venció. Conservamos tus datos. Actualizá la disponibilidad, revisá el importe y confirmá nuevamente: cada intento tiene hasta 1 minuto de guardado.</p>
+          <p className="mb-3">
+            El intento venció. Conservamos tus datos. Actualizá la disponibilidad, revisá el importe y confirmá
+            nuevamente: cada intento tiene hasta 1 minuto de guardado.
+          </p>
           <Button variante="secundario" cargando={actualizandoIntento} onClick={actualizarParaReintentar}>
             Actualizar disponibilidad para reintentar
           </Button>
         </div>
       )}
       {resultadoIncierto && !errorGeneral && (
-        <p role="alert">Revisá el listado de reservas y sus pagos antes de volver a cargarla. El resultado del intento anterior es incierto.</p>
+        <p role="alert">
+          Revisá el listado de reservas y sus pagos antes de volver a cargarla. El resultado del intento anterior es
+          incierto.
+        </p>
       )}
 
       <div className="flex items-center justify-between gap-3">

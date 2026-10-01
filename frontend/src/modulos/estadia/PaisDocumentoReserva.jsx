@@ -4,9 +4,7 @@ import { Input } from "../../componentes/Input";
 import { PAISES_OCUPANTES, buscarPaisOcupante } from "./ocupantesUbicacion";
 
 export function PaisDocumentoReserva({ value = "", onChange, onBlur, error }) {
-  const [manual, setManual] = useState(
-    Boolean(value && !buscarPaisOcupante(value)),
-  );
+  const [manual, setManual] = useState(Boolean(value && !buscarPaisOcupante(value)));
   return (
     <div className="space-y-2">
       <Select

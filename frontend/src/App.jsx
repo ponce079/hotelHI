@@ -1,4 +1,4 @@
-import { AlojadosPage } from './modulos/estadia/AlojadosPage';
+import { AlojadosPage } from "./modulos/estadia/AlojadosPage";
 import { Routes, Route, Navigate, Outlet } from "react-router-dom";
 import { Layout } from "./componentes/Layout";
 import { LoginPage } from "./modulos/login/LoginPage";
