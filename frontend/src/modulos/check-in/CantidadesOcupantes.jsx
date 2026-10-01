@@ -7,6 +7,8 @@ export function CantidadesOcupantes({ resumen }) {
       <p className={`text-sm ${h.completo ? 'text-pino' : 'text-piedra'}`}>
         {h.registradas} registradas de {h.esperadas || '—'} reservadas · {h.verificadas} verificadas · capacidad {h.capacidad}
       </p>
+      {h.titulares !== 1 && <p className="text-sm text-error-texto">Seleccioná exactamente un titular adulto para esta habitación.</p>}
+      {h.ampliable && <p className="text-sm text-piedra">Hay más personas que las reservadas. Al confirmar se solicitará aceptar la nueva cotización.</p>}
     </div>)}
   </section>;
 }

@@ -1,9 +1,10 @@
 const checkInServicio = require("./checkIn.servicio");
+const estadiaServicio = require('../estadia/estadia.servicio');
+const reservasServicio = require('../reservas/reservas.servicio');
 
 function responderError(res, err, contexto, mensaje) {
-  if (err.code === 'P2002') return res.status(409).json({error:'Una persona ya tiene un ingreso activo. Revisá sus datos.'});
-  if (err instanceof checkInServicio.ErrorDeNegocio || err instanceof require('../estadia/estadia.servicio').ErrorDeNegocio || err instanceof require('../reservas/reservas.servicio').ErrorDeNegocio) {
-    return res.status(err.statusCode).json({ error: err.message });
+  if (err instanceof checkInServicio.ErrorDeNegocio || err instanceof estadiaServicio.ErrorDeNegocio || err instanceof reservasServicio.ErrorDeNegocio) {
+    return res.status(err.statusCode).json({ error: err.message, codigo: err.codigo, detalle: err.detalle });
   }
   console.error(contexto, err);
   return res.status(500).json({ error: mensaje });

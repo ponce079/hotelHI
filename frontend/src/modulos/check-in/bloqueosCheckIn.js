@@ -13,8 +13,9 @@ export function bloqueosCheckIn({ resultado, titularPreparado, ocupantes, resume
       const cantidad = h.esperadas;
       if (!Number.isSafeInteger(cantidad) || cantidad < 1) motivos.push(`Habitación ${h.numero}: revisá los adultos y menores de la reserva.`);
       else if (cantidad > h.capacidad) motivos.push(`Habitación ${h.numero}: la ocupación reservada supera la capacidad de ${h.capacidad} personas.`);
-      else if (cantidad !== h.registradas) motivos.push(`Habitación ${h.numero}: hay ${cantidad} personas reservadas y ${h.registradas} registradas para hoy. Completá las fichas o modificá la reserva y revisá su cotización.`);
-      if (!h.edadesCoinciden) motivos.push(`Habitación ${h.numero}: completá las fechas de nacimiento y verificá que coincidan con los adultos y menores reservados.`);
+      else if (cantidad !== h.registradas && !h.ampliable) motivos.push(`Habitación ${h.numero}: hay ${cantidad} personas reservadas y ${h.registradas} registradas para hoy. Completá las fichas o modificá la reserva y revisá su cotización.`);
+      if (!h.edadesCoinciden && !h.ampliable) motivos.push(`Habitación ${h.numero}: completá las fechas de nacimiento y verificá que coincidan con los adultos y menores reservados.`);
+      if (h.titulares !== 1) motivos.push(`Habitación ${h.numero}: seleccioná exactamente un titular adulto.`);
       if (h.verificadas < h.registradas) motivos.push(`Habitación ${h.numero}: ${h.registradas - h.verificadas} persona(s) pendiente(s) de verificar. Completá sus datos y presioná «Verificar datos» en cada ficha; guardar no las verifica.`);
     }
   }

@@ -1,3 +1,5 @@
+> Documento historico. Para la version actual, garantia delegada a Ricardo y pruebas locales, ver [revision del 1/10/2026](REVISION_ESTADIA_2026-10-01.md).
+
 # Cambios de estadía: ocupantes y cargos por habitación
 
 Fecha de referencia: 28 de septiembre de 2026.

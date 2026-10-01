@@ -1,3 +1,4 @@
+const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 // Check-in (HU-43 a HU-47).
 //
 // No tiene tabla propia (ver Modelo_de_Datos_Sprint3_Holiday_Inn.docx): es
@@ -150,8 +151,7 @@ async function buscarReservaParaCheckIn({ id, codigo } = {}) {
 // exige que el importe no supere el saldo pendiente de la reserva, que es
 // exactamente la regla que no aplica acá (la garantía es plata aparte, no
 // un pago a cuenta del alojamiento). Sigue quedando como un PagoEstadia
-// real (concepto Garantía), marcada como separada. La cuenta solo descuenta
-// la parte aplicada; el resto debe devolverse o aplicarse antes del cierre.
+// real con el contrato de master; su reemplazo corresponde al modulo de Ricardo.
 // --------------------------------------------------------------
 
 function validarGarantia({ garantiaConfirmada, medioGarantia, referenciaGarantia }) {
@@ -174,7 +174,6 @@ async function registrarGarantia(reservaId, { medioGarantia, referenciaGarantia 
       reservaId,
       estado: "Pagado",
       concepto: CONCEPTO_GARANTIA,
-      garantiaSeparada: true,
       medios: {
         create: [
           {
@@ -215,6 +214,7 @@ async function ocuparHabitacion(tx, habitacionId) {
 // --------------------------------------------------------------
 
 async function confirmarCheckInConReserva({
+  confirmacionAmpliacion,
   operador,
   reservaId,
   numeroDocumentoIngresado,
@@ -247,6 +247,7 @@ async function confirmarCheckInConReserva({
       await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${id} FOR UPDATE`;
       const vigente = await tx.reserva.findUnique({where:{id}});
       validarReservaVigente(vigente);
+      await require('../estadia/ampliacion.servicio').ampliarSiCorresponde(tx, id, confirmacionAmpliacion);
       await require('../estadia/ingreso').prepararIngreso(tx, id, operador);
       await reservasServicio.marcarEnCurso(id, tx);
       for (const habitacion of reserva.habitaciones) {
@@ -254,7 +255,7 @@ async function confirmarCheckInConReserva({
       }
       await registrarGarantia(id, { medioGarantia, referenciaGarantia }, tx);
     },
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 
 
@@ -333,7 +334,7 @@ async function registrarCheckInWalkIn({
       await registrarGarantia(reserva.id, { medioGarantia, referenciaGarantia }, tx);
       return reserva.id;
     },
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 
 

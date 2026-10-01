@@ -1,3 +1,4 @@
+import { ConfirmarAmpliacion } from '../estadia/ConfirmarAmpliacion';
 import { useEffect, useRef, useState } from "react";
 import { EstadiaPanel } from '../estadia/EstadiaPanel';
 import { CantidadesOcupantes } from './CantidadesOcupantes';
@@ -128,8 +129,9 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
   }, [codigoPreseleccionado]);
 
   const confirmar = useMutation({
-    mutationFn: () =>
+    mutationFn: (confirmacionAmpliacion) =>
       confirmarCheckInConReserva(resultado.reserva.id, {
+        confirmacionAmpliacion,
         operador: usuario,
         numeroDocumentoIngresado: form.documento.trim(),
         garantiaConfirmada: form.garantiaConfirmada,
@@ -282,7 +284,7 @@ export function CheckInConReserva({ codigoPreseleccionado = "" }) {
                       {confirmar.error?.response?.data?.error ?? "No se pudo confirmar el check-in."}
                     </p>
                   )}
-                </>
+                  <ConfirmarAmpliacion respuesta={confirmar.error?.response?.data} pendiente={confirmar.isPending} onConfirmar={token=>confirmar.mutate(token)} />               </>
               )}
             </div>
           )}

@@ -1,3 +1,4 @@
+const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 // src/modulos/ordenes-compra/ordenesCompra.servicio.js
 //
 // Lógica de negocio pura (HU-22 a 25, HU-85). No sabe nada de HTTP/Express.
@@ -112,7 +113,7 @@ async function generarOC({ presupuestoId, usuario }) {
 
         return creada;
       },
-      { timeout: 30000, maxWait: 15000 }
+      OPCIONES_TRANSACCION
     );
   } catch (err) {
     // El chequeo de ocExistente de arriba no bloquea una carrera real entre
@@ -351,7 +352,7 @@ async function enviarOC(id, usuario) {
       });
       return actualizada;
     },
-    { timeout: 30000, maxWait: 15000 }
+    OPCIONES_TRANSACCION
   );
 }
 
@@ -401,7 +402,7 @@ async function anularOC(id, motivo, usuario) {
       });
       return actualizada;
     },
-    { timeout: 30000, maxWait: 15000 }
+    OPCIONES_TRANSACCION
   );
 }
 
@@ -587,7 +588,7 @@ async function registrarRecepcion(id, detalleRecibido, usuario) {
 
       return tx.ordenCompra.findUnique({ where: { id: oc.id } });
     },
-    { timeout: 30000, maxWait: 15000 }
+    OPCIONES_TRANSACCION
   );
 
   // Fase 2 (Sprint 3 · Fase 4), fuera de la transacción de arriba: recién

@@ -1,3 +1,4 @@
+const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 const { Prisma } = require('@prisma/client');
 const prisma = require('../../lib/prisma');
 const { calcularSaldoComprobante, calcularSaldosComprobantes, calcularPagosAplicados, pagoVigente, calcularFechaVencimiento } = require('../../lib/comprobantes');
@@ -423,7 +424,7 @@ async function crearNota(comprobanteId, data) {
       }
 
       return creada;
-    }, { timeout: 15000, maxWait: 10000 });
+    }, OPCIONES_TRANSACCION);
   } catch (err) {
     // Misma red de seguridad que crearComprobante: el findFirst de arriba
     // no cubre una condición de carrera contra el unique de BD.
@@ -603,7 +604,7 @@ async function crearComprobanteConAjustes(data) {
       }
 
       return { facturaCreada, ncAutoCreada, ajusteManualCreado };
-    }, { timeout: 15000, maxWait: 10000 });
+    }, OPCIONES_TRANSACCION);
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
       throw new ErrorDeNegocio('Uno de los números de comprobante ingresados ya existe para este proveedor.', 409);

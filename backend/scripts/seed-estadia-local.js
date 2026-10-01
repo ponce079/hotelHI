@@ -1,3 +1,4 @@
+if (!process.env.SEED_USUARIOS_PASSWORD) throw new Error('Definí SEED_USUARIOS_PASSWORD antes de ejecutar el seed.');
 // Debe invocarse mediante npm run setup:estadia. No carga .env.
 const destino = new URL(process.env.DATABASE_URL || 'mysql://sin-configurar');
 if (destino.hostname !== '127.0.0.1' || destino.port !== '3308' || destino.pathname !== '/hotelhi_estadia_demo') {
@@ -15,11 +16,11 @@ async function main() {
     await p.habitacion.upsert({ where: { numero }, update: {}, create: { numero, capacidad, tipoHabitacionId: tipo.id, piso: 3 } });
   }
   for (let diaSemana = 0; diaSemana < 7; diaSemana++) await p.modificadorDiaSemana.upsert({ where: { diaSemana }, update: {}, create: { diaSemana, porcentaje: 0 } });
-  const passwordHash = await hashearContrasena('Prueba2026!');
+  const passwordHash = await hashearContrasena(process.env.SEED_USUARIOS_PASSWORD);
   for (const [i, rol] of ['recepcionista', 'gerente', 'admin'].entries()) {
     await p.usuario.upsert({ where: { usuario: `${rol}.prueba` }, update: {}, create: { usuario: `${rol}.prueba`, nombre: 'Prueba', apellido: rol, dni: String(11000001 + i), rol, passwordHash, activo: true } });
   }
-  console.log('Base local preparada: habitaciones 301–304. Usuario recepcionista.prueba / contraseña Prueba2026!');
+  console.log('Base local preparada: habitaciones 301–304. Usuario recepcionista.prueba / contraseña (definida en SEED_USUARIOS_PASSWORD)');
   console.log('Volver a ejecutar no borra reservas, no cambia estados ni restablece contraseñas existentes.');
 }
 main().catch(error => { console.error(error.message); process.exitCode = 1; }).finally(() => p.$disconnect());

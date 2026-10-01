@@ -3,6 +3,8 @@ const documento = valor => String(valor || '').trim().toUpperCase().replace(/\s/
 // Huésped y ocupante tienen identificadores de tablas distintas. El nombre,
 // el correo y la posición en la lista no sirven para vincularlos.
 export function titularRegistrado(personas, huesped, ocupanteId) {
+  const vinculada = huesped?.id && personas.find(p => p.huespedId === huesped.id);
+  if (vinculada) return vinculada;
   if (ocupanteId != null) return personas.find(p => String(p.id) === String(ocupanteId)) || null;
   const numero = documento(huesped?.numeroDocumento);
   const tipo = documento(huesped?.tipoDocumento);

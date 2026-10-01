@@ -25,7 +25,7 @@ const adapter = new PrismaMariaDb(
     user: decodeURIComponent(dbUrl.username),
     password: decodeURIComponent(dbUrl.password),
     database: dbUrl.pathname.replace(/^\//, ""),
-    ssl: process.env.DATABASE_SSL === "false" ? false : {
+    ssl: process.env.DATABASE_SSL === 'false' ? false : {
       rejectUnauthorized: false,
     },
     // Una transacción ocupa una conexión hasta finalizar. Permitimos una
@@ -57,6 +57,6 @@ const adapter = new PrismaMariaDb(
   }
 );
 
-const prisma = new PrismaClient({ adapter, transactionOptions: { maxWait: 10000 } });
+const prisma = new PrismaClient({ adapter, transactionOptions: require('./constantes').OPCIONES_TRANSACCION });
 
 module.exports = prisma;

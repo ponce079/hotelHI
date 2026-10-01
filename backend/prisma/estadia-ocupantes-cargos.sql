@@ -10,9 +10,9 @@ ALTER TABLE `consumos_servicio_adicional` ADD COLUMN `anulado` BOOLEAN NOT NULL 
     ADD COLUMN `precioUnitario` DECIMAL(12, 2) NULL;
 
 -- AlterTable
-ALTER TABLE `pagos_estadia` ADD COLUMN `garantiaAplicada` DECIMAL(12, 2) NOT NULL DEFAULT 0,
-    ADD COLUMN `garantiaDevuelta` DECIMAL(12, 2) NOT NULL DEFAULT 0,
-    ADD COLUMN `garantiaSeparada` BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE `huespedes` ADD COLUMN `fechaNacimiento` DATE NULL,
+    ADD COLUMN `paisDocumento` VARCHAR(191) NULL,
+    ADD COLUMN `identidadDocumento` VARCHAR(64) NULL;
 
 -- AlterTable
 ALTER TABLE `cargos_verificacion_checkout` ADD COLUMN `habitacionId` INTEGER NULL;
@@ -86,3 +86,8 @@ ALTER TABLE `asignaciones_ocupantes` ADD CONSTRAINT `asignaciones_ocupantes_ocup
 
 -- AddForeignKey
 ALTER TABLE `eventos_estadia` ADD CONSTRAINT `eventos_estadia_reservaId_fkey` FOREIGN KEY (`reservaId`) REFERENCES `reservas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+ALTER TABLE `ocupantes_reserva` ADD COLUMN `huespedId` INTEGER NULL,
+    ADD COLUMN `esTitular` BOOLEAN NOT NULL DEFAULT false;
+CREATE UNIQUE INDEX `huespedes_identidadDocumento_key` ON `huespedes`(`identidadDocumento`);
+ALTER TABLE `ocupantes_reserva` ADD CONSTRAINT `ocupantes_reserva_huespedId_fkey` FOREIGN KEY (`huespedId`) REFERENCES `huespedes`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;

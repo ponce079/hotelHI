@@ -44,7 +44,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   listarLlegadasPendientes.mockResolvedValue([]);
   api.post.mockResolvedValue({data:{ocupanteId:1,creado:false}});
-  api.get.mockResolvedValue({data:[{id:1,nombre:'Marcos',apellido:'Beltrán',estado:'Previsto',fechaNacimiento:'1990-01-01',fechaDesde:'2020-01-01',fechaHasta:'2099-01-01',verificadoEn:'2026-01-01',asignaciones:[{habitacionId:1,hasta:null}]}]});
+  api.get.mockResolvedValue({data:[{id:1,esTitular:true,nombre:'Marcos',apellido:'Beltrán',estado:'Previsto',fechaNacimiento:'1990-01-01',fechaDesde:'2020-01-01',fechaHasta:'2099-01-01',verificadoEn:'2026-01-01',asignaciones:[{habitacionId:1,hasta:null}]}]});
 });
 
 // RecepcionistaInicio.jsx (Inicio del Recepcionista) linkea a
@@ -156,7 +156,7 @@ describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel
   it('habilita una habitación triple y explica el bloqueo hasta verificar a las tres personas',async()=>{
     const triple={...RESERVA,habitaciones:[{id:1,numero:'301',tipo:'Triple',capacidad:3,adultos:3,menores:0}]};
     buscarReservaParaCheckIn.mockResolvedValue({reserva:triple,puedeIniciarCheckIn:true});
-    const personas=[1,2,3].map(id=>({id,nombre:`Persona ${id}`,apellido:'Prueba',estado:'Previsto',fechaNacimiento:'1990-01-01',fechaDesde:'2020-01-01',fechaHasta:'2099-01-01',nacionalidad:'AR',paisResidencia:'AR',tipoDocumento:'DNI',numeroDocumento:String(id),paisDocumento:'AR',verificadoEn:id===3?null:'2026-01-01',asignaciones:[{habitacionId:1,hasta:null}]}));
+    const personas=[1,2,3].map(id=>({id,esTitular:id===1,nombre:`Persona ${id}`,apellido:'Prueba',estado:'Previsto',fechaNacimiento:'1990-01-01',fechaDesde:'2020-01-01',fechaHasta:'2099-01-01',nacionalidad:'AR',paisResidencia:'AR',tipoDocumento:'DNI',numeroDocumento:String(id),paisDocumento:'AR',verificadoEn:id===3?null:'2026-01-01',asignaciones:[{habitacionId:1,hasta:null}]}));
     api.get.mockImplementation(()=>Promise.resolve({data:personas.map(p=>({...p}))}));
     api.post.mockImplementation(async(url)=>{
       if(url.endsWith('/accion'))personas[2].verificadoEn='2026-01-01';

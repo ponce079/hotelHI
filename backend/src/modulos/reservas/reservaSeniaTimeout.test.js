@@ -5,7 +5,7 @@ const servicio = require('./reservas.servicio');
 const controlador = require('./reservas.controlador');
 const datos = {
   fechaDesde: '2099-10-10', fechaHasta: '2099-10-13', habitaciones: [{habitacionId:1,adultos:1,menores:0}], planTarifarioId:1,totalEsperado:100000,
-  huesped: { fechaNacimiento:'1990-01-01', nombre: 'Prueba Local', tipoDocumento: 'DNI', numeroDocumento: '30111222', contacto: 'prueba@example.test' },
+  huesped: { paisDocumento:"AR", fechaNacimiento:'1990-01-01', nombre: 'Prueba Local', tipoDocumento: 'DNI', numeroDocumento: '30111222', contacto: 'prueba@example.test' },
   canalConfirmacion: 'Email', origen: 'RECEPCION', medios: [{ tipo: 'Efectivo', importe: 30000 }],
 };
 beforeEach(() => { jest.clearAllMocks(); prisma.reservaHabitacion.findMany.mockResolvedValue([]); });
@@ -18,7 +18,7 @@ test('la expiraci√≥n confirmada devuelve 408 identificable y no reintenta autom√
   expect(res.status).toHaveBeenCalledWith(408);
   expect(res.json).toHaveBeenCalledWith(expect.objectContaining({ codigo: 'RESERVA_TIEMPO_AGOTADO', error: expect.stringContaining('1 minuto') }));
   expect(prisma.$transaction).toHaveBeenCalledTimes(1);
-  expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { timeout: 60000, maxWait: 10000 });
+  expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), require('../../lib/constantes').OPCIONES_TRANSACCION);
 });
 test.each([
   { code: 'P2028', meta: { operation: 'commit' }, message: 'Transaction commit failed' },

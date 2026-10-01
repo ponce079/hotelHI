@@ -110,6 +110,7 @@ async function completarPasos1a4() {
   fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
 
   fireEvent.change(await screen.findByLabelText("Nombre y apellido *"), { target: { value: "Ana Pérez" } });
+  fireEvent.change(screen.getByLabelText("País emisor del documento *"), {target:{value:"AR"}});
   fireEvent.change(screen.getByLabelText("Fecha de nacimiento del titular *"), {target:{value:"1990-01-01"}});
   fireEvent.change(screen.getByLabelText("Número *"), { target: { value: "30111222" } });
   fireEvent.change(screen.getByLabelText("Correo electrónico *"), { target: { value: "ana@mail.com" } });
@@ -372,7 +373,7 @@ describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin 
     habitaciones: [{ id: 1, numero: "101", tipo: "Doble", tipoHabitacionId: 10, adultos: 2, menores: 0 }],
     planTarifarioId: 1,
     planTarifario: { id: 1, codigo: "BAR", nombre: "Best Available Rate", reembolsable: true },
-    huesped: { fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com", preferencias: "" },
+    huesped: { paisDocumento:"AR", fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com", preferencias: "" },
   };
 
   it("edición: sin 'Seña', y el paso de huésped confirma directo ('Guardar cambios')", async () => {

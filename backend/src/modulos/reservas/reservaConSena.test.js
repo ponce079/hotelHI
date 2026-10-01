@@ -116,6 +116,7 @@ function crearCliente(obtenerTablas) {
       findMany: async () => obtenerTablas().modificadorDiaSemana,
     },
     reservaNoche: {
+      createMany: async ({data}) => { const t=obtenerTablas(); for(const fila of data)t.reservaNoche.push({id:t.secuencias.reservaNoche++,...fila}); return {count:data.length}; },
       create: async ({ data }) => {
         const t = obtenerTablas();
         const fila = { id: t.secuencias.reservaNoche++, ...data };
@@ -136,6 +137,7 @@ function crearCliente(obtenerTablas) {
       },
     },
     huesped: {
+      upsert: async ({where,create,update}) => {const t=obtenerTablas();let fila=t.huesped.find(h=>h.identidadDocumento===where.identidadDocumento);if(fila){Object.assign(fila,update);return fila;}fila={id:t.secuencias.huesped++,...create};t.huesped.push(fila);return fila;},
       findFirst: async ({ where }) => {
         const t = obtenerTablas();
         return t.huesped.find((h) => coincide(t, "huesped", h, where)) ?? null;
@@ -364,6 +366,7 @@ function checkOutFalsoFactory() {
 
 function huespedValido(sufijo) {
   return {
+    paisDocumento: "AR",
     nombre: "Huésped de Prueba",
     tipoDocumento: "DNI",
     numeroDocumento: `3000000${sufijo}`, fechaNacimiento:'1990-01-01',

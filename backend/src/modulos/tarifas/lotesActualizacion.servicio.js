@@ -1,3 +1,4 @@
+const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 // Actualización masiva de tarifas (HU-93) — Etapa 2 de tarifas por
 // temporada. Lógica de negocio pura: no conoce HTTP.
 
@@ -191,7 +192,7 @@ async function confirmarActualizacion(data, usuario) {
 
       return tx.loteActualizacionTarifaria.findUnique({ where: { id: lote.id }, include: { tarifas: true } });
     },
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 }
 
@@ -240,7 +241,7 @@ async function anularLote(id, motivoAnulacion, usuario) {
         data: { estado: ESTADO_LOTE.ANULADO, motivoAnulacion: motivo, anuladoPor: usuario || null },
       });
     },
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 }
 

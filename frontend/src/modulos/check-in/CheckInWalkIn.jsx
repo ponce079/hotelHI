@@ -1,3 +1,4 @@
+import { PaisDocumentoReserva } from '../estadia/PaisDocumentoReserva';
 import { validarNacimientoTitular } from '../reservas/validarNacimientoTitular';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PersonasWalkIn } from '../estadia/PersonasWalkIn';
@@ -106,6 +107,7 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
   const erroresHuesped = validarHuesped(form.huesped);
   const errorNacimiento = validarNacimientoTitular(form.huesped.fechaNacimiento, form.fechaDesde || new Date().toLocaleDateString('en-CA',{timeZone:'America/Argentina/Buenos_Aires'}));
   if(errorNacimiento) erroresHuesped.fechaNacimiento = errorNacimiento;
+  if (!form.huesped.paisDocumento?.trim()) erroresHuesped.paisDocumento = 'Selecciona el pais emisor del documento.';
   const huespedValido = Object.keys(erroresHuesped).length === 0;
   function errorHuesped(campo) {
     return huespedTocado[campo] || intentoAvanzarHuesped ? erroresHuesped[campo] : undefined;
@@ -214,6 +216,7 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
           tipoDocumento: form.huesped.tipoDocumento,
           numeroDocumento: form.huesped.numeroDocumento.trim(),
       fechaNacimiento: form.huesped.fechaNacimiento,
+      paisDocumento: form.huesped.paisDocumento,
           contacto: form.huesped.contacto.trim() || undefined,
         },
         garantiaConfirmada: form.garantiaConfirmada,
@@ -540,6 +543,7 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" } = {}) {
               error={errorHuesped("nombre")}
               placeholder="Ana Pérez"
             />
+            <PaisDocumentoReserva value={form.huesped.paisDocumento} onChange={value=>actualizarHuesped('paisDocumento',value)} onBlur={()=>tocarHuesped('paisDocumento')} error={errorHuesped('paisDocumento')} />
             <Input label="Fecha de nacimiento del titular *" type="date" value={form.huesped.fechaNacimiento || ''} onChange={e=>actualizarHuesped('fechaNacimiento',e.target.value)} onBlur={()=>tocarHuesped('fechaNacimiento')} error={errorHuesped('fechaNacimiento')} />
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3">
               <Select label="Documento *" value={form.huesped.tipoDocumento} onChange={(e) => actualizarHuesped("tipoDocumento", e.target.value)}>

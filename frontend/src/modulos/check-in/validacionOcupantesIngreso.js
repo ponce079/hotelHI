@@ -18,6 +18,8 @@ export function resumenOcupantes(habitaciones, personas, walkIn = false) {
     const edadesCoinciden = presentes.every(p=>p.fechaNacimiento) && menoresRegistrados === Number(h.menores);
     const verificadas = presentes.filter(p => walkIn || p.verificadoEn).length;
     return { ...h, esperadas:cantidad, registradas: presentes.length, verificadas, edadesCoinciden,
-      completo: Number.isSafeInteger(cantidad) && cantidad > 0 && cantidad <= h.capacidad && presentes.length === cantidad && verificadas === cantidad && edadesCoinciden };
+      titulares: presentes.filter(p => p.esTitular).length,
+      ampliable: presentes.length > cantidad && presentes.length <= h.capacidad && presentes.every(p => p.fechaNacimiento),
+      completo: Number.isSafeInteger(cantidad) && cantidad > 0 && cantidad <= h.capacidad && presentes.length === cantidad && verificadas === cantidad && edadesCoinciden && presentes.filter(p => p.esTitular).length === 1 };
   });
 }

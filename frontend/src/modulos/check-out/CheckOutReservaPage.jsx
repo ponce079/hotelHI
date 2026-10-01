@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "react-router-dom";
 import {
@@ -35,7 +35,6 @@ import { anularPagoEstadia, listarPagosEstadia } from "../pagos-estadia/pagoEsta
 import { ESTADO_PAGO_BADGE } from "../pagos-estadia/pagoEstadia.constantes";
 import { PagoEstadiaWizard } from "../pagos-estadia/PagoEstadiaWizard";
 import { CargoVerificacionCheckoutModal } from "./CargoVerificacionCheckoutModal";
-import { Garantias } from '../estadia/EstadiaPanel';
 import { confirmarCheckOut, obtenerCuenta, registrarVerificacion } from "./checkOut.api";
 import { ETIQUETA_TIPO_CARGO, PASOS_CHECKOUT, TIPO_VERIFICACION_SIN_NOVEDADES } from "./checkOut.constantes";
 
@@ -92,8 +91,6 @@ export function CheckOutReservaPage() {
     queryFn: () => obtenerCuenta(reservaId),
     enabled: puedeVer,
   });
-  const firmaCargos = JSON.stringify([cuentaQuery.data?.totalAdeudado, cuentaQuery.data?.consumos, cuentaQuery.data?.verificaciones]);
-  useEffect(() => { setCargosValidados(false); }, [firmaCargos]);
   const pagosQuery = useQuery({
     queryKey: ["check-out", "pagos", reservaId],
     queryFn: () => listarPagosEstadia(reservaId),
@@ -118,7 +115,9 @@ export function CheckOutReservaPage() {
   // estado propio.
   const mutacionSinNovedades = useMutation({
     mutationFn: async () => {
-      for(const h of cuentaQuery.data.habitaciones.filter(h=>!h.verificada)) await registrarVerificacion(reservaId,{habitacionId:h.habitacionId,tipo:TIPO_VERIFICACION_SIN_NOVEDADES,registradoPor:usuario});
+      for (const habitacion of cuentaQuery.data.habitaciones) {
+        await registrarVerificacion(reservaId, { habitacionId: habitacion.habitacionId, tipo: TIPO_VERIFICACION_SIN_NOVEDADES, registradoPor: usuario });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["check-out"] });
@@ -176,17 +175,17 @@ export function CheckOutReservaPage() {
   }
 
   const cuenta = cuentaQuery.data;
-  const pagos = (pagosQuery.data?.pagos ?? []).filter(p => !p.garantiaSeparada);
+  const pagos = pagosQuery.data?.pagos ?? [];
   const cerrada = cuenta.estadoReserva === ESTADO_RESERVA.CERRADA || Boolean(resultado);
   const enCurso = cuenta.estadoReserva === ESTADO_RESERVA.EN_CURSO && !resultado;
   const saldado = Math.round(cuenta.saldo * 100) === 0;
-  const verificacionCompleta = cuenta.habitaciones.length>0 && cuenta.habitaciones.every(h=>h.verificada);
+  const verificacionCompleta = cuenta.habitaciones.every(h => cuenta.verificaciones.some(v => v.habitacionId === h.habitacionId || (!v.habitacionId && cuenta.habitaciones.length === 1)));
   const consumosMinibar = cuenta.consumos.filter((c) => c.tipoServicio === "Minibar");
   const comprobanteVigente = (comprobantesQuery.data ?? []).find((c) => c.tipo === "Comprobante" && !c.anulado);
 
   // PasoAPaso: 0 verificación · 1 confirmación · 2 pago · 3 cierre · 4 cerrado.
-  const pasoActual = cerrada ? PASOS_CHECKOUT.length : !verificacionCompleta ? 0 : !cargosValidados ? 1 : cuenta.garantiaPendiente > 0 ? 2 : !saldado ? 3 : 4;
-  const puedeCerrar = puedeGestionar && enCurso && verificacionCompleta && cargosValidados && saldado && !(cuenta.garantiaPendiente>0);
+  const pasoActual = cerrada ? PASOS_CHECKOUT.length : !verificacionCompleta ? 0 : !cargosValidados ? 1 : !saldado ? 2 : 3;
+  const puedeCerrar = puedeGestionar && enCurso && verificacionCompleta && cargosValidados && saldado;
 
   function alRegistrarCargo(mensaje) {
     setModalCargo(false);
@@ -408,25 +407,19 @@ export function CheckOutReservaPage() {
         )}
       </Tarjeta>
 
-      <Tarjeta icono={Wallet} titulo="3. Resolución de la garantía">
-        <p className="my-3 text-sm text-piedra">Cargos de verificación: {moneda(cuenta.subtotales.verificacion)}. Saldo pendiente: {moneda(cuenta.saldo)}. Aplicá el importe acordado con el huésped y registrá la devolución del resto.</p>
-        {(!verificacionCompleta || !cargosValidados) && <p className="mb-3 text-sm">Primero verificá todas las habitaciones y confirmá los cargos con el huésped.</p>}
-        <Garantias reservaId={reservaId} garantias={cuenta.garantias||[]} editable={puedeGestionar&&enCurso&&verificacionCompleta&&cargosValidados} cargosValidados={cargosValidados} totalConfirmado={cuenta.totalAdeudado} onExito={()=>{queryClient.invalidateQueries({queryKey:['check-out']});queryClient.invalidateQueries({queryKey:['pagos-estadia']});}}/>
-      </Tarjeta>
-      <Tarjeta icono={Wallet} titulo="4. Pago" hu="HU 50 — se pueden combinar medios de pago">
+      <Tarjeta icono={Wallet} titulo="3. Pago" hu="HU 50 — se pueden combinar medios de pago">
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-3">
             {puedeGestionar && (
               <Button
                 variante="secundario"
                 icono={Wallet}
-                disabled={!enCurso || !cargosValidados || cuenta.garantiaPendiente > 0 || saldado}
+                disabled={!enCurso || !cargosValidados || saldado}
                 onClick={() => setModalPago(true)}
               >
                 Registrar pago
               </Button>
             )}
-            {cuenta.garantiaPendiente > 0 && <p className="text-sm text-piedra">Resolvé primero la garantía para cobrar el saldo restante.</p>}
             {saldado && <Badge variante="ok">Cuenta saldada</Badge>}
             {puedeGestionar && !cargosValidados && enCurso && !saldado && (
               <span className="text-[12px] text-piedra">Se habilita cuando el huésped confirma los cargos.</span>
@@ -481,7 +474,7 @@ export function CheckOutReservaPage() {
         </div>
       </Tarjeta>
 
-      <Tarjeta icono={DoorClosed} titulo="5. Cierre del check-out" hu="HU 51 y 52 — reserva cerrada, habitaciones a limpieza y aviso a Housekeeping">
+      <Tarjeta icono={DoorClosed} titulo="4. Cierre del check-out" hu="HU 51 y 52 — reserva cerrada, habitaciones a limpieza y aviso a Housekeeping">
         <div className="flex flex-col gap-3">
           <p className="text-[13px] text-piedra">
             Al confirmar, la reserva pasa a <strong className="text-tinta">Cerrada</strong>, cada habitación queda{" "}
@@ -511,7 +504,7 @@ export function CheckOutReservaPage() {
       </Tarjeta>
 
       {cerrada && (
-        <Tarjeta icono={Receipt} titulo="6. Comprobante" hu="HU 53 y 55 — comprobante de la estadía">
+        <Tarjeta icono={Receipt} titulo="5. Comprobante" hu="HU 53 y 55 — comprobante de la estadía">
           {comprobantesQuery.isLoading ? (
             <p className="text-sm text-piedra">Buscando comprobantes…</p>
           ) : comprobanteVigente ? (
@@ -547,8 +540,8 @@ export function CheckOutReservaPage() {
 
       {modalCargo && (
         <CargoVerificacionCheckoutModal
-          habitaciones={cuenta.habitaciones}
           reservaId={reservaId}
+          habitaciones={cuenta.habitaciones}
           consumosMinibar={consumosMinibar}
           onClose={() => setModalCargo(false)}
           onExito={alRegistrarCargo}

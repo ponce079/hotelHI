@@ -1,3 +1,4 @@
+const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 // src/modulos/movimientos-salida/movimientoSalida.servicio.js
 //
 // Lógica de negocio pura (HU-13: Movimiento de Salida). Mismo patrón que
@@ -152,7 +153,7 @@ async function registrarSalidaConCliente(cliente, { depositoId, tipoMovStockId, 
   // es el único caso en el que `registrarSalida` (sin cliente externo)
   // sigue comportándose exactamente igual que antes de este refactor.
   if (typeof cliente.$transaction === "function") {
-    return cliente.$transaction((tx) => escribir(tx), { timeout: 15000, maxWait: 10000 });
+    return cliente.$transaction((tx) => escribir(tx), OPCIONES_TRANSACCION);
   }
   return escribir(cliente);
 }

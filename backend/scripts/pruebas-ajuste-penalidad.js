@@ -71,7 +71,7 @@ function enDias(dias) {
   return new Date(hoy.getTime() + dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-const HUESPED = { fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
+const HUESPED = { paisDocumento:"AR", fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
 
 // --------------------------------------------------------------
 // Fixture — mismo esquema que pruebas-reserva-precio.js: temporada Base +

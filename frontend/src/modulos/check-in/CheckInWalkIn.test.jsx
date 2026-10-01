@@ -8,7 +8,7 @@ import { cotizarReserva } from "../reservas/reservas.api";
 import { listarPlanesTarifarios } from "../tarifas/tarifas.api";
 
 vi.mock('../../lib/sesion',()=>({useSesion:()=>({usuario:'Prueba',puede:()=>true})}));
-vi.mock('../estadia/PersonasWalkIn',()=>({PersonasWalkIn:({onChange,reserva})=><button onClick={()=>onChange(reserva.habitaciones.flatMap(h=>Array.from({length:h.adultos+h.menores},(_,i)=>({id:h.id*10+i,habitacionId:h.id,fechaNacimiento:'1990-01-01',fechaDesde:reserva.fechaDesde,fechaHasta:reserva.fechaHasta}))))}>Cargar identidades de prueba</button>}));
+vi.mock('../estadia/PersonasWalkIn',()=>({PersonasWalkIn:({onChange,reserva})=><button onClick={()=>onChange(reserva.habitaciones.flatMap(h=>Array.from({length:h.adultos+h.menores},(_,i)=>({esTitular:i===0,id:h.id*10+i,habitacionId:h.id,fechaNacimiento:'1990-01-01',fechaDesde:reserva.fechaDesde,fechaHasta:reserva.fechaHasta}))))}>Cargar identidades de prueba</button>}));
 // Etapa 4A — cubre lo que el rewrite de este wizard cambió: ocupación
 // editable por habitación (ajuste A), un único plan por reserva (no por
 // habitación), el total mostrado/enviado viniendo siempre de cotizarReserva
@@ -84,6 +84,7 @@ async function elegirPlanYAvanzarAHuesped() {
 
 async function completarHuespedYAvanzarAGarantia() {
   fireEvent.change(screen.getByLabelText("Nombre y apellido *"), { target: { value: "Ana Pérez" } });
+  fireEvent.change(screen.getByLabelText("País emisor del documento *"), {target:{value:"AR"}});
   fireEvent.change(screen.getByLabelText("Fecha de nacimiento del titular *"), {target:{value:"1990-01-01"}});
   fireEvent.change(screen.getByLabelText("Número *"), { target: { value: "30111222" } });
   fireEvent.change(screen.getByLabelText("Contacto (email o teléfono) *"), { target: { value: "ana@mail.com" } });

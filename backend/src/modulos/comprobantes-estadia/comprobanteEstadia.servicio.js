@@ -1,3 +1,4 @@
+const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 const { Prisma } = require('@prisma/client');
 const prisma = require('../../lib/prisma');
 const { redondear } = require('../../lib/comprobantes');
@@ -118,7 +119,7 @@ async function crearComprobante(data) {
           },
           include: { reserva: true },
         }),
-      { timeout: 15000, maxWait: 10000 }
+      OPCIONES_TRANSACCION
     );
   } catch (err) {
     // Red de seguridad ante una carrera contra el UNIQUE de `numero` —
@@ -187,7 +188,7 @@ async function crearNotaCredito(comprobanteId, data) {
         },
         include: { comprobanteRelacionado: true },
       }),
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 
   return nota;

@@ -71,7 +71,7 @@ async function esperaError(fn, textoEsperado) {
   throw new Error(`Se esperaba un error que mencionara "${textoEsperado}", pero no falló`);
 }
 
-const HUESPED = { fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
+const HUESPED = { paisDocumento:"AR", fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
 
 // --------------------------------------------------------------
 // Fixture mínima de tarifas (Etapa 4A) — crearReserva ahora pasa por el
@@ -155,6 +155,7 @@ async function crearReserva(extra = {}) {
   return reservasServicio.crearReserva({ ...resto, fechaDesde, fechaHasta, habitaciones, planTarifarioId, totalEsperado });
 }
 
+// --------------------------------------------------------------
 // Mismo 20% que va a usar ReservaWizard.jsx (PORCENTAJE_SEÑA en
 // reservas.constantes.js, frontend) — el backend no lo valida como una regla
 // propia (ver decisión documentada ahí: la exigencia del 20% vive en la UI,
@@ -214,17 +215,18 @@ async function main() {
     // El huésped llega, hace check-in normalmente — la seña ya cobrada sigue
     // contando en la cuenta consolidada sin que nadie tenga que volver a
     // cargarla.
+    await require('./_ocupantesFixture').completarFixture(reserva, reserva.habitaciones.map(h=>({habitacionId:h.id,adultos:h.adultos,menores:h.menores})));
     await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
       numeroDocumentoIngresado: "30111222",
       garantiaConfirmada: true,
-      medioGarantia: "Tarjeta de crédito",
+      medioGarantia: "Tarjeta crédito", referenciaGarantia: "PRUEBA-LOCAL",
     });
 
     const cuenta = await checkOutServicio.consolidarCargos(reserva.id);
     assert.equal(cuenta.totalAdeudado, 150000);
-    assert.equal(cuenta.totalPagado, 30000);
-    assert.equal(cuenta.saldo, 120000, "el check-out tiene que ver la seña ya descontada, no cobrar el total de nuevo");
+    assert.equal(cuenta.totalPagado, 60000);
+    assert.equal(cuenta.saldo, 90000, "el check-out tiene que ver la seña ya descontada, no cobrar el total de nuevo");
   });
 
   seccion("HU-37 (ajuste) — política de cancelación atada a la seña");

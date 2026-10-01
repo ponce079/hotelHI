@@ -1,3 +1,4 @@
+const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 // Servicios Adicionales (HU-61 a HU-64).
 //
 // Consumo de restaurante/spa/lavandería/minibar durante la estadía. Cuando
@@ -128,7 +129,7 @@ async function registrarConsumo(data) {
   const precioUnitario=Number(data.precioUnitario ?? (Number(data.monto)/cantidad));
   const decimal=n=>Number.isFinite(n)&&Math.abs(n*100-Math.round(n*100))<0.000001;
   if(!decimal(cantidad)||cantidad<=0||cantidad>99999999||!decimal(precioUnitario)||precioUnitario<0||(!incluido&&precioUnitario===0))throw new ErrorDeNegocio('Cantidad o precio unitario inválidos.');
-  const monto=incluido?0:Math.round(cantidad*precioUnitario*100)/100;
+  const monto=incluido?0:new (require('@prisma/client').Prisma.Decimal)(cantidad).times(precioUnitario).toDecimalPlaces(2).toNumber();
   if(monto>9999999999.99)throw new ErrorDeNegocio('El monto supera el máximo permitido.');
   const descripcion=textoObligatorio(data.descripcion||tipoServicio,'Descripción',500);
   const claveOperacion=data.claveOperacion?textoObligatorio(data.claveOperacion,'Clave de operación',100):null;
@@ -160,7 +161,7 @@ async function registrarConsumo(data) {
     const consumo=await tx.consumoServicioAdicional.create({data:{reservaId,habitacionId,tipoServicio,registradoPor,cantidad,precioUnitario,monto,incluido,descripcion,fechaServicio,claveOperacion,articuloId,movimientoStockId},include:{articulo:true,habitacion:true}});
     await require('../estadia/estadia.servicio').evento(tx,reservaId,'Agregar cargo',{consumoId:consumo.id,habitacionId,monto},registradoPor);
     return formatearConsumo(consumo);
-  },{timeout:15000,maxWait:10000});
+  },OPCIONES_TRANSACCION);
 }
 
 async function anularConsumo(id,data) {
@@ -178,7 +179,7 @@ async function anularConsumo(id,data) {
     const saved=await tx.consumoServicioAdicional.update({where:{id},data:{anulado:true,anuladoEn:new Date(),anuladoPor:operador,motivoAnulacion:motivo},include:{articulo:true,habitacion:true}});
     await require('../estadia/estadia.servicio').evento(tx,c.reservaId,'Anular cargo',{consumoId:id,habitacionId:c.habitacionId,motivo},operador);
     return formatearConsumo(saved);
-  },{timeout:15000});
+  },OPCIONES_TRANSACCION);
 }
 
 // --------------------------------------------------------------

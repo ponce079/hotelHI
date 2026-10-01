@@ -27,7 +27,6 @@ export const LIMITES_VERIFICACION = { descripcion: 500 };
 export const PASOS_CHECKOUT = [
   { clave: "verificacion", label: "Verificación" },
   { clave: "confirmacion", label: "Confirmación de cargos" },
-  { clave: "garantia", label: "Garantía" },
   { clave: "pago", label: "Pago" },
   { clave: "cierre", label: "Cierre", cerrado: true },
 ];

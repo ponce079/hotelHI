@@ -8,7 +8,7 @@ test.each([undefined,'1','3'])('pool configurable (%s) con mínimo compatible co
   if(valor)process.env.DATABASE_CONNECTION_LIMIT=valor;
   require('./prisma');
   expect(require('@prisma/adapter-mariadb').PrismaMariaDb).toHaveBeenCalledWith(expect.objectContaining({connectionLimit:valor?Number(valor):2,minimumIdle:1,idleTimeout:60}),expect.any(Object));
-  expect(require('@prisma/client').PrismaClient).toHaveBeenCalledWith(expect.objectContaining({transactionOptions:{maxWait:10000}}));
+  expect(require('@prisma/client').PrismaClient).toHaveBeenCalledWith(expect.objectContaining({transactionOptions:require('./constantes').OPCIONES_TRANSACCION}));
 });
 test.each(['0','-1','1.5','sin-limite','11'])('rechaza límite de pool inválido: %s',valor=>{
   process.env.DATABASE_CONNECTION_LIMIT=valor;

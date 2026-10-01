@@ -155,6 +155,7 @@ const CAMPO_FECHA_POR_DEFECTO = {
 // `where: { anulado: false }` (el chequeo de "comprobante vigente", el de
 // "pagos no anulados" de consolidarCargos, etc.) no matcheaba nunca.
 const CAMPO_BOOLEANO_FALSE_POR_DEFECTO = {
+  consumoServicioAdicional: ["anulado", "incluido"],
   pagoEstadia: ["anulado"],
   comprobanteEstadia: ["anulado"],
 };
@@ -177,6 +178,7 @@ const CAMPO_BOOLEANO_TRUE_POR_DEFECTO = {
 // — sumado para HU-93: lotesActualizacion.servicio.js no setea `estado` a
 // mano al crear un lote (confía en el default "Aplicado" del schema).
 const CAMPO_STRING_POR_DEFECTO = {
+  huesped: { paisDocumento: null, identidadDocumento: null },
   ocupanteReserva: { estado: "Previsto", verificadoEn: null },
   asignacionOcupanteHabitacion: { hasta: null },
   loteActualizacionTarifaria: { estado: "Aplicado" },
@@ -213,6 +215,13 @@ function crearBase() {
     return Object.entries(where).every(([campo, condicion]) => {
       if (campo === "OR") return condicion.some((sub) => coincide(tabla, registro, sub));
       if (campo === "AND") return condicion.every((sub) => coincide(tabla, registro, sub));
+      if (tabla === 'ocupanteReserva' && campo === 'asignaciones') {
+        return datos.asignacionOcupanteHabitacion.filter(a => a.ocupanteId === registro.id).some(a => coincide('asignacionOcupanteHabitacion', a, condicion.some));
+      }
+      if (tabla === 'asignacionOcupanteHabitacion' && campo === 'ocupante') {
+        const ocupante = datos.ocupanteReserva.find(p => p.id === registro.ocupanteId);
+        return ocupante ? coincide('ocupanteReserva', ocupante, condicion) : false;
+      }
 
       // --- Relaciones de Reservas (idénticas a pruebas-reservas.js) ---
       if (tabla === "reservaHabitacion" && campo === "reserva") {
@@ -585,6 +594,44 @@ function crearBase() {
         }
         return expandir(tabla, fila, include ?? {});
       },
+      // Etapa 4C — createMany real de Prisma: sin include, sin relaciones
+      // anidadas (tampoco las soporta Prisma acá), devuelve { count } en vez
+      // de las filas. Mismos defaults y mismas verificaciones de unicidad
+      // que `create` fila por fila (en particular, el P2002 de
+      // @@unique([reservaHabitacionId, fecha]) de ReservaNoche que ya
+      // probaba `create` — crearReservaEnTransaccion/modificarReserva pasaron
+      // a usar createMany, así que el doble tiene que reproducir el mismo
+      // rechazo acá, no solo en `create`).
+      createMany: async ({ data: filas }) => {
+        const lista = Array.isArray(filas) ? filas : [filas];
+        for (const propios of lista) {
+          const fila = { id: siguienteId(tabla), ...propios };
+          const campoFecha = CAMPO_FECHA_POR_DEFECTO[tabla];
+          if (campoFecha && fila[campoFecha] === undefined) fila[campoFecha] = ahoraFalso();
+          for (const campoBool of CAMPO_BOOLEANO_FALSE_POR_DEFECTO[tabla] ?? []) {
+            if (fila[campoBool] === undefined) fila[campoBool] = false;
+          }
+          for (const campoBool of CAMPO_BOOLEANO_TRUE_POR_DEFECTO[tabla] ?? []) {
+            if (fila[campoBool] === undefined) fila[campoBool] = true;
+          }
+          for (const [campoString, valorDefecto] of Object.entries(CAMPO_STRING_POR_DEFECTO[tabla] ?? {})) {
+            if (fila[campoString] === undefined) fila[campoString] = valorDefecto;
+          }
+          if (
+            tabla === "reservaNoche" &&
+            datos.reservaNoche.some(
+              (n) => n.reservaHabitacionId === fila.reservaHabitacionId && n.fecha?.getTime() === fila.fecha?.getTime()
+            )
+          ) {
+            throw new PrismaClientKnownRequestError("Unique constraint failed", {
+              code: "P2002",
+              meta: { target: ["reservaHabitacionId", "fecha"] },
+            });
+          }
+          datos[tabla].push(fila);
+        }
+        return { count: lista.length };
+      },
       update: async ({ where, data, include }) => {
         const fila = datos[tabla].find((r) => coincide(tabla, r, where));
         if (!fila) throw new Error(`No existe la fila a actualizar en ${tabla}`);
@@ -653,8 +700,29 @@ function crearBase() {
     };
   }
 
-  const cliente = { $queryRaw: async () => [], _datos: datos };
-  for (const tabla of TABLAS) cliente[tabla] = modelo(tabla);
+  // Etapa 4C — conteo de llamadas por tabla.método, para tests que afirman
+  // que una operación no vuelve a leer lo mismo por cada habitación/noche
+  // (ver pruebas-reservas.js, "Integridad transaccional"). Envuelve cada
+  // método de cada modelo con un contador — no toca la lógica de ninguno.
+  const contadorLlamadas = {};
+  function contarLlamada(tabla, metodo) {
+    const clave = `${tabla}.${metodo}`;
+    contadorLlamadas[clave] = (contadorLlamadas[clave] ?? 0) + 1;
+  }
+
+  const cliente = { $queryRaw: async () => [], _datos: datos, _contadorLlamadas: contadorLlamadas };
+  for (const tabla of TABLAS) {
+    const modeloBase = modelo(tabla);
+    cliente[tabla] = Object.fromEntries(
+      Object.entries(modeloBase).map(([metodo, fn]) => [
+        metodo,
+        (...args) => {
+          contarLlamada(tabla, metodo);
+          return fn(...args);
+        },
+      ])
+    );
+  }
   // Interactivo: el callback recibe el mismo cliente (todo corre "dentro"
   // de la única base en memoria). Con rollback real ante un error a mitad
   // de camino — HU-47 (check-in) y HU-61 (minibar) dependen exactamente de
@@ -720,6 +788,7 @@ function crearBase() {
   cliente._limpiar = () => {
     for (const tabla of TABLAS) datos[tabla] = [];
     for (const tabla of TABLAS) secuencias[tabla] = 0;
+    for (const clave of Object.keys(contadorLlamadas)) delete contadorLlamadas[clave];
   };
 
   // HU-89: sigue aceptando `tipo` como string de conveniencia (mínimo

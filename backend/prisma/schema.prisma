@@ -630,6 +630,9 @@ model ReservaHabitacion {
 }
 
 model Huesped {
+  paisDocumento String?
+  identidadDocumento String? @unique @db.VarChar(64)
+  ocupantes OcupanteReserva[]
   fechaNacimiento DateTime? @db.Date
   id              Int       @id @default(autoincrement())
   nombre          String
@@ -703,9 +706,6 @@ model PagoEstadia {
 
   @@index([reservaId], map: "pagos_estadia_reservaId_fkey")
   @@map("pagos_estadia")
-  garantiaDevuelta Decimal            @default(0) @db.Decimal(12, 2)
-  garantiaSeparada Boolean            @default(false)
-  garantiaAplicada Decimal            @default(0) @db.Decimal(12, 2)
 }
 
 model PagoEstadiaMedio {
@@ -965,6 +965,9 @@ model Usuario {
 
 
 model OcupanteReserva {
+  huespedId Int?
+  huesped Huesped? @relation(fields:[huespedId], references:[id])
+  esTitular Boolean @default(false)
   id                 Int                            @id @default(autoincrement())
   reservaId          Int
   identidadActiva    String?                        @unique @db.VarChar(64)

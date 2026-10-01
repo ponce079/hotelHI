@@ -1,3 +1,5 @@
+> Documento historico. Para la version actual, garantia delegada a Ricardo y pruebas locales, ver [revision del 1/10/2026](REVISION_ESTADIA_2026-10-01.md).
+
 # Integración de actualizaciones del equipo — 29/09/2026
 
 ## Nacimiento desde la reserva — 01/10/2026

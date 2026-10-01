@@ -45,7 +45,7 @@ function enDias(dias) {
   return new Date(hoy.getTime() + dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-const HUESPED = { fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
+const HUESPED = { paisDocumento:"AR", fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
 
 async function esperaError(fn, textoEsperado) {
   try {
@@ -203,7 +203,7 @@ async function main() {
           monto: 0,
           registradoPor: "X",
         }),
-      "monto"
+      "precio unitario"
     );
   });
 
@@ -271,7 +271,7 @@ async function main() {
           monto: 100,
           registradoPor: "X",
         }),
-      'En curso'
+      'reserva cerrada'
     );
   });
 
@@ -307,7 +307,7 @@ async function main() {
           registradoPor: "X",
           articuloId: 1,
         }),
-      "solo aplican"
+      "solo corresponde"
     );
   });
 

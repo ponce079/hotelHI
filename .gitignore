@@ -1,4 +1,6 @@
 .claude/
 
 .local/
+.env.estadia.local
+node_modules/
 docs/decisiones.md

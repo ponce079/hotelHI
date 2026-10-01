@@ -1,6 +1,6 @@
 // Diagnóstico de concurrencia exclusivamente local. No carga .env ni escribe datos.
 const assert = require('node:assert/strict');
-process.env.DATABASE_URL = 'mysql://root:HotelHiTestOnly@127.0.0.1:3308/hotelhi_estadia_test_v2';
+require('../../scripts/entorno-estadia.cjs').cargarEntorno('test');
 process.env.DATABASE_SSL = 'false';
 process.env.DATABASE_CONNECTION_LIMIT = '2';
 const prisma = require('../src/lib/prisma');

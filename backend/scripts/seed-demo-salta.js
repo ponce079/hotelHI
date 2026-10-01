@@ -270,7 +270,7 @@ async function crearReservaDemo({ nombre, numeroDocumento, contacto, fechaDesde,
     habitaciones,
     planTarifarioId: plan.id,
     totalEsperado: cotizadoPlan.total,
-    huesped: { fechaNacimiento:"1990-01-01", nombre, tipoDocumento: "DNI", numeroDocumento, contacto },
+    huesped: { paisDocumento:"AR", fechaNacimiento:"1990-01-01", nombre, tipoDocumento: "DNI", numeroDocumento, contacto },
     origen: "RECEPCION",
   });
   console.log(`  ✔ ${nombre} — ${reserva.codigoConfirmacion} — ${fechaDesde} al ${fechaHasta} — $${reserva.totalEstimadoAlojamiento}`);

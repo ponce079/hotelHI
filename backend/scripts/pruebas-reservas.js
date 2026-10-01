@@ -59,7 +59,7 @@ function enDias(dias) {
   return new Date(hoy.getTime() + dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-const HUESPED = { fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
+const HUESPED = { paisDocumento:"AR", fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
 
 // --------------------------------------------------------------
 // Fixture mínima de tarifas (Etapa 4A) — UNA temporada Base + UN plan BAR,
@@ -249,6 +249,100 @@ async function main() {
     await sembrarHabitacion({ numero: "101", estado: "libre" });
     await servicio.crearReserva(await alta());
     assert.equal(base._datos.habitacion[0].estado, "libre");
+  });
+
+  seccion("Integridad transaccional (Etapa 4C) — ReservaNoche.createMany");
+
+  await prueba(
+    "si el createMany de ReservaNoche falla a mitad de camino, no queda nada de la reserva (ni Reserva, ni ReservaHabitacion, ni ReservaNoche, ni un huésped nuevo huérfano)",
+    async () => {
+      limpiar();
+      await sembrarHabitacion({ numero: "101" });
+      await sembrarHabitacion({ numero: "102" });
+      // Mock que tira excepción (igual que si la conexión real se cortara a
+      // mitad del INSERT masivo contra Clever Cloud) — el resto de la
+      // transacción (resolverHuesped, reserva.create, reservaHabitacion.create)
+      // ya corrió antes de este punto, así que esto prueba justo lo que
+      // importa: que ningún paso ANTERIOR del alta sobrevive si el último
+      // falla.
+      const createManyOriginal = base.reservaNoche.createMany;
+      base.reservaNoche.createMany = async () => {
+        throw new Error("Fallo simulado a mitad del createMany (Etapa 4C, test de integridad)");
+      };
+      try {
+        await esperaError(
+          async () => servicio.crearReserva(await alta({ habitaciones: habs([1, 2]) })),
+          "Fallo simulado"
+        );
+      } finally {
+        base.reservaNoche.createMany = createManyOriginal;
+      }
+      assert.equal(base._datos.reserva.length, 0, "no debe quedar ninguna Reserva");
+      assert.equal(base._datos.reservaHabitacion.length, 0, "no debe quedar ninguna ReservaHabitacion");
+      assert.equal(base._datos.reservaNoche.length, 0, "no debe quedar ninguna ReservaNoche");
+      assert.equal(base._datos.huesped.length, 0, "no debe quedar un huésped nuevo huérfano");
+    }
+  );
+
+  seccion("Rendimiento (Etapa 4C) — las lecturas de cotización no crecen con noches ni se repiten por habitación");
+
+  await prueba("la cantidad de consultas de cotización no crece con la cantidad de noches (misma habitación)", async () => {
+    limpiar();
+    await sembrarHabitacion({ numero: "101" });
+    await servicio.crearReserva(await alta({ fechaDesde: enDias(10), fechaHasta: enDias(12) })); // 2 noches
+    const contador2noches = { ...base._contadorLlamadas };
+
+    limpiar();
+    await sembrarHabitacion({ numero: "101" });
+    await servicio.crearReserva(await alta({ fechaDesde: enDias(10), fechaHasta: enDias(25) })); // 15 noches
+    const contador15noches = { ...base._contadorLlamadas };
+
+    for (const clave of [
+      "temporada.findMany",
+      "modificadorDiaSemana.findMany",
+      "planTarifario.findMany",
+      "tarifa.findMany",
+      "tipoHabitacion.findUnique",
+    ]) {
+      assert.equal(
+        contador15noches[clave],
+        contador2noches[clave],
+        `${clave}: se esperaba la misma cantidad de llamadas con 2 y con 15 noches (dio ${contador2noches[clave]} vs ${contador15noches[clave]})`
+      );
+    }
+    assert.equal(contador15noches["reservaNoche.createMany"], 1, "las 15 noches tienen que crearse con una sola createMany");
+    assert.equal(contador15noches["reservaNoche.create"] ?? 0, 0, "no debe haber ningún create individual de ReservaNoche");
+  });
+
+  await prueba("las lecturas compartidas por la reserva (temporadas, planes, modificadores) se piden UNA vez, no una por habitación", async () => {
+    limpiar();
+    await sembrarHabitacion({ numero: "101" });
+    await servicio.crearReserva(await alta({ habitaciones: habs([1]) }));
+    const unaHabitacion = { ...base._contadorLlamadas };
+
+    limpiar();
+    await sembrarHabitacion({ numero: "101" });
+    await sembrarHabitacion({ numero: "102" });
+    await sembrarHabitacion({ numero: "103" });
+    await servicio.crearReserva(await alta({ habitaciones: habs([1, 2, 3]) }));
+    const tresHabitaciones = { ...base._contadorLlamadas };
+
+    for (const clave of ["temporada.findMany", "modificadorDiaSemana.findMany", "planTarifario.findMany"]) {
+      assert.equal(
+        tresHabitaciones[clave],
+        unaHabitacion[clave],
+        `${clave}: con 3 habitaciones se pidió ${tresHabitaciones[clave]} veces, se esperaba la misma cantidad que con 1 (${unaHabitacion[clave]})`
+      );
+    }
+    // Las 3 habitaciones son del mismo tipo (sembrarHabitacion sin tipo
+    // explícito reusa el mismo TipoHabitacion) — tarifa.findMany sigue
+    // siendo UNA sola consulta para todos los tipos presentes en la reserva.
+    assert.equal(
+      tresHabitaciones["tarifa.findMany"],
+      unaHabitacion["tarifa.findMany"],
+      "tarifa.findMany debería seguir siendo una sola consulta con 3 habitaciones del mismo tipo"
+    );
+    assert.equal(tresHabitaciones["reservaNoche.createMany"], 1, "una sola createMany para las 3 habitaciones juntas");
   });
 
   seccion("HU-36 / HU-38 — Validación de disponibilidad (solapamiento)");
@@ -491,6 +585,10 @@ async function main() {
     await sembrarHabitacion({ numero: "101" });
     await sembrarHabitacion({ numero: "102" });
     const reserva = await servicio.crearReserva(await alta({ habitaciones: habs([1]) }));
+    await esperaError(() => servicio.modificarReserva(reserva.id, { habitaciones: habs([2]) }), 'Hay ocupantes');
+    const estadia = require('../src/modulos/estadia/estadia.servicio');
+    const titular = (await estadia.listar(reserva.id))[0];
+    await estadia.accion(reserva.id, titular.id, { accion: 'cancelar', operador: 'Prueba', motivo: 'Cambio de habitacion' });
     const modificada = await servicio.modificarReserva(reserva.id, { habitaciones: habs([2]) });
     assert.equal(modificada.habitaciones.length, 1);
     assert.equal(modificada.habitaciones[0].numero, "102");

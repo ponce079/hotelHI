@@ -5,14 +5,9 @@ const fs = require('node:fs');
 const net = require('node:net');
 const { spawn, spawnSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
-const database = 'hotelhi_estadia_demo';
-Object.assign(process.env, {
-  DATABASE_URL: `mysql://root:HotelHiTestOnly@127.0.0.1:3308/${database}`,
-  DATABASE_SSL: 'false', DATABASE_CONNECTION_LIMIT: '2',
-  AUTH_SECRET: 'hotelhi-solo-demostracion-local',
-  SMTP_HOST: '', SMTP_USER: '', SMTP_PASS: '', SMTP_FROM: '',
-  PORT: '3000',
-});
+const destino = require('./entorno-estadia.cjs').cargarEntorno();
+process.env.DATABASE_CONNECTION_LIMIT = '2';
+process.env.PORT = '3000';
 function disponible() {
   return new Promise(resolve => {
     const socket = net.createConnection({ host: '127.0.0.1', port: 3308 });
@@ -47,12 +42,12 @@ async function main() {
   await iniciarBase();
   if (process.argv[2] === 'setup') {
     const mariadb = require(require.resolve('mariadb', { paths: [path.join(root, 'backend')] }));
-    const c = await mariadb.createConnection({ host: '127.0.0.1', port: 3308, user: 'root', password: 'HotelHiTestOnly' });
+    const c = await mariadb.createConnection({ host: '127.0.0.1', port: 3308, user: decodeURIComponent(destino.username), password: decodeURIComponent(destino.password) });
     try { await c.query('CREATE DATABASE IF NOT EXISTS hotelhi_estadia_demo CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'); }
     finally { await c.end(); }
     comando(['node_modules/prisma/build/index.js', 'generate']);
-    // Sin --accept-data-loss: una incompatibilidad destructiva detiene el setup.
-    comando(['node_modules/prisma/build/index.js', 'db', 'push']);
+    // Solo agrega el esquema de estadia sobre la base de tarifas ya preparada.
+    comando(['scripts/actualizar-esquema-estadia.js', '--aplicar']);
     comando(['scripts/seed-estadia-local.js']);
   } else {
     console.log('PRUEBAS LOCALES: hotelhi_estadia_demo en 127.0.0.1:3308. Correos desactivados.');

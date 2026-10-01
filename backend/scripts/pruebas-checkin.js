@@ -47,7 +47,7 @@ function enDias(dias) {
   return new Date(hoy.getTime() + dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-const HUESPED = { fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
+const HUESPED = { paisDocumento:"AR", fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
 // Efectivo, sin referencia: el default más simple que pasa validarGarantia.
 // El monto ya no lo manda el cliente — es fijo (MONTO_GARANTIA en
 // checkIn.constantes.js), así que no hace falta pasarlo acá.
@@ -152,7 +152,7 @@ async function crearReservaFixture(extra = {}) {
     const cotizacion = await reservasServicio.cotizarParaReserva({ fechaDesde, fechaHasta, planTarifarioId, habitaciones, canal: "RECEPCION" });
     totalEsperado = cotizacion.planes[0]?.total ?? 0;
   }
-  return reservasServicio.crearReserva({
+  const reserva = await reservasServicio.crearReserva({
     fechaDesde,
     fechaHasta,
     habitaciones,
@@ -161,6 +161,7 @@ async function crearReservaFixture(extra = {}) {
     huesped: { ...HUESPED },
     ...extra,
   });
+  return require('./_ocupantesFixture').completarFixture(reserva, habitaciones);
 }
 
 // Etapa 4A (ajuste A) — mismo criterio para el walk-in: planTarifarioId y
@@ -177,6 +178,8 @@ async function walkInFixture(extra = {}) {
     totalEsperado = cotizacion.planes[0]?.total ?? 0;
   }
   return checkInServicio.registrarCheckInWalkIn({
+    operador: "Prueba",
+    personas: require('./_ocupantesFixture').personasFixture(habitaciones, extra.huesped || HUESPED, fechaDesde, fechaHasta),
     fechaHasta,
     habitaciones,
     planTarifarioId,
@@ -212,7 +215,7 @@ async function main() {
     limpiar();
     await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture({
-      huesped: { nombre: "John Smith", tipoDocumento: "Pasaporte", numeroDocumento: "AB1234567", contacto: "john@mail.com" },
+      huesped: { paisDocumento:"AR", fechaNacimiento: "1990-01-01", nombre: "John Smith", tipoDocumento: "Pasaporte", numeroDocumento: "AB1234567", contacto: "john@mail.com" },
     });
     const resultado = await checkInServicio.buscarReservaParaCheckIn({ codigo: "AB1234567" });
     assert.equal(resultado.reserva.id, reserva.id);

@@ -27,7 +27,7 @@ export function Modal({ titulo, subtitulo, extra, onClose, children, ancho = "ma
           </div>
           <div className="flex flex-none items-center gap-3">
             {extra}
-            <button type="button" onClick={onClose} className="cursor-pointer rounded-md p-1 text-piedra hover:text-error">
+            <button type="button" aria-label="Cerrar" onClick={onClose} className="cursor-pointer rounded-md p-1 text-piedra hover:text-error">
               <X size={18} />
             </button>
           </div>

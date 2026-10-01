@@ -1,3 +1,5 @@
+> Documento historico. Para la version actual, garantia delegada a Ricardo y pruebas locales, ver [revision del 1/10/2026](REVISION_ESTADIA_2026-10-01.md).
+
 # Informe de trabajo de HotelHI
 
 **Período solicitado:** desde el lunes 28 de septiembre de 2026, 11:57 AM, hasta la última revisión registrada del martes 29 de septiembre de 2026. Zona de referencia: Argentina.

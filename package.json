@@ -16,5 +16,8 @@
     "db:check": "npm --prefix backend run db:check",
     "db:push": "npm --prefix backend run db:push",
     "db:seed": "npm --prefix backend run db:seed"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.9"
   }
 }

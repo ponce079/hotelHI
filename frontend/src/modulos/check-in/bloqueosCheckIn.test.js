@@ -3,7 +3,7 @@ import { bloqueosCheckIn } from './bloqueosCheckIn';
 const listo = {
   resultado: { reserva: { id: 5 }, puedeIniciarCheckIn: true }, titularPreparado: true,
   ocupantes: { isSuccess: true, isFetching: false },
-  resumen: [{ id: 1, numero: '301', capacidad: 3, esperadas:3, edadesCoinciden:true, registradas: 3, verificadas: 3 }],
+  resumen: [{ id: 1, numero: '301', capacidad: 3, esperadas:3,titulares:1, edadesCoinciden:true, registradas: 3, verificadas: 3 }],
   form: { documento: '30111222', garantiaConfirmada: true },
 };
 describe('motivos que impiden confirmar check-in',()=>{

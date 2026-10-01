@@ -1,13 +1,61 @@
-const { responderEsperaConexion } = require('../../lib/erroresConexion');
-const router=require('express').Router();
-const s=require('./estadia.servicio');
-const handler=fn=>async(req,res)=>{try{res.json(await fn(req));}catch(e){if(responderEsperaConexion(res,e))return;if(e.code==='P2002')return res.status(409).json({error:'Esta persona ya tiene un ingreso activo en otra estadía.'});if(!e.statusCode)console.error('[estadia]',e);if(['P2021','P2022'].includes(e.code))return res.status(503).json({codigo:'ESQUEMA_ESTADIA_INCOMPLETO',error:'La base de datos no tiene todas las tablas o columnas de estadía. Se debe completar la actualización de la base antes de continuar.'});res.status(e.statusCode||500).json({...(e.statusCode&&e.campos?{campos:e.campos}:{}),error:e.statusCode?e.message:'No se pudo completar la operación de estadía.'});}};
-router.get('/alojados',handler(r=>s.alojados(String(r.query.q||'').slice(0,100))));
-router.get('/:reservaId/ocupantes',handler(r=>s.listar(r.params.reservaId)));
-router.post('/:reservaId/titular',handler(r=>require('./titular.servicio').asegurarTitular(r.params.reservaId,r.body.operador)));
-router.post('/:reservaId/ocupantes',handler(r=>s.guardar(r.params.reservaId,null,r.body)));
-router.put('/:reservaId/ocupantes/:id',handler(r=>s.guardar(r.params.reservaId,r.params.id,r.body)));
-router.post('/:reservaId/ocupantes/:id/accion',handler(r=>s.accion(r.params.reservaId,r.params.id,r.body)));
-router.get('/:reservaId/historial',handler(r=>s.historial(r.params.reservaId)));
-router.post('/:reservaId/garantia',handler(r=>s.liquidarGarantia(r.params.reservaId,r.body)));
-module.exports=router;
+const { responderEsperaConexion } = require("../../lib/erroresConexion");
+const router = require("express").Router();
+const s = require("./estadia.servicio");
+const handler = (fn) => async (req, res) => {
+  try {
+    res.json(await fn(req));
+  } catch (e) {
+    if (responderEsperaConexion(res, e)) return;
+    if (e.code === "P2002")
+      return res.status(409).json({
+        error: "Esta persona ya tiene un ingreso activo en otra estadía.",
+      });
+    if (!e.statusCode) console.error("[estadia]", e);
+    if (["P2021", "P2022"].includes(e.code))
+      return res.status(503).json({
+        codigo: "ESQUEMA_ESTADIA_INCOMPLETO",
+        error:
+          "La base de datos no tiene todas las tablas o columnas de estadía. Se debe completar la actualización de la base antes de continuar.",
+      });
+    res.status(e.statusCode || 500).json({
+      ...(e.statusCode && e.campos ? { campos: e.campos } : {}),
+      error: e.statusCode
+        ? e.message
+        : "No se pudo completar la operación de estadía.",
+    });
+  }
+};
+router.get(
+  "/alojados",
+  handler((r) => s.alojados(String(r.query.q || "").slice(0, 100))),
+);
+router.get(
+  "/:reservaId/ocupantes",
+  handler((r) => s.listar(r.params.reservaId)),
+);
+router.post(
+  "/:reservaId/titular",
+  handler((r) =>
+    require("./titular.servicio").asegurarTitular(
+      r.params.reservaId,
+      r.body.operador,
+    ),
+  ),
+);
+router.post(
+  "/:reservaId/ocupantes",
+  handler((r) => s.guardar(r.params.reservaId, null, r.body)),
+);
+router.put(
+  "/:reservaId/ocupantes/:id",
+  handler((r) => s.guardar(r.params.reservaId, r.params.id, r.body)),
+);
+router.post(
+  "/:reservaId/ocupantes/:id/accion",
+  handler((r) => s.accion(r.params.reservaId, r.params.id, r.body)),
+);
+router.get(
+  "/:reservaId/historial",
+  handler((r) => s.historial(r.params.reservaId)),
+);
+module.exports = router;

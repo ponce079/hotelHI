@@ -1,20 +1,22 @@
 # HotelHI — desarrollo local
 
+Estado de esta rama: [correcciones de la revision del 1/10/2026](docs/REVISION_ESTADIA_2026-10-01.md).
+
 Sistema de gestión hotelera con React 19, Vite y Tailwind en `frontend/`,
 Express 5 y Prisma 7 en `backend/`, y una base MySQL/MariaDB.
 Usar Node.js 24 LTS (la instalación local se verificó con 24.19.0).
 
 La ampliación de ocupantes y cargos por habitación está documentada en
-[MODIFICACIONES_ESTADIA.md](MODIFICACIONES_ESTADIA.md): incluye el esquema
+[MODIFICACIONES_ESTADIA.md](docs/MODIFICACIONES_ESTADIA.md): incluye el esquema
 agregado a la base compartida, la actualización del equipo, respaldos,
 pruebas y limitaciones conocidas.
 
 La revisión posterior a las actualizaciones del equipo está en
-[INTEGRACION_ACTUALIZACIONES.md](INTEGRACION_ACTUALIZACIONES.md), con los cambios
+[INTEGRACION_ACTUALIZACIONES.md](docs/INTEGRACION_ACTUALIZACIONES.md), con los cambios
 restaurados, las comprobaciones y la lista de archivos modificados.
 
 El registro detallado del período solicitado desde el lunes 28/09 a las 11:57 está en
-[INFORME_TRABAJO_DESDE_2026-09-28_1157.md](INFORME_TRABAJO_DESDE_2026-09-28_1157.md).
+[INFORME_TRABAJO_DESDE_2026-09-28_1157.md](docs/INFORME_TRABAJO_DESDE_2026-09-28_1157.md).
 Incluye la secuencia reconstruida, el inventario de archivos, el impacto en la base,
 las pruebas y las diferencias entre lo documentado inicialmente y el estado actual.
 
@@ -27,9 +29,9 @@ entorno aislado preparado en esta computadora:
 npm.cmd run dev:estadia
 ```
 
-Usuario `recepcionista.prueba`, contraseña local `Prueba2026!`.
+Usuario `recepcionista.prueba`, contraseña local `<SEED_USUARIOS_PASSWORD>`.
 Este comando usa `hotelhi_estadia_demo` en `127.0.0.1:3308`, desactiva correos
-y no modifica `backend/.env`. Guía y preparación: [PRUEBAS_ESTADIA_LOCAL.md](PRUEBAS_ESTADIA_LOCAL.md).
+y no modifica `backend/.env`. Guía y preparación: [PRUEBAS_ESTADIA_LOCAL.md](docs/PRUEBAS_ESTADIA_LOCAL.md).
 La base compartida no tiene habilitada esta ampliación de ocupantes;
 el comando genérico de abajo usa la conexión de `.env` y no prepara su esquema.
 

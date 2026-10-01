@@ -1,3 +1,5 @@
+> Documento historico. Para la version actual, garantia delegada a Ricardo y pruebas locales, ver [revision del 1/10/2026](REVISION_ESTADIA_2026-10-01.md).
+
 # Pruebas locales de estadía y tarifas — 30/09/2026
 
 ## Entorno
@@ -12,7 +14,7 @@ npm.cmd run dev:estadia
 ```
 
 Abrir http://127.0.0.1:5173 e iniciar sesión con
-`recepcionista.prueba` / `Prueba2026!`. También están disponibles
+`recepcionista.prueba` / `<SEED_USUARIOS_PASSWORD>`. También están disponibles
 `gerente.prueba` y `admin.prueba` con esa contraseña inicial.
 
 Si los servidores ya están levantados, usar directamente esa dirección.

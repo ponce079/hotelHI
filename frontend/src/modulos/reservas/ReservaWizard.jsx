@@ -1,3 +1,4 @@
+import { PaisDocumentoReserva } from '../estadia/PaisDocumentoReserva';
 import { validarNacimientoTitular } from '../reservas/validarNacimientoTitular';
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -146,6 +147,7 @@ function estadoInicial(reserva, valoresIniciales) {
       tipoDocumento: reserva.huesped?.tipoDocumento ?? TIPOS_DOCUMENTO[0],
       numeroDocumento: reserva.huesped?.numeroDocumento ?? "",
       fechaNacimiento: reserva.huesped?.fechaNacimiento?.slice(0,10) ?? "",
+      paisDocumento: reserva.huesped?.paisDocumento ?? "",
       contacto: reserva.huesped?.contacto ?? "",
       preferencias: reserva.huesped?.preferencias ?? "",
     },
@@ -197,6 +199,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   const erroresHuesped = validarHuesped(form.huesped);
   const errorNacimiento = validarNacimientoTitular(form.huesped.fechaNacimiento, form.fechaDesde || new Date().toLocaleDateString('en-CA',{timeZone:'America/Argentina/Buenos_Aires'}));
   if(errorNacimiento) erroresHuesped.fechaNacimiento = errorNacimiento;
+  if (!form.huesped.paisDocumento?.trim()) erroresHuesped.paisDocumento = 'Selecciona el pais emisor del documento.';
   const huespedValido = Object.keys(erroresHuesped).length === 0;
   function errorHuesped(campo) {
     return huespedTocado[campo] || intentoConfirmarHuesped ? erroresHuesped[campo] : undefined;
@@ -341,6 +344,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       tipoDocumento: form.huesped.tipoDocumento,
       numeroDocumento: form.huesped.numeroDocumento.trim(),
       fechaNacimiento: form.huesped.fechaNacimiento,
+      paisDocumento: form.huesped.paisDocumento,
       contacto: form.huesped.contacto.trim(),
       preferencias: form.huesped.preferencias.trim() || undefined,
     },
@@ -845,6 +849,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
               error={errorHuesped("nombre")}
               placeholder="Ana Pérez"
             />
+            <PaisDocumentoReserva value={form.huesped.paisDocumento} onChange={value=>actualizarHuesped('paisDocumento',value)} onBlur={()=>tocarHuesped('paisDocumento')} error={errorHuesped('paisDocumento')} />
             <Input label="Fecha de nacimiento del titular *" type="date" value={form.huesped.fechaNacimiento || ''} onChange={e=>actualizarHuesped('fechaNacimiento',e.target.value)} onBlur={()=>tocarHuesped('fechaNacimiento')} error={errorHuesped('fechaNacimiento')} />
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3">
               <Select

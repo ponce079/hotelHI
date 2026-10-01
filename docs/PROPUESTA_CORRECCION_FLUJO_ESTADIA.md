@@ -1,3 +1,5 @@
+> Documento historico. Para la version actual, garantia delegada a Ricardo y pruebas locales, ver [revision del 1/10/2026](REVISION_ESTADIA_2026-10-01.md).
+
 # Revisión y propuesta de corrección del flujo de estadía
 
 Fecha: 29/09/2026. Estado: diagnóstico y diseño; cambios funcionales todavía no implementados en esta revisión.
