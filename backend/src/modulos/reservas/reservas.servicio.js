@@ -983,6 +983,10 @@ async function crearReservaEnTransaccion(tx, datos, { incluirTitular = true } = 
   if (incluirTitular) {
     await require('../estadia/titular.servicio').incorporarEnTransaccion(tx, {...reserva, reservaHabitaciones:reserva.reservaHabitaciones.map(rh=>({...rh,habitacion:habitacionesDb.find(h=>h.id===rh.habitacionId)}))}, huespedGuardado, 'Sistema: alta de reserva', true);
   }
+
+  // Etapa 4C: la relectura con include (INCLUDE_RESERVA son ~9 consultas,
+  // solo para armar la respuesta) se saca de la transacción — ver el
+  // comentario junto a cada llamador. Acá adentro basta con el id.
   return reserva;
 }
 
@@ -1041,7 +1045,9 @@ async function crearReserva(data) {
 //
 // No reimplementa nada: reusa crearReservaEnTransaccion tal cual (mismo
 // código que usa el alta sin seña y el walk-in de Check-in) y
-// pagoEstadia.crearPagoEnTransaccion, conservando el contrato de master.
+// pagoEstadia.crearPagoEnTransaccion tal cual (mismo código que usa el
+// cobro de HU-50) — lo único nuevo acá es que corren dentro de la MISMA
+// transacción en vez de en dos llamadas separadas.
 //
 // Require diferido, mismo motivo que en cancelarReserva: pagoEstadia.
 // servicio.js importa checkOut.servicio.js, que importa este archivo — un
@@ -1075,7 +1081,11 @@ async function crearReservaConSena(data) {
           // pueda estar disputando su saldo.
           let pagoCreado;
           try {
-            pagoCreado = await pagoEstadiaServicio.crearPagoEnTransaccion(tx, {reservaId:reservaCreada.id,medios:data?.medios,concepto:'Seña'});
+            pagoCreado = await pagoEstadiaServicio.crearPagoEnTransaccion(tx, {
+              reservaId: reservaCreada.id,
+              medios: data?.medios,
+              concepto: CONCEPTO_SENIA,
+            });
           } catch (err) {
             // El ErrorDeNegocio de pagoEstadia es OTRA clase (mismo caso que
             // calcularSaldoReserva reenvolviendo el de checkOut, en
@@ -1109,7 +1119,8 @@ async function crearReservaConSena(data) {
         throw err;
       });
 
-      const reservaCompleta = await prisma.reserva.findUnique({where:{id:reserva.id},include:INCLUDE_RESERVA});
+      // Relectura con include fuera del commit (ver OPCIONES_TRANSACCION).
+      const reservaCompleta = await prisma.reserva.findUnique({ where: { id: reserva.id }, include: INCLUDE_RESERVA });
       const confirmacionEmail = await enviarConfirmacionPorEmail(reservaCompleta);
       return { ...formatearReserva(reservaCompleta), confirmacionEmail, pagoSenia: pago };
     } catch (err) {
