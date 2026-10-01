@@ -21,7 +21,9 @@ function listening() {
 
 async function main() {
   if (!fs.existsSync(config) || !fs.existsSync(executable)) {
-    throw new Error("MariaDB portatil no esta preparada. Consulta README.md para configurar una base existente.");
+    throw new Error(
+      "MariaDB portatil no esta preparada. Consultá docs/README_ESTADIA.md para configurar una base existente.",
+    );
   }
   if (process.argv[2] === "stop") {
     if (!(await listening())) return;

@@ -64,9 +64,9 @@ rama. Se mantiene el tratamiento de pagos de master hasta integrar el módulo de
 Ricardo. Eso todavía incluye el depósito de check-in en los pagos de la cuenta;
 esta rama no implementa la futura preautorización con tarjeta ni su liquidación.
 
-El registro existente del depósito usa la misma conexión transaccional del ingreso,
-para evitar que una segunda conexión espere el bloqueo de la propia reserva.
-Esto no cambia importes ni políticas de garantía.
+`registrarGarantia` y su ubicación (después de la transacción del check-in, con la
+conexión común) quedan exactamente como en master, a la espera del módulo de Ricardo.
+Esta rama no cambia importes, políticas ni transaccionalidad de la garantía.
 
 Se mantienen cargos y verificaciones por habitación, exclusión de consumos anulados
 de la cuenta y cierre de ocupantes/asignaciones al completar el check-out. Se
@@ -76,8 +76,11 @@ conserva el comportamiento de mantenimiento y limpieza de master.
 
 Único ejecutor: `backend/scripts/actualizar-esquema-estadia.js`.
 Único SQL de esta ampliación: `backend/prisma/estadia-ocupantes-cargos.sql`.
-Incluye nacimiento, país e identidad del huésped, FK de ocupante y titular explícito,
-además de las tablas de estadía y campos de cargos. No altera tablas de tarifas.
+Incluye nacimiento, país e identidad del huésped; nacionalidad, país de residencia,
+domicilio y localidad (datos de la persona, en `huespedes`); FK de ocupante y titular
+explícito, además de las tablas de estadía y campos de cargos. No altera tablas de
+tarifas. Una base local que ya hubiera aplicado una versión anterior de este SQL
+conserva las columnas de residencia que tenía `ocupantes_reserva` (nullable, sin uso).
 
 Sin `--aplicar`, muestra el plan. Con `--aplicar`, respalda las tablas existentes
 afectadas en `.local/respaldos-estadia/`, agrega los elementos faltantes y comprueba
@@ -90,7 +93,9 @@ esta entrega no se conecta a Clever Cloud.
 
 Copiar `.env.estadia.example` a `.env.estadia.local` y completar las variables.
 El archivo local, las bases y los respaldos están excluidos de Git. Los lanzadores
-solo aceptan las bases demo/test previstas en `127.0.0.1:3308`, y desactivan correo.
+`dev:estadia` y `setup:estadia` solo aceptan la base demo prevista en `127.0.0.1:3308`
+y desactivan correo. Las pruebas de integración usan la base local que indique
+`ESTADIA_TEST_DATABASE_URL` (ver "Pruebas").
 El seed requiere `SEED_USUARIOS_PASSWORD`; no hay contraseña por defecto.
 
 `setup:estadia` requiere previamente las tablas base de tarifas. Aplica únicamente
@@ -108,8 +113,24 @@ npm.cmd run build
 ```
 
 También puede ejecutarse `npm.cmd --prefix backend run test:integracion`.
-La integración requiere MariaDB local y crea datos ficticios en
-`hotelhi_adaptacion_test`; nunca debe cambiarse por la conexión compartida.
+
+La integración corre contra cualquier base LOCAL (MySQL o MariaDB) indicada con
+`ESTADIA_TEST_DATABASE_URL`, en el entorno o en `.env.estadia.local`:
+
+```powershell
+$env:ESTADIA_TEST_DATABASE_URL = "mysql://usuario:clave@127.0.0.1:3306/hotelhi_pruebas"
+npm.cmd run test:estadia
+```
+
+La base tiene que tener las tablas del resto del sistema (`npm run db:push` con
+`DATABASE_URL` apuntando a esa base local); el test completa las de estadía con la
+migración aditiva. Se niega a correr si el host no es local y no lee `backend/.env`.
+Crea datos ficticios; deja en 0 los recargos por día de la semana mientras corre y los
+restituye al terminar, y calcula todos sus totales con el motor de cotización.
+
+`npm.cmd run test:consultas` verifica, sin base de datos, que las transacciones de
+estadía hacen la misma cantidad de consultas con 2 o con 10 personas y con 1 o con 5
+habitaciones.
 
 Casos reales cubiertos: titular automático, menor y contacto de responsable,
 capacidad, verificaciones, seña, rollback, cargos y anulaciones por habitación,
@@ -128,3 +149,26 @@ la nueva cotización. Aceptarla: la reserva pasa a dos adultos y el alojamiento
 refleja las noches recotizadas. Una tercera persona debe rechazarse por capacidad.
 En otra prueba, quitar la marca de titular o marcar a ambos: el ingreso se bloquea
 con un mensaje que explica la causa.
+
+## Correcciones posteriores (PR `fix/estadia-revision` hacia esta rama)
+
+Derivadas de la auditoría de esta rama. Un commit por corrección:
+
+1. **Nacionalidad y residencia en `Huesped`.** `nacionalidad`, `paisResidencia`, `domicilio`
+   y `localidad` son datos de la persona y viven en `huespedes`; `ocupantes_reserva` solo
+   guarda el vínculo (`huespedId`) y los datos propios de la estadía. Al registrar un
+   ocupante la ficha guarda los últimos datos declarados (un dato vacío no borra el
+   anterior). La API sigue devolviendo esos campos en la ficha del ocupante. Catálogo ISO
+   3166-1 alfa-2 en `backend/src/lib/paises.js` y `frontend/src/lib/paises.js` (copias
+   idénticas, verificadas por un test).
+2. **Consultas fijas por transacción.** Ingreso (`UPDATE ... CASE` único), carga del
+   walk-in en lote, `modificarReserva`, check-in y check-out ya no hacen consultas en
+   bucle. `identidadActiva` conserva su semántica: se asigna al ingresar y se libera al
+   salir; si la persona ya figura alojada en otra estadía, la sentencia completa se
+   rechaza (409). El máximo del walk-in es la capacidad real de las habitaciones.
+3. **`db:push`** se niega a correr si `DATABASE_URL` no es local.
+4. **Garantía** y `CONCEPTO_SENIA` como en master.
+5. **Test de integración** con totales del motor, base local configurable y pruebas de
+   tope de capacidad y de identidad activa única.
+6. **Formato** Prettier (`--print-width 120`) de los archivos de estadía.
+7. **Documentación:** el README de estado pasó a `docs/README_ESTADIA.md`.

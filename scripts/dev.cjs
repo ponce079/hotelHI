@@ -9,7 +9,7 @@ for (const file of [
   "frontend/node_modules/vite/bin/vite.js",
 ]) {
   if (!existsSync(path.join(root, file))) {
-    console.error(`Falta ${file}. Segui los pasos de README.md antes de iniciar.`);
+    console.error(`Falta ${file}. Seguí los pasos de docs/README_ESTADIA.md antes de iniciar.`);
     process.exit(1);
   }
 }
