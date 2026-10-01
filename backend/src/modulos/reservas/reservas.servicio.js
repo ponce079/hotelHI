@@ -41,6 +41,7 @@ const {
 // require — ver el comentario en lib/tipoHabitacion.js.
 const { hoyComoFechaUTC, parsearFechaSinHora: parsearFechaSinHoraBase } = require("../../lib/fechas");
 const { conTipoPlano } = require("../../lib/tipoHabitacion");
+const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 // Sin ciclo: pagoEstadia.constantes.js no importa nada (a diferencia de
 // pagoEstadia.servicio.js, que sí forma ciclo — ver el require diferido en
 // crearReservaConSena, más abajo).
@@ -406,11 +407,23 @@ function condicionSolapamiento(fechaDesde, fechaHasta, excluirReservaId = null) 
 }
 
 async function buscarConflictos(cliente, { habitacionIds, fechaDesde, fechaHasta, excluirReservaId }) {
-  return cliente.reservaHabitacion.findMany({
+  // Etapa 4C — primero un findMany liviano (solo id, sin include): Prisma
+  // igual ejecuta las consultas del `include` aunque el resultado base esté
+  // vacío, así que el camino feliz (sin conflictos, la inmensa mayoría de
+  // las altas) terminaba pagando 2 consultas de más, dos veces (acá y en el
+  // chequeo protegido dentro de la transacción). El detalle completo
+  // (habitación, código, fechas) para errorPorConflictos solo se pide si
+  // de verdad hay algo que reportar.
+  const coincidencias = await cliente.reservaHabitacion.findMany({
     where: {
       habitacionId: { in: habitacionIds },
       reserva: condicionSolapamiento(fechaDesde, fechaHasta, excluirReservaId),
     },
+    select: { id: true },
+  });
+  if (coincidencias.length === 0) return [];
+  return cliente.reservaHabitacion.findMany({
+    where: { id: { in: coincidencias.map((c) => c.id) } },
     include: {
       habitacion: { select: { id: true, numero: true } },
       reserva: { select: { id: true, codigoConfirmacion: true, fechaDesde: true, fechaHasta: true, estado: true } },
@@ -920,27 +933,27 @@ async function crearReservaEnTransaccion(tx, datos) {
   });
 
   // Precio congelado por noche (HU-96) — una ReservaNoche por habitación y
-  // noche, con el detalle que ya calculó cotizarReserva arriba. Loop
-  // aparte (no nested-create de 2 niveles): más simple, y sin sorpresas en
-  // el doble de Prisma de los tests, que solo sabe expandir un nivel de
-  // relación anidada.
+  // noche, con el detalle que ya calculó cotizarReserva arriba. Etapa 4C:
+  // una sola `createMany` con TODAS las filas de TODAS las habitaciones
+  // (antes: un `create` por noche, dentro de un loop anidado — contra
+  // Clever Cloud, una reserva de varias noches/habitaciones podía superar
+  // el timeout de la transacción solo por la cantidad de round-trips; ver
+  // docs/bug-timeout-transacciones.md). Nested-create de 2 niveles tampoco
+  // sirve acá: el doble de Prisma de los tests solo sabe expandir un nivel
+  // de relación anidada.
   const reservaHabitacionIdPorHabitacion = new Map(reserva.reservaHabitaciones.map((rh) => [rh.habitacionId, rh.id]));
-  for (const habitacionPlan of plan.habitaciones) {
-    const reservaHabitacionId = reservaHabitacionIdPorHabitacion.get(habitacionPlan.habitacionId);
-    for (const noche of habitacionPlan.detalle) {
-      await tx.reservaNoche.create({
-        data: {
-          reservaHabitacionId,
-          fecha: parsearFechaSinHora(noche.fecha, "fecha"),
-          temporadaId: noche.temporadaId,
-          tarifaId: noche.tarifaId,
-          planTarifarioId,
-          precioNoche: noche.precioNoche,
-          origen: "MOTOR",
-        },
-      });
-    }
-  }
+  const filasReservaNoche = plan.habitaciones.flatMap((habitacionPlan) =>
+    habitacionPlan.detalle.map((noche) => ({
+      reservaHabitacionId: reservaHabitacionIdPorHabitacion.get(habitacionPlan.habitacionId),
+      fecha: parsearFechaSinHora(noche.fecha, "fecha"),
+      temporadaId: noche.temporadaId,
+      tarifaId: noche.tarifaId,
+      planTarifarioId,
+      precioNoche: noche.precioNoche,
+      origen: "MOTOR",
+    }))
+  );
+  await tx.reservaNoche.createMany({ data: filasReservaNoche });
 
   await tx.notificacion.create({
     data: armarNotificacionConfirmacion({
@@ -951,7 +964,10 @@ async function crearReservaEnTransaccion(tx, datos) {
     }),
   });
 
-  return tx.reserva.findUnique({ where: { id: reserva.id }, include: INCLUDE_RESERVA });
+  // Etapa 4C: la relectura con include (INCLUDE_RESERVA son ~9 consultas,
+  // solo para armar la respuesta) se saca de la transacción — ver el
+  // comentario junto a cada llamador. Acá adentro basta con el id.
+  return reserva;
 }
 
 // HU-36 — alta individual o grupal (una fila ReservaHabitacion por
@@ -977,10 +993,9 @@ async function crearReserva(data) {
   let ultimoError;
   for (let intento = 0; intento < MAX_INTENTOS_CODIGO; intento += 1) {
     try {
-      const reserva = await prisma.$transaction((tx) => crearReservaEnTransaccion(tx, datos), {
-        timeout: 15000,
-        maxWait: 10000,
-      });
+      const creada = await prisma.$transaction((tx) => crearReservaEnTransaccion(tx, datos), OPCIONES_TRANSACCION);
+      // Relectura con include fuera del commit (ver OPCIONES_TRANSACCION).
+      const reserva = await prisma.reserva.findUnique({ where: { id: creada.id }, include: INCLUDE_RESERVA });
       const confirmacionEmail = await enviarConfirmacionPorEmail(reserva);
       return { ...formatearReserva(reserva), confirmacionEmail };
     } catch (err) {
@@ -1065,11 +1080,13 @@ async function crearReservaConSena(data) {
           }
           return { reserva: reservaCreada, pago: pagoCreado };
         },
-        { timeout: 15000, maxWait: 10000 }
+        OPCIONES_TRANSACCION
       );
 
-      const confirmacionEmail = await enviarConfirmacionPorEmail(reserva);
-      return { ...formatearReserva(reserva), confirmacionEmail, pagoSenia: pago };
+      // Relectura con include fuera del commit (ver OPCIONES_TRANSACCION).
+      const reservaCompleta = await prisma.reserva.findUnique({ where: { id: reserva.id }, include: INCLUDE_RESERVA });
+      const confirmacionEmail = await enviarConfirmacionPorEmail(reservaCompleta);
+      return { ...formatearReserva(reservaCompleta), confirmacionEmail, pagoSenia: pago };
     } catch (err) {
       const esCodigoDuplicado =
         err instanceof Prisma.PrismaClientKnownRequestError &&
@@ -1434,38 +1451,38 @@ async function modificarReserva(id, data) {
       include: { reservaHabitaciones: true },
     });
 
-    // Precio congelado por noche (HU-96), un loop aparte igual que en el
-    // alta (crearReservaEnTransaccion): el doble de Prisma de los tests
-    // solo sabe expandir un nivel de relación anidada.
+    // Precio congelado por noche (HU-96), una sola `createMany` igual que
+    // en el alta (crearReservaEnTransaccion) — Etapa 4C, ver
+    // docs/bug-timeout-transacciones.md. El doble de Prisma de los tests
+    // solo sabe expandir un nivel de relación anidada, así que sigue
+    // siendo un paso aparte, no un nested-create.
     const reservaHabitacionIdPorHabitacion = new Map(actualizada.reservaHabitaciones.map((rh) => [rh.habitacionId, rh.id]));
-    for (const [habitacionId, noches] of nochesPorHabitacion) {
-      const reservaHabitacionId = reservaHabitacionIdPorHabitacion.get(habitacionId);
-      for (const noche of noches) {
-        await tx.reservaNoche.create({
-          data: {
-            reservaHabitacionId,
-            fecha: parsearFechaSinHora(noche.fecha, "fecha"),
-            temporadaId: noche.temporadaId,
-            tarifaId: noche.tarifaId,
-            planTarifarioId: nuevoPlanTarifarioId,
-            precioNoche: noche.precioNoche,
-            origen: noche.origen,
-            // Etapa 4B (HU-97) — viaja junto con el precio (ver datosDeAjuste
-            // más arriba): null/false cuando la noche se recotizó de verdad.
-            precioOriginal: noche.precioOriginal,
-            ajustada: noche.ajustada,
-            motivoAjuste: noche.motivoAjuste,
-            ajustadoPor: noche.ajustadoPor,
-            ajustadoEn: noche.ajustadoEn,
-          },
-        });
-      }
+    const filasReservaNoche = [...nochesPorHabitacion.entries()].flatMap(([habitacionId, noches]) =>
+      noches.map((noche) => ({
+        reservaHabitacionId: reservaHabitacionIdPorHabitacion.get(habitacionId),
+        fecha: parsearFechaSinHora(noche.fecha, "fecha"),
+        temporadaId: noche.temporadaId,
+        tarifaId: noche.tarifaId,
+        planTarifarioId: nuevoPlanTarifarioId,
+        precioNoche: noche.precioNoche,
+        origen: noche.origen,
+        // Etapa 4B (HU-97) — viaja junto con el precio (ver datosDeAjuste
+        // más arriba): null/false cuando la noche se recotizó de verdad.
+        precioOriginal: noche.precioOriginal,
+        ajustada: noche.ajustada,
+        motivoAjuste: noche.motivoAjuste,
+        ajustadoPor: noche.ajustadoPor,
+        ajustadoEn: noche.ajustadoEn,
+      }))
+    );
+    if (filasReservaNoche.length > 0) {
+      await tx.reservaNoche.createMany({ data: filasReservaNoche });
     }
 
     return tx.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
   };
 
-  const resultado = await prisma.$transaction(ejecutar, { timeout: 15000, maxWait: 10000 });
+  const resultado = await prisma.$transaction(ejecutar, OPCIONES_TRANSACCION);
   return soloPrevia ? resultado : formatearReserva(resultado);
 }
 
@@ -1592,7 +1609,7 @@ async function ajustarPrecioReserva(id, data) {
     return tx.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
   };
 
-  const resultado = await prisma.$transaction(ejecutar, { timeout: 15000, maxWait: 10000 });
+  const resultado = await prisma.$transaction(ejecutar, OPCIONES_TRANSACCION);
   return formatearReserva(resultado);
 }
 
@@ -1672,7 +1689,7 @@ async function cancelarReserva(id, data) {
     }
 
     return actualizada;
-  });
+  }, OPCIONES_TRANSACCION);
   return formatearReserva(reserva);
 }
 

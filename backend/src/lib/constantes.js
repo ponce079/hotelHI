@@ -160,14 +160,22 @@ if (rubrosSinMapear.length > 0) {
 
 // Opciones para prisma.$transaction. El default de Prisma es timeout 5s /
 // maxWait 2s, que alcanza contra una base local pero NO contra la base
-// compartida de Clever Cloud: está en Francia, exige SSL y el plan
-// gratuito agrega latencia, así que 3 o 4 escrituras seguidas se pasan de
-// los 5s y Prisma tira P2028 ("A commit cannot be executed on an expired
-// transaction"). Además de subir el techo, la regla es dejar adentro de la
-// transacción SOLO las escrituras que tienen que ser atómicas: las
+// compartida de Clever Cloud: está en París (confirmado resolviendo el
+// host a 91.208.207.108, AS213394 Clever Cloud SAS, Île-de-France), y el
+// backend de cada integrante corre en su propia máquina en Salta — toda la
+// ida y vuelta de cada consulta cruza el Atlántico dos veces. Medido en
+// vivo contra esa base (Etapa 4C, docs/bug-timeout-transacciones.md): una
+// vez abierta la conexión, cada consulta tarda en promedio ~387ms, y una
+// alta de 15 noches × 2 habitaciones (34 consultas tras la optimización de
+// Etapa 4C) puede rondar los 14-15s. 20s dejaba poco margen ante una
+// variación de red; con 30s el peor caso medido queda con margen holgado.
+// En producción (backend y base en el mismo datacenter) esto no aplica:
+// cada consulta tarda ~1-2ms, así que una transacción entera corre en bien
+// menos de 100ms. Además de subir el techo, la regla es dejar adentro de
+// la transacción SOLO las escrituras que tienen que ser atómicas: las
 // lecturas con include (que Prisma resuelve en varias consultas) van
 // después del commit.
-const OPCIONES_TRANSACCION = { timeout: 20000, maxWait: 10000 };
+const OPCIONES_TRANSACCION = { timeout: 30000, maxWait: 15000 };
 
 // Motivo al marcar como revisada la diferencia de una transferencia
 // (MovimientoStock.motivoResolucion, HU-14/17). "Se generó pedido por la

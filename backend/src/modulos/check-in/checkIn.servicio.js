@@ -20,6 +20,7 @@
 // checkOut.servicio.js para sus propias transiciones de negocio.
 
 const prisma = require("../../lib/prisma");
+const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 const reservasServicio = require("../reservas/reservas.servicio");
 const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
 const { CONCEPTO_GARANTIA } = require("../pagos-estadia/pagoEstadia.constantes");
@@ -325,7 +326,7 @@ async function registrarCheckInWalkIn({
       }
       return reserva.id;
     },
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 
   await registrarGarantia(reservaId, { medioGarantia, referenciaGarantia });
