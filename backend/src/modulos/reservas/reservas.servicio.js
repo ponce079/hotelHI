@@ -964,7 +964,10 @@ async function crearReservaEnTransaccion(tx, datos) {
     }),
   });
 
-  return tx.reserva.findUnique({ where: { id: reserva.id }, include: INCLUDE_RESERVA });
+  // Etapa 4C: la relectura con include (INCLUDE_RESERVA son ~9 consultas,
+  // solo para armar la respuesta) se saca de la transacción — ver el
+  // comentario junto a cada llamador. Acá adentro basta con el id.
+  return reserva;
 }
 
 // HU-36 — alta individual o grupal (una fila ReservaHabitacion por
@@ -990,7 +993,9 @@ async function crearReserva(data) {
   let ultimoError;
   for (let intento = 0; intento < MAX_INTENTOS_CODIGO; intento += 1) {
     try {
-      const reserva = await prisma.$transaction((tx) => crearReservaEnTransaccion(tx, datos), OPCIONES_TRANSACCION);
+      const creada = await prisma.$transaction((tx) => crearReservaEnTransaccion(tx, datos), OPCIONES_TRANSACCION);
+      // Relectura con include fuera del commit (ver OPCIONES_TRANSACCION).
+      const reserva = await prisma.reserva.findUnique({ where: { id: creada.id }, include: INCLUDE_RESERVA });
       const confirmacionEmail = await enviarConfirmacionPorEmail(reserva);
       return { ...formatearReserva(reserva), confirmacionEmail };
     } catch (err) {
@@ -1078,8 +1083,10 @@ async function crearReservaConSena(data) {
         OPCIONES_TRANSACCION
       );
 
-      const confirmacionEmail = await enviarConfirmacionPorEmail(reserva);
-      return { ...formatearReserva(reserva), confirmacionEmail, pagoSenia: pago };
+      // Relectura con include fuera del commit (ver OPCIONES_TRANSACCION).
+      const reservaCompleta = await prisma.reserva.findUnique({ where: { id: reserva.id }, include: INCLUDE_RESERVA });
+      const confirmacionEmail = await enviarConfirmacionPorEmail(reservaCompleta);
+      return { ...formatearReserva(reservaCompleta), confirmacionEmail, pagoSenia: pago };
     } catch (err) {
       const esCodigoDuplicado =
         err instanceof Prisma.PrismaClientKnownRequestError &&

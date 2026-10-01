@@ -74,21 +74,38 @@ El mismo criterio ya aplicado y verificado en `migrar-reservas-a-reserva-noche.j
 - `ajustarPrecioReserva`: se dejó **sin cambios**, con `update` individual por noche, por decisión explícita — el caso de uso típico (cortesía/descuento de 1 a 3 noches) nunca se acerca al límite, y no vale la complejidad de un `$executeRaw` con `CASE WHEN` para un riesgo bajo. Queda anotado como posible mejora futura si en algún momento se usa para ajustar estadías largas completas.
 - `cancelarReserva`: ahora usa la misma constante de timeout que el resto (antes: default de Prisma, 5000ms).
 
-**Timeout — una sola constante compartida.** Los 5 `$transaction` de `reservas.servicio.js` (incluido `crearReservaConSena`, que no estaba en el análisis original pero tiene el mismo literal repetido) pasaron a usar `OPCIONES_TRANSACCION` de `backend/src/lib/constantes.js` (`{ timeout: 20000, maxWait: 10000 }`) — ya existía, usada en `presupuestos.servicio.js`/`proveedores.servicio.js`/`requerimientos.servicio.js`; no hizo falta crear una nueva.
+**Timeout — una sola constante compartida.** Los 5 `$transaction` de `reservas.servicio.js` (incluido `crearReservaConSena`, que no estaba en el análisis original pero tiene el mismo literal repetido), y además el walk-in de Check-in (`checkIn.servicio.js:registrarCheckInWalkIn`, que reutiliza `crearReservaEnTransaccion` pero tenía su **propio** `{ timeout: 15000, maxWait: 10000 }` hardcodeado en vez de la constante compartida), pasaron a usar `OPCIONES_TRANSACCION` de `backend/src/lib/constantes.js` — ya existía, usada en `presupuestos.servicio.js`/`proveedores.servicio.js`/`requerimientos.servicio.js`; no hizo falta crear una nueva. Con la latencia real medida (ver abajo), se subió de `{ timeout: 20000, maxWait: 10000 }` a **`{ timeout: 30000, maxWait: 15000 }`**.
 
 **Lecturas — deduplicadas dentro de la misma transacción (sin mover nada afuera, la regla del 409 sigue intacta: el precio se recalcula con `tx` y se compara contra lo que vio el usuario).** En `cotizacion.servicio.js`, `cotizarReserva` ahora pide **una sola vez por reserva** (no una vez por habitación) lo que es idéntico para todas sus habitaciones: el rango de temporadas (`resolverTemporadasEfectivasEnRango`), los modificadores por día de semana y los planes activos; y pide las tarifas de **todos los tipos de habitación presentes en una sola consulta** (`obtenerTarifasVigentesParaTipos`, nueva, en `precios.servicio.js`) en vez de una consulta por habitación. `tipoHabitacion`/`habitacionesActivas` se cachean por tipo (no por habitación), así que dos habitaciones del mismo tipo tampoco las piden dos veces. `cotizarEstadia` ahora acepta un 3er parámetro opcional `precargado` con cualquiera de estos datos ya resueltos — si no viene, lee todo solo, exactamente como antes (el cotizador de pantalla, que cotiza un tipo suelto sin pasar por `cotizarReserva`, sigue sin tocarse).
 
 Además, `buscarConflictos` (llamada dos veces por alta: chequeo rápido + chequeo protegido con lock) dejó de pedir el `include` completo (habitación + reserva, para el mensaje de error) cuando no hay ningún conflicto — Prisma emitía esas 2 consultas igual aunque el resultado base viniera vacío. Ahora el camino feliz (sin conflictos, la gran mayoría de las altas) hace 1 consulta en vez de 3; el detalle completo para el mensaje de error solo se pide si de verdad hay algo que reportar.
 
-**Medición de consultas dentro del alta, antes y después (contra `sgh_gimena`, log de queries de Prisma):**
+**Relectura final fuera de la transacción.** `crearReservaEnTransaccion` devolvía, como último paso, `tx.reserva.findUnique({ include: INCLUDE_RESERVA })` — una relectura con relaciones (habitaciones, huésped, noches, pagos) que solo sirve para armar la respuesta HTTP, no para la lógica de negocio: son ~9 consultas que Prisma resuelve por separado. Se movió a después del `$transaction` (mismo patrón ya usado en `requerimientos.servicio.js:199-200`): la función ahora devuelve la reserva recién creada (sin el include), y cada llamador (`crearReserva`, `crearReservaConSena`) hace su propio `prisma.reserva.findUnique({ include: INCLUDE_RESERVA })` una vez confirmada la transacción. Esto no acorta el tiempo total de la respuesta (son las mismas 9 consultas, ahora después del commit en vez de antes) — lo que logra es que esas 9 consultas **ya no cuenten contra el timeout de la transacción**, bajando la ventana de riesgo de P2028.
 
-| Caso | Antes | Después |
-|---|---|---|
-| 2 noches × 1 habitación | 40 | 33 |
-| 15 noches × 2 habitaciones | 103 | 34 |
-| 5 noches × 4 habitaciones | — (no medido antes) | 39 |
+**Latencia real medida contra Clever Cloud (2026-10-01, `SELECT 1` repetidos desde PowerShell, base compartida):**
+- Abrir la conexión (TCP + SSL + auth): **~2,1 s**.
+- Cada consulta siguiente, con la conexión ya abierta: **~387 ms** en promedio.
+- Resolviendo el host (`b4913r7yp8soaggsa4sv-mysql.services.clever-cloud.com` → `91.208.207.108`) contra un servicio de geolocalización de IP: **París, Francia** (AS213394 Clever Cloud SAS) — confirma la hipótesis: el backend de cada integrante corre en su propia máquina en Salta, Argentina, y cada consulta cruza el Atlántico dos veces. La estimación anterior de ~150ms/consulta (sacada de un único fallo real) era muy optimista.
 
-La cantidad **ya no crece con las noches** (33 → 34 al pasar de 2 a 15 noches, con 1 habitación más de por medio) y crece muy poco con las habitaciones (33 → 39 de 1 a 4 habitaciones). Con la estimación de ~150ms por consulta contra Clever Cloud (la que dio el fallo real del 30/9), el caso de 15×2 queda en **~5,1 segundos** — muy por debajo de los ~15,5s originales, prácticamente en el objetivo de 5s pero no estrictamente por debajo; el número real depende de la latencia efectiva, no medida con precisión en este cierre.
+**Medición de consultas dentro de la transacción del alta, antes y después (contra `sgh_gimena`, log de queries de Prisma), y duración estimada contra Clever Cloud (conexión fría + N×387ms):**
+
+| Caso | Antes (consultas en tx) | Antes (estimado) | Después (consultas en tx) | Después (estimado) |
+|---|---|---|---|---|
+| 2 noches × 1 habitación | 40 | ~17,6 s | 24 | **~11,4 s** |
+| 15 noches × 2 habitaciones | 103 | ~42,0 s | 25 | **~11,8 s** |
+| 5 noches × 4 habitaciones | — (no medido antes) | — | 30 | **~13,7 s** |
+
+La cantidad de consultas dentro de la transacción **ya no crece con las noches** (24 → 25 al pasar de 2 a 15 noches, con 1 habitación más de por medio) y crece muy poco con las habitaciones (24 → 30 de 1 a 4 habitaciones). Con la latencia real medida, el objetivo de "menos de 5 segundos" **no se alcanza** — los tres casos quedan entre ~11 y ~14 segundos — pero el timeout de 30 segundos deja un margen de 16 a 19 segundos en cada caso, y el objetivo central (ninguna falla deja una reserva a medias, ninguna transacción crece sin límite con las noches) sí se cumple. Bajar de ~11s requeriría sacar lecturas de cotización fuera de la transacción, lo que debilitaría la regla del 409 (ver sección "Limitación conocida").
+
+Sumando las ~9 consultas de la relectura final (después del commit, sin riesgo de timeout), el tiempo total percibido en la respuesta HTTP ronda los 14,9 s / 15,3 s / 17,2 s respectivamente — prácticamente igual al escenario con la relectura adentro, porque son las mismas consultas: lo que cambió es cuáles cuentan contra el timeout, no cuántas hay en total.
+
+**En producción, este problema no existiría en esta magnitud.** La causa de fondo no es la cantidad de consultas (ya optimizada) sino la distancia entre el backend y la base: en producción ambos estarían en el mismo datacenter, con una latencia de red de ~1-2ms por consulta en vez de ~387ms. Con esa latencia, las 25 consultas del caso 15×2 tardarían **menos de 100ms** en total — muy lejos de cualquier timeout.
+
+**Recomendación para la demo:** presentar contra una base local (con los datos de `seed-demo-salta.js`), no contra Clever Cloud — no por riesgo de falla (el timeout de 30s tiene margen de sobra), sino porque cada alta tardando 11-14 segundos es mala experiencia frente al jurado/equipo, y no representa cómo se va a comportar el sistema en un entorno real.
+
+**Limitación conocida.** Incluso un alta de **1 sola noche** no baja de ~24 consultas dentro de la transacción (el piso lo ponen la validación — lock, conflictos, huésped, código de confirmación — y la cotización de esa única habitación, no las noches): a ~387ms/consulta contra Clever Cloud eso son **~11,4 segundos**, con margen (~18,6s) pero lejos de ser instantáneo. Una optimización futura de bajo impacto podría apuntar a esas consultas de validación en lugar de a las de escritura, que ya están al mínimo.
+
+**Qué tienen que hacer los demás después del merge:** solo `git pull`. No hay cambios de schema ni de datos — es exclusivamente código de la aplicación (servicio de reservas, check-in, cotización, la constante de timeout). No hace falta ningún paso de despliegue ni tocar ninguna base.
 
 **Tests nuevos** (`backend/scripts/pruebas-reservas.js`):
 - Integridad: si `ReservaNoche.createMany` falla a mitad de camino, no queda ninguna `Reserva`, `ReservaHabitacion`, `ReservaNoche` ni un huésped nuevo huérfano (transacción revertida por completo).
