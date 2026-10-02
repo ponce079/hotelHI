@@ -159,7 +159,7 @@ Caso que la disparó: en E7AC5CC5, "Editar ocupante" de un adulto alojado ofrec�
 - Además, la ficha nueva toma por defecto como ingreso la fecha de entrada de la reserva, que ya pasó.
 
 **Por qué no es chica.**
-- `modificarReserva` (y `previa-ocupacion`) rechaza toda reserva que no esté Confirmada (`exigirModificable`, `reservas.servicio.js:1337`).
+- `modificarReserva` (y `previa-ocupacion`) rechaza toda reserva que no esté Confirmada (`exigirModificable`, `reservas.servicio.js:1338`).
 - Además recotiza todas las noches cuya ocupación cambia. No tiene la noción de "desde esta noche": las noches ya pasadas se recotizarían.
 - La ocupación es una sola por habitación para toda la estadía (`ReservaHabitacion.adultos/menores`), no por noche. Conservar el precio de las noches pasadas con la ocupación nueva deja datos inconsistentes.
 - Mover a una persona entre habitaciones también cambia la ocupación de las dos habitaciones sin recotizar: es el mismo hueco.
