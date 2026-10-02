@@ -91,15 +91,23 @@ export function TablaLlegadas({ busqueda, onBuscar, consulta, seleccionadaId, on
                       moverFoco(e, -1);
                     }
                   }}
-                  className={`cursor-pointer whitespace-nowrap focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-pino ${seleccionada ? "bg-pino-100" : "hover:bg-hueso"}`}
+                  className={`cursor-pointer align-top focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-pino ${seleccionada ? "bg-pino-100" : "hover:bg-hueso"}`}
                 >
-                  <td className="border-b border-borde px-2.5 py-[11px] font-mono font-semibold">{r.codigoConfirmacion}</td>
+                  <td className="whitespace-nowrap border-b border-borde px-2.5 py-[11px] font-mono font-semibold">{r.codigoConfirmacion}</td>
                   <td className="border-b border-borde px-2.5 py-[11px]">{r.titular?.nombre}</td>
                   <td className="border-b border-borde px-2.5 py-[11px]">{r.habitaciones.map((h) => `${h.numero} ${h.tipo}`).join(" + ")}</td>
-                  <td className="border-b border-borde px-2.5 py-[11px]">{estadia(r)}</td>
+                  <td className="whitespace-nowrap border-b border-borde px-2.5 py-[11px]">{estadia(r)}</td>
                   <td className="border-b border-borde px-2.5 py-[11px]">{etiquetaOcupacion(adultos, menores)}</td>
                   <td className="border-b border-borde px-2.5 py-[11px]">
-                    {senia ? <Chip variante="ok">{senia}</Chip> : <Chip variante="aviso">Sin garantía · tomar al ingreso</Chip>}
+                    {senia ? (
+                      <Chip variante="ok" envolver>
+                        {senia}
+                      </Chip>
+                    ) : (
+                      <Chip variante="aviso" envolver>
+                        Sin garantía · tomar al ingreso
+                      </Chip>
+                    )}
                   </td>
                   <td className="border-b border-borde px-2.5 py-[11px]">
                     <Chip variante="ok">Por llegar</Chip>

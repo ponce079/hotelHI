@@ -39,7 +39,8 @@ const GRILLA_DOCUMENTO = "grid gap-x-3 gap-y-2.5 [grid-template-columns:repeat(a
 const GRILLA = "grid gap-x-3 gap-y-2.5 [grid-template-columns:repeat(auto-fill,minmax(160px,1fr))]";
 
 export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
-  usePersonaQueVuelve(fila, dispatch, fila.tipo === "adulto" || fila.conDocumento);
+  // Persona que vuelve: en filas cargadas a mano; en las precargadas, solo si se cambia el documento.
+  usePersonaQueVuelve(fila, dispatch, (fila.tipo === "adulto" || fila.conDocumento) && (!fila.precargada || Boolean(fila.documentoEditado)));
   const revision = revisarFila(estado, fila, contexto);
   const { heredados } = resolverCampos(estado, fila);
   const avisos = avisosDeFila(fila);

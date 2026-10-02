@@ -293,7 +293,7 @@ export function reducer(estado, accion) {
           campos: { ...f.campos, [campo]: valor },
           corregidos: heredables.includes(campo) && !f.corregidos.includes(campo) ? [...f.corregidos, campo] : f.corregidos,
           // Otro documento: la ficha encontrada y el aviso de alojada ya no aplican.
-          ...(CAMPOS_DOCUMENTO.includes(campo) ? { ficha: null, alojadaEnOtra: false } : {}),
+          ...(CAMPOS_DOCUMENTO.includes(campo) ? { ficha: null, alojadaEnOtra: false, documentoEditado: true } : {}),
           errorServidor: null,
         };
       });

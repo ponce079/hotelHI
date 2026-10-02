@@ -21,9 +21,12 @@ const CHIPS = {
   error: "bg-error-suave text-error-texto",
 };
 
-export function Chip({ variante = "neutro", children, className = "" }) {
+// `envolver`: el texto puede partirse en dos líneas (chips largos dentro de una tabla).
+export function Chip({ variante = "neutro", envolver = false, children, className = "" }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[12.5px] font-semibold ${CHIPS[variante]} ${className}`}>
+    <span
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[12.5px] font-semibold ${envolver ? "whitespace-normal rounded-md" : "whitespace-nowrap rounded-full"} ${CHIPS[variante]} ${className}`}
+    >
       {children}
     </span>
   );
