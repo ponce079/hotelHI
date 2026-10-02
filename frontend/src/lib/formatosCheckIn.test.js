@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatearPrecio } from "./moneda";
 import {
   ddMmAaaaAISO,
@@ -7,6 +7,7 @@ import {
   formatearDiaLargo,
   formatearFechaDdMmAaaa,
   formatearFechaOperacion,
+  hoyEnHoraLocal,
   mascaraFecha,
   nochesEntre,
   sumarDiasISO,
@@ -44,5 +45,21 @@ describe("fechas del check-in", () => {
   it("edad cumplida a una fecha", () => {
     expect(edadEnFecha("2013-10-02", "2026-10-01")).toBe(12);
     expect(edadEnFecha("2013-10-01", "2026-10-01")).toBe(13);
+  });
+});
+
+// Encabezado del check-in: el día de operación es el de Argentina, a cualquier hora.
+describe("hoyEnHoraLocal y el encabezado", () => {
+  afterEach(() => vi.useRealTimers());
+  const hoyA = (instante) => {
+    vi.useFakeTimers({ now: new Date(instante) });
+    return hoyEnHoraLocal();
+  };
+  it("a las 02:43 del 03/10 en Argentina es el 03/10", () => {
+    expect(hoyA("2026-10-03T05:43:00Z")).toBe("2026-10-03");
+    expect(formatearFechaOperacion(hoyEnHoraLocal())).toBe("Sábado 03/10/2026");
+  });
+  it("a las 23:59 del 02/10 en Argentina sigue siendo el 02/10", () => {
+    expect(hoyA("2026-10-03T02:59:00Z")).toBe("2026-10-02");
   });
 });
