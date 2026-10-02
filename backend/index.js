@@ -87,7 +87,17 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Ocurrió un error inesperado en el servidor." });
 });
 
-app.listen(PORT, () => {
+// Express 5 le pasa al callback el error de bind (puerto ocupado, sin permisos...). Si no se mira,
+// se imprime "Servidor corriendo" aunque no se esté escuchando y el proceso sigue vivo sin atender nada.
+app.listen(PORT, (error) => {
+  if (error) {
+    const motivo =
+      error.code === "EADDRINUSE"
+        ? "el puerto está ocupado. Cerrá la otra instancia o cambiá PORT en backend/.env."
+        : error.message;
+    console.error(`No se pudo iniciar el servidor en el puerto ${PORT}: ${motivo}`);
+    process.exit(1);
+  }
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
 
