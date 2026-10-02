@@ -585,14 +585,17 @@ export function PersonaFormulario({
             )}
           </div>
         )}
-        <label className="flex gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={Boolean(form.esTitular)}
-            onChange={(e) => setForm((f) => ({ ...f, esTitular: e.target.checked }))}
-          />
-          Titular de esta habitación
-        </label>
+        {/* El titular tiene que ser mayor de edad: a un menor no se le ofrece. */}
+        {(!esMenor || form.esTitular) && (
+          <label className="flex gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(form.esTitular)}
+              onChange={(e) => setForm((f) => ({ ...f, esTitular: e.target.checked }))}
+            />
+            Titular de esta habitación
+          </label>
+        )}
         {reemplazaTitular && (
           <div className="space-y-2 rounded border border-laton-300 bg-laton-100 p-3 text-sm text-laton-700">
             <p>
