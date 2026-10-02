@@ -478,7 +478,7 @@ async function main() {
     await sembrarHabitacion({ numero: "101" });
     await esperaError(
       async () => servicio.crearReserva(await alta({ huesped: { ...HUESPED, tipoDocumento: "Carnet del club" } })),
-      "tipoDocumento"
+      "tipo de documento"
     );
   });
 
