@@ -59,7 +59,7 @@ export function ServiciosAdicionalesPage() {
       <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
         <h1 className="font-heading text-[34px] font-semibold">Servicios Adicionales</h1>
         <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
-          HU 61 a 64 — consulta de consumos de todo el hotel por período (restaurante, spa, lavandería y minibar)
+          Consumos de todo el hotel por período (restaurante, spa, lavandería y minibar)
         </p>
       </div>
 

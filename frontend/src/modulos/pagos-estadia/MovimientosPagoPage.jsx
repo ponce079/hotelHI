@@ -230,7 +230,7 @@ export function MovimientosPagoPage() {
       <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
         <h1 className="font-heading text-[34px] font-semibold">Movimientos de pago</h1>
         <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
-          HU 88 — seña, garantía y pago final de todas las reservas, agrupados por reserva
+          Seña, garantía y pago final de todas las reservas, agrupados por reserva
         </p>
       </div>
 
