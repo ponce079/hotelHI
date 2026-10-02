@@ -72,8 +72,8 @@ Reemplaza el asistente de 5 pasos del walk-in y la pantalla con modal del check-
 - **Numeración:** el bloque HU-107 a HU-114 sigue reservado para Ricardo.
 
 ## Pruebas
-- **Vitest:** 226/226 (14 casos nuevos de la pantalla + lógica pura + formatos, y 2 de las correcciones).
-- **Jest:** 88/88. `pruebas-estadia-consultas.js`: 14/14. `test:checkin-rediseno`: 15 bloques OK. `test:integracion` (estadía): OK.
+- **Vitest:** 230/230 (14 casos nuevos de la pantalla + lógica pura + formatos, y 6 de las correcciones).
+- **Jest:** 88/88. `pruebas-estadia-consultas.js`: 14/14. `test:checkin-rediseno`: 16 bloques OK. `test:integracion` (estadía): OK.
 - **Navegador contra `sgh_gimena` con el seed de demo:**
   - 1: un solo `POST /confirmar` aun con doble clic y ningún guardado por persona.
   - 4: quitar con tarifa flexible −$ 4.400 por noche; con no reembolsable "el precio no baja"; cancelar deja todo igual.
@@ -105,7 +105,78 @@ Caso que las disparó: la reserva **E7AC5CC5** (habitación 407) en `sgh_gimena`
   - `test:checkin-rediseno`, bloque 15: 409 en alta, en lote y en el titular automático; el cambio con motivo deja un solo titular y su evento; una ficha cancelada no cuenta.
   - `test:integracion` (I2): el segundo titular ahora es 409.
   - Vitest: lista e historial sin canceladas; cambio de titular con motivo.
-- **Fuera de alcance:** quedan textos "HU-…" visibles en `ServiciosAdicionalesPage.jsx:62` y `MovimientosPagoPage.jsx:233` (otras pantallas).
+- **Textos HU en otras pantallas:** se resolvieron en la segunda corrección (ver abajo).
+
+## Segunda corrección: editar ocupantes con la estadía en curso
+
+Caso que la disparó: en E7AC5CC5, "Editar ocupante" de un adulto alojado ofrecía:
+- ingreso, salida y habitación editables;
+- "Justificación sin documento" aunque la persona tenía documento;
+- "Adulto responsable: Sin asignar" para alguien nacido en 1984.
+
+**Qué cambió**
+- **Adulto responsable.** Solo aparece para menores de 18 años, según el nacimiento (`MAYORIA_EDAD`, se calcula al tipear), y para ellos es obligatorio. Para un mayor se envía `null`. El backend valida lo mismo: un adulto con responsable da 400, y un menor sin responsable también.
+- **Estadía en solo lectura para alojados.** Muestra la habitación, el ingreso real (fecha y hora), la salida prevista (la de la reserva) y el rol: "Titular" o "Responsable de: …". El backend rechaza con 409 cualquier cambio de ingreso, salida o habitación de una ficha Alojada que llegue por "Editar". Para irse antes está "Registrar salida"; para quedarse más, se modifica la reserva.
+- **Justificación sin documento.** Solo se muestra si no hay número de documento. A un menor sin documento le muestra el motivo guardado.
+- **Cambio de documento.** Si en una ficha verificada cambia el tipo, el país o el número:
+  - se pide un motivo;
+  - se registra el evento "Cambio de documento" solo con los valores anterior y nuevo de esos tres campos;
+  - la ficha vuelve a "Datos por verificar";
+  - si la persona está alojada, se actualiza su identidad activa.
+
+  Cambiar nombre, apellido o nacimiento registra "Corrección de datos personales", sin motivo. A una persona alojada, cambiar esos datos o el contacto no le quita la verificación. Una ficha Prevista sigue volviendo a verificarse con cualquier cambio, como antes.
+- **Mover a otra habitación** (acción aparte, `POST /estadia/:reservaId/ocupantes/:id/mover`).
+  - Solo para personas alojadas y entre habitaciones de la misma reserva.
+  - Exige motivo y respeta la capacidad. Las habitaciones completas no se ofrecen.
+  - Si se mueve al titular y quedan personas en la habitación que deja, hay que elegir un nuevo titular mayor de edad. Si en el destino ya hay titular, la persona movida deja de serlo.
+  - Queda el evento "Cambio de habitación" con las habitaciones de origen y destino, el motivo y el nuevo titular. "Editar" ya no tiene campos de habitación para alojados.
+- **Titular.** Sigue el flujo de la corrección anterior (confirmación de reemplazo y motivo obligatorio con la estadía en curso). Se verificó que sigue funcionando. A un menor no se le ofrece la casilla.
+- **Formulario en tres bloques:** Identidad · Residencia y contacto · Estadía, con las acciones debajo.
+- **Textos HU en otras pantallas.** Se quitaron "HU 61 a 64" de `ServiciosAdicionalesPage.jsx` y "HU 88" de `MovimientosPagoPage.jsx`. Son pantallas de otros integrantes y el cambio es **solo de texto**, sin tocar lógica.
+- **Capturas** (E7AC5CC5, 1366 px):
+  - `capturas-checkin/3-personas-de-la-estadia-1366.png`
+  - `capturas-checkin/4-editar-adulto-alojado-1366.png`
+  - `capturas-checkin/5-editar-menor-alojado-1366.png`
+- **Pruebas.**
+  - `test:checkin-rediseno`, bloque 16:
+    - responsable solo para menores;
+    - 409 al cambiar fechas o habitación de un alojado;
+    - el cambio de documento con motivo deja el evento con anterior y nuevo, y la ficha vuelve a verificarse;
+    - corrección de nombre auditada sin perder la verificación;
+    - mover: otra reserva → 400, sin motivo → 400, titular sin reemplazo → 400, reemplazo menor de edad → 400, caso correcto con un titular por habitación y su evento, habitación completa → 409.
+  - Vitest:
+    - adulto, menor y el nacimiento cambiado a 15 años;
+    - motivo del cambio de documento;
+    - modal de mover.
+
+### "Agregar persona" con la estadía en curso: diagnóstico y propuesta (no implementado)
+
+**Qué hace hoy.** Crea una ficha Prevista y solo controla la capacidad de la habitación (`estadia.servicio.guardar`).
+- **No cambia la ocupación** de la reserva: `ReservaHabitacion.adultos/menores` queda igual.
+- **No recotiza** y **no muestra** una vista previa.
+- "Registrar ingreso" (`accion: "ingresar"`) tampoco lo hace: la ampliación con recotización (`ampliacion.servicio.ampliarSiCorresponde`) solo corre dentro de la confirmación del check-in.
+- Resultado: un tercer adulto agregado a una doble con la estadía en curso queda alojado al precio de dos.
+- Además, la ficha nueva toma por defecto como ingreso la fecha de entrada de la reserva, que ya pasó.
+
+**Por qué no es chica.**
+- `modificarReserva` (y `previa-ocupacion`) rechaza toda reserva que no esté Confirmada (`exigirModificable`, `reservas.servicio.js:1337`).
+- Además recotiza todas las noches cuya ocupación cambia. No tiene la noción de "desde esta noche": las noches ya pasadas se recotizarían.
+- La ocupación es una sola por habitación para toda la estadía (`ReservaHabitacion.adultos/menores`), no por noche. Conservar el precio de las noches pasadas con la ocupación nueva deja datos inconsistentes.
+- Mover a una persona entre habitaciones también cambia la ocupación de las dos habitaciones sin recotizar: es el mismo hueco.
+- Tampoco existe hoy "quedarse más" con la estadía en curso, porque esa modificación de la reserva rechaza el estado "En curso".
+
+**Propuesta.**
+1. Agregar a `modificarReserva` una opción interna `desdeNoche` (hoy, en hora argentina), aceptada solo con la reserva En curso y llamada desde estadía. Las noches anteriores a `desdeNoche` conservan su precio congelado aunque cambie la ocupación; desde esa noche se recotiza con la regla de siempre, incluido el Ajuste B de las tarifas no reembolsables.
+2. Reutilizar `ampliarSiCorresponde`, con su token de confirmación, en `guardar` al crear y en `accion: "ingresar"`:
+   - si el adulto queda por encima de la ocupación base, el backend devuelve 409 `AMPLIACION_OCUPACION_REQUIERE_CONFIRMACION` con la vista previa (`diferenciaPorNoche` solo desde hoy);
+   - el panel muestra la diferencia y reenvía con la confirmación;
+   - la capacidad se sigue controlando como hoy.
+3. Por defecto, el ingreso de una persona agregada con la estadía en curso es hoy.
+4. Decidir con el equipo cómo registrar la ocupación por noche: un campo en `ReservaNoche` o mantener la ocupación por habitación y documentar que refleja la ocupación vigente. Esto toca el módulo de reservas compartido.
+
+**Otros hallazgos (no tocados)**
+- Las rutas `/api/estadia/*` responden sin sesión: `POST …/mover` sin token devuelve 400 por el operador, no 401. Es preexistente y lo tiene que ver Tomás (login).
+- El mensaje guardado de "Confirmaciones enviadas" tiene fechas sin ceros ("2/10/2026"). Es un texto generado al confirmar la reserva y guardado así.
 
 ## Para Ricardo: el saldo descuenta la garantía (solo informado, no se tocó)
 
