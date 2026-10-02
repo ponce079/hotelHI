@@ -497,3 +497,61 @@ it("conserva una nacionalidad histórica escrita a mano que no figura en el cat�
   );
   expect(screen.getByLabelText("Nombre del país de la nacionalidad")).toHaveValue("Atlántida");
 });
+
+// ---------------------------------------------------------------- correcciones de la etapa 2
+const ocupante = (datos) => ({
+  apellido: "",
+  tipoDocumento: "DNI",
+  paisDocumento: "AR",
+  nacionalidad: "AR",
+  paisResidencia: "AR",
+  fechaDesde: "2026-09-28",
+  fechaHasta: "2026-09-30",
+  verificadoEn: "2026-09-28T14:00:00.000Z",
+  asignaciones: [{ habitacionId: 10, hasta: null }],
+  ...datos,
+});
+
+it("las fichas canceladas no se listan ni muestran faltantes; quedan en el Historial con su motivo", async () => {
+  const fichas = [
+    ocupante({ id: 26, nombre: "Martín Gutiérrez", numeroDocumento: "30512874", estado: "Cancelado", esTitular: true, verificadoEn: null, asignaciones: [{ habitacionId: 10, hasta: "2026-09-28T14:03:51.000Z" }] }),
+    ocupante({ id: 38, nombre: "Martín", apellido: "Gutiérrez", numeroDocumento: "30512874", estado: "Alojado", esTitular: true, fechaNacimiento: "1984-10-01" }),
+    ocupante({ id: 40, nombre: "María", apellido: "Gutiérrez", numeroDocumento: null, tipoDocumento: null, paisDocumento: null, motivoSinDocumento: "Menor sin documento presentado", estado: "Alojado", fechaNacimiento: "2018-03-14", responsableId: 38 }),
+  ];
+  const historial = [{ id: 60, fecha: "2026-09-28T14:03:51.000Z", accion: "cancelar", operador: "recepcionista.prueba", detalle: JSON.stringify({ ocupanteId: 26, motivo: "Reemplazada en el check-in" }) }];
+  api.get.mockImplementation(async (url) => ({ data: url.endsWith("/historial") ? historial : url.endsWith("/ocupantes") ? fichas : [] }));
+  const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={cliente}>
+      <EstadiaPanel reserva={reserva} />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("María Gutiérrez")).toBeInTheDocument();
+  expect(screen.getAllByText(/Martín/)).toHaveLength(1);
+  expect(screen.queryByText(/Cancelado/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Falta completar/)).not.toBeInTheDocument();
+  expect(screen.getByText(/Sin documento \(menor\) · Alojado/)).toBeInTheDocument();
+  expect(screen.queryByText(/Documento pendiente/)).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "Historial" }));
+  expect(await screen.findByText(/28\/09\/2026 \d{2}:\d{2} · Ficha dada de baja · recepcionista\.prueba/)).toBeInTheDocument();
+  expect(screen.getByText("Martín Gutiérrez · Reemplazada en el check-in")).toBeInTheDocument();
+});
+
+it("marcar a otra persona como titular con la estadía en curso pide el motivo y reemplaza al titular actual", async () => {
+  const onGuardar = vi.fn();
+  const titular = ocupante({ id: 38, nombre: "Martín", apellido: "Gutiérrez", numeroDocumento: "30512874", estado: "Alojado", esTitular: true, fechaNacimiento: "1984-10-01" });
+  const marta = ocupante({ id: 39, nombre: "Marta", apellido: "Conte", numeroDocumento: "40236523", estado: "Alojado", esTitular: false, fechaNacimiento: "1990-05-05", nacionalidad: "AR", paisResidencia: "AR" });
+  render(<PersonaFormulario reserva={reserva} persona={marta} personas={[titular, marta]} onGuardar={onGuardar} onClose={() => {}} />);
+  expect(screen.queryByText(/Hoy el titular de esta habitación/)).not.toBeInTheDocument();
+  await userEvent.click(screen.getByLabelText("Titular de esta habitación"));
+  expect(screen.getByText(/Hoy el titular de esta habitación es Martín Gutiérrez\. Al guardar deja de serlo/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).not.toHaveBeenCalled();
+  expect(screen.getByText("Indicá el motivo del cambio de titular.")).toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText(/Motivo del cambio de titular \*/), "El titular se retira antes");
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalledWith(
+    expect.objectContaining({ esTitular: true, reemplazarTitular: true, motivoCambioTitular: "El titular se retira antes" }),
+  );
+});
