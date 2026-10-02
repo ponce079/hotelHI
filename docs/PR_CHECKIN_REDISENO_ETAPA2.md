@@ -72,8 +72,8 @@ Reemplaza el asistente de 5 pasos del walk-in y la pantalla con modal del check-
 - **Numeración:** el bloque HU-107 a HU-114 sigue reservado para Ricardo.
 
 ## Pruebas
-- **Vitest:** 232/232 (14 casos nuevos de la pantalla + lógica pura + formatos, y 8 de las correcciones).
-- **Jest:** 88/88. `pruebas-estadia-consultas.js`: 14/14. `test:checkin-rediseno`: 21 bloques OK. `test:integracion` (estadía): OK.
+- **Vitest:** 233/233 (14 casos nuevos de la pantalla + lógica pura + formatos, y 9 de las correcciones).
+- **Jest:** 88/88. `pruebas-estadia-consultas.js`: 14/14. `test:checkin-rediseno`: 22 bloques OK. `test:integracion` (estadía): OK.
 - **Navegador contra `sgh_gimena` con el seed de demo:**
   - 1: un solo `POST /confirmar` aun con doble clic y ningún guardado por persona.
   - 4: quitar con tarifa flexible −$ 4.400 por noche; con no reembolsable "el precio no baja"; cancelar deja todo igual.
@@ -201,9 +201,9 @@ Primero se frenó porque el servicio de cargos no se podía usar dentro de una t
   - eventos con el operador de la sesión.
 
   `ReservaNoche` **no se recotiza**: el precio congelado queda intacto.
-- **Salida anticipada.** "Registrar salida" anula, en la misma transacción y como baja lógica, los cargos "Persona adicional" de esa persona desde la noche de hoy, con motivo "Salida anticipada". Las noches ya usadas quedan. La ocupación registrada no se descuenta.
+- **Salida anticipada.** "Registrar salida" anula, en la misma transacción y como baja lógica, los cargos "Persona adicional" de esa persona desde la noche de hoy, con motivo "Salida anticipada". Las noches ya usadas quedan. La ocupación registrada se ajusta según la regla de la cuarta corrección.
 - **Ingreso por defecto.** Con la estadía en curso, quien se agrega tiene como ingreso hoy, y el backend lo fuerza.
-- **Límite conocido.** Si la temporada exige una estadía mínima mayor que las noches que faltan, el motor rechaza la cotización y no se puede agregar a la persona; se informa con un 409 claro.
+- **Restricciones de venta.** La estadía mínima y el cierre a llegadas no aplican a este cálculo (cuarta corrección): siempre se puede registrar a quien se aloja.
 
 **Criterios verificados**
 - `test:checkin-rediseno`, 5 bloques nuevos:
@@ -258,8 +258,45 @@ Todas las rutas `/api/estadia/*` usan `requiereSesion` + `requiereRol` (middlewa
 - **Ocupación por noche y recotización "desde esta noche"** en reservas. Es una decisión de equipo y toca el módulo compartido de reservas (`modificarReserva` solo acepta reservas Confirmadas y la ocupación es una por habitación para toda la estadía).
 - **Extender la estadía con la reserva En curso:** hoy no se puede, porque `exigirModificable` la rechaza.
 - **Recotizar al mover personas entre habitaciones:** hoy el precio no cambia, y se avisa en la confirmación.
-- **Persona adicional:** reclasificar el cargo como ingreso de alojamiento (hoy tipo "Otro") y decidir si una salida anticipada descuenta la ocupación registrada.
+- **Persona adicional:** reclasificar el cargo como ingreso de alojamiento (hoy tipo "Otro").
 - **Para Tomás:** `PATCH /api/reservas/:id` sigue sin exigir sesión.
+
+## Cuarta corrección
+
+### 1. Persona adicional y restricciones de venta
+
+La estadía mínima y el cierre a llegadas son restricciones de **venta**: no aplican al precio de una persona adicional en una estadía ya vendida y En curso. Antes, una temporada con estadía mínima mayor que las noches restantes impedía registrar a la persona. Ahora se puede: registrar a quien se aloja es obligatorio.
+
+- **Motor de cotización** (`tarifas/cotizacion.servicio.js`; Gimena, responsable de tarifas, autorizó el cambio):
+  - `cotizarEstadia(data, cliente, precargado, opciones)` y `cotizarReserva(datos, cliente, opciones)` aceptan la opción `{ ignorarRestriccionesVenta: true }`, que omite **solo** la estadía mínima y el cierre a llegadas.
+  - El precio por noche, el plan, la temporada, el adicional por adulto, los menores sin cargo y el modificador por día de la semana se calculan igual.
+  - **Sin la opción, el comportamiento no cambia.**
+- **Dónde se usa:** solo en la vista previa y el cálculo de cargos de la persona adicional (`estadia/personaAdicional.js`).
+- **Tests nuevos:**
+  - `pruebas-cotizacion.js`: con la opción, 1 noche de un evento con mínima 3 se cotiza al mismo precio por noche que dentro de una estadía que cumple la mínima; sin la opción se sigue rechazando. Lo mismo con el cierre a llegadas.
+  - `test:checkin-rediseno`: temporada con estadía mínima 3 y estadía En curso con 1 noche restante. Se agrega un adulto con 1 cargo correcto (el adicional por adulto del evento) y, sin la opción, la cotización sigue exigiendo la mínima.
+- **Tests de tarifas y reservas corridos** (todos OK):
+  - tarifas: `pruebas-cotizacion` 18/18 (16 previas + 2 nuevas), `pruebas-temporadas` 15/15, `pruebas-planes-tarifarios` 11/11, `pruebas-ajuste-penalidad` 26/26;
+  - reservas y estadía: `pruebas-reserva-precio` 13/13, `pruebas-reservas` 76/76, `pruebas-senia-reserva` 10/10, `pruebas-checkin` 32/32, `pruebas-checkout-facturacion` 18/18, `pruebas-servicios-adicionales` 24/24, `pruebas-integracion-mantenimiento-checkout` 6/6.
+
+### 2. Ocupación después de una salida anticipada (regla)
+
+- **Si la persona entró como persona adicional** (la registra el evento "Persona adicional"; así también se reconoce a un menor o a un adulto sin cargo), "Registrar salida" antes de la salida prevista hace, en la misma transacción:
+  - anular sus cargos de las noches no usadas;
+  - bajar en 1 la ocupación registrada de la habitación en la que se sumó (adulto o menor, según cómo entró);
+  - registrar el evento "Ocupación ajustada", con la ocupación anterior y la nueva y el motivo "Salida anticipada de una persona adicional".
+- **Si la persona era de la reserva original,** la ocupación registrada **no cambia**: el precio congelado de la reserva no se reintegra.
+- **Confirmación en pantalla:** "Registrar salida" pide confirmación. Para una persona de la reserva original muestra "La tarifa de la reserva no cambia por esta salida."; para una persona adicional, que se anulan sus cargos de las noches que no usa y que baja la ocupación.
+- **Tests:**
+  - backend: el adulto adicional pasa de 3 + 0 a 2 + 0, con evento; la salida de alguien de la reserva original no cambia la ocupación; el menor adicional pasa de 2 + 1 a 2 + 0;
+  - Vitest: los dos mensajes de la confirmación.
+- **Navegador** (caso de demo `i`, 968DD072):
+  - se agregó un tercer adulto (3 cargos) y se simuló "el día siguiente" corriendo un día hacia atrás las fechas de esa reserva de demo en `sgh_gimena`;
+  - se registró su salida desde el panel;
+  - resultado: ocupación 2 + 0, la noche usada quedó vigente ($ 4.400), las otras dos se anularon con "Salida anticipada" y quedó el evento "Ocupación ajustada";
+  - en otra persona de la reserva original, la confirmación muestra "La tarifa de la reserva no cambia por esta salida." (se canceló sin registrar la salida).
+
+  Captura: `capturas-checkin/8-salida-persona-adicional.jpg`.
 
 ## Para Ricardo: el saldo descuenta la garantía (solo informado, no se tocó)
 
