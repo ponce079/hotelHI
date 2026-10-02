@@ -3,7 +3,13 @@
 // docs/demo-checkin.md.
 //
 //   npm run seed:checkin-demo              crea o actualiza los casos de HOY
-//   npm run seed:checkin-demo -- --limpiar  anula (baja lógica) las reservas de demo
+//   npm run seed:checkin-demo -- --limpiar  anula las Confirmadas de demo y cierra con check-out
+//                                           real las estadías de demo En curso
+//
+// Mañana de la presentación: primero --limpiar y después sin argumentos (docs/demo-checkin.md).
+// Todo caso que lista queda usable: ninguna de sus personas está alojada en otra estadía (si lo
+// está, el caso se recrea con personas nuevas y lo informa). Un error en un caso no corta el
+// script: se informa, se sigue con el resto y el código de salida es distinto de 0.
 //
 // Solo corre contra una base LOCAL (misma guardia que db:push). Todo se crea con los servicios
 // reales (alta, seña, check-in, pago, check-out), así que precios y ReservaNoche salen del motor.
@@ -77,7 +83,16 @@ function leerTodo() {
 function leerManifiesto() {
   const m = leerTodo()[BASE] ?? {};
   // `anteriores`: reservas de demo reemplazadas por una nueva (por ejemplo, quedaron En curso).
-  return { reservas: m.reservas ?? {}, anteriores: m.anteriores ?? [], huespedes: m.huespedes ?? [], habitaciones: m.habitaciones ?? [] };
+  // `personas`: las personas vigentes de cada caso (cambian si las anteriores quedaron alojadas).
+  // `pagosDemo`: pagos en efectivo que registró --limpiar para cerrar estadías de demo.
+  return {
+    reservas: m.reservas ?? {},
+    anteriores: m.anteriores ?? [],
+    huespedes: m.huespedes ?? [],
+    habitaciones: m.habitaciones ?? [],
+    personas: m.personas ?? {},
+    pagosDemo: m.pagosDemo ?? [],
+  };
 }
 function guardarManifiesto(m) {
   const todo = leerTodo();
@@ -98,6 +113,83 @@ const TITULARES = {
   i: { nombre: "Valeria Ríos", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99627351", fechaNacimiento: haceAnios(37), contacto: "valeria.rios@correo.com.ar" },
   g: { nombre: "Pedro Vargas", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99290417", fechaNacimiento: haceAnios(51), contacto: "+54 11 555-0190" },
 };
+
+// Acompañantes fijos de los casos que se crean con check-in real (f: estadía anterior; i: en curso).
+const ACOMPANANTES = {
+  f: { nombre: "Javier", apellido: "Paz", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99784206", fechaNacimiento: haceAnios(41) },
+  i: { nombre: "Andrés", apellido: "Molina", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99627352", fechaNacimiento: haceAnios(39) },
+};
+// Nombres para reemplazar a personas que siguen alojadas en otra estadía de demo.
+const NOMBRES_NUEVOS = [
+  ["Julieta", "Sosa"], ["Tomás", "Aguirre"], ["Camila", "Benítez"], ["Nicolás", "Herrera"], ["Florencia", "Medina"],
+  ["Matías", "Romero"], ["Agustina", "Castro"], ["Lautaro", "Giménez"], ["Rocío", "Domínguez"], ["Facundo", "Ortiz"],
+  ["Micaela", "Ledesma"], ["Santiago", "Acosta"], ["Paula", "Quiroga"], ["Joaquín", "Villalba"], ["Abril", "Navarro"],
+];
+
+// Personas vigentes de un caso: las del manifiesto (si se renovaron) o las fijas.
+function personasDelCaso(manifiesto, clave) {
+  return manifiesto.personas[clave] ?? { titular: TITULARES[clave], ...(ACOMPANANTES[clave] ? { acompanante: ACOMPANANTES[clave] } : {}) };
+}
+const nombreCompleto = (persona) => (persona.apellido ? `${persona.nombre} ${persona.apellido}` : persona.nombre);
+
+// ¿Alguna persona del caso está alojada en una estadía que no es la del propio caso?
+async function alojadasEnOtraEstadia(manifiesto, clave, reservaPropiaId = null) {
+  const personas = Object.values(personasDelCaso(manifiesto, clave));
+  const alojadas = await prisma.ocupanteReserva.findMany({
+    where: {
+      identidadActiva: { not: null },
+      ...(reservaPropiaId ? { reservaId: { not: reservaPropiaId } } : {}),
+      OR: personas.map((p) => ({ tipoDocumento: p.tipoDocumento, numeroDocumento: p.numeroDocumento })),
+    },
+    select: { nombre: true, apellido: true, reserva: { select: { codigoConfirmacion: true } } },
+  });
+  return alojadas;
+}
+
+// Documento 99… que no usa nadie (ni como huésped ni como ocupante). Pasaporte: 99F + 5 dígitos.
+async function documentoLibre(tipoDocumento = "DNI") {
+  for (;;) {
+    const azar = (n) => String(Math.floor(Math.random() * 10 ** n)).padStart(n, "0");
+    const numero = tipoDocumento === "Pasaporte" ? `99F${azar(5)}` : `99${azar(6)}`;
+    const [h, o] = await Promise.all([
+      prisma.huesped.count({ where: { numeroDocumento: numero } }),
+      prisma.ocupanteReserva.count({ where: { numeroDocumento: numero } }),
+    ]);
+    if (!h && !o) return numero;
+  }
+}
+
+// Personas nuevas para el caso (mismo tipo de persona: titular adulto y, si corresponde, acompañante).
+async function renovarPersonas(manifiesto, clave) {
+  const usados = new Set(Object.values(manifiesto.personas).flatMap((c) => Object.values(c).map(nombreCompleto)));
+  const libres = NOMBRES_NUEVOS.filter(([n, a]) => !usados.has(`${n} ${a}`));
+  const elegir = () => (libres.length ? libres.shift() : NOMBRES_NUEVOS[Math.floor(Math.random() * NOMBRES_NUEVOS.length)]);
+  const actual = personasDelCaso(manifiesto, clave);
+  const [n, a] = elegir();
+  const titular = {
+    ...actual.titular,
+    nombre: `${n} ${a}`,
+    numeroDocumento: await documentoLibre(actual.titular.tipoDocumento),
+    contacto: actual.titular.contacto?.includes("@") ? `${n}.${a}@correo.com.ar`.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : actual.titular.contacto,
+  };
+  const nuevas = { titular };
+  if (actual.acompanante) {
+    const [n2] = elegir();
+    nuevas.acompanante = { ...actual.acompanante, nombre: n2, apellido: a, numeroDocumento: await documentoLibre() };
+  }
+  manifiesto.personas[clave] = nuevas;
+  return nuevas;
+}
+
+// Antes de reutilizar o crear un caso: si alguna persona está alojada en otra estadía, el caso
+// pasa a usar personas nuevas. Devuelve el aviso para la salida o null.
+async function asegurarPersonasLibres(manifiesto, clave, reservaPropiaId = null) {
+  const alojadas = await alojadasEnOtraEstadia(manifiesto, clave, reservaPropiaId);
+  if (!alojadas.length) return null;
+  const codigos = [...new Set(alojadas.map((o) => o.reserva.codigoConfirmacion))].join(", ");
+  await renovarPersonas(manifiesto, clave);
+  return `recreado con personas nuevas: las anteriores siguen alojadas en ${codigos}`;
+}
 
 const CASOS = [
   { clave: "a", descripcion: "familia 2 adultos + 1 menor en Doble, tarifa flexible, con seña con tarjeta", plan: "BAR", noches: 3, habitaciones: [{ tipo: "Doble", adultos: 2, menores: 1 }], senia: "tarjeta" },
@@ -182,7 +274,7 @@ async function crearReservaCaso(manifiesto, caso, desde = enDias(0)) {
   const plan = await planPorCodigo(caso.plan);
   const cotizacion = await reservas.cotizarParaReserva({ fechaDesde: desde, fechaHasta: hasta, habitaciones, planTarifarioId: plan.id, canal: "RECEPCION" });
   const total = cotizacion.planes[0].total;
-  const alta = { fechaDesde: desde, fechaHasta: hasta, habitaciones, planTarifarioId: plan.id, totalEsperado: total, huesped: TITULARES[caso.clave], origen: "RECEPCION" };
+  const alta = { fechaDesde: desde, fechaHasta: hasta, habitaciones, planTarifarioId: plan.id, totalEsperado: total, huesped: personasDelCaso(manifiesto, caso.clave).titular, origen: "RECEPCION" };
   let reserva;
   if (caso.senia) {
     const importe = Math.round((total * 0.2) / 100) * 100;
@@ -194,7 +286,7 @@ async function crearReservaCaso(manifiesto, caso, desde = enDias(0)) {
   } else {
     reserva = await reservas.crearReserva(alta);
   }
-  const titular = await prisma.huesped.findFirst({ where: { numeroDocumento: TITULARES[caso.clave].numeroDocumento }, select: { id: true } });
+  const titular = await prisma.huesped.findFirst({ where: { numeroDocumento: personasDelCaso(manifiesto, caso.clave).titular.numeroDocumento }, select: { id: true } });
   if (titular && !manifiesto.huespedes.includes(titular.id)) manifiesto.huespedes.push(titular.id);
   const previa = manifiesto.reservas[caso.clave];
   if (previa && previa !== reserva.id && !manifiesto.anteriores.includes(previa)) manifiesto.anteriores.push(previa);
@@ -231,11 +323,11 @@ async function crearEstadiaAnterior(manifiesto) {
   const caso = { clave: "f", plan: "BAR", noches: 2, habitaciones: [{ tipo: "Doble", adultos: 2, menores: 0 }] };
   const reserva = await crearReservaCaso(manifiesto, caso);
   const habitacionId = reserva.habitaciones[0].id;
-  const t = TITULARES.f;
+  const { titular: t, acompanante: ac } = personasDelCaso(manifiesto, "f");
   const [nombre, apellido] = t.nombre.split(" ");
   const personas = [
     { id: 1, habitacionId, esTitular: true, nombre, apellido, tipoDocumento: t.tipoDocumento, paisDocumento: t.paisDocumento, numeroDocumento: t.numeroDocumento, fechaNacimiento: t.fechaNacimiento, nacionalidad: "AR", paisResidencia: "AR", localidad: "Salta", domicilio: "Av. Belgrano 1250", telefono: "+54 387 555-0142", email: t.contacto },
-    { id: 2, habitacionId, esTitular: false, nombre: "Javier", apellido: "Paz", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99784206", fechaNacimiento: haceAnios(41), nacionalidad: "AR", paisResidencia: "AR" },
+    { id: 2, habitacionId, esTitular: false, ...ac, nacionalidad: "AR", paisResidencia: "AR" },
   ];
   await checkin.confirmarCheckInConReserva({
     reservaId: reserva.id,
@@ -253,7 +345,7 @@ async function crearEstadiaAnterior(manifiesto) {
   await correrFechas(reserva.id, -30);
   // La habitación queda "en limpieza" por el check-out de hoy: la estadía es de hace un mes.
   await prisma.habitacion.update({ where: { id: habitacionId }, data: { estado: "libre", estadoAnterior: null } });
-  const acompanante = await prisma.huesped.findFirst({ where: { numeroDocumento: "99784206" }, select: { id: true } });
+  const acompanante = await prisma.huesped.findFirst({ where: { numeroDocumento: ac.numeroDocumento }, select: { id: true } });
   if (acompanante && !manifiesto.huespedes.includes(acompanante.id)) manifiesto.huespedes.push(acompanante.id);
   return reserva;
 }
@@ -264,11 +356,11 @@ async function crearEstadiaEnCursoHoy(manifiesto) {
   const caso = { clave: "i", plan: "BAR", noches: 3, habitaciones: [{ tipo: "Doble", adultos: 2, menores: 0, capacidadExacta: 3 }] };
   const reserva = await crearReservaCaso(manifiesto, caso);
   const habitacionId = reserva.habitaciones[0].id;
-  const t = TITULARES.i;
+  const { titular: t, acompanante: ac } = personasDelCaso(manifiesto, "i");
   const [nombre, apellido] = t.nombre.split(" ");
   const personas = [
     { id: 1, habitacionId, esTitular: true, nombre, apellido, tipoDocumento: t.tipoDocumento, paisDocumento: t.paisDocumento, numeroDocumento: t.numeroDocumento, fechaNacimiento: t.fechaNacimiento, nacionalidad: "AR", paisResidencia: "AR", localidad: "Salta", domicilio: "Caseros 845", telefono: "+54 387 555-0161", email: t.contacto },
-    { id: 2, habitacionId, esTitular: false, nombre: "Andrés", apellido: "Molina", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99627352", fechaNacimiento: haceAnios(39), nacionalidad: "AR", paisResidencia: "AR" },
+    { id: 2, habitacionId, esTitular: false, ...ac, nacionalidad: "AR", paisResidencia: "AR" },
   ];
   await checkin.confirmarCheckInConReserva({
     reservaId: reserva.id,
@@ -279,7 +371,7 @@ async function crearEstadiaEnCursoHoy(manifiesto) {
     garantiaConfirmada: true,
     medioGarantia: "Efectivo",
   });
-  const acompanante = await prisma.huesped.findFirst({ where: { numeroDocumento: "99627352" }, select: { id: true } });
+  const acompanante = await prisma.huesped.findFirst({ where: { numeroDocumento: ac.numeroDocumento }, select: { id: true } });
   if (acompanante && !manifiesto.huespedes.includes(acompanante.id)) manifiesto.huespedes.push(acompanante.id);
   return reserva;
 }
@@ -296,92 +388,169 @@ async function anular(r) {
   console.log(`  − ${r.codigoConfirmacion} anulada (${MOTIVO_BAJA})`);
 }
 
+// Cierra una estadía de demo En curso con el flujo real de check-out: verificación "sin novedades"
+// de cada habitación que no la tenga, pago de demo en efectivo por el saldo (queda en el
+// manifiesto) y confirmación del check-out (las personas quedan retiradas, sin estadía activa).
+async function cerrarConCheckOut(manifiesto, r) {
+  let cuenta = await checkout.consolidarCargos(r.id);
+  for (const h of cuenta.habitaciones) {
+    const verificada = cuenta.verificaciones.some(
+      (v) => v.habitacionId === h.habitacionId || (!v.habitacionId && cuenta.habitaciones.length === 1),
+    );
+    if (!verificada)
+      await checkout.registrarVerificacion(r.id, { habitacionId: h.habitacionId, tipo: "SinNovedades", registradoPor: OPERADOR });
+  }
+  cuenta = await checkout.consolidarCargos(r.id);
+  let pagado = 0;
+  if (cuenta.saldo > 0) {
+    const pago = await pagos.crearPago({ reservaId: r.id, medios: [{ tipo: "Efectivo", importe: cuenta.saldo }] });
+    pagado = cuenta.saldo;
+    manifiesto.pagosDemo.push({ reservaId: r.id, codigo: r.codigoConfirmacion, pagoId: pago?.id ?? null, importe: cuenta.saldo, medio: "Efectivo", fecha: new Date().toISOString() });
+    guardarManifiesto(manifiesto);
+  }
+  await checkout.confirmarCheckOut(r.id, { cargosValidados: true });
+  return pagado;
+}
+
 async function limpiar() {
   const manifiesto = leerManifiesto();
-  const enCurso = [];
+  const noCerradas = [];
   const ids = [...Object.entries(manifiesto.reservas), ...manifiesto.anteriores.map((id) => ["anterior", id])];
+  const vistos = new Set();
+  console.log("Limpieza de los datos de demo del check-in:");
   for (const [caso, id] of ids) {
+    if (vistos.has(id)) continue;
+    vistos.add(id);
     const r = await reservaDeDemo(id);
     if (!r) continue;
-    if (r.estado === "Confirmada") await anular(r);
-    else if (r.estado === "En curso") enCurso.push(`${r.codigoConfirmacion}${caso === "anterior" ? "" : ` (caso ${caso})`}`);
+    const etiqueta = `${r.codigoConfirmacion}${caso === "anterior" ? "" : ` (caso ${caso})`}`;
+    try {
+      if (r.estado === "Confirmada") await anular(r);
+      else if (r.estado === "En curso") {
+        const pagado = await cerrarConCheckOut(manifiesto, r);
+        console.log(`  ✔ ${etiqueta} cerrada con check-out${pagado > 0 ? ` (pago de demo en efectivo: $ ${pagado.toLocaleString("es-AR")})` : ""}`);
+      }
+    } catch (error) {
+      noCerradas.push(`${etiqueta}: ${error.message}`);
+      console.log(`  ✖ ${etiqueta} no se pudo cerrar: ${error.message}`);
+    }
   }
-  if (enCurso.length) console.log(`\nEstán En curso y hay que cerrarlas con check-out: ${enCurso.join(", ")}.`);
+  guardarManifiesto(manifiesto);
+  if (noCerradas.length) {
+    console.log(`\nNo se pudieron cerrar solas (revisarlas desde Check-out):\n  ${noCerradas.join("\n  ")}`);
+    process.exitCode = 1;
+  }
   console.log("Listo. Las habitaciones y personas de demo se conservan para la próxima corrida.");
 }
 
 async function sembrar() {
   const manifiesto = leerManifiesto();
   const enCurso = [];
-  console.log(`Casos de demo del check-in para hoy (${enDias(0)}):`);
+  const fallas = [];
+  console.log(`Casos de demo del check-in para hoy (${enDias(0).split("-").reverse().join("/")}):`);
+  // Cada caso por separado: un error se informa y se sigue con los demás.
+  async function caso(clave, fn) {
+    try {
+      await fn();
+    } catch (error) {
+      fallas.push(`${clave}) ${error.message}`);
+      console.log(`  ✖ ${clave}) no se pudo preparar: ${error.message}`);
+    } finally {
+      guardarManifiesto(manifiesto);
+    }
+  }
+  const conAviso = (aviso) => (aviso ? ` — ${aviso}` : "");
 
-  // a–e: ingreso HOY. Se conserva la reserva del caso si ya es de hoy y sigue Confirmada.
-  for (const caso of CASOS) {
-    const previa = await reservaDeDemo(manifiesto.reservas[caso.clave]);
-    if (previa?.estado === "Confirmada" && iso(previa.fechaDesde) === enDias(0)) {
-      console.log(`  ↷ ${caso.clave}) ${previa.codigoConfirmacion} ya está lista — ${caso.descripcion}`);
-      continue;
+  // a–e, h: ingreso HOY. Se conserva la reserva si ya es de hoy, sigue Confirmada y sus personas
+  // no están alojadas en otra estadía.
+  for (const c of CASOS) {
+    await caso(c.clave, async () => {
+      const previa = await reservaDeDemo(manifiesto.reservas[c.clave]);
+      if (previa?.estado === "En curso") enCurso.push(previa.codigoConfirmacion);
+      const aviso = await asegurarPersonasLibres(manifiesto, c.clave);
+      if (!aviso && previa?.estado === "Confirmada" && iso(previa.fechaDesde) === enDias(0)) {
+        console.log(`  ↷ ${c.clave}) ${previa.codigoConfirmacion} ya está lista — ${c.descripcion}`);
+        return;
+      }
+      if (previa?.estado === "Confirmada") await anular(previa);
+      const r = await crearReservaCaso(manifiesto, c);
+      console.log(`  ✔ ${c.clave}) ${r.codigoConfirmacion} — ${c.descripcion}${conAviso(aviso)}`);
+    });
+  }
+
+  // f: estadía anterior cerrada. Sus personas son "la persona que vuelve": sin estadía activa.
+  await caso("f", async () => {
+    const anterior = await reservaDeDemo(manifiesto.reservas.f);
+    const aviso = await asegurarPersonasLibres(manifiesto, "f");
+    if (!aviso && anterior?.estado === "Cerrada") {
+      console.log(`  ↷ f) ${anterior.codigoConfirmacion} estadía anterior ya cerrada`);
+      return;
+    }
+    const r = await crearEstadiaAnterior(manifiesto);
+    console.log(`  ✔ f) ${r.codigoConfirmacion} — estadía anterior cerrada (hace 30 días)${conAviso(aviso)}`);
+  });
+
+  // g: Confirmada con ingreso AYER, sin check-in (para el aviso de no-show).
+  await caso("g", async () => {
+    const ayer = await reservaDeDemo(manifiesto.reservas.g);
+    if (ayer?.estado === "En curso") enCurso.push(ayer.codigoConfirmacion);
+    const aviso = await asegurarPersonasLibres(manifiesto, "g");
+    if (!aviso && ayer?.estado === "Confirmada" && iso(ayer.fechaDesde) === enDias(-1)) {
+      console.log(`  ↷ g) ${ayer.codigoConfirmacion} ingreso de ayer ya está`);
+      return;
+    }
+    if (ayer?.estado === "Confirmada") await anular(ayer);
+    const datos = { clave: "g", plan: "BAR", noches: 2, habitaciones: [{ tipo: "Simple", adultos: 1, menores: 0 }] };
+    const r = await crearReservaCaso(manifiesto, datos);
+    await correrFechas(r.id, -1);
+    console.log(`  ✔ g) ${r.codigoConfirmacion} — confirmada con ingreso ayer, sin check-in${conAviso(aviso)}`);
+  });
+
+  // i: estadía En curso desde hoy (Doble, 2 adultos, 3 noches), para sumar una persona adicional.
+  // Sus personas pueden estar alojadas en la propia estadía del caso, en ninguna otra.
+  await caso("i", async () => {
+    const previa = await reservaDeDemo(manifiesto.reservas.i);
+    const vigente = previa?.estado === "En curso" && iso(previa.fechaDesde) === enDias(0);
+    const aviso = await asegurarPersonasLibres(manifiesto, "i", vigente ? previa.id : null);
+    if (!aviso && vigente) {
+      console.log(`  ↷ i) ${previa.codigoConfirmacion} estadía en curso de hoy ya está`);
+      return;
     }
     if (previa?.estado === "Confirmada") await anular(previa);
     if (previa?.estado === "En curso") enCurso.push(previa.codigoConfirmacion);
-    const r = await crearReservaCaso(manifiesto, caso);
-    console.log(`  ✔ ${caso.clave}) ${r.codigoConfirmacion} — ${caso.descripcion}`);
-    guardarManifiesto(manifiesto);
-  }
-
-  // f: estadía anterior cerrada (una sola vez).
-  const anterior = await reservaDeDemo(manifiesto.reservas.f);
-  if (anterior?.estado === "Cerrada") console.log(`  ↷ f) ${anterior.codigoConfirmacion} estadía anterior ya cerrada`);
-  else {
-    const r = await crearEstadiaAnterior(manifiesto);
-    console.log(`  ✔ f) ${r.codigoConfirmacion} — estadía anterior cerrada (hace 30 días)`);
-    guardarManifiesto(manifiesto);
-  }
-
-  // g: Confirmada con ingreso AYER, sin check-in (para el aviso de no-show).
-  const ayer = await reservaDeDemo(manifiesto.reservas.g);
-  if (ayer?.estado === "Confirmada" && iso(ayer.fechaDesde) === enDias(-1)) console.log(`  ↷ g) ${ayer.codigoConfirmacion} ingreso de ayer ya está`);
-  else {
-    if (ayer?.estado === "Confirmada") await anular(ayer);
-    const caso = { clave: "g", plan: "BAR", noches: 2, habitaciones: [{ tipo: "Simple", adultos: 1, menores: 0 }] };
-    const r = await crearReservaCaso(manifiesto, caso);
-    await correrFechas(r.id, -1);
-    console.log(`  ✔ g) ${r.codigoConfirmacion} — confirmada con ingreso ayer, sin check-in`);
-    guardarManifiesto(manifiesto);
-  }
-
-  // i: estadía En curso desde hoy (Doble, 2 adultos, 3 noches), para sumar una persona adicional.
-  const enCursoHoy = await reservaDeDemo(manifiesto.reservas.i);
-  if (enCursoHoy?.estado === "En curso" && iso(enCursoHoy.fechaDesde) === enDias(0))
-    console.log(`  ↷ i) ${enCursoHoy.codigoConfirmacion} estadía en curso de hoy ya está`);
-  else {
-    if (enCursoHoy?.estado === "Confirmada") await anular(enCursoHoy);
-    if (enCursoHoy?.estado === "En curso") enCurso.push(enCursoHoy.codigoConfirmacion);
     const r = await crearEstadiaEnCursoHoy(manifiesto);
-    console.log(`  ✔ i) ${r.codigoConfirmacion} — en curso desde hoy, Doble con 2 adultos y 3 noches (persona adicional)`);
-    guardarManifiesto(manifiesto);
-  }
+    console.log(`  ✔ i) ${r.codigoConfirmacion} — en curso desde hoy, Doble con 2 adultos y 3 noches (persona adicional)${conAviso(aviso)}`);
+  });
 
   // Al menos 4 habitaciones libres para el walk-in: 2 Doble y 2 Simple.
   console.log("\nHabitaciones libres para el walk-in:");
   for (const [nombre, capacidad] of [["Doble", 3], ["Simple", 2]]) {
-    const tipo = await tipoPorNombre(nombre);
-    let libres = await libresHoy(tipo, 1, enDias(1));
-    while (libres.length < 2) {
-      await crearHabitacionDemo(manifiesto, tipo, capacidad);
-      libres = await libresHoy(tipo, 1, enDias(1));
-    }
-    console.log(`  ${nombre}: ${libres.map((h) => h.numero).join(", ")}`);
+    await caso(`walk-in ${nombre}`, async () => {
+      const tipo = await tipoPorNombre(nombre);
+      let libres = await libresHoy(tipo, 1, enDias(1));
+      while (libres.length < 2) {
+        await crearHabitacionDemo(manifiesto, tipo, capacidad);
+        libres = await libresHoy(tipo, 1, enDias(1));
+      }
+      console.log(`  ${nombre}: ${libres.map((h) => h.numero).join(", ")}`);
+    });
   }
-  guardarManifiesto(manifiesto);
 
   for (const id of manifiesto.anteriores) {
     const r = await reservaDeDemo(id);
     if (r?.estado === "En curso" && !enCurso.includes(r.codigoConfirmacion)) enCurso.push(r.codigoConfirmacion);
   }
-  if (enCurso.length) console.log(`\nDe corridas anteriores quedaron En curso (cerrarlas con check-out): ${enCurso.join(", ")}.`);
-  console.log(`\nPersona que vuelve: DNI ${TITULARES.f.numeroDocumento} (Argentina) — ${TITULARES.f.nombre}.`);
+  const casoI = await reservaDeDemo(manifiesto.reservas.i);
+  const pendientes = enCurso.filter((codigo) => codigo !== casoI?.codigoConfirmacion);
+  if (pendientes.length)
+    console.log(`\nDe corridas anteriores quedaron En curso (las cierra "-- --limpiar"): ${[...new Set(pendientes)].join(", ")}.`);
+  const vuelve = personasDelCaso(manifiesto, "f").titular;
+  console.log(`\nPersona que vuelve: ${vuelve.tipoDocumento} ${vuelve.numeroDocumento} (Argentina) — ${vuelve.nombre}.`);
   console.log("Cargala como acompañante en cualquier llegada de hoy para ver la ficha encontrada.");
+  if (fallas.length) {
+    console.log(`\nCasos con error (${fallas.length}):\n  ${fallas.join("\n  ")}`);
+    process.exitCode = 1;
+  }
 }
 
 (process.argv.includes("--limpiar") ? limpiar() : sembrar())
