@@ -236,11 +236,15 @@ async function cargarPersonasEnLote(tx, reservaId, entradas, operador) {
     throw new ErrorDeNegocio(`Las habitaciones de la reserva admiten como máximo ${maximo} personas.`);
   const quien = String(operador || "").trim();
   if (!quien) throw new ErrorDeNegocio("Operador: valor inválido (máximo 191 caracteres).");
+  // Todas las fichas previas de la reserva, también las canceladas: una ficha cancelada de la
+  // misma persona (mismo huespedId) no puede confundirse con la que se crea ahora.
   const previas = await tx.ocupanteReserva.findMany({
-    where: { reservaId, estado: { not: "Cancelado" } },
+    where: { reservaId },
     include: { asignaciones: true },
   });
-  const existentes = previas.map((o) => ({ ...o, habitacionId: o.asignaciones.find((a) => !a.hasta)?.habitacionId }));
+  const existentes = previas
+    .filter((o) => o.estado !== "Cancelado")
+    .map((o) => ({ ...o, habitacionId: o.asignaciones.find((a) => !a.hasta)?.habitacionId }));
   // Primero los que no dependen de nadie, después los menores a cargo de un adulto del lote.
   const ordenadas = [...entradas].sort((a, b) => Number(Boolean(a.responsableId)) - Number(Boolean(b.responsableId)));
   const fichas = validarLote(reserva, ordenadas, existentes).map((f) => ({ ...f, reservaId }));

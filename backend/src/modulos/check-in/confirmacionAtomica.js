@@ -176,9 +176,16 @@ async function confirmarConOcupacion(reserva, { operador, habitaciones, personas
       await validarCambiosDeHabitacion(tx, reserva, cambios, await tx.habitacion.findMany({ where: { id: { in: ids } } }));
     }
 
+    // Filas de la reserva por habitación: sirven para el total actual y para reasignar habitación
+    // (modificarReserva conserva sus ids cuando no cambian las habitaciones).
+    const filasReserva = await tx.reservaHabitacion.findMany({
+      where: { reservaId },
+      select: { id: true, habitacionId: true },
+    });
+
     // Precio con la ocupación final, comparado ANTES de escribir.
     const sumaActual = await tx.reservaNoche.aggregate({
-      where: { reservaHabitacion: { reservaId } },
+      where: { reservaHabitacionId: { in: filasReserva.map((rh) => rh.id) } },
       _sum: { precioNoche: true },
     });
     const totalActual = Number(sumaActual._sum.precioNoche ?? 0);
@@ -203,15 +210,12 @@ async function confirmarConOcupacion(reserva, { operador, habitaciones, personas
 
     // Habitación definitiva: una sola sentencia para todas las que cambian.
     if (cambios.length) {
-      const filasReserva = await tx.reservaHabitacion.findMany({
-        where: { reservaId, habitacionId: { in: cambios.map((c) => c.anterior.id) } },
-        select: { id: true, habitacionId: true },
-      });
-      const casos = filasReserva.map(
+      const aMover = filasReserva.filter((rh) => cambios.some((c) => c.anterior.id === rh.habitacionId));
+      const casos = aMover.map(
         (rh) => Prisma.sql`WHEN ${rh.id} THEN ${cambios.find((c) => c.anterior.id === rh.habitacionId).habitacionId}`,
       );
       await tx.$executeRaw(
-        Prisma.sql`UPDATE reservas_habitaciones SET habitacionId = CASE id ${Prisma.join(casos, " ")} END WHERE id IN (${Prisma.join(filasReserva.map((rh) => rh.id))})`,
+        Prisma.sql`UPDATE reservas_habitaciones SET habitacionId = CASE id ${Prisma.join(casos, " ")} END WHERE id IN (${Prisma.join(aMover.map((rh) => rh.id))})`,
       );
     }
 
