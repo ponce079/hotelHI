@@ -79,8 +79,8 @@ Reemplaza el asistente de 5 pasos del walk-in y la pantalla con modal del check-
 - **Numeración:** el bloque HU-107 a HU-114 sigue reservado para Ricardo.
 
 ## Pruebas
-- **Vitest:** 233/233 (14 casos nuevos de la pantalla + lógica pura + formatos, y 9 de las correcciones).
-- **Jest:** 88/88. `pruebas-estadia-consultas.js`: 14/14. `test:checkin-rediseno`: 22 bloques OK. `test:integracion` (estadía): OK.
+- **Vitest:** 249/249 (14 casos nuevos de la pantalla + lógica pura + formatos, y los de las correcciones).
+- **Jest:** 97/97. `pruebas-estadia-consultas.js`: 14/14. `test:checkin-rediseno`: 24 bloques OK. `test:integracion` (estadía): OK. `test:seed-demo`: 6/6.
 - **Navegador contra `sgh_gimena` con el seed de demo:**
   - 1: un solo `POST /confirmar` aun con doble clic y ningún guardado por persona.
   - 4: quitar con tarifa flexible −$ 4.400 por noche; con no reembolsable "el precio no baja"; cancelar deja todo igual.
@@ -304,6 +304,86 @@ La estadía mínima y el cierre a llegadas son restricciones de **venta**: no ap
   - en otra persona de la reserva original, la confirmación muestra "La tarifa de la reserva no cambia por esta salida." (se canceló sin registrar la salida).
 
   Captura: `capturas-checkin/8-salida-persona-adicional.jpg`.
+
+## Quinta corrección
+
+### 1. Nombres y apellido separados desde la reserva
+
+- **Huesped:** columnas nuevas `nombres` y `apellido` (aditivas, en la misma migración de estadía). `Huesped.nombre` sigue siendo el nombre completo y se arma como "nombres apellido" cuando están los dos, así que comprobantes, búsquedas y confirmaciones no cambian.
+- **Alta de reserva de mostrador:** `ReservaWizard` pide **Nombres \*** y **Apellido \*** por separado. `normalizarHuesped` y `resolverHuesped` guardan los dos.
+  - Quien manda solo `nombre` sigue funcionando como antes.
+  - La reserva y las llegadas exponen `nombres` y `apellido`.
+- **Walk-in:** el huésped armado desde el titular guarda los dos.
+- **Titular automático** (`titular.servicio.js`): toma nombres y apellido del huésped cuando los tiene. Un huésped viejo, con el nombre completo en un solo campo, sigue como siempre: todo en `nombre`, apellido vacío y el aviso.
+- **Check-in y ficha de ocupante:** precargan cada uno en su campo. El aviso "separá nombre y apellido" queda solo para huéspedes viejos. **Nunca se parte un nombre viejo automáticamente.**
+- **Sincronización:** todo camino que actualiza el Huesped desde una ficha guarda nombres y apellido y recalcula `nombre`. Eso incluye el upsert de `vincularPersona`, la carga en lote (`resolverHuespedes` / `actualizarFichasEnLote`), la edición de una ficha, el alta de reserva y el walk-in.
+- **`GET /api/huespedes/por-documento`:** sin ficha previa, devuelve nombres y apellido del Huesped. El nombre completo, solo si el huésped no los tiene separados.
+- **Para el e-commerce** (rama `feature/ecommerce`, no se tocó): **debe enviar `nombres` y `apellido` por separado** en el huésped del alta. Hoy manda solo `nombre`, que sigue aceptándose, pero deja al huésped sin los campos separados.
+
+### 2. Mayúscula inicial
+
+`formatearNombrePropio` (`frontend/src/lib/nombres.js`, con tests) se aplica al salir del campo en el check-in, la ficha de ocupante y el alta de reserva:
+- pone mayúscula inicial en cada palabra, sin agregar ni quitar tildes ("maria cruz" → "Maria Cruz");
+- deja las partículas (de, del, la, las, los, y, da, di, van, von) en minúscula, salvo al inicio ("juan de la vega" → "Juan de la Vega");
+- solo actúa en el frontend; el backend no reescribe nombres.
+
+### 3. Campos obligatorios
+
+- **Check-in:** `camposObligatorios` usa las mismas reglas que `revisarFila`, que es lo que bloquea "Confirmar check-in":
+  - el documento según la fila;
+  - la residencia propia, salvo que se herede;
+  - localidad y domicilio del titular de la habitación;
+  - el **teléfono solo del titular de la reserva**;
+  - el **responsable y su vínculo solo de menores de 18**;
+  - la autorización según el vínculo.
+
+  Cada rótulo obligatorio lleva asterisco y la sección muestra "* obligatorio". El motivo del titular distinto también lleva asterisco.
+- **Ficha de ocupante:** "* obligatorio" en Identidad y Estadía; domicilio, teléfono y correo "(opcional)".
+- **Alta de reserva:** "* obligatorio"; preferencias y canal de confirmación "(opcional)".
+
+### 4. Vínculo del responsable con el menor
+
+- **Catálogo único** en `lib/vinculos.js`, en el backend y en el frontend, con un test de igualdad: "Padre o madre", "Tutor legal", "Otro familiar", "Otro adulto a cargo". El backend rechaza valores fuera del catálogo.
+- **Obligatorio para todo menor de 18** (`MAYORIA_EDAD`), incluidos los de 13 a 17 que cuentan como adultos para la ocupación.
+- Con "Otro familiar" u "Otro adulto a cargo", la pantalla muestra "Pedí la autorización de los padres o tutores" y la casilla obligatoria "Autorización presentada" (`autorizacionPresentada = true`).
+- Columnas nuevas `vinculoResponsable` y `autorizacionPresentada` en `OcupanteReserva`, en la misma migración.
+- **Validación:**
+  - en la confirmación del check-in (`ocupacionIngreso`), en la carga en lote y al guardar una ficha;
+  - en `validarCompleto`, para verificar o ingresar;
+  - y en el frontend.
+
+  El vínculo queda en la ficha del menor y en el evento "Check-in: ocupantes registrados" (`menores: [{ ocupanteId, responsableId, vinculo, autorizacionPresentada }]`).
+- **Personas de la estadía** muestra "Responsable: Martín Gutiérrez · Padre o madre" y, si corresponde, "· Autorización presentada".
+
+### 5. "Marcar documento verificado"
+
+El botón "Verificar datos" se llama ahora **"Marcar documento verificado"** y solo aparece en fichas con "Datos por verificar".
+
+### Migración
+
+`prisma/estadia-ocupantes-cargos.sql` suma 4 columnas aditivas, con el mismo script y runbook (`actualizar-esquema-estadia.js`). Probada de las dos formas:
+- **desde cero:** base local temporal `hotelhi_migracion_prueba` con el esquema de master. Aplicó 32 operaciones, `prisma migrate diff` contra `schema.prisma` de la rama dio vacío, la segunda corrida aplicó 0 y la base se borró al terminar;
+- **sobre `hotelhi_pruebas`**, que ya tenía la migración anterior: aplicó solo las 4 columnas y la segunda corrida aplicó 0.
+
+También se aplicó en `sgh_gimena` (local).
+
+### Demo
+
+- **Casos:** nombres y apellido separados en todos, salvo **e** (el huésped viejo). El menor del caso **a** viene con "Padre o madre"; el de **b**, con "Otro familiar" y autorización presentada.
+- **`--limpiar`:** ahora también libera las habitaciones que el check-out de la demo deja "en limpieza".
+- **Capturas:**
+  - `9-checkin-nombres-separados-y-vinculo-1366.png`
+  - `10-checkin-otro-familiar-con-autorizacion-1366.png`
+  - `11-checkin-huesped-viejo-aviso-1366.png`
+  - `12-personas-de-la-estadia-vinculo-1366.png`
+
+### Pruebas
+
+- **Backend:**
+  - `test:checkin-rediseno`, 24 bloques. Cubren nombres y apellido (alta, titular automático, edición sincronizada, persona que vuelve) y el vínculo (sin autorización 400; con autorización confirma, se guarda y queda en el evento; un valor fuera del catálogo 400; un adulto no lleva vínculo).
+  - Jest 97/97: catálogo de vínculos, migración y validación de ocupación.
+  - `test:seed-demo` 6/6, con nombres separados y menores con su vínculo.
+- **Vitest 249/249:** nombres, check-in (precarga separada sin aviso, asteriscos por fila, autorización que bloquea y se envía), ficha de ocupante y alta de reserva.
 
 ## Para Ricardo: el saldo descuenta la garantía (solo informado, no se tocó)
 

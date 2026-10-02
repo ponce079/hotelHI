@@ -24,15 +24,17 @@ La misma secuencia deja todo usable, aunque en el ensayo se hayan hecho check-in
 
 Se puede correr las veces que haga falta: si los casos de hoy ya están y sus personas están libres, no crea nada nuevo (no duplica habitaciones, huéspedes ni reservas).
 
+`--limpiar` también devuelve a "libre" las habitaciones que el check-out de la demo dejó "en limpieza": la limpieza se da por hecha. Lo mismo hace con las habitaciones de demo de corridas anteriores que no tienen una estadía en curso. Así, cada corrida no tiene que crear habitaciones nuevas. Las habitaciones en mantenimiento no se tocan.
+
 ## Casos
 
 | | Caso | Para probar |
 |---|---|---|
-| a | Martín Gutiérrez — Doble, 2 adultos + 1 menor, tarifa flexible, **seña con tarjeta** (VISA ****4242) | Check-in completo, chip de seña, menor con responsable |
-| b | Sofía Ruiz Díaz — **2 habitaciones**: Doble 2 adultos + Simple 1 adulto y 1 menor, seña por transferencia | Filas por habitación, un titular por habitación, menor con responsable de la otra habitación |
+| a | Martín Gutiérrez — Doble, 2 adultos + 1 menor, tarifa flexible, **seña con tarjeta** (VISA ****4242) | Check-in completo, chip de seña. Nombre y apellido llegan **cada uno en su campo**, sin aviso. El menor (Tomás) viene precargado con su responsable como **"Padre o madre"** |
+| b | Sofía Ruiz Díaz — **2 habitaciones**: Doble 2 adultos + Simple 1 adulto y 1 menor, seña por transferencia | Filas por habitación, un titular por habitación. El menor (Joaquín) viene precargado a cargo de la titular de la otra habitación como **"Otro familiar"**, con la **autorización presentada**. Desmarcar la casilla bloquea la confirmación |
 | c | Lucía Fernández — Doble, 2 adultos, **no reembolsable** | Tarifa no reembolsable en el resumen. Quitar a uno dice "No cambia el precio": la Doble ya incluye 2 adultos |
 | d | Diego Morales — Doble de capacidad 3 con **3 adultos**, tarifa flexible | Quitar un adulto: el total baja un adicional por noche |
-| e | María José Fernández Ruiz — pasaporte de Chile, **nombre completo en un solo campo** | Aviso "El nombre viene completo desde la reserva" |
+| e | María José Fernández Ruiz — pasaporte de Chile, **nombre completo en un solo campo** (huésped viejo: es el único caso sin nombres y apellido separados) | Aviso "El nombre viene completo desde la reserva": se separa a mano |
 | h | Federico Álvarez — Doble de capacidad 3 con **3 adultos**, **no reembolsable** | Quitar un adulto: "Tarifa no reembolsable: el precio no baja" |
 | f | Carolina Paz — **estadía anterior cerrada** (hace 30 días) | Persona que vuelve: DNI **99784205** (Argentina). El script lo imprime al final |
 | g | Pedro Vargas — Confirmada con ingreso **ayer**, sin check-in | Aviso de posible no-show (no figura en la lista) |
