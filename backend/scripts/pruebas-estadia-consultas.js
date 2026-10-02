@@ -317,23 +317,29 @@ async function main() {
   );
 
   await prueba(
-    "modificar la ocupación de 1 o 4 habitaciones usa una sola updateMany y ningún update por habitación",
+    "modificar la ocupación de 1 o 4 habitaciones (con ocupaciones distintas) usa una sola sentencia",
     async () => {
       const consultas = async (cantidad) => {
         base._limpiar();
         const habs = await habitaciones(cantidad, 3);
         const reserva = await reservaCompleta(habs.map((h) => ({ ...h, adultos: 1, menores: 0 })));
-        const nuevas = habs.map((h) => ({ ...h, adultos: 2, menores: 0 }));
-        return medir(["reservaHabitacion."], () =>
+        // Ocupaciones distintas entre sí: antes era un updateMany por cada par (adultos, menores).
+        const nuevas = habs.map((h, i) => ({ ...h, adultos: 2, menores: i % 2 }));
+        return medir(["reservaHabitacion.", "$executeRaw"], () =>
           reservasServicio.modificarReserva(reserva.id, { habitaciones: nuevas }),
         );
       };
       const chica = await consultas(1);
       const grande = await consultas(4);
       igual(chica.cuenta, grande.cuenta, "modificarReserva");
-      assert.equal(grande.cuenta["reservaHabitacion.updateMany"], 1);
+      assert.equal(grande.cuenta["$executeRaw"], 1);
+      assert.equal(grande.cuenta["reservaHabitacion.updateMany"] ?? 0, 0);
       assert.equal(grande.cuenta["reservaHabitacion.update"] ?? 0, 0);
       assert.ok(base._datos.reservaHabitacion.every((rh) => rh.adultos === 2));
+      assert.deepEqual(
+        base._datos.reservaHabitacion.map((rh) => rh.menores),
+        [0, 1, 0, 1],
+      );
     },
   );
 

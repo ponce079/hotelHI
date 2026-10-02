@@ -235,6 +235,10 @@ async function confirmarCheckInConReserva({
   garantiaConfirmada,
   medioGarantia,
   referenciaGarantia,
+  habitaciones,
+  personas,
+  totalEsperado,
+  motivoTitularDistinto,
 }) {
   const id = enteroPositivo(reservaId, "reservaId");
   let reserva;
@@ -245,16 +249,33 @@ async function confirmarCheckInConReserva({
   }
   validarReservaVigente(reserva);
 
+  // Rediseño del check-in: con `personas` en el body la identidad se toma de las personas que
+  // ingresan (no hay un "documento presentado" aparte) y la confirmación es atómica con la
+  // ocupación final (confirmacionAtomica.js). Sin `personas`, el flujo de siempre.
+  const conOcupacion = Array.isArray(personas);
+
   // HU-43 — "verificación del documento de identidad contra los datos de
   // Huesped": comparación real contra lo que ya quedó cargado en la
   // reserva, no una casilla decorativa que se puede tildar sin mirar.
-  if (!documentosCoinciden(numeroDocumentoIngresado, reserva.huesped?.numeroDocumento)) {
+  if (!conOcupacion && !documentosCoinciden(numeroDocumentoIngresado, reserva.huesped?.numeroDocumento)) {
     throw new ErrorDeNegocio(
       `El documento ingresado no coincide con el de la reserva (${reserva.huesped?.tipoDocumento} ${reserva.huesped?.numeroDocumento}).`
     );
   }
 
   validarGarantia({ garantiaConfirmada, medioGarantia, referenciaGarantia });
+
+  if (conOcupacion) {
+    await require("./confirmacionAtomica").confirmarConOcupacion(reserva, {
+      operador,
+      habitaciones,
+      personas,
+      totalEsperado,
+      motivoTitularDistinto,
+    });
+    await registrarGarantia(id, { medioGarantia, referenciaGarantia });
+    return reservasServicio.obtenerReserva(id);
+  }
 
   await prisma.$transaction(
     async (tx) => {
@@ -386,5 +407,6 @@ module.exports = {
   listarHabitacionesLibresAhora,
   registrarCheckInWalkIn,
   validarReservaVigente,
+  ocuparHabitaciones,
   ErrorDeNegocio,
 };

@@ -989,10 +989,19 @@ async function crearReservaEnTransaccion(tx, datos, { incluirTitular = true } = 
     throw new ErrorDeNegocio("El plan tarifario elegido no está disponible para este canal.");
   }
   if (centavos(plan.total) !== centavos(totalEsperado)) {
-    throw new ErrorDeNegocio(
+    const error = new ErrorDeNegocio(
       `El precio cambió desde la cotización: antes $${totalEsperado}, ahora $${plan.total}. Volvé a cotizar.`,
       409
     );
+    // Rediseño del check-in (aditivo): mismo contrato que el 409 del confirmar con reserva.
+    error.codigo = "PRECIO_CAMBIO";
+    error.detalle = {
+      totalAnterior: Number(totalEsperado),
+      totalNuevo: plan.total,
+      diferencia: Number((plan.total - Number(totalEsperado)).toFixed(2)),
+      mensajeNoReembolsable: null,
+    };
+    throw error;
   }
 
   const huespedGuardado = await resolverHuesped(tx, huesped);
@@ -1522,10 +1531,49 @@ async function modificarReserva(id, data, cliente = prisma) {
     );
 
     if (soloPrevia) {
+      // Rediseño del check-in (aditivo): detalle por habitación y por noche para la vista previa.
+      const redondear = (n) => Number(n.toFixed(2));
+      const porHabitacion = plan.habitaciones.map((habitacionPlan) => {
+        const anterior = snapshotPorHabitacion.get(habitacionPlan.habitacionId);
+        const totalAnteriorHabitacion = anterior
+          ? [...anterior.noches.values()].reduce((a, n) => a + Number(n.precioNoche), 0)
+          : 0;
+        const totalNuevoHabitacion = (nochesPorHabitacion.get(habitacionPlan.habitacionId) ?? []).reduce(
+          (a, n) => a + n.precioNoche,
+          0
+        );
+        return {
+          habitacionId: habitacionPlan.habitacionId,
+          numero: habitacionPlan.numero,
+          adultos: habitacionPlan.adultos,
+          menores: habitacionPlan.menores,
+          totalAnterior: redondear(totalAnteriorHabitacion),
+          totalNuevo: redondear(totalNuevoHabitacion),
+          diferencia: redondear(totalNuevoHabitacion - totalAnteriorHabitacion),
+        };
+      });
+      const porFecha = new Map();
+      const sumar = (fecha, campo, valor) => {
+        if (!porFecha.has(fecha)) porFecha.set(fecha, { fecha, anterior: 0, nuevo: 0 });
+        porFecha.get(fecha)[campo] += valor;
+      };
+      for (const { noches } of snapshotPorHabitacion.values())
+        for (const [fecha, n] of noches) sumar(fecha, "anterior", Number(n.precioNoche));
+      for (const noches of nochesPorHabitacion.values()) for (const n of noches) sumar(n.fecha, "nuevo", n.precioNoche);
+      const diferenciaPorNoche = [...porFecha.values()]
+        .sort((a, b) => a.fecha.localeCompare(b.fecha))
+        .map((n) => ({
+          fecha: n.fecha,
+          anterior: redondear(n.anterior),
+          nuevo: redondear(n.nuevo),
+          diferencia: redondear(n.nuevo - n.anterior),
+        }));
       return {
         totalAnterior,
         totalNuevo,
         diferencia: Number((totalNuevo - totalAnterior).toFixed(2)),
+        porHabitacion,
+        diferenciaPorNoche,
         mensajeNoReembolsable: huboReduccionNoReembolsable
           ? "Tarifa no reembolsable: la reducción de ocupación no modifica el precio."
           : null,
@@ -1557,16 +1605,17 @@ async function modificarReserva(id, data, cliente = prisma) {
     // Una sola updateMany por cada par (adultos, menores) distinto, en vez de un update por
     // habitación: las consultas dependen de la variedad de ocupaciones (acotada por la capacidad
     // de las habitaciones), no de cuántas habitaciones tenga la reserva.
-    const idsPorOcupacion = new Map();
-    for (const h of habitaciones) {
-      const anterior = actual.reservaHabitaciones.find((rh) => rh.habitacionId === h.habitacionId);
-      if (!anterior || (anterior.adultos === h.adultos && anterior.menores === h.menores)) continue;
-      const clave = `${h.adultos}|${h.menores}`;
-      if (!idsPorOcupacion.has(clave)) idsPorOcupacion.set(clave, { adultos: h.adultos, menores: h.menores, ids: [] });
-      idsPorOcupacion.get(clave).ids.push(anterior.id);
-    }
-    for (const { adultos, menores, ids } of idsPorOcupacion.values()) {
-      await tx.reservaHabitacion.updateMany({ where: { id: { in: ids } }, data: { adultos, menores } });
+    // Rediseño del check-in: UNA sola sentencia para todas las habitaciones que cambian de
+    // ocupación (antes, un updateMany por cada par adultos/menores distinto).
+    const cambiosOcupacion = habitaciones
+      .map((h) => ({ h, anterior: actual.reservaHabitaciones.find((rh) => rh.habitacionId === h.habitacionId) }))
+      .filter(({ h, anterior }) => anterior && (anterior.adultos !== h.adultos || anterior.menores !== h.menores));
+    if (cambiosOcupacion.length > 0) {
+      const casoAdultos = cambiosOcupacion.map(({ h, anterior }) => Prisma.sql`WHEN ${anterior.id} THEN ${h.adultos}`);
+      const casoMenores = cambiosOcupacion.map(({ h, anterior }) => Prisma.sql`WHEN ${anterior.id} THEN ${h.menores}`);
+      await tx.$executeRaw(
+        Prisma.sql`UPDATE reservas_habitaciones SET adultos = CASE id ${Prisma.join(casoAdultos, " ")} END, menores = CASE id ${Prisma.join(casoMenores, " ")} END WHERE id IN (${Prisma.join(cambiosOcupacion.map(({ anterior }) => anterior.id))})`
+      );
     }
     const actualizada = await tx.reserva.update({
       where: { id: reservaId },
@@ -1900,6 +1949,8 @@ module.exports = {
   obtenerPorCodigoODocumento,
   consultarDisponibilidad,
   esLibreAhora,
+  buscarConflictos,
+  conIdsDePlan,
   // Transiciones para Check-in / Check-out
   marcarEnCurso,
   marcarCerrada,
