@@ -143,12 +143,20 @@ function sacarResidencia(persona) {
   return residencia;
 }
 async function listar(reservaId) {
-  const personas = await prisma.ocupanteReserva.findMany({
-    where: { reservaId: id(reservaId) },
-    include: includePersona,
-    orderBy: { id: "asc" },
-  });
-  return personas.map(conResidencia);
+  const [personas, adicionales] = await Promise.all([
+    prisma.ocupanteReserva.findMany({
+      where: { reservaId: id(reservaId) },
+      include: includePersona,
+      orderBy: { id: "asc" },
+    }),
+    prisma.eventoEstadia.findMany({
+      where: { reservaId: id(reservaId), accion: "Persona adicional" },
+      select: { detalle: true },
+    }),
+  ]);
+  // Marca a quien entró como persona adicional (la salida anticipada le baja la ocupación).
+  const idsAdicionales = new Set(adicionales.map((e) => JSON.parse(e.detalle).ocupanteId));
+  return personas.map((o) => ({ ...conResidencia(o), personaAdicional: idsAdicionales.has(o.id) }));
 }
 async function capacidad(tx, r, habitacionId, persona, excluirId) {
   const rh = r.reservaHabitaciones.find((h) => h.habitacionId === habitacionId);
@@ -549,7 +557,10 @@ async function accion(reservaId, ocupanteId, data) {
     await evento(tx, reservaId, data.accion, { ocupanteId: p.id }, operador);
     if (adicional) await personaAdicional.aplicar(tx, r, adicional, p, operador, evento);
     // Salida anticipada de una persona adicional: se anulan los cargos de las noches que no usa.
-    if (data.accion === "retirar") await personaAdicional.anularNochesNoUsadas(tx, reservaId, p.id, operador);
+    if (data.accion === "retirar") {
+      await personaAdicional.anularNochesNoUsadas(tx, reservaId, p.id, operador);
+      await personaAdicional.ajustarOcupacionPorSalida(tx, r, p.id, operador, evento);
+    }
     return { ok: true };
   }, OPCIONES_TRANSACCION);
 }

@@ -893,11 +893,32 @@ async function pruebas({ bar, nrf, temporada }) {
     const despues = await adicionales(reserva.id);
     assert.deepEqual(despues.map((c) => c.anulado), [false, true, true]);
     assert.ok(despues.filter((c) => c.anulado).every((c) => c.motivoAnulacion === "Salida anticipada" && c.anuladoPor === OPERADOR));
+    // Entró como persona adicional: su salida anticipada baja la ocupación registrada, con evento.
+    const ocupacion = async () => {
+      const x = await p.reservaHabitacion.findFirst({ where: { reservaId: reserva.id } });
+      return [x.adultos, x.menores];
+    };
+    assert.deepEqual(await ocupacion(), [2, 0], "la salida anticipada de la persona adicional baja la ocupación");
+    const ajustes = () => p.eventoEstadia.findMany({ where: { reservaId: reserva.id, accion: "Ocupación ajustada" } });
+    const [ajuste] = await ajustes();
+    assert.deepEqual(JSON.parse(ajuste.detalle), {
+      ocupanteId: ficha.id,
+      habitacionId: h.id,
+      ocupacionAnterior: { adultos: 3, menores: 0 },
+      ocupacionNueva: { adultos: 2, menores: 0 },
+      motivo: "Salida anticipada de una persona adicional",
+    });
+    assert.equal(ajuste.operador, OPERADOR);
     // Retirar a alguien sin cargos adicionales no anula nada.
     const anuladosAntes = await p.consumoServicioAdicional.count({ where: { reservaId: reserva.id, anulado: true } });
     const acompanante = await p.ocupanteReserva.findFirst({ where: { reservaId: reserva.id, estado: "Alojado", esTitular: false } });
     await estadiaS.accion(reserva.id, acompanante.id, { accion: "retirar", operador: OPERADOR });
     assert.equal(await p.consumoServicioAdicional.count({ where: { reservaId: reserva.id, anulado: true } }), anuladosAntes);
+    // Era de la reserva original: la ocupación registrada no cambia (el precio congelado no se reintegra).
+    assert.deepEqual(await ocupacion(), [2, 0]);
+    assert.equal((await ajustes()).length, 1);
+    assert.equal((await estadiaS.listar(reserva.id)).find((o) => o.id === ficha.id).personaAdicional, true);
+    assert.equal((await estadiaS.listar(reserva.id)).find((o) => o.id === acompanante.id).personaAdicional, false);
     void titular;
     ok("persona adicional: vista previa obligatoria, 3 cargos por noche, ficha Alojada, ReservaNoche intacta, capacidad y salida anticipada");
   }
@@ -934,7 +955,11 @@ async function pruebas({ bar, nrf, temporada }) {
     assert.equal(await p.consumoServicioAdicional.count({ where: { reservaId: reserva.id, claveOperacion: { startsWith: "persona-adicional:" } } }), 0);
     const rh = await p.reservaHabitacion.findFirst({ where: { reservaId: reserva.id } });
     assert.deepEqual([rh.adultos, rh.menores], [2, 1]);
-    ok("persona adicional menor: vista previa sin cargo, entra alojado y la ocupación suma un menor");
+    // Su salida anticipada baja la ocupación en un menor.
+    await estadiaS.accion(reserva.id, ficha.id, { accion: "retirar", operador: OPERADOR });
+    const rhSalida = await p.reservaHabitacion.findFirst({ where: { reservaId: reserva.id } });
+    assert.deepEqual([rhSalida.adultos, rhSalida.menores], [2, 0]);
+    ok("persona adicional menor: vista previa sin cargo, entra alojado, suma un menor y su salida anticipada lo resta");
   }
   {
     // "Registrar ingreso" de una ficha Prevista que supera la ocupación: misma vista previa y cargos.
@@ -982,6 +1007,50 @@ async function pruebas({ bar, nrf, temporada }) {
     assert.equal((await p.ocupanteReserva.findUnique({ where: { id: prevista.id } })).estado, "Alojado");
     assert.equal(await p.consumoServicioAdicional.count({ where: { reservaId: reserva.id, claveOperacion: { startsWith: `persona-adicional:${prevista.id}:` } } }), 2);
     ok("persona adicional por Registrar ingreso: vista previa y 2 cargos");
+  }
+  {
+    // Restricciones de venta: una temporada con estadía mínima 3 no impide registrar a una persona
+    // adicional cuando queda 1 noche. Va al final y se borra al terminar (afecta a toda la base).
+    const { reserva, h } = await enCurso({ noches: 2 });
+    await correrUnDia(reserva.id);
+    const evento = await p.temporada.create({
+      data: { nombre: `Evento mínima 3 ${marca}`, nivel: "EVENTO", fechaDesde: new Date(`${enDias(-1)}T00:00:00Z`), fechaHasta: new Date(`${enDias(5)}T00:00:00Z`), estadiaMinima: 3 },
+    });
+    const habitacionDb = await p.habitacion.findUnique({ where: { id: h.id } });
+    const tarifa = await p.tarifa.create({
+      data: { tipoHabitacionId: habitacionDb.tipoHabitacionId, temporadaId: evento.id, precioBase: 150000, adicionalAdultoExtra: 25000, vigenteDesde: new Date("2020-01-01") },
+    });
+    try {
+      const r = await p.reserva.findUnique({ where: { id: reserva.id } });
+      const cotizar = (opciones) =>
+        require("../src/modulos/tarifas/cotizacion.servicio").cotizarReserva(
+          {
+            fechaDesde: enDias(0),
+            fechaHasta: r.fechaHasta.toISOString().slice(0, 10),
+            planTarifarioId: r.planTarifarioId,
+            habitaciones: [{ habitacionId: h.id, adultos: 3, menores: 0 }],
+            canal: "RECEPCION",
+          },
+          p,
+          opciones,
+        );
+      // Sin el parámetro, la estadía mínima se sigue exigiendo.
+      await assert.rejects(() => cotizar(), /estadía mínima de 3 noches/);
+      const tercero = persona(3, h.id, 30);
+      const alta = (extra = {}) => estadiaS.guardar(reserva.id, null, { ...tercero, habitacionId: h.id, operador: OPERADOR, ...extra });
+      const vista = await alta().catch((e) => {
+        assert.equal(e.codigo, "PERSONA_ADICIONAL_REQUIERE_CONFIRMACION", e.message);
+        return e.detalle;
+      });
+      assert.deepEqual(vista.noches, [{ fecha: enDias(0), diferencia: 25000 }], "1 noche: el adicional por adulto del evento");
+      const ficha = await alta({ confirmacionPersonaAdicional: vista.token });
+      const cargosFicha = await p.consumoServicioAdicional.findMany({ where: { claveOperacion: { startsWith: `persona-adicional:${ficha.id}:` } } });
+      assert.deepEqual(cargosFicha.map((c) => Number(c.monto)), [25000]);
+    } finally {
+      await p.tarifa.delete({ where: { id: tarifa.id } });
+      await p.temporada.delete({ where: { id: evento.id } });
+    }
+    ok("persona adicional con estadía mínima 3 y 1 noche restante: se registra con 1 cargo (sin el parámetro, la mínima se sigue exigiendo)");
   }
 }
 

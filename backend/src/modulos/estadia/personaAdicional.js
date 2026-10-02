@@ -10,6 +10,7 @@
 //     de la reserva y las tarifas vigentes hoy (motor de cotización existente, sin modificarlo). Las
 //     noches con diferencia se cargan en la cuenta de la habitación como "Persona adicional — …";
 //   - menor: sin cargo.
+// La estadía mínima y el cierre a llegadas (restricciones de venta) no aplican a este cálculo.
 // La ocupación registrada de la habitación se actualiza; ReservaNoche no se toca (precio congelado).
 // En la salida anticipada se anulan (baja lógica) los cargos de las noches que no se usan.
 const { createHash } = require("node:crypto");
@@ -60,6 +61,7 @@ async function evaluar(tx, r, habitacionId, persona, { excluirId = null, ErrorDe
           fechaVenta: iso(hoy),
         },
         tx,
+        { ignorarRestriccionesVenta: true },
       );
     } catch (e) {
       if (e.statusCode) throw new ErrorDeNegocio(`No se pudo calcular el cargo de la persona adicional: ${e.message}`, 409);
@@ -144,4 +146,52 @@ async function anularNochesNoUsadas(tx, reservaId, ocupanteId, operador) {
   });
 }
 
-module.exports = { evaluar, exigirConfirmacion, aplicar, anularNochesNoUsadas, CODIGO_CONFIRMACION, prefijoClave };
+// Evento "Persona adicional" de este ocupante (el registro de que entró por encima de la ocupación).
+async function ingresoComoAdicional(tx, reservaId, ocupanteId) {
+  const ev = await tx.eventoEstadia.findFirst({
+    where: { reservaId, accion: "Persona adicional", detalle: { startsWith: `{"ocupanteId":${ocupanteId},` } },
+    orderBy: { id: "desc" },
+  });
+  return ev ? JSON.parse(ev.detalle) : null;
+}
+
+// Salida anticipada de una persona adicional: la ocupación registrada de la habitación en la que
+// se sumó baja en 1 (adulto o menor, según cómo entró). Si la persona era de la reserva original,
+// la ocupación no cambia: el precio congelado de la reserva no se reintegra.
+async function ajustarOcupacionPorSalida(tx, r, ocupanteId, operador, evento) {
+  if (hoyComoFechaUTC() >= r.fechaHasta) return null;
+  const ingreso = await ingresoComoAdicional(tx, r.id, ocupanteId);
+  if (!ingreso) return null;
+  const rh = await tx.reservaHabitacion.findFirst({ where: { reservaId: r.id, habitacionId: ingreso.habitacionId } });
+  if (!rh) return null;
+  const campo = ingreso.categoria === "menor" ? "menores" : "adultos";
+  if (rh[campo] - 1 < (campo === "adultos" ? 1 : 0)) return null;
+  const anterior = { adultos: rh.adultos, menores: rh.menores };
+  const nueva = { ...anterior, [campo]: rh[campo] - 1 };
+  await tx.reservaHabitacion.update({ where: { id: rh.id }, data: { [campo]: nueva[campo] } });
+  await evento(
+    tx,
+    r.id,
+    "Ocupación ajustada",
+    {
+      ocupanteId,
+      habitacionId: ingreso.habitacionId,
+      ocupacionAnterior: anterior,
+      ocupacionNueva: nueva,
+      motivo: "Salida anticipada de una persona adicional",
+    },
+    operador,
+  );
+  return nueva;
+}
+
+module.exports = {
+  evaluar,
+  exigirConfirmacion,
+  aplicar,
+  anularNochesNoUsadas,
+  ingresoComoAdicional,
+  ajustarOcupacionPorSalida,
+  CODIGO_CONFIRMACION,
+  prefijoClave,
+};
