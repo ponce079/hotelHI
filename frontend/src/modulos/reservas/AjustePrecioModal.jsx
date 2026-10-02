@@ -19,8 +19,9 @@ const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", curre
 // ReservaWizard.jsx en edición: mientras la selección/modo/valor/motivo son
 // válidos, se consulta sola una vista previa (soloPrevia: true) antes de
 // que el gerente confirme.
-export function AjustePrecioModal({ reserva, onClose, onExito }) {
-  const [seleccionadas, setSeleccionadas] = useState(() => new Set());
+// `nocheInicial` (opcional): noche que llega elegida cuando se abre desde la fila de esa noche en la Cuenta.
+export function AjustePrecioModal({ reserva, nocheInicial, onClose, onExito }) {
+  const [seleccionadas, setSeleccionadas] = useState(() => new Set(nocheInicial ? [nocheInicial] : []));
   const [modo, setModo] = useState(MODO_AJUSTE_PRECIO.PRECIO_FIJO);
   const [valor, setValor] = useState("");
   const [motivo, setMotivo] = useState("");

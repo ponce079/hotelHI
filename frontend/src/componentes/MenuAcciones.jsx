@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MoreVertical } from "lucide-react";
 
@@ -8,7 +8,12 @@ import { MoreVertical } from "lucide-react";
 // cortado contra el borde. Ahora solo la acción principal queda visible;
 // el resto entra acá, así la columna mide siempre lo mismo sin importar
 // cuántas acciones tenga cada estado.
-export function MenuAcciones({ acciones }) {
+//
+// Cada acción es { label, onClick, disabled?, variante?, separador? }: `separador` pinta una línea
+// antes de esa acción. `etiqueta` es el nombre accesible del botón (por defecto "Más acciones"; en
+// una tabla conviene decir de quién, p. ej. "Acciones de Ana Pérez"). El menú se abre hacia arriba;
+// si arriba no hay lugar, se abre hacia abajo para no quedar cortado.
+export function MenuAcciones({ acciones, etiqueta = "Más acciones" }) {
   const [abierto, setAbierto] = useState(false);
   const [posicion, setPosicion] = useState(null);
   const contenedorRef = useRef(null);
@@ -43,14 +48,17 @@ export function MenuAcciones({ acciones }) {
         onClick={() => {
           if (!abierto) {
             const rect = contenedorRef.current.getBoundingClientRect();
-            setPosicion({
-              right: Math.max(8, window.innerWidth - rect.right),
-              bottom: Math.max(8, window.innerHeight - rect.top + 4),
-            });
+            const alto = acciones.length * 32 + 16;
+            const derecha = Math.max(8, window.innerWidth - rect.right);
+            setPosicion(
+              rect.top < alto + 12
+                ? { right: derecha, top: rect.bottom + 4 }
+                : { right: derecha, bottom: Math.max(8, window.innerHeight - rect.top + 4) },
+            );
           }
           setAbierto((v) => !v);
         }}
-        aria-label="Más acciones"
+        aria-label={etiqueta}
         className="flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-md text-piedra transition-colors hover:bg-hueso hover:text-tinta"
       >
         <MoreVertical size={16} />
@@ -58,12 +66,13 @@ export function MenuAcciones({ acciones }) {
       {abierto && posicion && createPortal(
         <div
           ref={menuRef}
-          style={{ right: posicion.right, bottom: posicion.bottom }}
+          style={{ right: posicion.right, bottom: posicion.bottom, top: posicion.top }}
           className="fixed z-[100] min-w-[190px] rounded-md border border-borde bg-white py-1 shadow-[0_8px_24px_rgba(46,43,37,0.22)]"
         >
           {acciones.map((a) => (
+            <Fragment key={a.label}>
+            {a.separador && <hr className="my-1 border-borde" />}
             <button
-              key={a.label}
               type="button"
               disabled={a.disabled}
               onClick={() => {
@@ -76,6 +85,7 @@ export function MenuAcciones({ acciones }) {
             >
               {a.label}
             </button>
+            </Fragment>
           ))}
         </div>,
         document.body

@@ -2,7 +2,13 @@ import { render, screen, within, waitFor, fireEvent } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, it, expect, beforeEach } from "vitest";
-import { EstadiaPanel, PersonaFormulario, MoverHabitacion, PersonaAdicionalPrevia } from "./EstadiaPanel";
+import { PersonaFormulario } from "./PersonaFormulario";
+import { MoverHabitacion } from "./MoverHabitacion";
+import { PersonaAdicionalPrevia } from "./PersonaAdicionalPrevia";
+import { EstadiaModales } from "./EstadiaModales";
+import { useEstadia } from "./useEstadia";
+import { PestanaHuespedes } from "../reservas/detalle/PestanaHuespedes";
+import { BotonAgregarPersona } from "../reservas/detalle/BotonAgregarPersona";
 import { api } from "../../lib/api";
 import { PAISES } from "../../lib/paises";
 // Formularios largos tipeados con userEvent: con la suite completa en paralelo superan a veces los
@@ -14,6 +20,26 @@ vi.mock("../../lib/api", () => ({
 vi.mock("../../lib/sesion", () => ({
   useSesion: () => ({ usuario: "Operador prueba", puede: () => true }),
 }));
+// Lo que antes era <EstadiaPanel soloPersonas>: el hook de la estadía, la pestaña Huéspedes y sus
+// ventanas, tal como las arma la pantalla de detalle de la reserva.
+function PanelEstadia({ reserva, onTitularPreparado }) {
+  const estadia = useEstadia(reserva, { onTitularPreparado });
+  return (
+    <>
+      <BotonAgregarPersona estadia={estadia} reserva={reserva} />
+      <PestanaHuespedes reserva={reserva} estadia={estadia} />
+      <EstadiaModales estadia={estadia} />
+    </>
+  );
+}
+// Las acciones de cada persona están en su menú ⋯.
+async function abrirMenu(nombre) {
+  await userEvent.click(await screen.findByRole("button", { name: `Acciones de ${nombre}` }));
+}
+async function elegirAccion(nombre, accion) {
+  await abrirMenu(nombre);
+  await userEvent.click(screen.getByRole("button", { name: accion }));
+}
 const reserva = {
   id: 50,
   estado: "En curso",
@@ -107,7 +133,7 @@ function setup() {
         })
       }
     >
-      <EstadiaPanel reserva={reserva} />
+      <PanelEstadia reserva={reserva} />
     </QueryClientProvider>,
   );
 }
@@ -133,7 +159,7 @@ it.each([false, true])(
     const onTitularPreparado = vi.fn();
     render(
       <QueryClientProvider client={new QueryClient()}>
-        <EstadiaPanel
+        <PanelEstadia
           reserva={{
             ...reserva,
             huesped: {
@@ -142,7 +168,6 @@ it.each([false, true])(
               numeroDocumento: "12345678",
             },
           }}
-          soloPersonas
           onTitularPreparado={onTitularPreparado}
         />
       </QueryClientProvider>,
@@ -178,9 +203,8 @@ it("recupera titular y ocupantes tras reinicio del backend y vuelve a habilitar 
   const onTitularPreparado = vi.fn();
   render(
     <QueryClientProvider client={new QueryClient()}>
-      <EstadiaPanel
+      <PanelEstadia
         reserva={{ ...reserva, huesped: { id: 9, nombre: "Ana Prueba" } }}
-        soloPersonas
         onTitularPreparado={onTitularPreparado}
       />
     </QueryClientProvider>,
@@ -225,7 +249,7 @@ it("incorpora al titular automáticamente y permite completar los datos copiados
   const onTitularPreparado = vi.fn();
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <EstadiaPanel
+      <PanelEstadia
         reserva={{
           ...reserva,
           huesped: {
@@ -235,7 +259,6 @@ it("incorpora al titular automáticamente y permite completar los datos copiados
             numeroDocumento: "12345678",
           },
         }}
-        soloPersonas
         onTitularPreparado={onTitularPreparado}
       />
     </QueryClientProvider>,
@@ -247,6 +270,7 @@ it("incorpora al titular automáticamente y permite completar los datos copiados
   });
   expect(onTitularPreparado).toHaveBeenCalledWith(50);
   expect(screen.getByText(/Falta completar:/)).toBeInTheDocument();
+  await abrirMenu("Ana Pérez");
   expect(screen.getByRole("button", { name: "Marcar documento verificado" })).toBeDisabled();
   await userEvent.click(screen.getByRole("button", { name: "Completar datos" }));
   expect(screen.getByLabelText("Nombre *")).toHaveValue("Ana Pérez");
@@ -272,16 +296,6 @@ it("incorpora al titular automáticamente y permite completar los datos copiados
     ),
   );
   expect(api.post).toHaveBeenCalledTimes(1);
-});
-it("no consulta cuenta ni consumos hasta abrir la pestaña correspondiente", async () => {
-  setup();
-  await screen.findByText(/Todavía no se registraron ocupantes/);
-  expect(api.get.mock.calls.some(([url]) => url.includes("/cuenta") || url === "/consumos-servicios")).toBe(false);
-  await userEvent.click(screen.getByRole("button", { name: "Cuenta" }));
-  await waitFor(() => expect(api.get.mock.calls.some(([url]) => url.includes("/cuenta"))).toBe(true));
-  expect(api.get.mock.calls.some(([url]) => url === "/consumos-servicios")).toBe(false);
-  await userEvent.click(screen.getByRole("button", { name: "Cargos por habitación" }));
-  await waitFor(() => expect(api.get).toHaveBeenCalledWith("/consumos-servicios", expect.any(Object)));
 });
 it("muestra todos los campos obligatorios faltantes y permite corregirlos sin enviar antes", async () => {
   const onGuardar = vi.fn();
@@ -396,28 +410,7 @@ beforeEach(() => {
   );
   api.post.mockResolvedValue({ data: { ok: true } });
 });
-it("agrupa cargos por habitación sin solicitar el nombre del huésped", async () => {
-  setup();
-  await userEvent.click(screen.getByRole("button", { name: "Cargos por habitación" }));
-  expect(await screen.findByText(/Lavandería · 2/)).toBeInTheDocument();
-  expect(screen.getAllByRole("button", { name: "Agregar cargo" })).toHaveLength(2);
-  expect(screen.queryByLabelText(/huésped/i)).not.toBeInTheDocument();
-});
-it("exige motivo y manda operador para anular un cargo", async () => {
-  setup();
-  await userEvent.click(screen.getByRole("button", { name: "Cargos por habitación" }));
-  await userEvent.click(await screen.findByRole("button", { name: "Anular" }));
-  const confirmar = screen.getByRole("button", { name: "Confirmar anulación" });
-  expect(confirmar).toBeDisabled();
-  await userEvent.type(screen.getByLabelText("Motivo *"), "Carga duplicada");
-  await userEvent.click(confirmar);
-  await waitFor(() =>
-    expect(api.post).toHaveBeenCalledWith("/consumos-servicios/1/anular", {
-      motivo: "Carga duplicada",
-      operador: "Operador prueba",
-    }),
-  );
-});
+// Los cargos por habitación y su anulación ahora viven en la pestaña Cuenta: ver ReservaDetallePage.test.jsx.
 it("permite cargar ocupantes de distintas habitaciones y no copia al titular automáticamente", async () => {
   setup();
   await userEvent.click(screen.getByRole("button", { name: "Agregar persona" }));
@@ -515,7 +508,7 @@ const ocupante = (datos) => ({
   ...datos,
 });
 
-it("las fichas canceladas no se listan ni muestran faltantes; quedan en el Historial con su motivo", async () => {
+it("las fichas canceladas no se listan ni muestran faltantes", async () => {
   const fichas = [
     ocupante({ id: 26, nombre: "Martín Gutiérrez", numeroDocumento: "30512874", estado: "Cancelado", esTitular: true, verificadoEn: null, asignaciones: [{ habitacionId: 10, hasta: "2026-09-28T14:03:51.000Z" }] }),
     ocupante({ id: 38, nombre: "Martín", apellido: "Gutiérrez", numeroDocumento: "30512874", estado: "Alojado", esTitular: true, fechaNacimiento: "1984-10-01" }),
@@ -526,7 +519,7 @@ it("las fichas canceladas no se listan ni muestran faltantes; quedan en el Histo
   const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={cliente}>
-      <EstadiaPanel reserva={reserva} />
+      <PanelEstadia reserva={reserva} />
     </QueryClientProvider>,
   );
   expect(await screen.findByText("María Gutiérrez")).toBeInTheDocument();
@@ -535,12 +528,9 @@ it("las fichas canceladas no se listan ni muestran faltantes; quedan en el Histo
   expect(screen.getByText("Responsable: Martín Gutiérrez")).toBeInTheDocument();
   expect(screen.queryByText(/Cancelado/)).not.toBeInTheDocument();
   expect(screen.queryByText(/Falta completar/)).not.toBeInTheDocument();
-  expect(screen.getByText(/Sin documento \(menor\) · Alojado/)).toBeInTheDocument();
+  expect(screen.getByText(/Sin documento \(menor\)/)).toBeInTheDocument();
   expect(screen.queryByText(/Documento pendiente/)).not.toBeInTheDocument();
-
-  await userEvent.click(screen.getByRole("button", { name: "Historial" }));
-  expect(await screen.findByText(/28\/09\/2026 \d{2}:\d{2} · Ficha dada de baja · recepcionista\.prueba/)).toBeInTheDocument();
-  expect(screen.getByText("Martín Gutiérrez · Reemplazada en el check-in")).toBeInTheDocument();
+  // El historial con la baja y su motivo se ve en la pestaña Historial (ReservaDetallePage.test.jsx).
 });
 
 it("marcar a otra persona como titular con la estadía en curso pide el motivo y reemplaza al titular actual", async () => {
@@ -763,10 +753,10 @@ it("Registrar ingreso de una persona adicional muestra la vista previa y confirm
   const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={cliente}>
-      <EstadiaPanel reserva={reserva} />
+      <PanelEstadia reserva={reserva} />
     </QueryClientProvider>,
   );
-  await userEvent.click(await screen.findByRole("button", { name: "Registrar ingreso" }));
+  await elegirAccion("Ana Pérez", "Registrar ingreso");
   const dialogo = await screen.findByRole("dialog", { name: "Persona adicional" });
   expect(within(dialogo).getByText(/\+\$ 8\.800 por noche × 1 noche =/)).toBeInTheDocument();
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -790,15 +780,14 @@ it("Registrar salida pide confirmación: persona adicional baja la ocupación; d
   const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={cliente}>
-      <EstadiaPanel reserva={reservaVigente} />
+      <PanelEstadia reserva={reservaVigente} />
     </QueryClientProvider>,
   );
-  const salidas = await screen.findAllByRole("button", { name: "Registrar salida" });
-  await userEvent.click(salidas[0]);
+  await elegirAccion("Martín Gutiérrez", "Registrar salida");
   expect(screen.getByText("La tarifa de la reserva no cambia por esta salida.")).toBeInTheDocument();
   expect(api.post).not.toHaveBeenCalled();
   await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
-  await userEvent.click(salidas[1]);
+  await elegirAccion("Lucas Ríos", "Registrar salida");
   expect(screen.getByText(/Se anulan sus cargos «Persona adicional» de las noches que no usa y la ocupación registrada/)).toBeInTheDocument();
   const confirmar = screen.getAllByRole("button", { name: "Registrar salida" }).at(-1);
   await userEvent.click(confirmar);
@@ -815,12 +804,17 @@ it("«Marcar documento verificado» solo en fichas por verificar; el menor muest
   const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={cliente}>
-      <EstadiaPanel reserva={reserva} />
+      <PanelEstadia reserva={reserva} />
     </QueryClientProvider>,
   );
   await screen.findByText("Marta Conte");
+  await abrirMenu("Marta Conte");
   expect(screen.getAllByRole("button", { name: "Marcar documento verificado" })).toHaveLength(1);
   expect(screen.queryByRole("button", { name: "Verificar datos" })).not.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(document.body);
+  await abrirMenu("Martín Gutiérrez");
+  expect(screen.queryByRole("button", { name: "Marcar documento verificado" })).not.toBeInTheDocument();
   expect(screen.getByText("Responsable: Martín Gutiérrez · Otro familiar · Autorización presentada")).toBeInTheDocument();
 });
 
