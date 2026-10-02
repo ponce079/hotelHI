@@ -4,8 +4,10 @@
 // una por una, pero se resuelven en memoria sobre lecturas agrupadas.
 const { randomUUID } = require("node:crypto");
 const s = require("./estadia.servicio");
+const { MAYORIA_EDAD } = require("../../lib/fechas");
 const personasServicio = require("./persona.servicio");
 const { comparteCorreo } = require("./contactoPersona");
+const { esEmail } = require("../../lib/contacto");
 
 const { ErrorDeNegocio, edad } = s;
 const normalizar = (v) =>
@@ -33,18 +35,18 @@ function validarLote(reserva, entradas, existentes) {
     if (!rh) throw new ErrorDeNegocio("La habitación no pertenece a esta reserva.");
     const clave = `t${Number(entrada.id) || indice + 1}`;
     const responsable = entrada.responsableId ? porClave.get(`t${Number(entrada.responsableId)}`) : null;
-    const menor = p.fechaNacimiento && edad(p.fechaNacimiento, p.fechaDesde) < 18;
+    const menor = p.fechaNacimiento && edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD;
     const esTitular = entrada.esTitular === true;
     const comoTitularDeReserva =
       titularDeReserva &&
       normalizar(p.numeroDocumento) === normalizar(titularDeReserva.numeroDocumento) &&
       normalizar(p.tipoDocumento) === normalizar(titularDeReserva.tipoDocumento);
-    if ((esTitular || comoTitularDeReserva) && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < 18))
+    if ((esTitular || comoTitularDeReserva) && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD))
       throw new ErrorDeNegocio("El titular debe tener al menos 18 años al ingresar.", 400, {
         fechaNacimiento: "Completá una fecha de nacimiento válida: el titular debe tener al menos 18 años al ingresar.",
       });
     if (entrada.usarContactoResponsable === true) {
-      if (!menor || !responsable?.fechaNacimiento || edad(responsable.fechaNacimiento, p.fechaDesde) < 18)
+      if (!menor || !responsable?.fechaNacimiento || edad(responsable.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD)
         throw new ErrorDeNegocio("Elegí un adulto responsable válido para compartir su contacto.", 400, {
           responsableId: "Elegí el adulto responsable del menor.",
         });
@@ -66,16 +68,26 @@ function validarLote(reserva, entradas, existentes) {
     }
     if (entrada.responsableId) {
       const adulto = responsable && !responsable.responsableId ? responsable : null;
-      if (!adulto || !adulto.fechaNacimiento || edad(adulto.fechaNacimiento, p.fechaDesde) < 18)
+      if (!adulto || !adulto.fechaNacimiento || edad(adulto.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD)
         throw new ErrorDeNegocio("El responsable debe ser un adulto de la misma reserva.");
     }
-    if (p.numeroDocumento && otros.some((o) => o.numeroDocumento && claveDeDocumento(o) === claveDeDocumento(p)))
-      throw new ErrorDeNegocio("Esta persona ya está registrada en la reserva.", 409);
+    if (p.numeroDocumento) {
+      // Repetida dentro del mismo envío (en la misma o en otra habitación): error de carga, 400.
+      const repetida = aceptadas.find((o) => o.numeroDocumento && claveDeDocumento(o) === claveDeDocumento(p));
+      if (repetida)
+        throw new ErrorDeNegocio(
+          `${p.nombre} ${p.apellido} figura dos veces en la lista (mismo documento ${p.tipoDocumento} ` +
+            `${p.numeroDocumento}). Cargá a cada persona una sola vez.`,
+          400,
+        );
+      if (existentes.some((o) => o.estado !== "Cancelado" && o.numeroDocumento && claveDeDocumento(o) === claveDeDocumento(p)))
+        throw new ErrorDeNegocio("Esta persona ya está registrada en la reserva.", 409);
+    }
     const enLaHabitacion = otros.filter(
       (o) => ACTIVOS.includes(o.estado ?? "Previsto") && o.habitacionId === rh.habitacionId,
     );
     s.verificarCapacidad(rh, p, enLaHabitacion);
-    if (esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < 18))
+    if (esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD))
       throw new ErrorDeNegocio("El titular de habitacion debe tener 18 años cumplidos.");
     const ficha = {
       ...p,
@@ -134,7 +146,8 @@ async function resolverHuespedes(tx, reserva, fichas) {
       normalizar(titular.numeroDocumento) === normalizar(ficha.numeroDocumento) &&
       (!titular.paisDocumento || personasServicio.normalizarPais(titular.paisDocumento) === datos.paisDocumento);
     if (esElTitular && !encontrado) {
-      await tx.huesped.update({ where: { id: titular.id }, data: { ...datos, identidadDocumento: identidad } });
+      const contacto = esEmail(ficha.email) || !esEmail(titular.contacto) ? datos.contacto : titular.contacto;
+      await tx.huesped.update({ where: { id: titular.id }, data: { ...datos, contacto, identidadDocumento: identidad } });
       resultado.set(ficha.id, titular.id);
     } else if (esElTitular && encontrado.id !== titular.id) {
       await tx.reserva.update({ where: { id: reserva.id }, data: { huespedId: encontrado.id } });
@@ -154,10 +167,28 @@ async function resolverHuespedes(tx, reserva, fichas) {
     const idPorIdentidad = new Map(creados.map((h) => [h.identidadDocumento, h.id]));
     for (const [clave, identidad] of conIdentidadNueva) resultado.set(clave, idPorIdentidad.get(identidad));
   }
+  // Persona que vuelve: su ficha se reutiliza y se actualiza con lo declarado ahora. Contacto:
+  // el correo manda; un correo ya guardado no se pisa con un teléfono si ahora no declaró correo.
+  const contactoGuardado = new Map(existentes.map((h) => [h.id, h.contacto]));
+  if (titular) contactoGuardado.set(titular.id, titular.contacto);
   const yaExistian = fichas.filter((ficha) => !conIdentidadNueva.has(ficha.id));
-  await personasServicio.actualizarResidenciaEnLote(
+  await personasServicio.actualizarFichasEnLote(
     tx,
-    yaExistian.map((ficha) => ({ huespedId: resultado.get(ficha.id), residencia: ficha.residencia })),
+    yaExistian.map((ficha) => {
+      const datos = personasServicio.datosDeHuesped(ficha);
+      const huespedId = resultado.get(ficha.id);
+      const correoNuevo = esEmail(ficha.email);
+      const contacto = correoNuevo || !esEmail(contactoGuardado.get(huespedId)) ? datos.contacto : null;
+      return {
+        huespedId,
+        datos: {
+          nombre: datos.nombre,
+          fechaNacimiento: datos.fechaNacimiento,
+          contacto,
+          ...ficha.residencia,
+        },
+      };
+    }),
   );
   return resultado;
 }
@@ -184,6 +215,27 @@ function filaDeOcupante(ficha, huespedId, responsableId, verificadoPor, ahora) {
   };
 }
 
+// Una persona alojada ahora en otra estadía (identidadActiva ocupada) no puede ingresar de
+// nuevo. La base igual lo impide con el índice único al ingresar; esto lo avisa antes y con
+// el nombre de la persona, en una sola consulta.
+async function rechazarYaAlojadas(tx, fichas) {
+  const identidades = fichas.map((f) => s.identidad(f)).filter(Boolean);
+  if (!identidades.length) return;
+  const alojadas = await tx.ocupanteReserva.findMany({
+    where: { identidadActiva: { in: identidades } },
+    select: { nombre: true, apellido: true, reserva: { select: { codigoConfirmacion: true } } },
+  });
+  if (alojadas.length) {
+    const quienes = alojadas
+      .map((p) => `${p.nombre} ${p.apellido}`.trim() + (p.reserva ? ` (reserva ${p.reserva.codigoConfirmacion})` : ""))
+      .join(", ");
+    throw new ErrorDeNegocio(
+      `Ya figura alojada en otra estadía: ${quienes}. Registrá su salida antes de volver a ingresarla.`,
+      409,
+    );
+  }
+}
+
 async function cargarPersonasEnLote(tx, reservaId, entradas, operador) {
   const reserva = await s.bloquear(tx, reservaId);
   if (!Array.isArray(entradas) || !entradas.length) throw new ErrorDeNegocio("Registrá las personas que ingresan.");
@@ -192,14 +244,19 @@ async function cargarPersonasEnLote(tx, reservaId, entradas, operador) {
     throw new ErrorDeNegocio(`Las habitaciones de la reserva admiten como máximo ${maximo} personas.`);
   const quien = String(operador || "").trim();
   if (!quien) throw new ErrorDeNegocio("Operador: valor inválido (máximo 191 caracteres).");
+  // Todas las fichas previas de la reserva, también las canceladas: una ficha cancelada de la
+  // misma persona (mismo huespedId) no puede confundirse con la que se crea ahora.
   const previas = await tx.ocupanteReserva.findMany({
-    where: { reservaId, estado: { not: "Cancelado" } },
+    where: { reservaId },
     include: { asignaciones: true },
   });
-  const existentes = previas.map((o) => ({ ...o, habitacionId: o.asignaciones.find((a) => !a.hasta)?.habitacionId }));
+  const existentes = previas
+    .filter((o) => o.estado !== "Cancelado")
+    .map((o) => ({ ...o, habitacionId: o.asignaciones.find((a) => !a.hasta)?.habitacionId }));
   // Primero los que no dependen de nadie, después los menores a cargo de un adulto del lote.
   const ordenadas = [...entradas].sort((a, b) => Number(Boolean(a.responsableId)) - Number(Boolean(b.responsableId)));
   const fichas = validarLote(reserva, ordenadas, existentes).map((f) => ({ ...f, reservaId }));
+  await rechazarYaAlojadas(tx, fichas);
   const huespedes = await resolverHuespedes(tx, reserva, fichas);
   const ahora = new Date();
   const ocupantes = new Map();

@@ -24,6 +24,7 @@ import { cotizarReserva } from "../reservas/reservas.api";
 import { listarTiposHabitacion } from "../tipos-habitacion/tiposHabitacion.api";
 import { MEDIOS_GARANTIA } from "./checkIn.constantes";
 import { validarHuesped } from "./validarHuesped";
+import { TIPOS_DOCUMENTO } from "../../lib/tiposDocumento";
 
 // El "tipo" de habitación es texto libre (lo define cada hotel en el
 // catálogo), no un enum fijo — así que el chip de color por tipo se asigna
@@ -48,7 +49,6 @@ const PASO_PLAN = 3;
 const PASO_HUESPED = 4;
 const PASO_GARANTIA = 5;
 
-const TIPOS_DOCUMENTO = ["DNI", "Pasaporte", "Cédula de identidad", "Libreta cívica", "Libreta de enrolamiento"];
 
 // Ocupación por defecto de una habitación recién elegida.
 const OCUPACION_DEFECTO = { adultos: 2, menores: 0 };

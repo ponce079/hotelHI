@@ -1,4 +1,5 @@
 const s = require("./estadia.servicio");
+const { EDAD_ADULTO_OCUPACION, MAYORIA_EDAD } = require("../../lib/fechas");
 const { marcarAlojados } = require("./alojamiento");
 const { cargarPersonasEnLote } = require("./cargaMasiva");
 
@@ -24,10 +25,10 @@ function validarOcupacion(habitaciones, personas) {
       throw new s.ErrorDeNegocio("Cada habitacion debe tener exactamente un titular.", 409);
     for (const p of registradas) {
       s.validarCompleto(p);
-      if (p.esTitular && s.edad(p.fechaNacimiento, p.fechaDesde) < 18)
+      if (p.esTitular && s.edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD)
         throw new s.ErrorDeNegocio("El titular debe ser adulto.", 409);
     }
-    const menores = registradas.filter((p) => s.edad(p.fechaNacimiento, p.fechaDesde) < 18).length;
+    const menores = registradas.filter((p) => s.edad(p.fechaNacimiento, p.fechaDesde) < EDAD_ADULTO_OCUPACION).length;
     if (menores !== rh.menores)
       throw new s.ErrorDeNegocio(
         `Habitación ${h.numero}: las edades no coinciden con los ${rh.adultos} adultos ` +

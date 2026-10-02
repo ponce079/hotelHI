@@ -31,6 +31,7 @@ const {
   TIPOS_DOCUMENTO,
   CANALES_CONFIRMACION,
   DESTINATARIO_HUESPED,
+  DESTINATARIO_RECEPCION,
   TIPO_NOTIFICACION_RESERVA,
   LIMITES_RESERVA,
   MAX_INTENTOS_CODIGO,
@@ -39,7 +40,11 @@ const {
 // HU-89: hoyComoFechaUTC vive en lib/ (no acá) porque habitaciones.servicio.js
 // también la necesita, y ese import directo desde acá cerraría un ciclo de
 // require — ver el comentario en lib/tipoHabitacion.js.
-const { hoyComoFechaUTC, parsearFechaSinHora: parsearFechaSinHoraBase } = require("../../lib/fechas");
+const {
+  hoyComoFechaUTC,
+  parsearFechaSinHora: parsearFechaSinHoraBase,
+  MAYORIA_EDAD,
+} = require("../../lib/fechas");
 const { conTipoPlano } = require("../../lib/tipoHabitacion");
 const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 // Sin ciclo: pagoEstadia.constantes.js no importa nada (a diferencia de
@@ -77,7 +82,8 @@ class ErrorDeNegocio extends Error {
 }
 
 const MILISEGUNDOS_POR_DIA = 24 * 60 * 60 * 1000;
-const PATRON_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const { esEmail, esTelefono } = require("../../lib/contacto");
+const { normalizarTipoDocumento } = require("../../lib/tiposDocumento");
 
 // --------------------------------------------------------------
 // Helpers de validación
@@ -219,7 +225,7 @@ function normalizarHabitacionesConOcupacion(valor) {
 // El titular de la reserva tiene que ser adulto en la fecha de ingreso.
 function validarTitularAdulto(nacimiento, fechaIngreso) {
   const { edad } = require("../estadia/estadia.servicio");
-  if (nacimiento > hoyComoFechaUTC() || edad(nacimiento, fechaIngreso) < 18) {
+  if (nacimiento > hoyComoFechaUTC() || edad(nacimiento, fechaIngreso) < MAYORIA_EDAD) {
     throw new ErrorDeNegocio("El titular debe tener al menos 18 años en la fecha de ingreso.");
   }
 }
@@ -230,17 +236,25 @@ function normalizarHuesped(data, fechaIngreso = hoyComoFechaUTC()) {
   if (!data || typeof data !== "object") {
     throw new ErrorDeNegocio("Faltan los datos del huésped.");
   }
-  const tipoDocumento = typeof data.tipoDocumento === "string" ? data.tipoDocumento.trim() : "";
+  const tipoDocumento = normalizarTipoDocumento(data.tipoDocumento);
   if (data.fechaNacimiento) {
     const nacimiento = parsearFechaSinHora(data.fechaNacimiento, "La fecha de nacimiento del titular");
     validarTitularAdulto(nacimiento, fechaIngreso);
   }
-  if (!TIPOS_DOCUMENTO.includes(tipoDocumento)) {
-    throw new ErrorDeNegocio(`tipoDocumento debe ser uno de: ${TIPOS_DOCUMENTO.join(", ")}.`);
+  if (!tipoDocumento) {
+    throw new ErrorDeNegocio(`El tipo de documento tiene que ser uno de: ${TIPOS_DOCUMENTO.join(", ")}.`);
   }
-  const email = textoObligatorio(data.contacto, "El correo electrónico del huésped", LIMITES_RESERVA.contacto).toLowerCase();
-  if (!PATRON_EMAIL.test(email)) {
-    throw new ErrorDeNegocio("El correo electrónico del huésped no tiene un formato válido.");
+  // Huesped.contacto guarda el correo si lo hay y, si no, el teléfono (lib/contacto.js).
+  const contactoIngresado = textoObligatorio(
+    data.contacto,
+    "El correo electrónico o teléfono del huésped",
+    LIMITES_RESERVA.contacto
+  );
+  const contacto = esEmail(contactoIngresado) ? contactoIngresado.toLowerCase() : contactoIngresado;
+  if (!esEmail(contacto) && !esTelefono(contacto)) {
+    throw new ErrorDeNegocio(
+      "El contacto del huésped tiene que ser un correo válido o un teléfono (números, +, espacios o guiones)."
+    );
   }
   return {
     nombre: textoObligatorio(data.nombre, "El nombre del huésped", LIMITES_RESERVA.nombre),
@@ -256,7 +270,7 @@ function normalizarHuesped(data, fechaIngreso = hoyComoFechaUTC()) {
         }
       : {}),
     numeroDocumento: textoObligatorio(data.numeroDocumento, "El número de documento", LIMITES_RESERVA.numeroDocumento),
-    contacto: email,
+    contacto,
     preferencias: textoOpcional(data.preferencias, "Las preferencias del huésped", LIMITES_RESERVA.preferencias),
   };
 }
@@ -643,6 +657,12 @@ async function consultarDisponibilidad({
       }
     }
   }
+  // planTarifarioId en cada plan (una sola consulta para todos los tipos).
+  const planesConId = await conIdsDePlan([...cotizacionPorTipo.values()].flatMap((c) => c.planes));
+  const idPlanPorCodigo = new Map(planesConId.map((p) => [p.codigo, p.planTarifarioId]));
+  for (const cotizacion of cotizacionPorTipo.values()) {
+    cotizacion.planes = cotizacion.planes.map((p) => ({ ...p, planTarifarioId: idPlanPorCodigo.get(p.codigo) ?? null }));
+  }
 
   const disponibles = [];
   const todas = conOcupadas ? [] : undefined;
@@ -745,11 +765,12 @@ async function reservarCodigoLibre(tx) {
 async function resolverHuesped(tx, datos) {
   const identidadDocumento = require("../estadia/persona.servicio").claveDocumento(datos);
   if (identidadDocumento) {
-    return tx.huesped.upsert({
-      where: { identidadDocumento },
-      update: datos,
-      create: { ...datos, identidadDocumento },
-    });
+    // Persona que vuelve: se reutiliza su ficha y se actualiza. El correo manda: un correo ya
+    // guardado no se reemplaza por un teléfono (por ejemplo, un walk-in que solo dejó teléfono).
+    const existente = await tx.huesped.findUnique({ where: { identidadDocumento } });
+    if (!existente) return tx.huesped.create({ data: { ...datos, identidadDocumento } });
+    const contacto = esEmail(datos.contacto) || !esEmail(existente.contacto) ? datos.contacto : existente.contacto;
+    return tx.huesped.update({ where: { id: existente.id }, data: { ...datos, contacto } });
   }
   const existente = await tx.huesped.findFirst({
     where: { tipoDocumento: datos.tipoDocumento, numeroDocumento: datos.numeroDocumento, paisDocumento: null },
@@ -783,6 +804,16 @@ function armarNotificacionConfirmacion({ reserva, huesped, habitaciones, origen 
     `habitación/es ${numeros}, del ${periodo}` +
     (origen === "WEB" ? " (reserva web autogestionada)." : ".");
 
+  // Con un teléfono como único contacto no hay correo que enviar: queda como aviso interno.
+  if (!esEmail(huesped.contacto)) {
+    return {
+      tipo: TIPO_NOTIFICACION_RESERVA,
+      reservaId: reserva.id,
+      canal: "Interno",
+      destinatarioArea: DESTINATARIO_RECEPCION,
+      mensaje: `${base} Sin correo del huésped: avisar por teléfono (${huesped.contacto ?? "sin contacto"}).`,
+    };
+  }
   return {
     tipo: TIPO_NOTIFICACION_RESERVA,
     reservaId: reserva.id,
@@ -803,6 +834,7 @@ function escaparHTML(valor) {
 
 async function enviarConfirmacionPorEmail(reserva) {
   const huesped = reserva.huesped;
+  if (!esEmail(huesped?.contacto)) return { enviado: false, motivo: "El huésped no tiene correo cargado." };
   const habitaciones = (reserva.reservaHabitaciones ?? []).map((rh) => rh.habitacion).filter(Boolean);
   const numeros = habitaciones.map((h) => h.numero).join(", ");
   const periodo = `${formatearFechaMensaje(reserva.fechaDesde)} al ${formatearFechaMensaje(reserva.fechaHasta)}`;
@@ -889,10 +921,24 @@ async function cotizarParaReserva(data) {
       : enteroPositivo(data.planTarifarioId, "planTarifarioId");
   const canal = data?.canal === "WEB" ? "WEB" : "RECEPCION";
 
-  return cotizarReservaEnvuelto(
+  const cotizacion = await cotizarReservaEnvuelto(
     { fechaDesde, fechaHasta, planTarifarioId, habitaciones, canal, fechaVenta: hoyComoFechaUTC() },
     prisma
   );
+  return { ...cotizacion, planes: await conIdsDePlan(cotizacion.planes) };
+}
+
+// El motor (cotizacion.servicio.js) identifica los planes por código; el alta necesita el id.
+// Suma `planTarifarioId` a cada plan con UNA consulta, sin tocar el motor (cambio aditivo).
+async function conIdsDePlan(planes, cliente = prisma) {
+  const codigos = [...new Set((planes ?? []).map((p) => p.codigo))];
+  if (codigos.length === 0) return planes ?? [];
+  const filas = await cliente.planTarifario.findMany({
+    where: { codigo: { in: codigos } },
+    select: { id: true, codigo: true },
+  });
+  const idPorCodigo = new Map(filas.map((f) => [f.codigo, f.id]));
+  return planes.map((p) => ({ ...p, planTarifarioId: idPorCodigo.get(p.codigo) ?? null }));
 }
 
 // Núcleo transaccional del alta. Público aparte de `crearReserva` para que
@@ -944,10 +990,19 @@ async function crearReservaEnTransaccion(tx, datos, { incluirTitular = true } = 
     throw new ErrorDeNegocio("El plan tarifario elegido no está disponible para este canal.");
   }
   if (centavos(plan.total) !== centavos(totalEsperado)) {
-    throw new ErrorDeNegocio(
+    const error = new ErrorDeNegocio(
       `El precio cambió desde la cotización: antes $${totalEsperado}, ahora $${plan.total}. Volvé a cotizar.`,
       409
     );
+    // Rediseño del check-in (aditivo): mismo contrato que el 409 del confirmar con reserva.
+    error.codigo = "PRECIO_CAMBIO";
+    error.detalle = {
+      totalAnterior: Number(totalEsperado),
+      totalNuevo: plan.total,
+      diferencia: Number((plan.total - Number(totalEsperado)).toFixed(2)),
+      mensajeNoReembolsable: null,
+    };
+    throw error;
   }
 
   const huespedGuardado = await resolverHuesped(tx, huesped);
@@ -1477,10 +1532,49 @@ async function modificarReserva(id, data, cliente = prisma) {
     );
 
     if (soloPrevia) {
+      // Rediseño del check-in (aditivo): detalle por habitación y por noche para la vista previa.
+      const redondear = (n) => Number(n.toFixed(2));
+      const porHabitacion = plan.habitaciones.map((habitacionPlan) => {
+        const anterior = snapshotPorHabitacion.get(habitacionPlan.habitacionId);
+        const totalAnteriorHabitacion = anterior
+          ? [...anterior.noches.values()].reduce((a, n) => a + Number(n.precioNoche), 0)
+          : 0;
+        const totalNuevoHabitacion = (nochesPorHabitacion.get(habitacionPlan.habitacionId) ?? []).reduce(
+          (a, n) => a + n.precioNoche,
+          0
+        );
+        return {
+          habitacionId: habitacionPlan.habitacionId,
+          numero: habitacionPlan.numero,
+          adultos: habitacionPlan.adultos,
+          menores: habitacionPlan.menores,
+          totalAnterior: redondear(totalAnteriorHabitacion),
+          totalNuevo: redondear(totalNuevoHabitacion),
+          diferencia: redondear(totalNuevoHabitacion - totalAnteriorHabitacion),
+        };
+      });
+      const porFecha = new Map();
+      const sumar = (fecha, campo, valor) => {
+        if (!porFecha.has(fecha)) porFecha.set(fecha, { fecha, anterior: 0, nuevo: 0 });
+        porFecha.get(fecha)[campo] += valor;
+      };
+      for (const { noches } of snapshotPorHabitacion.values())
+        for (const [fecha, n] of noches) sumar(fecha, "anterior", Number(n.precioNoche));
+      for (const noches of nochesPorHabitacion.values()) for (const n of noches) sumar(n.fecha, "nuevo", n.precioNoche);
+      const diferenciaPorNoche = [...porFecha.values()]
+        .sort((a, b) => a.fecha.localeCompare(b.fecha))
+        .map((n) => ({
+          fecha: n.fecha,
+          anterior: redondear(n.anterior),
+          nuevo: redondear(n.nuevo),
+          diferencia: redondear(n.nuevo - n.anterior),
+        }));
       return {
         totalAnterior,
         totalNuevo,
         diferencia: Number((totalNuevo - totalAnterior).toFixed(2)),
+        porHabitacion,
+        diferenciaPorNoche,
         mensajeNoReembolsable: huboReduccionNoReembolsable
           ? "Tarifa no reembolsable: la reducción de ocupación no modifica el precio."
           : null,
@@ -1512,16 +1606,17 @@ async function modificarReserva(id, data, cliente = prisma) {
     // Una sola updateMany por cada par (adultos, menores) distinto, en vez de un update por
     // habitación: las consultas dependen de la variedad de ocupaciones (acotada por la capacidad
     // de las habitaciones), no de cuántas habitaciones tenga la reserva.
-    const idsPorOcupacion = new Map();
-    for (const h of habitaciones) {
-      const anterior = actual.reservaHabitaciones.find((rh) => rh.habitacionId === h.habitacionId);
-      if (!anterior || (anterior.adultos === h.adultos && anterior.menores === h.menores)) continue;
-      const clave = `${h.adultos}|${h.menores}`;
-      if (!idsPorOcupacion.has(clave)) idsPorOcupacion.set(clave, { adultos: h.adultos, menores: h.menores, ids: [] });
-      idsPorOcupacion.get(clave).ids.push(anterior.id);
-    }
-    for (const { adultos, menores, ids } of idsPorOcupacion.values()) {
-      await tx.reservaHabitacion.updateMany({ where: { id: { in: ids } }, data: { adultos, menores } });
+    // Rediseño del check-in: UNA sola sentencia para todas las habitaciones que cambian de
+    // ocupación (antes, un updateMany por cada par adultos/menores distinto).
+    const cambiosOcupacion = habitaciones
+      .map((h) => ({ h, anterior: actual.reservaHabitaciones.find((rh) => rh.habitacionId === h.habitacionId) }))
+      .filter(({ h, anterior }) => anterior && (anterior.adultos !== h.adultos || anterior.menores !== h.menores));
+    if (cambiosOcupacion.length > 0) {
+      const casoAdultos = cambiosOcupacion.map(({ h, anterior }) => Prisma.sql`WHEN ${anterior.id} THEN ${h.adultos}`);
+      const casoMenores = cambiosOcupacion.map(({ h, anterior }) => Prisma.sql`WHEN ${anterior.id} THEN ${h.menores}`);
+      await tx.$executeRaw(
+        Prisma.sql`UPDATE reservas_habitaciones SET adultos = CASE id ${Prisma.join(casoAdultos, " ")} END, menores = CASE id ${Prisma.join(casoMenores, " ")} END WHERE id IN (${Prisma.join(cambiosOcupacion.map(({ anterior }) => anterior.id))})`
+      );
     }
     const actualizada = await tx.reserva.update({
       where: { id: reservaId },
@@ -1855,6 +1950,8 @@ module.exports = {
   obtenerPorCodigoODocumento,
   consultarDisponibilidad,
   esLibreAhora,
+  buscarConflictos,
+  conIdsDePlan,
   // Transiciones para Check-in / Check-out
   marcarEnCurso,
   marcarCerrada,

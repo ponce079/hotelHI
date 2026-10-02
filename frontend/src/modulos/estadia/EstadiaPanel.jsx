@@ -9,6 +9,7 @@ import { Modal } from "../../componentes/Modal";
 import { ConsumoModal } from "../servicios-adicionales/ConsumoModal";
 import { obtenerCuenta } from "../check-out/checkOut.api";
 import { PAISES_SELECTOR, buscarPaisOcupante } from "./ocupantesUbicacion";
+import { TIPOS_DOCUMENTO, ETIQUETAS_NUMERO_DOCUMENTO } from "../../lib/tiposDocumento";
 import { validarOcupante, pendientesParaIngreso } from "./validarOcupante";
 import { titularRegistrado } from "./titularRegistrado";
 import {
@@ -46,13 +47,8 @@ const detalleEvento = (e) => {
 };
 const fecha = (v) => (v ? new Date(v).toLocaleString("es-AR") : "—");
 const activa = (p) => p.asignaciones?.find((a) => !a.hasta);
-const TIPOS_DOCUMENTO_OCUPANTE = ["DNI", "Pasaporte", "NIE", "TIE"];
-const ETIQUETAS_NUMERO_DOCUMENTO = {
-  DNI: "Número de DNI",
-  Pasaporte: "Número de pasaporte",
-  NIE: "Número de NIE",
-  TIE: "Número de TIE",
-};
+// Catálogo único de huésped y ocupantes (lib/tiposDocumento.js).
+const TIPOS_DOCUMENTO_OCUPANTE = TIPOS_DOCUMENTO;
 // Campos que se eligen del catálogo de países (con "Otro país" para valores que no figuren en él).
 const CAMPOS_PAIS = ["paisDocumento", "nacionalidad", "paisResidencia"];
 const ETIQUETAS_PAIS_MANUAL = {

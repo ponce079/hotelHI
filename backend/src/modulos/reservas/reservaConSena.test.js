@@ -162,6 +162,10 @@ function crearCliente(obtenerTablas) {
         const t = obtenerTablas();
         return t.huesped.find((h) => coincide(t, "huesped", h, where)) ?? null;
       },
+      findUnique: async ({ where }) => {
+        const t = obtenerTablas();
+        return t.huesped.find((h) => coincide(t, "huesped", h, where)) ?? null;
+      },
       create: async ({ data }) => {
         const t = obtenerTablas();
         const fila = { id: t.secuencias.huesped++, ...data };
@@ -384,13 +388,16 @@ function checkOutFalsoFactory() {
   };
 }
 
+// Nacimientos relativos a hoy (scripts/_fechasPrueba.js): nunca años fijos.
+const { haceAnios } = require("../../../scripts/_fechasPrueba");
+
 function huespedValido(sufijo) {
   return {
     paisDocumento: "AR",
     nombre: "Huésped de Prueba",
     tipoDocumento: "DNI",
     numeroDocumento: `3000000${sufijo}`,
-    fechaNacimiento: "1990-01-01",
+    fechaNacimiento: haceAnios(36),
     contacto: `huesped${sufijo}@ejemplo.com`,
   };
 }

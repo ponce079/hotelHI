@@ -8,6 +8,8 @@
 //   node scripts/pruebas-estadia-consultas.js
 
 const assert = require("assert");
+const { haceAnios } = require("./_fechasPrueba");
+const { edadEn, MAYORIA_EDAD } = require("../src/lib/fechas");
 const { crearBase, instalarDoble } = require("./_dobleSprint3");
 
 const base = crearBase();
@@ -43,7 +45,7 @@ function enDias(dias) {
 
 const HUESPED = {
   paisDocumento: "AR",
-  fechaNacimiento: "1990-01-01",
+  fechaNacimiento: haceAnios(36),
   nombre: "Ana Pérez",
   tipoDocumento: "DNI",
   numeroDocumento: "30111222",
@@ -230,7 +232,7 @@ async function main() {
       base._limpiar();
       const una = [{ ...(await habitaciones(1, 4))[0], adultos: 2, menores: 2 }];
       const chica = await cargarWalkIn(una);
-      const menores = base._datos.ocupanteReserva.filter((o) => o.fechaNacimiento.getUTCFullYear() > 2000);
+      const menores = base._datos.ocupanteReserva.filter((o) => edadEn(o.fechaNacimiento, o.fechaDesde) < MAYORIA_EDAD);
       assert.equal(menores.length, 2);
       for (const menor of menores) {
         const responsable = base._datos.ocupanteReserva.find((o) => o.id === menor.responsableId);
@@ -317,23 +319,103 @@ async function main() {
   );
 
   await prueba(
-    "modificar la ocupación de 1 o 4 habitaciones usa una sola updateMany y ningún update por habitación",
+    "modificar la ocupación de 1 o 4 habitaciones (con ocupaciones distintas) usa una sola sentencia",
     async () => {
       const consultas = async (cantidad) => {
         base._limpiar();
         const habs = await habitaciones(cantidad, 3);
         const reserva = await reservaCompleta(habs.map((h) => ({ ...h, adultos: 1, menores: 0 })));
-        const nuevas = habs.map((h) => ({ ...h, adultos: 2, menores: 0 }));
-        return medir(["reservaHabitacion."], () =>
+        // Ocupaciones distintas entre sí: antes era un updateMany por cada par (adultos, menores).
+        const nuevas = habs.map((h, i) => ({ ...h, adultos: 2, menores: i % 2 }));
+        return medir(["reservaHabitacion.", "$executeRaw"], () =>
           reservasServicio.modificarReserva(reserva.id, { habitaciones: nuevas }),
         );
       };
       const chica = await consultas(1);
       const grande = await consultas(4);
       igual(chica.cuenta, grande.cuenta, "modificarReserva");
-      assert.equal(grande.cuenta["reservaHabitacion.updateMany"], 1);
+      assert.equal(grande.cuenta["$executeRaw"], 1);
+      assert.equal(grande.cuenta["reservaHabitacion.updateMany"] ?? 0, 0);
       assert.equal(grande.cuenta["reservaHabitacion.update"] ?? 0, 0);
       assert.ok(base._datos.reservaHabitacion.every((rh) => rh.adultos === 2));
+      assert.deepEqual(
+        base._datos.reservaHabitacion.map((rh) => rh.menores),
+        [0, 1, 0, 1],
+      );
+    },
+  );
+
+  // Rediseño del check-in (criterio 13). EXCEPCIÓN DOCUMENTADA Y APROBADA: el motor de tarifas
+  // (cotizacion.servicio.js: cotizarReserva) hace habitacion.findUnique UNA vez por habitación.
+  // No se modifica en esta rama (tarifas queda fuera de alcance); el tope es de 20 habitaciones por
+  // reserva. Es la única clave que se excluye al comparar; todo lo demás tiene que ser idéntico.
+  const EXCEPCION_MOTOR = "habitacion.findUnique";
+  const sinMotor = (cuenta) => Object.fromEntries(Object.entries(cuenta).filter(([k]) => k !== EXCEPCION_MOTOR));
+  const excepcionProporcional = (chica, grande, habitacionesExtra) => {
+    const diferencia = (grande[EXCEPCION_MOTOR] ?? 0) - (chica[EXCEPCION_MOTOR] ?? 0);
+    assert.ok(diferencia % habitacionesExtra === 0, `la excepción del motor crece solo por habitación (${diferencia})`);
+  };
+
+  await prueba(
+    "confirmar con reserva y ocupación real: 1 habitación/2 personas y 4 habitaciones/8 personas hacen las mismas consultas (salvo el motor)",
+    async () => {
+      const consultas = async (cantidad) => {
+        base._limpiar();
+        const habs = await habitaciones(cantidad, 3);
+        const reservadas = habs.map((h) => ({ ...h, adultos: 1, menores: 0 }));
+        const reserva = await reservasServicio.crearReserva({
+          fechaDesde: enDias(0),
+          fechaHasta: enDias(2),
+          habitaciones: reservadas,
+          ...(await totalDe({ fechaDesde: enDias(0), fechaHasta: enDias(2), habitaciones: reservadas })),
+          huesped: { ...HUESPED },
+        });
+        // Llegan 2 adultos por habitación: cambia la ocupación y se recotiza dentro del confirmar.
+        const finales = habs.map((h) => ({ ...h, adultos: 2, menores: 0 }));
+        const { totalEsperado } = await totalDe({ fechaDesde: enDias(0), fechaHasta: enDias(2), habitaciones: finales });
+        return medir([""], () =>
+          checkInServicio.confirmarCheckInConReserva({
+            reservaId: reserva.id,
+            operador: "Prueba",
+            habitaciones: finales.map((h) => ({ habitacionIdAnterior: h.habitacionId, adultos: 2, menores: 0 })),
+            personas: personasFixture(finales, HUESPED, enDias(0), enDias(2)),
+            totalEsperado,
+            ...GARANTIA_OK,
+          }),
+        );
+      };
+      const chica = await consultas(1);
+      const grande = await consultas(4);
+      igual(sinMotor(chica.cuenta), sinMotor(grande.cuenta), "confirmar con ocupación real");
+      excepcionProporcional(chica.cuenta, grande.cuenta, 3);
+      assert.equal(base._datos.ocupanteReserva.filter((o) => o.estado === "Alojado").length, 8);
+      assert.ok(base._datos.reservaHabitacion.every((rh) => rh.adultos === 2));
+    },
+  );
+
+  await prueba(
+    "walk-in completo: 1 habitación y 4 habitaciones hacen las mismas consultas (salvo el motor)",
+    async () => {
+      const consultas = async (cantidad) => {
+        base._limpiar();
+        const habs = await habitaciones(cantidad, 3);
+        const precio = await totalDe({ fechaDesde: enDias(0), fechaHasta: enDias(2), habitaciones: habs });
+        return medir([""], () =>
+          checkInServicio.registrarCheckInWalkIn({
+            operador: "Prueba",
+            personas: personasFixture(habs, HUESPED, enDias(0), enDias(2)),
+            fechaHasta: enDias(2),
+            habitaciones: habs,
+            ...precio,
+            ...GARANTIA_OK,
+          }),
+        );
+      };
+      const chica = await consultas(1);
+      const grande = await consultas(4);
+      igual(sinMotor(chica.cuenta), sinMotor(grande.cuenta), "walk-in completo");
+      excepcionProporcional(chica.cuenta, grande.cuenta, 3);
+      assert.equal(base._datos.ocupanteReserva.length, 8);
     },
   );
 
@@ -361,12 +443,12 @@ async function main() {
           operador: "Prueba",
           personas,
           fechaHasta: enDias(2),
-          habitaciones: habs,
+          habitaciones: [{ ...habs[0], adultos: 2, menores: 1 }],
           ...precio,
           huesped: { ...HUESPED },
           ...GARANTIA_OK,
         }),
-      /como máximo 2 personas/,
+      /entran como máximo 2 personas y se indicaron 3/,
     );
     assert.equal(base._datos.ocupanteReserva.length, 0, "el rechazo no deja nada a medias");
   });
@@ -388,7 +470,7 @@ async function main() {
           huesped: { ...HUESPED },
           ...GARANTIA_OK,
         }),
-      /ya está registrada/,
+      (err) => err.statusCode === 400 && /tienen el mismo documento/.test(err.message),
     );
   });
 

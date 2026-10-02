@@ -1,6 +1,7 @@
 jest.mock("../../lib/prisma", () => ({ reservaHabitacion: { findMany: jest.fn() }, $transaction: jest.fn() }));
 jest.mock("../../lib/correo", () => ({ enviarCorreo: jest.fn() }));
 const prisma = require("../../lib/prisma");
+const { haceAnios } = require("../../../scripts/_fechasPrueba");
 const servicio = require("./reservas.servicio");
 const controlador = require("./reservas.controlador");
 const datos = {
@@ -11,7 +12,7 @@ const datos = {
   totalEsperado: 100000,
   huesped: {
     paisDocumento: "AR",
-    fechaNacimiento: "1990-01-01",
+    fechaNacimiento: haceAnios(36),
     nombre: "Prueba Local",
     tipoDocumento: "DNI",
     numeroDocumento: "30111222",

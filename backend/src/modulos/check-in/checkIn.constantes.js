@@ -41,4 +41,9 @@ const LIMITES_CHECKIN = {
   numeroDocumento: 30,
 };
 
-module.exports = { MEDIOS_GARANTIA, MEDIOS_CON_TARJETA, MONTO_GARANTIA, LIMITES_CHECKIN };
+// Rediseño del check-in: roles que pueden usar las consultas con datos personales
+// (llegadas, vista previa de ocupación y huésped por documento). Equivale a
+// puede("gestionarCheckIn") del frontend (frontend/src/lib/sesion.jsx).
+const ROLES_CHECK_IN = ["admin", "recepcionista"];
+
+module.exports = { MEDIOS_GARANTIA, MEDIOS_CON_TARJETA, MONTO_GARANTIA, LIMITES_CHECKIN, ROLES_CHECK_IN };

@@ -770,15 +770,23 @@ function crearBase() {
       }
       return n;
     }
-    if (texto.startsWith("UPDATE huespedes SET nacionalidad")) {
-      const campos = ["nacionalidad", "paisResidencia", "domicilio", "localidad"];
+    // UPDATE <tabla> SET campo = [COALESCE(]CASE id WHEN ? THEN ? … END[, campo)], … WHERE id IN (…):
+    // actualización en lote con un valor distinto por fila (persona.servicio.js, check-in).
+    const enLote = /^UPDATE (\w+) SET (.*) WHERE id IN \(/.exec(texto);
+    const TABLA_POR_NOMBRE = { huespedes: "huesped", reservas_habitaciones: "reservaHabitacion" };
+    if (enLote && TABLA_POR_NOMBRE[enLote[1]]) {
+      const filas = datos[TABLA_POR_NOMBRE[enLote[1]]];
+      const campos = [...enLote[2].matchAll(/(\w+) = (COALESCE\()?CASE id/g)].map((m) => ({
+        campo: m[1],
+        coalesce: Boolean(m[2]),
+      }));
       const n = valores.length / (2 * campos.length + 1);
-      campos.forEach((campo, k) => {
+      campos.forEach(({ campo, coalesce }, k) => {
         for (let i = 0; i < n; i++) {
           const id = valores[k * 2 * n + 2 * i];
           const valor = valores[k * 2 * n + 2 * i + 1];
-          const fila = datos.huesped.find((h) => h.id === id);
-          fila[campo] = valor ?? fila[campo] ?? null;
+          const fila = filas.find((h) => h.id === id);
+          fila[campo] = coalesce ? (valor ?? fila[campo] ?? null) : valor;
         }
       });
       return n;

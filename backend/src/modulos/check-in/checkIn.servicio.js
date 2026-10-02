@@ -25,6 +25,7 @@ const reservasServicio = require("../reservas/reservas.servicio");
 const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
 const { CONCEPTO_GARANTIA } = require("../pagos-estadia/pagoEstadia.constantes");
 const { MEDIOS_GARANTIA, MEDIOS_CON_TARJETA, MONTO_GARANTIA } = require("./checkIn.constantes");
+const { contactoDeHuesped } = require("../../lib/contacto");
 
 // ErrorDeNegocio duplicada a propósito (mismo criterio documentado en
 // movimientoSalida.servicio.js): esta carpeta queda autocontenida.
@@ -50,6 +51,22 @@ function hoyComoFechaUTC() {
 
 function formatearFechaCorta(fechaISO) {
   return new Date(fechaISO).toLocaleDateString("es-AR", { timeZone: "UTC" });
+}
+
+// Dos operaciones simultáneas sobre las mismas habitaciones (por ejemplo, un doble envío): si
+// MySQL corta una por deadlock o conflicto de escritura (P2034), es el mismo caso que una
+// habitación tomada por otra reserva: 409 con un mensaje para recepción.
+async function conConcurrenciaComo409(fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err?.code === "P2034")
+      throw new ErrorDeNegocio(
+        "Otra operación tomó la misma habitación al mismo tiempo. Actualizá la pantalla y volvé a intentar.",
+        409
+      );
+    throw err;
+  }
 }
 
 function documentosCoinciden(a, b) {
@@ -235,6 +252,10 @@ async function confirmarCheckInConReserva({
   garantiaConfirmada,
   medioGarantia,
   referenciaGarantia,
+  habitaciones,
+  personas,
+  totalEsperado,
+  motivoTitularDistinto,
 }) {
   const id = enteroPositivo(reservaId, "reservaId");
   let reserva;
@@ -245,16 +266,33 @@ async function confirmarCheckInConReserva({
   }
   validarReservaVigente(reserva);
 
+  // Rediseño del check-in: con `personas` en el body la identidad se toma de las personas que
+  // ingresan (no hay un "documento presentado" aparte) y la confirmación es atómica con la
+  // ocupación final (confirmacionAtomica.js). Sin `personas`, el flujo de siempre.
+  const conOcupacion = Array.isArray(personas);
+
   // HU-43 — "verificación del documento de identidad contra los datos de
   // Huesped": comparación real contra lo que ya quedó cargado en la
   // reserva, no una casilla decorativa que se puede tildar sin mirar.
-  if (!documentosCoinciden(numeroDocumentoIngresado, reserva.huesped?.numeroDocumento)) {
+  if (!conOcupacion && !documentosCoinciden(numeroDocumentoIngresado, reserva.huesped?.numeroDocumento)) {
     throw new ErrorDeNegocio(
       `El documento ingresado no coincide con el de la reserva (${reserva.huesped?.tipoDocumento} ${reserva.huesped?.numeroDocumento}).`
     );
   }
 
   validarGarantia({ garantiaConfirmada, medioGarantia, referenciaGarantia });
+
+  if (conOcupacion) {
+    await require("./confirmacionAtomica").confirmarConOcupacion(reserva, {
+      operador,
+      habitaciones,
+      personas,
+      totalEsperado,
+      motivoTitularDistinto,
+    });
+    await registrarGarantia(id, { medioGarantia, referenciaGarantia });
+    return reservasServicio.obtenerReserva(id);
+  }
 
   await prisma.$transaction(
     async (tx) => {
@@ -288,13 +326,36 @@ async function confirmarCheckInConReserva({
 // cuando `fechaDesde` es hoy, que es siempre el caso acá — walk-in y
 // asignación manual son "ahora", nunca a futuro. No hay filtro propio que
 // reimplementar: si hubiera dos, correrían el riesgo de desincronizarse.
-async function listarHabitacionesLibresAhora({ fechaHasta, tipoHabitacionId, capacidadMinima }) {
-  return reservasServicio.consultarDisponibilidad({
+//
+// Rediseño del check-in: `adultos`/`menores` viajan al motor para que cada plan traiga el
+// total de ESA ocupación (y `planTarifarioId`), la capacidad mínima pasa a ser adultos +
+// menores, y `excluir` (ids separados por coma) saca las habitaciones ya elegidas para otra
+// habitación del mismo walk-in. Sin adultos se mantiene el comportamiento anterior (2/0).
+async function listarHabitacionesLibresAhora({ fechaHasta, tipoHabitacionId, capacidadMinima, adultos, menores, excluir }) {
+  const conOcupacion = adultos !== undefined && adultos !== "";
+  const cantAdultos = conOcupacion ? Number(adultos) : undefined;
+  const cantMenores = menores === undefined || menores === "" ? 0 : Number(menores);
+  if (conOcupacion && (!Number.isInteger(cantAdultos) || cantAdultos < 1))
+    throw new ErrorDeNegocio("Indicá al menos un adulto por habitación.");
+  if (!Number.isInteger(cantMenores) || cantMenores < 0) throw new ErrorDeNegocio("La cantidad de menores no es válida.");
+  const excluidas = new Set(
+    (Array.isArray(excluir) ? excluir : String(excluir ?? "").split(","))
+      .map((v) => Number(String(v).trim()))
+      .filter((v) => Number.isInteger(v) && v > 0)
+  );
+  const minimaPedida = capacidadMinima ? Number(capacidadMinima) : 0;
+  const minima = Math.max(minimaPedida || 0, conOcupacion ? cantAdultos + cantMenores : 0);
+  const resultado = await reservasServicio.consultarDisponibilidad({
     fechaDesde: hoyComoFechaISO(),
     fechaHasta,
     tipoHabitacionId,
-    capacidadMinima,
+    capacidadMinima: minima || undefined,
+    ...(conOcupacion ? { adultos: cantAdultos, menores: cantMenores } : {}),
   });
+  return {
+    ...resultado,
+    habitaciones: resultado.habitaciones.filter((h) => h.estado === "libre" && !excluidas.has(h.id)),
+  };
 }
 
 // --------------------------------------------------------------
@@ -320,6 +381,56 @@ async function registrarCheckInWalkIn({
 }) {
   validarGarantia({ garantiaConfirmada, medioGarantia, referenciaGarantia });
 
+  // Rediseño del check-in — varias habitaciones (pueden ser de distinto tipo) con UN plan para
+  // toda la reserva: si alguna habitación trae su propio plan, tiene que ser el mismo.
+  const lista = Array.isArray(habitaciones) ? habitaciones : [];
+  if (lista.some((h) => h?.planTarifarioId != null && h.planTarifarioId !== "" && Number(h.planTarifarioId) !== Number(planTarifarioId)))
+    throw new ErrorDeNegocio("Todas las habitaciones de la reserva tienen que tener el mismo plan tarifario.");
+  const repetidas = lista.map((h) => Number(h?.habitacionId)).filter((id, i, ids) => ids.indexOf(id) !== i);
+  if (repetidas.length) throw new ErrorDeNegocio("La misma habitación figura dos veces. Elegí cada habitación una sola vez.");
+
+  // Ocupación real de cada habitación contra las personas que ingresan (400 sin abrir la
+  // transacción). El titular de la primera habitación es el titular de la reserva.
+  const { validarOcupacionIngreso, resumirErrores } = require("./ocupacionIngreso");
+  const fisicas = lista.length
+    ? await prisma.habitacion.findMany({ where: { id: { in: lista.map((h) => Number(h.habitacionId)).filter(Number.isInteger) } } })
+    : [];
+  const validacion = validarOcupacionIngreso({
+    habitaciones: lista.map((h) => {
+      const fisica = fisicas.find((f) => f.id === Number(h.habitacionId));
+      return {
+        habitacionId: Number(h.habitacionId),
+        numero: fisica?.numero ?? h.habitacionId,
+        capacidad: fisica?.capacidad ?? 0,
+        adultos: Number(h.adultos),
+        menores: h.menores == null || h.menores === "" ? 0 : Number(h.menores),
+      };
+    }),
+    personas,
+    fechaIngreso: hoyComoFechaUTC(),
+  });
+  if (validacion.hayErrores) {
+    const error = new ErrorDeNegocio(resumirErrores(validacion.errores));
+    error.codigo = "OCUPACION_INVALIDA";
+    error.detalle = validacion.errores;
+    throw error;
+  }
+
+  // El huésped de la reserva se arma con el titular de la primera habitación (si la pantalla
+  // no lo manda aparte). Se vincula por identidad de documento al crear la reserva: si ya
+  // existe esa persona, se reutiliza y se actualiza (resolverHuesped).
+  const titular = validacion.titularDeLaReserva;
+  const huespedDeLaReserva =
+    huesped ??
+    (titular && {
+      nombre: `${String(titular.nombre ?? "").trim()} ${String(titular.apellido ?? "").trim()}`.trim(),
+      tipoDocumento: titular.tipoDocumento,
+      numeroDocumento: titular.numeroDocumento,
+      paisDocumento: titular.paisDocumento,
+      fechaNacimiento: titular.fechaNacimiento,
+      contacto: contactoDeHuesped({ email: titular.email, telefono: titular.telefono }),
+    });
+
   // Mismo alta que HU-36 (recepcionista) — la "reserva inmediata" que pide
   // la tarea técnica de HU-44 no es un modelo aparte, es una Reserva común
   // que arranca hoy. `normalizarAltaReserva` valida el rango de fechas, el
@@ -329,14 +440,17 @@ async function registrarCheckInWalkIn({
   const datos = reservasServicio.normalizarAltaReserva({
     fechaDesde: hoyComoFechaISO(),
     fechaHasta,
-    habitaciones,
+    habitaciones: lista.map(({ habitacionId, adultos, menores }) => ({ habitacionId, adultos, menores })),
     planTarifarioId,
     totalEsperado,
-    huesped,
+    huesped: huespedDeLaReserva,
     origen: "RECEPCION",
   });
 
-  const reservaId = await prisma.$transaction(
+  // Doble envío: la segunda transacción espera el lock de las habitaciones (crearReservaEnTransaccion)
+  // y después encuentra la reserva encimada (409). Si MySQL la corta por deadlock (P2034), se
+  // responde el mismo 409 en vez de un 500.
+  const reservaId = await conConcurrenciaComo409(() => prisma.$transaction(
     async (tx) => {
       // El walk-in ya trae todos los ocupantes completos; no crear un borrador adicional.
       const reserva = await reservasServicio.crearReservaEnTransaccion(tx, datos, { incluirTitular: false });
@@ -350,7 +464,7 @@ async function registrarCheckInWalkIn({
       return reserva.id;
     },
     OPCIONES_TRANSACCION
-  );
+  ));
 
   await registrarGarantia(reservaId, { medioGarantia, referenciaGarantia });
 
@@ -363,5 +477,7 @@ module.exports = {
   listarHabitacionesLibresAhora,
   registrarCheckInWalkIn,
   validarReservaVigente,
+  ocuparHabitaciones,
+  conConcurrenciaComo409,
   ErrorDeNegocio,
 };

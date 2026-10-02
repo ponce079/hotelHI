@@ -1,4 +1,5 @@
 // Datos de prueba explícitos para los contratos de registro de huéspedes.
+const { haceAnios } = require("./_fechasPrueba");
 function personasFixture(habitaciones, huesped, fechaDesde, fechaHasta) {
   let id = 0;
   return habitaciones.flatMap((h) =>
@@ -15,10 +16,11 @@ function personasFixture(habitaciones, huesped, fechaDesde, fechaHasta) {
         paisDocumento: "AR",
         nacionalidad: "AR",
         paisResidencia: "AR",
-        fechaNacimiento: menor ? "2020-01-01" : "1990-01-01",
+        fechaNacimiento: menor ? haceAnios(6) : haceAnios(36),
         fechaDesde: new Date(fechaDesde).toISOString().slice(0, 10),
         fechaHasta: new Date(fechaHasta).toISOString().slice(0, 10),
         esTitular: i === 0,
+        telefono: i === 0 ? "+54 387 555-0000" : null,
         responsableId: menor ? id - i : null,
       };
     }),
