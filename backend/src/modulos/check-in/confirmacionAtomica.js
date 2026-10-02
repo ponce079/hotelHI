@@ -269,4 +269,4 @@ async function confirmarConOcupacion(reserva, { operador, habitaciones, personas
   }, OPCIONES_TRANSACCION));
 }
 
-module.exports = { confirmarConOcupacion, MOTIVO_REEMPLAZO };
+module.exports = { confirmarConOcupacion, normalizarHabitaciones, MOTIVO_REEMPLAZO };

@@ -59,6 +59,7 @@ app.use("/api/tarifas", require("./src/modulos/tarifas/tarifas.routes"));
 app.use("/api/reservas", require("./src/modulos/reservas/reservas.routes"));
 app.use("/api/check-in", require("./src/modulos/check-in/checkIn.routes"));
 app.use("/api/estadia", require("./src/modulos/estadia/estadia.routes"));
+app.use("/api/huespedes", require("./src/modulos/huespedes/huespedes.routes"));
 app.use("/api/consumos-servicios", require("./src/modulos/servicios-adicionales/serviciosAdicionales.routes"));
 app.use("/api/comprobantes-estadia", require("./src/modulos/comprobantes-estadia/comprobanteEstadia.routes"));
 app.use("/api/pagos-estadia", require("./src/modulos/pagos-estadia/pagoEstadia.routes"));

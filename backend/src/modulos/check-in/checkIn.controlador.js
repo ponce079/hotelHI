@@ -1,8 +1,11 @@
 const checkInServicio = require("./checkIn.servicio");
 const estadiaServicio = require("../estadia/estadia.servicio");
 const reservasServicio = require("../reservas/reservas.servicio");
+const checkInApoyo = require("./checkIn.apoyo.servicio");
+const { responderEsperaConexion } = require("../../lib/erroresConexion");
 
 function responderError(res, err, contexto, mensaje) {
+  if (responderEsperaConexion(res, err)) return;
   if (
     err instanceof checkInServicio.ErrorDeNegocio ||
     err instanceof estadiaServicio.ErrorDeNegocio ||
@@ -69,7 +72,27 @@ async function postCheckInWalkIn(req, res) {
   }
 }
 
+// GET /api/check-in/llegadas?q= — reservas Confirmadas que ingresan hoy (rediseño).
+async function getLlegadas(req, res) {
+  try {
+    return res.json(await checkInApoyo.listarLlegadas(req.query));
+  } catch (err) {
+    return responderError(res, err, "Error al listar las llegadas:", "No se pudieron listar las llegadas de hoy.");
+  }
+}
+
+// POST /api/check-in/:reservaId/previa-ocupacion — solo lectura (rediseño).
+async function postPreviaOcupacion(req, res) {
+  try {
+    return res.json(await checkInApoyo.previaOcupacion(req.params.reservaId, req.body ?? {}));
+  } catch (err) {
+    return responderError(res, err, "Error en la vista previa de ocupación:", "No se pudo calcular la vista previa.");
+  }
+}
+
 module.exports = {
+  getLlegadas,
+  postPreviaOcupacion,
   getBuscarReserva,
   getHabitacionesLibres,
   postConfirmarConReserva,
