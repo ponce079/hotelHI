@@ -127,6 +127,8 @@ function habitacionDeReserva(h) {
     habitacionId: h.id,
     numero: h.numero,
     numeroAnterior: h.numero,
+    pisoAnterior: h.piso,
+    capacidadAnterior: h.capacidad,
     tipo: h.tipo,
     tipoHabitacionId: h.tipoHabitacionId,
     capacidad: h.capacidad,
@@ -453,9 +455,10 @@ export function reducer(estado, accion) {
                   tipoHabitacionId: habitacion.tipoHabitacionId,
                   capacidad: habitacion.capacidad,
                   piso: habitacion.piso,
+                  planes: habitacion.planes ?? [],
                   errorServidor: null,
                 }
-              : { ...h, habitacionId: null, numero: null, tipo: null, tipoHabitacionId: null, capacidad: null, piso: null }
+              : { ...h, habitacionId: null, numero: null, tipo: null, tipoHabitacionId: null, capacidad: null, piso: null, planes: [] }
             : h,
         ),
       };

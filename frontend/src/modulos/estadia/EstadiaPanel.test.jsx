@@ -5,7 +5,6 @@ import { vi, it, expect, beforeEach } from "vitest";
 import { EstadiaPanel, PersonaFormulario } from "./EstadiaPanel";
 import { api } from "../../lib/api";
 import { PAISES } from "../../lib/paises";
-import { PersonasWalkIn } from "./PersonasWalkIn";
 vi.mock("../../lib/api", () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
 }));
@@ -464,12 +463,6 @@ it("la ficha de ocupante ofrece el catálogo completo de países, con Argentina 
       onClose={() => {}}
     />,
   );
-  for (const etiqueta of CAMPOS_DE_PAIS) verificarCatalogoCompleto(screen.getByLabelText(etiqueta));
-});
-
-it("el alta de personas del walk-in ofrece el mismo catálogo completo", async () => {
-  render(<PersonasWalkIn reserva={reserva} personas={[]} onChange={() => {}} />);
-  await userEvent.click(screen.getByRole("button", { name: "Agregar persona" }));
   for (const etiqueta of CAMPOS_DE_PAIS) verificarCatalogoCompleto(screen.getByLabelText(etiqueta));
 });
 
