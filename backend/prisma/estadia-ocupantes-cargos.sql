@@ -91,3 +91,9 @@ ALTER TABLE `ocupantes_reserva` ADD COLUMN `huespedId` INTEGER NULL,
     ADD COLUMN `esTitular` BOOLEAN NOT NULL DEFAULT false;
 CREATE UNIQUE INDEX `huespedes_identidadDocumento_key` ON `huespedes`(`identidadDocumento`);
 ALTER TABLE `ocupantes_reserva` ADD CONSTRAINT `ocupantes_reserva_huespedId_fkey` FOREIGN KEY (`huespedId`) REFERENCES `huespedes`(`id`) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Nombres y apellido separados del huésped; vínculo del responsable con el menor
+ALTER TABLE `huespedes` ADD COLUMN `nombres` VARCHAR(191) NULL,
+    ADD COLUMN `apellido` VARCHAR(191) NULL;
+ALTER TABLE `ocupantes_reserva` ADD COLUMN `vinculoResponsable` VARCHAR(40) NULL,
+    ADD COLUMN `autorizacionPresentada` BOOLEAN NOT NULL DEFAULT false;
