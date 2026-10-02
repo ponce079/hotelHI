@@ -2,6 +2,9 @@ const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 const prisma = require("../../lib/prisma");
 const { codigoPais } = require("../../lib/paises");
 const { CAMPOS_RESIDENCIA } = require("./persona.servicio");
+const { MAYORIA_EDAD, edadEn } = require("../../lib/fechas");
+const { TIPOS_DOCUMENTO, normalizarTipoDocumento } = require("../../lib/tiposDocumento");
+const { esEmail, esTelefono } = require("../../lib/contacto");
 function identidad(p) {
   return p.numeroDocumento
     ? require("node:crypto")
@@ -43,15 +46,8 @@ function fecha(v, campo) {
     throw new ErrorDeNegocio(`${campo}: fecha inválida.`);
   return d;
 }
-function edad(nacimiento, en) {
-  let n = en.getUTCFullYear() - nacimiento.getUTCFullYear();
-  if (
-    en.getUTCMonth() < nacimiento.getUTCMonth() ||
-    (en.getUTCMonth() === nacimiento.getUTCMonth() && en.getUTCDate() < nacimiento.getUTCDate())
-  )
-    n--;
-  return n;
-}
+// Años cumplidos en una fecha: la regla vive en lib/fechas.js.
+const edad = edadEn;
 function normalizarPersona(d, reserva) {
   const fechaDesde = fecha(d.fechaDesde || reserva.fechaDesde.toISOString(), "Ingreso previsto");
   const fechaHasta = fecha(d.fechaHasta || reserva.fechaHasta.toISOString(), "Salida prevista");
@@ -80,10 +76,23 @@ function normalizarPersona(d, reserva) {
   ])
     r[k] = texto(d[k], k);
   for (const k of ["nacionalidad", "paisResidencia"]) r[k] = codigoPais(r[k]) || r[k];
+  if (r.tipoDocumento) {
+    // Catálogo único de huésped y ocupantes (lib/tiposDocumento.js), guardado con su valor canónico.
+    const canonico = normalizarTipoDocumento(r.tipoDocumento);
+    if (!canonico) {
+      const mensaje = `El tipo de documento tiene que ser uno de: ${TIPOS_DOCUMENTO.join(", ")}.`;
+      throw new ErrorDeNegocio(mensaje, 400, { tipoDocumento: mensaje });
+    }
+    r.tipoDocumento = canonico;
+  }
   if (r.numeroDocumento) r.numeroDocumento = r.numeroDocumento.toUpperCase().replace(/\s/g, "");
-  if (r.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email))
+  if (r.email && !esEmail(r.email))
     throw new ErrorDeNegocio("Correo electrónico inválido.", 400, {
       email: "Ingresá un correo electrónico válido.",
+    });
+  if (r.telefono && !esTelefono(r.telefono))
+    throw new ErrorDeNegocio("Teléfono inválido.", 400, {
+      telefono: "Ingresá un teléfono válido: números, +, espacios o guiones.",
     });
   r.responsableId = d.responsableId ? id(d.responsableId) : null;
   return r;
@@ -238,7 +247,7 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
       if (
         !adulto ||
         !adulto.fechaNacimiento ||
-        edad(adulto.fechaNacimiento, p.fechaDesde) < 18 ||
+        edad(adulto.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD ||
         adulto.id === actual?.id
       )
         throw new ErrorDeNegocio("El responsable debe ser un adulto de la misma reserva.");
@@ -266,12 +275,12 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
           estado: { in: ["Previsto", "Alojado"] },
         },
       })) &&
-      (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < 18)
+      (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD)
     )
       throw new ErrorDeNegocio("El responsable de menores debe conservar su condición de adulto.");
     await capacidad(tx, r, habitacionId, p, actual?.id);
     p.esTitular = data.esTitular === undefined ? Boolean(actual?.esTitular) : data.esTitular === true;
-    if (p.esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < 18))
+    if (p.esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD))
       throw new ErrorDeNegocio("El titular de habitacion debe tener 18 años cumplidos.");
     const personas = require("./persona.servicio");
     p.huespedId = await personas.vincularPersona(tx, r, p, actual);
@@ -328,7 +337,7 @@ function validarCompleto(p) {
     throw new ErrorDeNegocio("Completá nacimiento, nacionalidad y país de residencia.");
   if (!(p.tipoDocumento && p.numeroDocumento && p.paisDocumento) && !p.motivoSinDocumento)
     throw new ErrorDeNegocio("Completá el documento y su país emisor o justificá la excepción.");
-  if (edad(p.fechaNacimiento, p.fechaDesde) < 18 && !p.responsableId)
+  if (edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD && !p.responsableId)
     throw new ErrorDeNegocio("El menor necesita un adulto responsable.");
 }
 async function accion(reservaId, ocupanteId, data) {

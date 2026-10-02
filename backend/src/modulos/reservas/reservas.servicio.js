@@ -31,6 +31,7 @@ const {
   TIPOS_DOCUMENTO,
   CANALES_CONFIRMACION,
   DESTINATARIO_HUESPED,
+  DESTINATARIO_RECEPCION,
   TIPO_NOTIFICACION_RESERVA,
   LIMITES_RESERVA,
   MAX_INTENTOS_CODIGO,
@@ -39,7 +40,11 @@ const {
 // HU-89: hoyComoFechaUTC vive en lib/ (no acá) porque habitaciones.servicio.js
 // también la necesita, y ese import directo desde acá cerraría un ciclo de
 // require — ver el comentario en lib/tipoHabitacion.js.
-const { hoyComoFechaUTC, parsearFechaSinHora: parsearFechaSinHoraBase } = require("../../lib/fechas");
+const {
+  hoyComoFechaUTC,
+  parsearFechaSinHora: parsearFechaSinHoraBase,
+  MAYORIA_EDAD,
+} = require("../../lib/fechas");
 const { conTipoPlano } = require("../../lib/tipoHabitacion");
 const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 // Sin ciclo: pagoEstadia.constantes.js no importa nada (a diferencia de
@@ -77,7 +82,8 @@ class ErrorDeNegocio extends Error {
 }
 
 const MILISEGUNDOS_POR_DIA = 24 * 60 * 60 * 1000;
-const PATRON_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const { esEmail, esTelefono } = require("../../lib/contacto");
+const { normalizarTipoDocumento } = require("../../lib/tiposDocumento");
 
 // --------------------------------------------------------------
 // Helpers de validación
@@ -219,7 +225,7 @@ function normalizarHabitacionesConOcupacion(valor) {
 // El titular de la reserva tiene que ser adulto en la fecha de ingreso.
 function validarTitularAdulto(nacimiento, fechaIngreso) {
   const { edad } = require("../estadia/estadia.servicio");
-  if (nacimiento > hoyComoFechaUTC() || edad(nacimiento, fechaIngreso) < 18) {
+  if (nacimiento > hoyComoFechaUTC() || edad(nacimiento, fechaIngreso) < MAYORIA_EDAD) {
     throw new ErrorDeNegocio("El titular debe tener al menos 18 años en la fecha de ingreso.");
   }
 }
@@ -230,17 +236,25 @@ function normalizarHuesped(data, fechaIngreso = hoyComoFechaUTC()) {
   if (!data || typeof data !== "object") {
     throw new ErrorDeNegocio("Faltan los datos del huésped.");
   }
-  const tipoDocumento = typeof data.tipoDocumento === "string" ? data.tipoDocumento.trim() : "";
+  const tipoDocumento = normalizarTipoDocumento(data.tipoDocumento);
   if (data.fechaNacimiento) {
     const nacimiento = parsearFechaSinHora(data.fechaNacimiento, "La fecha de nacimiento del titular");
     validarTitularAdulto(nacimiento, fechaIngreso);
   }
-  if (!TIPOS_DOCUMENTO.includes(tipoDocumento)) {
-    throw new ErrorDeNegocio(`tipoDocumento debe ser uno de: ${TIPOS_DOCUMENTO.join(", ")}.`);
+  if (!tipoDocumento) {
+    throw new ErrorDeNegocio(`El tipo de documento tiene que ser uno de: ${TIPOS_DOCUMENTO.join(", ")}.`);
   }
-  const email = textoObligatorio(data.contacto, "El correo electrónico del huésped", LIMITES_RESERVA.contacto).toLowerCase();
-  if (!PATRON_EMAIL.test(email)) {
-    throw new ErrorDeNegocio("El correo electrónico del huésped no tiene un formato válido.");
+  // Huesped.contacto guarda el correo si lo hay y, si no, el teléfono (lib/contacto.js).
+  const contactoIngresado = textoObligatorio(
+    data.contacto,
+    "El correo electrónico o teléfono del huésped",
+    LIMITES_RESERVA.contacto
+  );
+  const contacto = esEmail(contactoIngresado) ? contactoIngresado.toLowerCase() : contactoIngresado;
+  if (!esEmail(contacto) && !esTelefono(contacto)) {
+    throw new ErrorDeNegocio(
+      "El contacto del huésped tiene que ser un correo válido o un teléfono (números, +, espacios o guiones)."
+    );
   }
   return {
     nombre: textoObligatorio(data.nombre, "El nombre del huésped", LIMITES_RESERVA.nombre),
@@ -256,7 +270,7 @@ function normalizarHuesped(data, fechaIngreso = hoyComoFechaUTC()) {
         }
       : {}),
     numeroDocumento: textoObligatorio(data.numeroDocumento, "El número de documento", LIMITES_RESERVA.numeroDocumento),
-    contacto: email,
+    contacto,
     preferencias: textoOpcional(data.preferencias, "Las preferencias del huésped", LIMITES_RESERVA.preferencias),
   };
 }
@@ -783,6 +797,16 @@ function armarNotificacionConfirmacion({ reserva, huesped, habitaciones, origen 
     `habitación/es ${numeros}, del ${periodo}` +
     (origen === "WEB" ? " (reserva web autogestionada)." : ".");
 
+  // Con un teléfono como único contacto no hay correo que enviar: queda como aviso interno.
+  if (!esEmail(huesped.contacto)) {
+    return {
+      tipo: TIPO_NOTIFICACION_RESERVA,
+      reservaId: reserva.id,
+      canal: "Interno",
+      destinatarioArea: DESTINATARIO_RECEPCION,
+      mensaje: `${base} Sin correo del huésped: avisar por teléfono (${huesped.contacto ?? "sin contacto"}).`,
+    };
+  }
   return {
     tipo: TIPO_NOTIFICACION_RESERVA,
     reservaId: reserva.id,
@@ -803,6 +827,7 @@ function escaparHTML(valor) {
 
 async function enviarConfirmacionPorEmail(reserva) {
   const huesped = reserva.huesped;
+  if (!esEmail(huesped?.contacto)) return { enviado: false, motivo: "El huésped no tiene correo cargado." };
   const habitaciones = (reserva.reservaHabitaciones ?? []).map((rh) => rh.habitacion).filter(Boolean);
   const numeros = habitaciones.map((h) => h.numero).join(", ");
   const periodo = `${formatearFechaMensaje(reserva.fechaDesde)} al ${formatearFechaMensaje(reserva.fechaHasta)}`;
