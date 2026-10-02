@@ -28,6 +28,8 @@ export const FILTROS_CUENTA = [
   { id: "pago", texto: "Pagos" },
 ];
 
+const PREFIJO_PERSONA_ADICIONAL = /^Persona adicional\s*—\s*/;
+
 // Dentro de un mismo día: primero el alojamiento de la noche, después los consumos y al final los pagos.
 const ORDEN_TIPO = { aloj: 1, consumo: 2, pago: 3 };
 
@@ -75,14 +77,18 @@ export function armarMovimientos({ reserva, consumos = [], pagos = [], verificac
   }
 
   for (const c of consumos) {
+    // El cargo de una persona adicional se guarda como consumo "Otro": en la cuenta se lee por lo que es.
+    const personaAdicional = PREFIJO_PERSONA_ADICIONAL.test(c.descripcion ?? "");
     filas.push({
       id: `consumo-${c.id}`,
       tipo: "consumo",
       fecha: fechaArgentina(c.fechaServicio || c.fechaHora),
       hora: String(c.fechaHora ?? ""),
-      concepto: c.tipoServicio,
+      concepto: personaAdicional ? "Persona adicional" : c.tipoServicio,
       detalle: [
-        c.descripcion || (c.articuloNombre ? `${c.articuloNombre} × ${c.cantidad}` : null),
+        personaAdicional
+          ? c.descripcion.replace(PREFIJO_PERSONA_ADICIONAL, "")
+          : c.descripcion || (c.articuloNombre ? `${c.articuloNombre} × ${c.cantidad}` : null),
         variasHabitaciones && c.habitacionNumero ? `Hab. ${c.habitacionNumero}` : null,
         c.registradoPor ? `cargado por ${c.registradoPor}` : null,
         c.incluido ? "incluido en la tarifa" : null,
@@ -212,7 +218,7 @@ export function lineaDeTiempo(reserva, personas = []) {
 // Los seis datos clave del encabezado. `personas` son los ocupantes ya leídos (para el ingreso real y
 // cuántas personas hay registradas).
 export function datosClave(reserva, personas = [], hoy = hoyEnHoraLocal()) {
-  const registradas = personas.filter((p) => ["Previsto", "Alojado"].includes(p.estado));
+  const registradas = personas.filter((p) => p.estado !== "Cancelado");
   const adultos = reserva.habitaciones.reduce((acc, h) => acc + h.adultos, 0);
   const menores = reserva.habitaciones.reduce((acc, h) => acc + h.menores, 0);
   const ingreso = personas.map((p) => p.ingresoReal).filter(Boolean).sort()[0];

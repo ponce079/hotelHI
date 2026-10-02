@@ -40,6 +40,10 @@ const TITULOS_FICHA = {
   "Titular incorporado como ocupante": "Titular incorporado a la estadía",
 };
 
+// Eventos de la ficha que repiten lo que ya cuentan los consumos (cargo y anulación, con su motivo): no se
+// listan dos veces.
+const ACCIONES_REPETIDAS = new Set(["Agregar cargos", "Anular cargos"]);
+
 const CAMPOS_PERSONALES = {
   tipoDocumento: "tipo",
   paisDocumento: "país emisor",
@@ -242,7 +246,7 @@ function armarHistorial({ eventos = [], personas = [], habitaciones = [], notifi
     habitaciones: new Map(habitaciones.map((h) => [h.id, h.numero])),
   };
   const lista = [
-    ...eventos.map((e) => eventoFicha(e, contexto)),
+    ...eventos.filter((e) => !ACCIONES_REPETIDAS.has(e.accion)).map((e) => eventoFicha(e, contexto)),
     ...notificaciones.map(eventoNotificacion),
     ...pagos.map(eventoPago),
     ...consumos.flatMap((c) => eventosConsumo(c, contexto.habitaciones)),

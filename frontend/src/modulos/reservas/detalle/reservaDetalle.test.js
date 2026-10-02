@@ -105,6 +105,13 @@ describe("armarMovimientos — orden y 'a devengar'", () => {
     expect(totalesMovimientos(m).consumos).toBe(3000);
   });
 
+  it("el cargo de una persona adicional se llama así, no 'Otro'", () => {
+    const extra = { ...cena, id: 20, tipoServicio: "Otro", descripcion: "Persona adicional — Lucas Ríos", monto: "4400" };
+    const m = armarMovimientos({ reserva: reservaBase("En curso"), consumos: [extra], hoy: "2026-10-02" });
+    expect(m.find((x) => x.id === "consumo-20")).toMatchObject({ concepto: "Persona adicional", cargo: 4400 });
+    expect(m.find((x) => x.id === "consumo-20").detalle).toBe("Lucas Ríos · cargado por restaurante.prueba");
+  });
+
   it("filtra por tipo", () => {
     const m = armarMovimientos({ reserva: reservaBase("En curso"), consumos: [cena], pagos: [sena], hoy: "2026-10-02" });
     expect(filtrarMovimientos(m, "aloj")).toHaveLength(3);
@@ -169,6 +176,11 @@ describe("encabezado", () => {
     expect(d.noches).toEqual({ principal: "3", sub: "noche 1 de 3" });
     expect(d.habitacion).toEqual({ principal: "404 · Doble", sub: "piso 4 · capacidad 3" });
     expect(d.ocupacion).toEqual({ principal: "2 adultos · 1 menor", sub: "2 huéspedes registrados" });
+  });
+
+  it("en una estadía cerrada las personas retiradas siguen contando como registradas", () => {
+    const d = datosClave(reservaBase("Cerrada"), [{ estado: "Retirado" }, { estado: "Retirado" }, { estado: "Cancelado" }], "2026-10-06");
+    expect(d.ocupacion.sub).toBe("2 huéspedes registrados");
   });
 
   it("reserva grupal: cuenta las habitaciones y suma la ocupación", () => {

@@ -71,6 +71,19 @@ test("suma los ajustes manuales de precio con noche, precios, motivo y gerente",
   });
 });
 
+test("no repite los cargos de persona adicional: ya figuran como consumos cargados y anulados", () => {
+  const h = armarHistorial({
+    habitaciones,
+    eventos: [
+      { id: 1, fecha: fecha("10:00"), accion: "Agregar cargos", operador: "x", detalle: "{}" },
+      { id: 2, fecha: fecha("11:00"), accion: "Anular cargos", operador: "x", detalle: "{}" },
+      { id: 3, fecha: fecha("12:00"), accion: "ingresar", operador: "x", detalle: JSON.stringify({ ocupanteId: 1 }) },
+    ],
+    personas,
+  });
+  expect(h.map((e) => e.titulo)).toEqual(["Ingreso registrado"]);
+});
+
 test("no inventa eventos: una reserva sin registros devuelve la lista vacía y un detalle roto no corta el resto", () => {
   expect(armarHistorial({})).toEqual([]);
   const h = armarHistorial({ eventos: [{ id: 1, fecha: fecha("10:00"), accion: "cancelar", operador: "x", detalle: "no es json" }] });

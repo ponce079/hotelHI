@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { PersonaFormulario } from "./EstadiaPanel";
+import { PersonaFormulario } from "./PersonaFormulario";
 import { validarOcupante } from "./validarOcupante";
 const reserva = {
   fechaDesde: "2026-10-01",

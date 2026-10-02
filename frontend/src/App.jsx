@@ -40,7 +40,7 @@ import { PlanesPage } from "./modulos/tarifas/PlanesPage";
 import { ActualizacionesPage } from "./modulos/tarifas/ActualizacionesPage";
 import { CotizadorPage } from "./modulos/tarifas/CotizadorPage";
 import { ReservasPage } from "./modulos/reservas/ReservasPage";
-import { ReservaDetallePage } from "./modulos/reservas/ReservaDetallePage";
+import { ReservaDetallePage } from "./modulos/reservas/detalle/ReservaDetallePage";
 import { DisponibilidadPublicaPage } from "./modulos/reservas/DisponibilidadPublicaPage";
 import { ReservaWebPage } from "./modulos/reservas/ReservaWebPage";
 import { CheckInPage } from "./modulos/check-in/CheckInPage";
