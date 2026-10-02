@@ -72,8 +72,8 @@ Reemplaza el asistente de 5 pasos del walk-in y la pantalla con modal del check-
 - **Numeración:** el bloque HU-107 a HU-114 sigue reservado para Ricardo.
 
 ## Pruebas
-- **Vitest:** 224/224 (14 casos nuevos de la pantalla + lógica pura + formatos). Corrido dos veces seguidas sin fallos.
-- **Jest:** 88/88. `pruebas-estadia-consultas.js`: 14/14. `test:checkin-rediseno`: 14 bloques OK. `test:estadia`: OK.
+- **Vitest:** 226/226 (14 casos nuevos de la pantalla + lógica pura + formatos, y 2 de las correcciones).
+- **Jest:** 88/88. `pruebas-estadia-consultas.js`: 14/14. `test:checkin-rediseno`: 15 bloques OK. `test:integracion` (estadía): OK.
 - **Navegador contra `sgh_gimena` con el seed de demo:**
   - 1: un solo `POST /confirmar` aun con doble clic y ningún guardado por persona.
   - 4: quitar con tarifa flexible −$ 4.400 por noche; con no reembolsable "el precio no baja"; cancelar deja todo igual.
@@ -81,5 +81,40 @@ Reemplaza el asistente de 5 pasos del walk-in y la pantalla con modal del check-
   - 8: walk-in Doble + Simple, `excluir` y total igual a `/reservas/cotizar`, 201.
   - 9: precio cambiado con la pantalla abierta, panel antes/ahora y confirmación con el nuevo total.
 - **Fallo preexistente intermitente:** `EstadiaPanel.test.jsx > detecta correo repetido…` a veces vence a los 5 s bajo carga, igual que en la línea base.
+
+## Correcciones antes del merge
+
+Caso que las disparó: la reserva **E7AC5CC5** (habitación 407) en `sgh_gimena` mostraba dos titulares y una ficha cancelada en la lista de personas.
+
+**Causa.** El check-in en lote creó a Martín como titular (verificado) y a Marta Conte como acompañante. Después se editó a Marta desde "Personas de la estadía" y se tildó "Titular de esta habitación". `estadia.servicio.guardar` lo aceptó sin verificar si la habitación ya tenía titular, y como toda edición borra `verificadoEn`, Marta quedó sin verificar. El mismo hueco existía en la confirmación en lote (`cargaMasiva.validarLote`) y en el titular automático (`titular.servicio`). El panel listaba también la ficha Cancelada ("Reemplazada en el check-in").
+
+**Qué cambió**
+- **Un solo titular activo por habitación** en todos los caminos que escriben fichas (`estadia/titularHabitacion.js`, usado por alta y edición, lote y titular automático). Solo cuentan las fichas Previstas o Alojadas: las Canceladas y las Retiradas no.
+  - Si ya hay otro titular, el servidor responde **409** con `codigo: "TITULAR_EXISTENTE"` y un mensaje que lo nombra.
+  - Antes del check-in, el cambio exige `reemplazarTitular: true`. Con la estadía en curso exige `motivoCambioTitular`.
+  - En la misma transacción desmarca al titular anterior y registra el evento "Cambio de titular de habitación" con el titular anterior, el nuevo, el motivo y el operador.
+  - El titular automático ya no marca a una segunda persona.
+- **Panel "Personas de la estadía".**
+  - Las fichas canceladas no se listan ni generan avisos de faltantes. Aparecen en el "Historial" con su motivo ("Ficha dada de baja · … · Reemplazada en el check-in").
+  - Los menores con motivo sin documento muestran "Sin documento (menor)".
+  - Al marcar a otra persona como titular, el formulario avisa quién deja de serlo. Con la estadía en curso, el motivo es obligatorio.
+- **Página de la reserva.** El encabezado (código, estado, "Volver") va primero y "Personas de la estadía" debajo.
+- **Textos y fechas.** Se quitaron todos los textos "HU-…" visibles en las pantallas de reservas y estadía; los comentarios del código quedan. Las fechas se muestran como dd/mm/aaaa con ceros (`formatearFechaDdMmAaaa`, y el nuevo `formatearFechaHora` para fecha y hora).
+- **Datos.** En `sgh_gimena`, la ficha de Marta Conte (E7AC5CC5) dejó de ser titular y queda Martín, según los eventos. Se registró el evento "Corrección de titular de habitación" con motivo "Corrección de datos de prueba". No se borró nada.
+- **Pruebas nuevas.**
+  - `test:checkin-rediseno`, bloque 15: 409 en alta, en lote y en el titular automático; el cambio con motivo deja un solo titular y su evento; una ficha cancelada no cuenta.
+  - `test:integracion` (I2): el segundo titular ahora es 409.
+  - Vitest: lista e historial sin canceladas; cambio de titular con motivo.
+- **Fuera de alcance:** quedan textos "HU-…" visibles en `ServiciosAdicionalesPage.jsx:62` y `MovimientosPagoPage.jsx:233` (otras pantallas).
+
+## Para Ricardo: el saldo descuenta la garantía (solo informado, no se tocó)
+
+E7AC5CC5 muestra un saldo de $ 72.400: 128.000 − 25.600 de seña − **30.000 de garantía**.
+
+- **Dónde:** `backend/src/modulos/check-out/checkOut.servicio.js`, `consolidarCargos`, líneas 162-173. El `aggregate` de `pagoEstadiaMedio` suma todos los pagos no anulados, sin filtrar por concepto.
+- **Cómo llega a pantalla:** lo usa `calcularSaldoReserva` (`pagos-estadia/pagoEstadia.servicio.js:33`) y se muestra en `ReservaDetallePage.jsx:302`.
+- **Propuesta:**
+  1. Excluir la garantía de `totalPagado` filtrando el `aggregate` con `pagoEstadia: { reservaId: id, anulado: false, concepto: { not: CONCEPTO_GARANTIA } }` (constante de `pagoEstadia.constantes.js`).
+  2. Mostrar la garantía aparte, como depósito que se devuelve o se aplica en el check-out.
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
