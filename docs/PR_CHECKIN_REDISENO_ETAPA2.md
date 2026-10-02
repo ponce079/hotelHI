@@ -72,8 +72,8 @@ Reemplaza el asistente de 5 pasos del walk-in y la pantalla con modal del check-
 - **Numeración:** el bloque HU-107 a HU-114 sigue reservado para Ricardo.
 
 ## Pruebas
-- **Vitest:** 230/230 (14 casos nuevos de la pantalla + lógica pura + formatos, y 6 de las correcciones).
-- **Jest:** 88/88. `pruebas-estadia-consultas.js`: 14/14. `test:checkin-rediseno`: 16 bloques OK. `test:integracion` (estadía): OK.
+- **Vitest:** 232/232 (14 casos nuevos de la pantalla + lógica pura + formatos, y 8 de las correcciones).
+- **Jest:** 88/88. `pruebas-estadia-consultas.js`: 14/14. `test:checkin-rediseno`: 21 bloques OK. `test:integracion` (estadía): OK.
 - **Navegador contra `sgh_gimena` con el seed de demo:**
   - 1: un solo `POST /confirmar` aun con doble clic y ningún guardado por persona.
   - 4: quitar con tarifa flexible −$ 4.400 por noche; con no reembolsable "el precio no baja"; cancelar deja todo igual.
@@ -180,33 +180,56 @@ Caso que la disparó: en E7AC5CC5, "Editar ocupante" de un adulto alojado ofrec�
 
 ## Tercera corrección
 
-### 1. Persona adicional con la estadía en curso: frenado (falta una función en el servicio de cargos)
+### 1. Persona adicional con la estadía en curso (cargo en la cuenta, sin recotizar la reserva)
 
-La decisión es cargar la persona adicional en la cuenta de la habitación, sin recotizar la reserva. Lo que pide (ficha Alojada, un cargo por noche con `createMany`, evento, ocupación actualizada, todo en **una** transacción, y en la salida anticipada anular en la misma transacción los cargos de las noches posteriores) **no se puede hacer con el servicio de cargos tal como está**. Según la regla f, se frenó sin implementar nada de este punto.
+Primero se frenó porque el servicio de cargos no se podía usar dentro de una transacción. Se aprobó la propuesta: se agregaron dos funciones al servicio (ver "Para Agustín" abajo) y se completó el punto.
 
-**Qué impide usarlo sin modificarlo** (`backend/src/modulos/servicios-adicionales/serviciosAdicionales.servicio.js`):
-- **Abre su propia transacción.** `registrarConsumo(data)` (línea 122) ejecuta su propio `prisma.$transaction` y no recibe un `tx`. Llamarlo desde la transacción de estadía haría una transacción aparte que intenta bloquear la misma reserva (`SELECT … FOR UPDATE`), que ya está bloqueada por la de estadía: se trabaría o quedaría a medias. Llamarlo después rompe la atomicidad: la ficha podría quedar Alojada sin cargos.
-- **Un cargo por llamada.** Hace un `create` y un evento por llamada. No tiene alta en lote (`createMany`), así que N noches serían N transacciones.
-- **Lo mismo al anular.** `anularConsumo(id, data)` (línea 222) también abre su propia transacción y anula de a uno, por `id`. No se puede usar dentro de la transacción de "Registrar salida".
-- **Nada vincula el cargo con la persona.** No hay un campo de ocupante. Hoy solo se podría reconocer por `claveOperacion` o por el texto de la descripción.
+**Cuándo aplica.** En "Agregar persona" y en "Registrar ingreso" de una ficha Prevista, con la estadía En curso, cuando con esa persona la habitación supera su ocupación registrada (`ReservaHabitacion.adultos + menores`). Lógica en `estadia/personaAdicional.js`.
 
-**Qué faltaría** (funciones nuevas en el servicio de cargos, sin cambiar las existentes):
-1. `registrarCargosEnTransaccion(tx, { reservaId, habitacionId, tipoServicio, registradoPor, cargos: [{ fechaServicio, precioUnitario, descripcion, claveOperacion }] })`:
-   - las mismas validaciones de `registrarConsumo`;
-   - un solo `createMany` y un evento;
-   - sin abrir transacción ni volver a bloquear (la reserva ya viene bloqueada).
-2. `anularCargosEnTransaccion(tx, { reservaId, claveOperacion: { startsWith } | ids, motivo, operador })`, con un `updateMany` como baja lógica y un evento.
-3. Una convención para reconocer los cargos de cada persona sin cambiar el esquema: `claveOperacion = "persona-adicional:<ocupanteId>:<YYYY-MM-DD>"`. Entra en los 100 caracteres y, como es única, hace idempotente el reintento.
-4. Definir el tipo: `tipoServicio: "Otro"` con descripción "Persona adicional — Nombre Apellido", o un tipo nuevo en `TIPOS_SERVICIO`, que está duplicado a mano en el frontend.
+**Flujo**
+- **Controles previos.** Primero se controlan la capacidad (adultos + menores ≤ `Habitacion.capacidad`; si se supera, 409 "La habitación … supera su capacidad", antes de cualquier vista previa), el titular único, el responsable de los menores y los datos completos.
+- **Vista previa obligatoria.** El backend responde 409 `PERSONA_ADICIONAL_REQUIERE_CONFIRMACION` con la vista previa y un token. El panel la muestra con "Confirmar" y "Cancelar":
+  - **Adulto (13 años o más):** por cada noche desde hoy hasta la anterior a la salida, se calcula el precio con ocupación + 1 menos el precio con la ocupación registrada. Usa el plan de la reserva y las tarifas vigentes hoy, con el motor de cotización (`tarifas/cotizacion.servicio.cotizarReserva`, sin modificarlo).
+    - Si todas las noches valen lo mismo, la pantalla muestra "+$ X por noche × N noches = $ Y. Se carga en la cuenta de la habitación como «Persona adicional»".
+    - Si cambian, muestra el total y el detalle por noche.
+    - Si la diferencia es 0, muestra "Dentro de la ocupación base: no se genera cargo".
+  - **Menor (0 a 12):** "Menor sin cargo".
+- **Al confirmar, en una sola transacción:**
+  - ficha **Alojada** con ingreso real = ahora;
+  - un cargo por noche con un solo `createMany` (tipo "Otro", descripción "Persona adicional — Nombre Apellido", fecha de cada noche, `claveOperacion = "persona-adicional:<ocupanteId>:<fecha>"`, montos con `Prisma.Decimal`);
+  - ocupación registrada + 1;
+  - eventos con el operador de la sesión.
 
-**Quién tiene que decidir.** `registrarConsumo` y `anularConsumo` los refactorizó por última vez otro integrante (commit `53a0eb3` de agusfar45). Conviene acordar el cambio con quien mantiene Cargos por habitación y check-out.
+  `ReservaNoche` **no se recotiza**: el precio congelado queda intacto.
+- **Salida anticipada.** "Registrar salida" anula, en la misma transacción y como baja lógica, los cargos "Persona adicional" de esa persona desde la noche de hoy, con motivo "Salida anticipada". Las noches ya usadas quedan. La ocupación registrada no se descuenta.
+- **Ingreso por defecto.** Con la estadía en curso, quien se agrega tiene como ingreso hoy, y el backend lo fuerza.
+- **Límite conocido.** Si la temporada exige una estadía mínima mayor que las noches que faltan, el motor rechaza la cotización y no se puede agregar a la persona; se informa con un 409 claro.
 
-**Lo demás ya se puede hacer sin tocar a nadie:**
-- la vista previa, con el motor de cotización existente (`cotizarParaReserva` con el plan de la reserva, desde hoy hasta la salida, ocupación actual y +1), solo lectura;
-- la capacidad, el titular único, el responsable de menores y la edad 13;
-- actualizar `ReservaHabitacion.adultos/menores` sin recotizar `ReservaNoche`.
+**Criterios verificados**
+- `test:checkin-rediseno`, 5 bloques nuevos:
+  1. 3 cargos, ficha Alojada y `ReservaNoche` sin cambios;
+  2. un día después (fechas corridas en la base de pruebas), 2 cargos;
+  3. un menor no genera cargos y suma un menor a la ocupación;
+  4. en la salida anticipada al día siguiente, la noche usada queda y las otras dos se anulan con su motivo;
+  5. con la capacidad superada, 409.
 
-Con las dos funciones de arriba, el punto 1 se completa en estadía.
+  Cubren además "Registrar ingreso" y las dos funciones nuevas del servicio de cargos.
+- **Vitest:** la vista previa en sus cuatro variantes y el flujo de confirmación con el token.
+- **Navegador** (caso de demo `i`, reserva 968DD072, Doble con 2 adultos y 3 noches desde hoy). Se agregó un tercer adulto, se vio la vista previa con el detalle por noche (+$ 4.400, +$ 4.400, +$ 4.000 = $ 12.800) y se confirmó. Quedaron 3 cargos en "Cargos por habitación", la ocupación en 3 + 0 y las noches de la reserva sin cambios. Capturas: `capturas-checkin/6-persona-adicional-vista-previa.jpg` y `capturas-checkin/7-persona-adicional-cargos.jpg`.
+
+### Para Agustín (servicios adicionales): qué se agregó en tu módulo
+
+En `backend/src/modulos/servicios-adicionales/serviciosAdicionales.servicio.js` **solo se agregaron** dos funciones exportadas. Las líneas existentes no cambiaron: `registrarConsumo`, `anularConsumo`, las consultas y las constantes (incluida `TIPOS_SERVICIO`) siguen igual.
+- **`registrarCargosEnTransaccion(tx, { reservaId, habitacionId, tipoServicio, registradoPor, cargos: [{ fechaServicio, precioUnitario, cantidad?, descripcion?, claveOperacion? }] })`**
+  - Tiene las mismas validaciones que `registrarConsumo`: tipo del catálogo (Minibar no, porque descuenta stock y va de a uno), precio y cantidad válidos, monto máximo, reserva En curso, habitación de la reserva y fecha dentro de la estadía.
+  - Hace un solo `createMany` y registra un evento "Agregar cargos".
+  - No abre transacción ni vuelve a bloquear la reserva: la bloquea quien llama.
+  - Es idempotente por `claveOperacion`: un reintento no duplica ni registra otro evento. Una clave usada en otra habitación da 409.
+- **`anularCargosEnTransaccion(tx, { reservaId, ids? | claveOperacionPrefijo?, fechaServicioDesde?, motivo, operador })`**
+  - Hace la baja lógica con motivo, `anuladoPor` y `anuladoEn`, con un solo `updateMany`, y registra un evento "Anular cargos".
+  - Sin coincidencias no escribe nada.
+- **Pruebas:** bloque "cargos en lote" de `test:checkin-rediseno`. Cubre el lote y el reintento sin duplicar, las validaciones y la anulación por prefijo y fecha con su motivo.
+- **Pendiente:** reclasificar "Persona adicional" como **ingreso de alojamiento**. Hoy usa el tipo "Otro" con descripción; no se agregó un tipo nuevo a `TIPOS_SERVICIO`.
 
 ### 2. Mover entre habitaciones de la misma reserva
 Sin cambios de precio (limitación documentada). La confirmación muestra "El precio de la estadía no se recalcula por este cambio".
@@ -235,7 +258,7 @@ Todas las rutas `/api/estadia/*` usan `requiereSesion` + `requiereRol` (middlewa
 - **Ocupación por noche y recotización "desde esta noche"** en reservas. Es una decisión de equipo y toca el módulo compartido de reservas (`modificarReserva` solo acepta reservas Confirmadas y la ocupación es una por habitación para toda la estadía).
 - **Extender la estadía con la reserva En curso:** hoy no se puede, porque `exigirModificable` la rechaza.
 - **Recotizar al mover personas entre habitaciones:** hoy el precio no cambia, y se avisa en la confirmación.
-- **Persona adicional con cargo en la cuenta:** ver el punto 1, depende de las funciones del servicio de cargos.
+- **Persona adicional:** reclasificar el cargo como ingreso de alojamiento (hoy tipo "Otro") y decidir si una salida anticipada descuenta la ocupación registrada.
 - **Para Tomás:** `PATCH /api/reservas/:id` sigue sin exigir sesión.
 
 ## Para Ricardo: el saldo descuenta la garantía (solo informado, no se tocó)
