@@ -278,11 +278,13 @@ export function camposObligatorios(estado, fila, contexto) {
   return obligatorios;
 }
 
+export const AVISO_NOMBRE_COMPLETO = "El nombre viene completo desde la reserva: separá nombre y apellido según el documento.";
+
 // Avisos informativos de la fila (no bloquean).
 export function avisosDeFila(fila) {
   const avisos = [];
   if (fila.precargada && !texto(fila.campos.apellido) && /\s/.test(texto(fila.campos.nombre)))
-    avisos.push("El nombre viene completo desde la reserva: separá nombre y apellido según el documento.");
+    avisos.push(AVISO_NOMBRE_COMPLETO);
   if (fila.alojadaEnOtra) avisos.push("Esta persona figura alojada en otra estadía.");
   return avisos;
 }

@@ -8,6 +8,7 @@ import { validarOcupante, pendientesParaIngreso } from "./validarOcupante";
 import { formatearFechaDdMmAaaa, formatearFechaHora } from "../../lib/fechas";
 import { formatearNombrePropio } from "../../lib/nombres";
 import { VINCULOS_RESPONSABLE, requiereAutorizacion } from "../../lib/vinculos";
+import { CONTENEDOR_FICHA, FILA_FICHA, Rotulo } from "../../componentes/FilaFicha";
 import { activa, esMenorDeEdad, fechaISO, ingresoPorDefecto } from "./estadiaUtils";
 
 // Catálogo único de huésped y ocupantes (lib/tiposDocumento.js).
@@ -20,23 +21,31 @@ const ETIQUETAS_PAIS_MANUAL = {
   paisResidencia: "Nombre del país de residencia",
 };
 // El formulario se agrupa en tres bloques: Identidad · Residencia y contacto · Estadía.
-const CAMPOS_IDENTIDAD = [
-  ["nombre", "Nombre", "text", true],
-  ["apellido", "Apellido", "text", true],
-  ["tipoDocumento", "Tipo de documento", "text"],
-  ["numeroDocumento", "Número de documento", "text"],
+// Filas (mismas que el check-in, componentes/FilaFicha.jsx): Documento · Identidad · Residencia ·
+// Contacto. [campo, rótulo corto, tipo, obligatorio, opcional].
+const CAMPOS_DOCUMENTO_FILA = [
+  ["tipoDocumento", "Tipo", "text"],
   ["paisDocumento", "País emisor", "text"],
-  ["motivoSinDocumento", "Justificación sin documento", "text"],
-  ["fechaNacimiento", "Nacimiento", "date"],
+  ["numeroDocumento", "Número", "text"],
 ];
-const CAMPOS_RESIDENCIA = [
+const CAMPO_SIN_DOCUMENTO = ["motivoSinDocumento", "Justificación sin documento", "text"];
+const CAMPOS_IDENTIDAD_FILA = [
+  ["nombre", "Nombres", "text", true],
+  ["apellido", "Apellido", "text", true],
+  ["fechaNacimiento", "Nacimiento", "date"],
   ["nacionalidad", "Nacionalidad", "text"],
+];
+const CAMPOS_IDENTIDAD = [...CAMPOS_DOCUMENTO_FILA, CAMPO_SIN_DOCUMENTO, ...CAMPOS_IDENTIDAD_FILA];
+const CAMPOS_RESIDENCIA_FILA = [
   ["paisResidencia", "País de residencia", "text"],
   ["localidad", "Localidad", "text"],
-  ["domicilio", "Domicilio (opcional)", "text"],
-  ["telefono", "Teléfono (opcional)", "tel"],
-  ["email", "Correo electrónico (opcional)", "email"],
+  ["domicilio", "Domicilio", "text", false, true],
 ];
+const CAMPOS_CONTACTO_FILA = [
+  ["telefono", "Teléfono", "tel", false, true],
+  ["email", "Correo", "email", false, true],
+];
+const CAMPOS_RESIDENCIA = [...CAMPOS_RESIDENCIA_FILA, ...CAMPOS_CONTACTO_FILA];
 const CAMPOS_FECHAS = [
   ["fechaDesde", "Ingreso previsto", "date", true],
   ["fechaHasta", "Salida prevista", "date", true],
@@ -178,8 +187,9 @@ export function PersonaFormulario({
       (["email", "numeroDocumento", "habitacionId"].includes(campo) && form[campo]) ||
       erroresServidor[campo];
     const definicion = campos.find((c) => c[0] === campo);
+    const ACCESIBLES = { email: "Correo electrónico", numeroDocumento: "Número de documento" };
     let etiqueta = definicion
-      ? definicion[1] + (definicion[3] ? " *" : "")
+      ? (ACCESIBLES[campo] ?? definicion[1]) + (definicion[3] ? " *" : "") + (definicion[4] ? " (opcional)" : "")
       : {
           habitacionId: "Habitación *",
           responsableId: "Adulto responsable (menores)",
@@ -211,13 +221,14 @@ export function PersonaFormulario({
     if (campo === "paisResidencia") setOtraLocalidad(false);
   }
 
-  function renderCampo([k, label, type, required]) {
+  function renderCampo([k, label, type, required, opcional]) {
+    const rotulo = <Rotulo texto={label} obligatorio={Boolean(required)} opcional={Boolean(opcional)} />;
     if (CAMPOS_PAIS.includes(k)) {
       const pais = buscarPaisOcupante(form[k]);
       return (
         <div key={k} className="space-y-2">
           <Select
-            label={label}
+            label={rotulo}
             {...(!paisManual[k] ? propsCampo(k) : {})}
             value={paisManual[k] ? "__otro__" : pais?.codigo || ""}
             onChange={(e) => {
@@ -310,7 +321,7 @@ export function PersonaFormulario({
         <Select
           key={k}
           {...propsCampo(k)}
-          label={label}
+          label={rotulo}
           value={form.tipoDocumento || ""}
           onChange={(e) => setForm((f) => ({ ...f, tipoDocumento: e.target.value }))}
         >
@@ -333,7 +344,7 @@ export function PersonaFormulario({
       <Input
         key={k}
         {...propsCampo(k)}
-        label={etiqueta + (required ? " *" : "")}
+        label={rotulo}
         placeholder={k === "numeroDocumento" ? `Ingresá el ${etiqueta.replace("Número", "número")}` : undefined}
         type={type}
         disabled={Boolean(form.usarContactoResponsable) && ["email", "telefono"].includes(k)}
@@ -389,14 +400,16 @@ export function PersonaFormulario({
         Los datos identifican al ocupante. Todos los cargos se asignan a la habitación.
       </p>
       <Bloque titulo="Identidad" obligatorio>
-        <div className="grid gap-3 sm:grid-cols-2">
-          {CAMPOS_IDENTIDAD.filter(
-            ([k]) => k !== "motivoSinDocumento" || !String(form.numeroDocumento ?? "").trim(),
-          ).map(renderCampo)}
+        <div className={CONTENEDOR_FICHA}>
+        <div className={FILA_FICHA.documento}>{CAMPOS_DOCUMENTO_FILA.map(renderCampo)}</div>
+        {!String(form.numeroDocumento ?? "").trim() && <div className="mt-2.5 max-w-xl">{renderCampo(CAMPO_SIN_DOCUMENTO)}</div>}
+        <div className={`${FILA_FICHA.identidad} mt-2.5`}>{CAMPOS_IDENTIDAD_FILA.map(renderCampo)}</div>
+        {esMenor && (
+        <div className={`${FILA_FICHA.responsable} mt-2.5`}>
           {esMenor && (
             <Select
               {...propsCampo("responsableId")}
-              label="Adulto responsable *"
+              label={<Rotulo texto="Adulto responsable" obligatorio />}
               value={form.responsableId || ""}
               onChange={(e) => setForm({ ...form, responsableId: e.target.value })}
             >
@@ -411,7 +424,7 @@ export function PersonaFormulario({
           {esMenor && (
             <Select
               {...propsCampo("vinculoResponsable")}
-              label="Vínculo con el menor *"
+              label={<Rotulo texto="Vínculo" obligatorio />}
               value={form.vinculoResponsable || ""}
               onChange={(e) =>
                 setForm((f) => ({
@@ -429,6 +442,8 @@ export function PersonaFormulario({
               ))}
             </Select>
           )}
+        </div>
+        )}
         </div>
         {esMenor && requiereAutorizacion(form.vinculoResponsable) && (
           <div className="space-y-2 rounded border border-laton-300 bg-laton-100 p-3 text-sm text-laton-700">
@@ -489,7 +504,10 @@ export function PersonaFormulario({
             guardar.
           </p>
         )}
-        <div className="grid gap-3 sm:grid-cols-2">{CAMPOS_RESIDENCIA.map(renderCampo)}</div>
+        <div className={CONTENEDOR_FICHA}>
+          <div className={FILA_FICHA.residencia}>{CAMPOS_RESIDENCIA_FILA.map(renderCampo)}</div>
+          <div className={`${FILA_FICHA.contacto} mt-2.5`}>{CAMPOS_CONTACTO_FILA.map(renderCampo)}</div>
+        </div>
       </Bloque>
       <Bloque titulo="Estadía" obligatorio={!alojado}>
         {alojado ? (
@@ -517,11 +535,12 @@ export function PersonaFormulario({
             </p>
           </>
         ) : (
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className={CONTENEDOR_FICHA}>
+          <div className={FILA_FICHA.responsable}>
             {CAMPOS_FECHAS.map(renderCampo)}
             <Select
               {...propsCampo("habitacionId")}
-              label="Habitación *"
+              label={<Rotulo texto="Habitación" obligatorio />}
               required
               value={form.habitacionId}
               onChange={(e) => setForm({ ...form, habitacionId: e.target.value })}
@@ -540,6 +559,7 @@ export function PersonaFormulario({
                 onChange={(e) => setForm({ ...form, motivo: e.target.value })}
               />
             )}
+          </div>
           </div>
         )}
         {/* El titular tiene que ser mayor de edad: a un menor no se le ofrece. */}

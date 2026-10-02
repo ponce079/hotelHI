@@ -25,6 +25,7 @@ import {
 } from "./reservas.constantes";
 import { validarHuesped } from "./validarHuesped";
 import { formatearNombrePropio } from "../../lib/nombres";
+import { CONTENEDOR_FICHA, FILA_FICHA, Rotulo } from "../../componentes/FilaFicha";
 
 // Alta de reserva (HU-36) y edición de una existente (HU-37) en el mismo
 // wizard: los primeros pasos son idénticos, solo cambia con qué datos
@@ -858,48 +859,45 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       {form.paso === PASO_HUESPED && (
         <div className="flex flex-col gap-4 rounded-[18.4px] bg-white px-6 py-[22px]">
           <p className="text-[12px] text-piedra">* obligatorio</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <Input
-              label="Nombres *"
-              value={form.huesped.nombres}
-              maxLength={LIMITES_RESERVA.nombres}
-              onChange={(e) => actualizarHuesped("nombres", e.target.value)}
-              onBlur={() => {
-                actualizarHuesped("nombres", formatearNombrePropio(form.huesped.nombres));
-                tocarHuesped("nombres");
-              }}
-              error={errorHuesped("nombres")}
-              placeholder="Ana María"
-            />
-            <Input
-              label="Apellido *"
-              value={form.huesped.apellido}
-              maxLength={LIMITES_RESERVA.apellido}
-              onChange={(e) => actualizarHuesped("apellido", e.target.value)}
-              onBlur={() => {
-                actualizarHuesped("apellido", formatearNombrePropio(form.huesped.apellido));
-                tocarHuesped("apellido");
-              }}
-              error={errorHuesped("apellido")}
-              placeholder="Pérez"
-            />
-            <PaisDocumentoReserva
-              value={form.huesped.paisDocumento}
-              onChange={(value) => actualizarHuesped("paisDocumento", value)}
-              onBlur={() => tocarHuesped("paisDocumento")}
-              error={errorHuesped("paisDocumento")}
-            />
-            <Input
-              label="Fecha de nacimiento del titular *"
-              type="date"
-              value={form.huesped.fechaNacimiento || ""}
-              onChange={(e) => actualizarHuesped("fechaNacimiento", e.target.value)}
-              onBlur={() => tocarHuesped("fechaNacimiento")}
-              error={errorHuesped("fechaNacimiento")}
-            />
-            <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3">
+          {/* Mismas filas que el check-in y la ficha de ocupante (componentes/FilaFicha.jsx). */}
+          <div className={CONTENEDOR_FICHA}>
+            <div className={FILA_FICHA.identidad}>
+              <Input
+                label={<Rotulo texto="Nombres" obligatorio />}
+                value={form.huesped.nombres}
+                maxLength={LIMITES_RESERVA.nombres}
+                onChange={(e) => actualizarHuesped("nombres", e.target.value)}
+                onBlur={() => {
+                  actualizarHuesped("nombres", formatearNombrePropio(form.huesped.nombres));
+                  tocarHuesped("nombres");
+                }}
+                error={errorHuesped("nombres")}
+                placeholder="Ana María"
+              />
+              <Input
+                label={<Rotulo texto="Apellido" obligatorio />}
+                value={form.huesped.apellido}
+                maxLength={LIMITES_RESERVA.apellido}
+                onChange={(e) => actualizarHuesped("apellido", e.target.value)}
+                onBlur={() => {
+                  actualizarHuesped("apellido", formatearNombrePropio(form.huesped.apellido));
+                  tocarHuesped("apellido");
+                }}
+                error={errorHuesped("apellido")}
+                placeholder="Pérez"
+              />
+              <Input
+                label={<Rotulo texto="Nacimiento" obligatorio />}
+                type="date"
+                value={form.huesped.fechaNacimiento || ""}
+                onChange={(e) => actualizarHuesped("fechaNacimiento", e.target.value)}
+                onBlur={() => tocarHuesped("fechaNacimiento")}
+                error={errorHuesped("fechaNacimiento")}
+              />
+            </div>
+            <div className={`${FILA_FICHA.documento} mt-2.5`}>
               <Select
-                label="Documento *"
+                label={<Rotulo texto="Tipo" obligatorio />}
                 value={form.huesped.tipoDocumento}
                 onChange={(e) => actualizarHuesped("tipoDocumento", e.target.value)}
               >
@@ -909,8 +907,15 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
                   </option>
                 ))}
               </Select>
+              <PaisDocumentoReserva
+                label={<Rotulo texto="País emisor" obligatorio />}
+                value={form.huesped.paisDocumento}
+                onChange={(value) => actualizarHuesped("paisDocumento", value)}
+                onBlur={() => tocarHuesped("paisDocumento")}
+                error={errorHuesped("paisDocumento")}
+              />
               <Input
-                label="Número *"
+                label={<Rotulo texto="Número" obligatorio />}
                 value={form.huesped.numeroDocumento}
                 maxLength={LIMITES_RESERVA.numeroDocumento}
                 onChange={(e) => actualizarHuesped("numeroDocumento", e.target.value)}
@@ -919,29 +924,31 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
                 placeholder="30111222"
               />
             </div>
-            <Input
-              label="Contacto (email o teléfono)"
-              value={form.huesped.contacto}
-              type="email"
-              maxLength={LIMITES_RESERVA.contacto}
-              onChange={(e) => actualizarHuesped("contacto", e.target.value)}
-              onBlur={() => tocarHuesped("contacto")}
-              error={errorHuesped("contacto")}
-              placeholder="ana@mail.com"
-            />
-            {!esEdicion && (
-              <Select
-                label="Enviar confirmación por (opcional)"
-                value={form.canalConfirmacion}
-                onChange={(e) => actualizar("canalConfirmacion", e.target.value)}
-              >
-                {CANALES_CONFIRMACION.map((c) => (
-                  <option key={c} value={c}>
-                    {c}
-                  </option>
-                ))}
-              </Select>
-            )}
+            <div className={`${FILA_FICHA.contacto} mt-2.5`}>
+              <Input
+                label={<Rotulo texto="Correo electrónico" obligatorio />}
+                value={form.huesped.contacto}
+                type="email"
+                maxLength={LIMITES_RESERVA.contacto}
+                onChange={(e) => actualizarHuesped("contacto", e.target.value)}
+                onBlur={() => tocarHuesped("contacto")}
+                error={errorHuesped("contacto")}
+                placeholder="ana@mail.com"
+              />
+              {!esEdicion && (
+                <Select
+                  label={<Rotulo texto="Enviar confirmación por" opcional />}
+                  value={form.canalConfirmacion}
+                  onChange={(e) => actualizar("canalConfirmacion", e.target.value)}
+                >
+                  {CANALES_CONFIRMACION.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </div>
           </div>
 
           <label className="flex flex-col gap-1.5 font-body text-sm">

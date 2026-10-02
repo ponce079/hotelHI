@@ -100,8 +100,8 @@ function renderizar(ruta = "/check-in") {
 }
 
 const filas = () => [...document.querySelectorAll('[id^="ci-fila-"]')];
-// Rótulo con o sin el asterisco de obligatorio ("Nombre" o "Nombre *").
-const rotulo = (texto) => new RegExp(`^${texto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}( \\*)?$`);
+// Rótulo con o sin el asterisco de obligatorio, pegado ("Nombres" o "Nombres*"), o "(opcional)".
+const rotulo = (texto) => new RegExp(`^${texto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\*| \\(opcional\\))?$`);
 const cambiar = (fila, etiqueta, valor) =>
   fireEvent.change(within(fila).getByLabelText(typeof etiqueta === "string" ? rotulo(etiqueta) : etiqueta), { target: { value: valor } });
 const botonConfirmar = () => screen.getByRole("button", { name: /Confirmar check-in|Confirmando/ });
@@ -115,16 +115,16 @@ async function abrirReserva(codigo = "C43B1F20") {
 // Completa la reserva de 2 adultos + 1 menor (titular precargado).
 function completarFamilia() {
   const [titular, adulto2, menor] = filas();
-  cambiar(titular, "Nombre", "Martín");
+  cambiar(titular, "Nombres", "Martín");
   cambiar(titular, "Apellido", "Gutiérrez");
-  cambiar(adulto2, "Número de documento", "31784205");
-  cambiar(adulto2, "Nombre", "Carolina");
+  cambiar(adulto2, "Número", "31784205");
+  cambiar(adulto2, "Nombres", "Carolina");
   cambiar(adulto2, "Apellido", "Paz");
   cambiar(adulto2, "Nacimiento", haceAnios(39).texto.replace(/\//g, ""));
-  cambiar(menor, "Nombre", "Tomás");
+  cambiar(menor, "Nombres", "Tomás");
   cambiar(menor, "Apellido", "Gutiérrez");
   cambiar(menor, "Nacimiento", haceAnios(8).texto.replace(/\//g, ""));
-  cambiar(menor, "Vínculo con el menor", "Padre o madre");
+  cambiar(menor, "Vínculo", "Padre o madre");
   fireEvent.click(screen.getByLabelText(/Confirmo que recibí/));
 }
 
@@ -164,7 +164,7 @@ describe("Check-in con reserva", () => {
     renderizar("/check-in?codigo=C43B1F20");
     await waitFor(() => expect(filas()).toHaveLength(3));
     const [titular, adulto2, menor] = filas();
-    expect(within(titular).getByLabelText(rotulo("Nombre"))).toHaveValue("Martín Gutiérrez");
+    expect(within(titular).getByLabelText(rotulo("Nombres"))).toHaveValue("Martín Gutiérrez");
     expect(within(titular).getByLabelText(rotulo("Nacimiento"))).toHaveValue(haceAnios(42).texto);
     expect(within(titular).getByText("Titular de la reserva")).toBeInTheDocument();
     expect(within(titular).getByText(/El nombre viene completo desde la reserva/)).toBeInTheDocument();
@@ -179,7 +179,7 @@ describe("Check-in con reserva", () => {
     renderizar("/check-in?codigo=C43B1F20");
     await waitFor(() => expect(filas()).toHaveLength(3));
     const [titular] = filas();
-    expect(within(titular).getByLabelText(rotulo("Nombre"))).toHaveValue("Martín");
+    expect(within(titular).getByLabelText(rotulo("Nombres"))).toHaveValue("Martín");
     expect(within(titular).getByLabelText(rotulo("Apellido"))).toHaveValue("Gutiérrez");
     expect(within(titular).queryByText(/El nombre viene completo desde la reserva/)).not.toBeInTheDocument();
   });
@@ -191,17 +191,17 @@ describe("Check-in con reserva", () => {
     const [titular, adulto2, menor] = filas();
     expect(screen.getByText("* obligatorio")).toBeInTheDocument();
     // Teléfono: obligatorio solo para el titular de la reserva.
-    expect(within(titular).getByLabelText("Teléfono *")).toBeInTheDocument();
-    for (const etiqueta of ["Nombre *", "Apellido *", "Nacimiento *", "Número de documento *", "País emisor *"])
+    expect(within(titular).getByLabelText("Teléfono*")).toBeInTheDocument();
+    for (const etiqueta of ["Nombres*", "Apellido*", "Nacimiento*", "Número*", "País emisor*"])
       expect(within(adulto2).getByLabelText(etiqueta)).toBeInTheDocument();
-    expect(within(adulto2).queryByLabelText(/Vínculo con el menor/)).not.toBeInTheDocument();
+    expect(within(adulto2).queryByLabelText(/^Vínculo/)).not.toBeInTheDocument();
     // Menor: responsable y vínculo obligatorios; el documento es opcional.
-    expect(within(menor).getByLabelText("Adulto responsable *")).toBeInTheDocument();
-    expect(within(menor).getByLabelText("Vínculo con el menor *")).toBeInTheDocument();
+    expect(within(menor).getByLabelText("Adulto responsable*")).toBeInTheDocument();
+    expect(within(menor).getByLabelText("Vínculo*")).toBeInTheDocument();
     // Mayúscula inicial al salir del campo, con partículas en minúscula.
     cambiar(adulto2, "Apellido", "juan de la vega");
-    fireEvent.blur(within(adulto2).getByLabelText("Apellido *"));
-    expect(within(adulto2).getByLabelText("Apellido *")).toHaveValue("Juan de la Vega");
+    fireEvent.blur(within(adulto2).getByLabelText("Apellido*"));
+    expect(within(adulto2).getByLabelText("Apellido*")).toHaveValue("Juan de la Vega");
   });
 
   it("menor con «Otro adulto a cargo»: sin la autorización no deja confirmar; con la autorización confirma y la envía", async () => {
@@ -211,11 +211,11 @@ describe("Check-in con reserva", () => {
     await waitFor(() => expect(filas()).toHaveLength(3));
     completarFamilia();
     const menor = filas()[2];
-    cambiar(menor, "Vínculo con el menor", "Otro adulto a cargo");
+    cambiar(menor, "Vínculo", "Otro adulto a cargo");
     expect(within(menor).getByText("Pedí la autorización de los padres o tutores.")).toBeInTheDocument();
     expect(botonConfirmar()).toBeDisabled();
     expect(screen.getByRole("button", { name: /la autorización de los padres o tutores/ })).toBeInTheDocument();
-    fireEvent.click(within(menor).getByLabelText("Autorización presentada *"));
+    fireEvent.click(within(menor).getByLabelText("Autorización presentada*"));
     await waitFor(() => expect(botonConfirmar()).toBeEnabled());
     fireEvent.click(botonConfirmar());
     await waitFor(() => expect(api.confirmarCheckInConReserva).toHaveBeenCalledTimes(1));
@@ -266,10 +266,10 @@ describe("Check-in con reserva", () => {
     renderizar("/check-in?codigo=C43B1F20");
     await waitFor(() => expect(filas()).toHaveLength(3));
     const adulto2 = filas()[1];
-    cambiar(adulto2, "Número de documento", "317");
+    cambiar(adulto2, "Número", "317");
     await new Promise((r) => setTimeout(r, 600));
     expect(api.buscarHuespedPorDocumento).not.toHaveBeenCalled();
-    cambiar(adulto2, "Número de documento", "31784205");
+    cambiar(adulto2, "Número", "31784205");
     expect(await within(adulto2).findByText(/Ficha encontrada:/, {}, { timeout: 2000 })).toHaveTextContent(
       "✓ Ficha encontrada: Carolina Paz — datos completados · última estadía 12/07/2025",
     );
@@ -494,9 +494,9 @@ describe("Walk-in", () => {
     const completar = (fila, datos) => Object.entries(datos).forEach(([k, v]) => cambiar(fila, k, v));
     await waitFor(() => expect(filas()).toHaveLength(3));
     const [a1, a2, b1] = filas();
-    completar(a1, { "Número de documento": "27093318", Nombre: "Raúl", Apellido: "Ibarra", Nacimiento: haceAnios(46).texto, Localidad: "Jujuy", Domicilio: "Belgrano 845", Teléfono: "+54 388 555-0147" });
-    completar(a2, { "Número de documento": "27093319", Nombre: "Ana", Apellido: "Ibarra", Nacimiento: haceAnios(44).texto });
-    completar(b1, { "Número de documento": "27093320", Nombre: "Tomás", Apellido: "Ibarra", Nacimiento: haceAnios(24).texto, Localidad: "Jujuy", Domicilio: "Belgrano 845" });
+    completar(a1, { "Número": "27093318", Nombres: "Raúl", Apellido: "Ibarra", Nacimiento: haceAnios(46).texto, Localidad: "Jujuy", Domicilio: "Belgrano 845", Teléfono: "+54 388 555-0147" });
+    completar(a2, { "Número": "27093319", Nombres: "Ana", Apellido: "Ibarra", Nacimiento: haceAnios(44).texto });
+    completar(b1, { "Número": "27093320", Nombres: "Tomás", Apellido: "Ibarra", Nacimiento: haceAnios(24).texto, Localidad: "Jujuy", Domicilio: "Belgrano 845" });
     fireEvent.click(screen.getByLabelText(/Confirmo que recibí/));
     await waitFor(() => expect(botonConfirmar()).toBeEnabled());
     fireEvent.click(botonConfirmar());

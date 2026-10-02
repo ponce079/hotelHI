@@ -110,14 +110,14 @@ async function completarPasos1a4() {
   fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
 
   // Minúsculas a propósito: al salir del campo quedan con mayúscula inicial (y partículas en minúscula).
-  fireEvent.change(await screen.findByLabelText("Nombres *"), { target: { value: "ana maría" } });
-  fireEvent.blur(screen.getByLabelText("Nombres *"));
-  fireEvent.change(screen.getByLabelText("Apellido *"), { target: { value: "pérez de la vega" } });
-  fireEvent.blur(screen.getByLabelText("Apellido *"));
-  fireEvent.change(screen.getByLabelText("País emisor del documento *"), { target: { value: "AR" } });
-  fireEvent.change(screen.getByLabelText("Fecha de nacimiento del titular *"), { target: { value: "1990-01-01" } });
-  fireEvent.change(screen.getByLabelText("Número *"), { target: { value: "30111222" } });
-  fireEvent.change(screen.getByLabelText("Correo electrónico *"), { target: { value: "ana@mail.com" } });
+  fireEvent.change(await screen.findByLabelText("Nombres*"), { target: { value: "ana maría" } });
+  fireEvent.blur(screen.getByLabelText("Nombres*"));
+  fireEvent.change(screen.getByLabelText("Apellido*"), { target: { value: "pérez de la vega" } });
+  fireEvent.blur(screen.getByLabelText("Apellido*"));
+  fireEvent.change(screen.getByLabelText("País emisor*"), { target: { value: "AR" } });
+  fireEvent.change(screen.getByLabelText("Nacimiento*"), { target: { value: "1990-01-01" } });
+  fireEvent.change(screen.getByLabelText("Número*"), { target: { value: "30111222" } });
+  fireEvent.change(screen.getByLabelText("Correo electrónico*"), { target: { value: "ana@mail.com" } });
 }
 
 beforeEach(() => {
@@ -377,7 +377,7 @@ describe("ReservaWizard — arranca con habitaciones ya elegidas (desde Disponib
     renderWizard({ origen: "WEB", valoresIniciales: { fechaDesde: "2026-10-10", fechaHasta: "2026-10-13" } });
 
     expect(screen.getByLabelText("Entrada (check-in) *")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Nombres *")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Nombres*")).not.toBeInTheDocument();
   });
 });
 
@@ -418,7 +418,7 @@ describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin 
 
     fireEvent.click(await screen.findByText("Best Available Rate"));
     fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
-    await screen.findByLabelText("Nombres *");
+    await screen.findByLabelText("Nombres*");
 
     const guardar = screen.getByRole("button", { name: "Guardar cambios" });
     fireEvent.click(guardar);
