@@ -175,8 +175,68 @@ Caso que la disparó: en E7AC5CC5, "Editar ocupante" de un adulto alojado ofrec�
 4. Decidir con el equipo cómo registrar la ocupación por noche: un campo en `ReservaNoche` o mantener la ocupación por habitación y documentar que refleja la ocupación vigente. Esto toca el módulo de reservas compartido.
 
 **Otros hallazgos (no tocados)**
-- Las rutas `/api/estadia/*` responden sin sesión: `POST …/mover` sin token devuelve 400 por el operador, no 401. Es preexistente y lo tiene que ver Tomás (login).
+- Las rutas `/api/estadia/*` respondían sin sesión. **Resuelto en la tercera corrección** (sesión y rol en el router de estadía, sin tocar el middleware).
 - El mensaje guardado de "Confirmaciones enviadas" tiene fechas sin ceros ("2/10/2026"). Es un texto generado al confirmar la reserva y guardado así.
+
+## Tercera corrección
+
+### 1. Persona adicional con la estadía en curso: frenado (falta una función en el servicio de cargos)
+
+La decisión es cargar la persona adicional en la cuenta de la habitación, sin recotizar la reserva. Lo que pide (ficha Alojada, un cargo por noche con `createMany`, evento, ocupación actualizada, todo en **una** transacción, y en la salida anticipada anular en la misma transacción los cargos de las noches posteriores) **no se puede hacer con el servicio de cargos tal como está**. Según la regla f, se frenó sin implementar nada de este punto.
+
+**Qué impide usarlo sin modificarlo** (`backend/src/modulos/servicios-adicionales/serviciosAdicionales.servicio.js`):
+- **Abre su propia transacción.** `registrarConsumo(data)` (línea 122) ejecuta su propio `prisma.$transaction` y no recibe un `tx`. Llamarlo desde la transacción de estadía haría una transacción aparte que intenta bloquear la misma reserva (`SELECT … FOR UPDATE`), que ya está bloqueada por la de estadía: se trabaría o quedaría a medias. Llamarlo después rompe la atomicidad: la ficha podría quedar Alojada sin cargos.
+- **Un cargo por llamada.** Hace un `create` y un evento por llamada. No tiene alta en lote (`createMany`), así que N noches serían N transacciones.
+- **Lo mismo al anular.** `anularConsumo(id, data)` (línea 222) también abre su propia transacción y anula de a uno, por `id`. No se puede usar dentro de la transacción de "Registrar salida".
+- **Nada vincula el cargo con la persona.** No hay un campo de ocupante. Hoy solo se podría reconocer por `claveOperacion` o por el texto de la descripción.
+
+**Qué faltaría** (funciones nuevas en el servicio de cargos, sin cambiar las existentes):
+1. `registrarCargosEnTransaccion(tx, { reservaId, habitacionId, tipoServicio, registradoPor, cargos: [{ fechaServicio, precioUnitario, descripcion, claveOperacion }] })`:
+   - las mismas validaciones de `registrarConsumo`;
+   - un solo `createMany` y un evento;
+   - sin abrir transacción ni volver a bloquear (la reserva ya viene bloqueada).
+2. `anularCargosEnTransaccion(tx, { reservaId, claveOperacion: { startsWith } | ids, motivo, operador })`, con un `updateMany` como baja lógica y un evento.
+3. Una convención para reconocer los cargos de cada persona sin cambiar el esquema: `claveOperacion = "persona-adicional:<ocupanteId>:<YYYY-MM-DD>"`. Entra en los 100 caracteres y, como es única, hace idempotente el reintento.
+4. Definir el tipo: `tipoServicio: "Otro"` con descripción "Persona adicional — Nombre Apellido", o un tipo nuevo en `TIPOS_SERVICIO`, que está duplicado a mano en el frontend.
+
+**Quién tiene que decidir.** `registrarConsumo` y `anularConsumo` los refactorizó por última vez otro integrante (commit `53a0eb3` de agusfar45). Conviene acordar el cambio con quien mantiene Cargos por habitación y check-out.
+
+**Lo demás ya se puede hacer sin tocar a nadie:**
+- la vista previa, con el motor de cotización existente (`cotizarParaReserva` con el plan de la reserva, desde hoy hasta la salida, ocupación actual y +1), solo lectura;
+- la capacidad, el titular único, el responsable de menores y la edad 13;
+- actualizar `ReservaHabitacion.adultos/menores` sin recotizar `ReservaNoche`.
+
+Con las dos funciones de arriba, el punto 1 se completa en estadía.
+
+### 2. Mover entre habitaciones de la misma reserva
+Sin cambios de precio (limitación documentada). La confirmación muestra "El precio de la estadía no se recalcula por este cambio".
+
+### 3. Sesión en las rutas de estadía
+
+Todas las rutas `/api/estadia/*` usan `requiereSesion` + `requiereRol` (middleware sin cambios). Sin token devuelven 401 y un rol sin permiso, 403. En las rutas que escriben, el operador de los eventos sale de la sesión (`req.usuarioActual.usuario`) aunque el cuerpo mande otro.
+
+| Ruta | Pantallas que la usan | Roles |
+|---|---|---|
+| `GET /alojados` | Personas alojadas (menú: admin, recepcionista) | admin, recepcionista |
+| `GET /:reservaId/ocupantes` | Personas de la estadía (detalle de reserva, también el gerente con `verReservas`), check-in (precarga de fichas) | admin, recepcionista, gerente |
+| `GET /:reservaId/historial` | Pestaña Historial del detalle de reserva | admin, recepcionista, gerente |
+| `POST /:reservaId/titular` | Personas de la estadía (titular automático, solo si puede editar) | admin, recepcionista |
+| `POST /:reservaId/ocupantes` | Agregar persona | admin, recepcionista |
+| `PUT /:reservaId/ocupantes/:id` | Editar ocupante | admin, recepcionista |
+| `POST /:reservaId/ocupantes/:id/accion` | Verificar, ingresar, cancelar, registrar salida | admin, recepcionista |
+| `POST /:reservaId/ocupantes/:id/mover` | Mover a otra habitación | admin, recepcionista |
+
+- **Fuera de estas rutas:** housekeeping y check-out no llaman a `/api/estadia`. Check-out usa `/api/check-out` y `/api/pagos-estadia`.
+- **Token:** el frontend lo manda en todas estas llamadas, porque todas pasan por `lib/api.js`.
+- **Prueba automática (`test:integracion`):** 401 sin token y 403 para housekeeping en las 8 rutas. El gerente lee fichas e historial, pero recibe 403 en alojados y en las escrituras. Además verifica que el operador sale de la sesión.
+- **Navegador, con sesión de recepcionista:** respondieron 200 check-in (`/estadia/127/ocupantes`), Personas de la estadía (ocupantes e historial), Personas alojadas (`/estadia/alojados`) y check-out.
+
+### 4. Pendientes (sin implementar)
+- **Ocupación por noche y recotización "desde esta noche"** en reservas. Es una decisión de equipo y toca el módulo compartido de reservas (`modificarReserva` solo acepta reservas Confirmadas y la ocupación es una por habitación para toda la estadía).
+- **Extender la estadía con la reserva En curso:** hoy no se puede, porque `exigirModificable` la rechaza.
+- **Recotizar al mover personas entre habitaciones:** hoy el precio no cambia, y se avisa en la confirmación.
+- **Persona adicional con cargo en la cuenta:** ver el punto 1, depende de las funciones del servicio de cargos.
+- **Para Tomás:** `PATCH /api/reservas/:id` sigue sin exigir sesión.
 
 ## Para Ricardo: el saldo descuenta la garantía (solo informado, no se tocó)
 
