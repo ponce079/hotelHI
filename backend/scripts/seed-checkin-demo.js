@@ -49,6 +49,8 @@ const reservas = require("../src/modulos/reservas/reservas.servicio");
 const checkin = require("../src/modulos/check-in/checkIn.servicio");
 const checkout = require("../src/modulos/check-out/checkOut.servicio");
 const pagos = require("../src/modulos/pagos-estadia/pagoEstadia.servicio");
+const estadia = require("../src/modulos/estadia/estadia.servicio");
+const { ESTADO_HABITACION_POST_CHECKOUT } = require("../src/modulos/check-out/checkOut.constantes");
 const { hoyComoFechaUTC } = require("../src/lib/fechas");
 
 const MANIFIESTO = path.join(__dirname, ".demo-checkin.json");
@@ -101,17 +103,19 @@ function guardarManifiesto(m) {
 }
 
 // --------------------------------------------------------------- casos
-// Cada titular tiene documento 99… fijo: así la persona se reutiliza (no se duplica).
+// Cada titular tiene documento 99… fijo: así la persona se reutiliza (no se duplica). Nombres y
+// apellido van por separado, como en el alta de mostrador; el caso e conserva el nombre completo
+// en un solo campo (huésped viejo: el check-in pide separarlo).
 const TITULARES = {
-  a: { nombre: "Martín Gutiérrez", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99512874", fechaNacimiento: haceAnios(42), contacto: "martin.gutierrez@correo.com.ar" },
-  b: { nombre: "Sofía Ruiz Díaz", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99331908", fechaNacimiento: haceAnios(48), contacto: "+54 261 555-0110" },
-  c: { nombre: "Lucía Fernández", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99218664", fechaNacimiento: haceAnios(35), contacto: "lucia.fernandez@correo.com.ar" },
-  d: { nombre: "Diego Morales", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99104455", fechaNacimiento: haceAnios(39), contacto: "+54 387 555-0177" },
+  a: { nombre: "Martín Gutiérrez", nombres: "Martín", apellido: "Gutiérrez", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99512874", fechaNacimiento: haceAnios(42), contacto: "martin.gutierrez@correo.com.ar" },
+  b: { nombre: "Sofía Ruiz Díaz", nombres: "Sofía", apellido: "Ruiz Díaz", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99331908", fechaNacimiento: haceAnios(48), contacto: "+54 261 555-0110" },
+  c: { nombre: "Lucía Fernández", nombres: "Lucía", apellido: "Fernández", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99218664", fechaNacimiento: haceAnios(35), contacto: "lucia.fernandez@correo.com.ar" },
+  d: { nombre: "Diego Morales", nombres: "Diego", apellido: "Morales", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99104455", fechaNacimiento: haceAnios(39), contacto: "+54 387 555-0177" },
   e: { nombre: "María José Fernández Ruiz", tipoDocumento: "Pasaporte", paisDocumento: "CL", numeroDocumento: "99F22904", fechaNacimiento: haceAnios(51), contacto: "mjfernandez@correo.cl" },
-  f: { nombre: "Carolina Paz", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99784205", fechaNacimiento: haceAnios(39), contacto: "carolina.paz@correo.com.ar" },
-  h: { nombre: "Federico Álvarez", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99460318", fechaNacimiento: haceAnios(45), contacto: "+54 381 555-0123" },
-  i: { nombre: "Valeria Ríos", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99627351", fechaNacimiento: haceAnios(37), contacto: "valeria.rios@correo.com.ar" },
-  g: { nombre: "Pedro Vargas", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99290417", fechaNacimiento: haceAnios(51), contacto: "+54 11 555-0190" },
+  f: { nombre: "Carolina Paz", nombres: "Carolina", apellido: "Paz", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99784205", fechaNacimiento: haceAnios(39), contacto: "carolina.paz@correo.com.ar" },
+  h: { nombre: "Federico Álvarez", nombres: "Federico", apellido: "Álvarez", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99460318", fechaNacimiento: haceAnios(45), contacto: "+54 381 555-0123" },
+  i: { nombre: "Valeria Ríos", nombres: "Valeria", apellido: "Ríos", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99627351", fechaNacimiento: haceAnios(37), contacto: "valeria.rios@correo.com.ar" },
+  g: { nombre: "Pedro Vargas", nombres: "Pedro", apellido: "Vargas", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99290417", fechaNacimiento: haceAnios(51), contacto: "+54 11 555-0190" },
 };
 
 // Acompañantes fijos de los casos que se crean con check-in real (f: estadía anterior; i: en curso).
@@ -128,7 +132,20 @@ const NOMBRES_NUEVOS = [
 
 // Personas vigentes de un caso: las del manifiesto (si se renovaron) o las fijas.
 function personasDelCaso(manifiesto, clave) {
-  return manifiesto.personas[clave] ?? { titular: TITULARES[clave], ...(ACOMPANANTES[clave] ? { acompanante: ACOMPANANTES[clave] } : {}) };
+  // Personas renovadas en corridas anteriores (formato viejo, solo `nombre`): el seed las armó como
+  // "Nombre Apellido" con una palabra cada uno, así que se separan; el caso e sigue con el nombre completo.
+  const guardadas = manifiesto.personas[clave];
+  if (guardadas?.titular && !guardadas.titular.apellido && TITULARES[clave]?.apellido) {
+    const [nombres, ...resto] = guardadas.titular.nombre.split(" ");
+    guardadas.titular = { ...guardadas.titular, nombres, apellido: resto.join(" ") };
+  }
+  // Lo que falte en las guardadas (por ejemplo, el menor, que se agregó después) sale de las fijas.
+  return {
+    titular: TITULARES[clave],
+    ...(ACOMPANANTES[clave] ? { acompanante: ACOMPANANTES[clave] } : {}),
+    ...(MENORES[clave] ? { menor: { ...MENORES[clave], tipoDocumento: "DNI" } } : {}),
+    ...(guardadas ?? {}),
+  };
 }
 const nombreCompleto = (persona) => (persona.apellido ? `${persona.nombre} ${persona.apellido}` : persona.nombre);
 
@@ -169,10 +186,12 @@ async function renovarPersonas(manifiesto, clave) {
   const titular = {
     ...actual.titular,
     nombre: `${n} ${a}`,
+    ...(actual.titular.apellido ? { nombres: n, apellido: a } : {}),
     numeroDocumento: await documentoLibre(actual.titular.tipoDocumento),
     contacto: actual.titular.contacto?.includes("@") ? `${n}.${a}@correo.com.ar`.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "") : actual.titular.contacto,
   };
   const nuevas = { titular };
+  if (actual.menor) nuevas.menor = { ...actual.menor, apellido: a, numeroDocumento: await documentoLibre() };
   if (actual.acompanante) {
     const [n2] = elegir();
     nuevas.acompanante = { ...actual.acompanante, nombre: n2, apellido: a, numeroDocumento: await documentoLibre() };
@@ -324,7 +343,7 @@ async function crearEstadiaAnterior(manifiesto) {
   const reserva = await crearReservaCaso(manifiesto, caso);
   const habitacionId = reserva.habitaciones[0].id;
   const { titular: t, acompanante: ac } = personasDelCaso(manifiesto, "f");
-  const [nombre, apellido] = t.nombre.split(" ");
+  const [nombre, apellido] = t.apellido ? [t.nombres, t.apellido] : t.nombre.split(" ");
   const personas = [
     { id: 1, habitacionId, esTitular: true, nombre, apellido, tipoDocumento: t.tipoDocumento, paisDocumento: t.paisDocumento, numeroDocumento: t.numeroDocumento, fechaNacimiento: t.fechaNacimiento, nacionalidad: "AR", paisResidencia: "AR", localidad: "Salta", domicilio: "Av. Belgrano 1250", telefono: "+54 387 555-0142", email: t.contacto },
     { id: 2, habitacionId, esTitular: false, ...ac, nacionalidad: "AR", paisResidencia: "AR" },
@@ -357,7 +376,7 @@ async function crearEstadiaEnCursoHoy(manifiesto) {
   const reserva = await crearReservaCaso(manifiesto, caso);
   const habitacionId = reserva.habitaciones[0].id;
   const { titular: t, acompanante: ac } = personasDelCaso(manifiesto, "i");
-  const [nombre, apellido] = t.nombre.split(" ");
+  const [nombre, apellido] = t.apellido ? [t.nombres, t.apellido] : t.nombre.split(" ");
   const personas = [
     { id: 1, habitacionId, esTitular: true, nombre, apellido, tipoDocumento: t.tipoDocumento, paisDocumento: t.paisDocumento, numeroDocumento: t.numeroDocumento, fechaNacimiento: t.fechaNacimiento, nacionalidad: "AR", paisResidencia: "AR", localidad: "Salta", domicilio: "Caseros 845", telefono: "+54 387 555-0161", email: t.contacto },
     { id: 2, habitacionId, esTitular: false, ...ac, nacionalidad: "AR", paisResidencia: "AR" },
@@ -374,6 +393,34 @@ async function crearEstadiaEnCursoHoy(manifiesto) {
   const acompanante = await prisma.huesped.findFirst({ where: { numeroDocumento: ac.numeroDocumento }, select: { id: true } });
   if (acompanante && !manifiesto.huespedes.includes(acompanante.id)) manifiesto.huespedes.push(acompanante.id);
   return reserva;
+}
+
+// Menores de los casos a y b: su ficha queda precargada en la reserva (el check-in la trae a su
+// fila) con el vínculo del responsable. En b, el responsable es la titular (de la otra habitación)
+// como "Otro familiar", con la autorización presentada.
+const MENORES = {
+  a: { nombre: "Tomás", apellido: "Gutiérrez", numeroDocumento: "99512875", edad: 8, vinculoResponsable: "Padre o madre", autorizacionPresentada: false },
+  b: { nombre: "Joaquín", apellido: "Ruiz Díaz", numeroDocumento: "99331909", edad: 9, vinculoResponsable: "Otro familiar", autorizacionPresentada: true },
+};
+async function precargarMenor(manifiesto, reserva, clave) {
+  const datos = personasDelCaso(manifiesto, clave).menor;
+  if (!datos) return;
+  const fichas = await estadia.listar(reserva.id);
+  const titular = fichas.find((f) => f.estado === "Previsto" && f.huespedId === reserva.huespedId);
+  const habitacionMenor = (await prisma.reservaHabitacion.findMany({ where: { reservaId: reserva.id, menores: { gt: 0 } }, orderBy: { id: "asc" } }))[0];
+  if (!titular || !habitacionMenor) return;
+  const { edad, tipoDocumento: _tipo, ...ficha } = datos;
+  await estadia.guardar(reserva.id, null, {
+    ...ficha,
+    tipoDocumento: "DNI",
+    paisDocumento: "AR",
+    fechaNacimiento: haceAnios(edad),
+    nacionalidad: "AR",
+    paisResidencia: "AR",
+    habitacionId: habitacionMenor.habitacionId,
+    responsableId: titular.id,
+    operador: OPERADOR,
+  });
 }
 
 // Una reserva es "de demo" solo si está en el manifiesto Y su titular tiene documento 99….
@@ -409,6 +456,14 @@ async function cerrarConCheckOut(manifiesto, r) {
     guardarManifiesto(manifiesto);
   }
   await checkout.confirmarCheckOut(r.id, { cargosValidados: true });
+  // El check-out deja las habitaciones "en limpieza". En la demo la limpieza se da por hecha: las
+  // que quedaron así vuelven a "libre" para que la corrida siguiente las use (no se crean otras).
+  // Las que están en mantenimiento no se tocan.
+  const ids = cuenta.habitaciones.map((h) => h.habitacionId);
+  await prisma.habitacion.updateMany({
+    where: { id: { in: ids }, estado: ESTADO_HABITACION_POST_CHECKOUT },
+    data: { estado: "libre", estadoAnterior: null },
+  });
   return pagado;
 }
 
@@ -434,6 +489,19 @@ async function limpiar() {
       noCerradas.push(`${etiqueta}: ${error.message}`);
       console.log(`  ✖ ${etiqueta} no se pudo cerrar: ${error.message}`);
     }
+  }
+  // Habitaciones de demo (creadas por este script) que quedaron "en limpieza" por check-outs de
+  // corridas anteriores y no tienen una estadía en curso: vuelven a "libre".
+  if (manifiesto.habitaciones.length) {
+    const liberadas = await prisma.habitacion.updateMany({
+      where: {
+        id: { in: manifiesto.habitaciones },
+        estado: ESTADO_HABITACION_POST_CHECKOUT,
+        reservaHabitaciones: { none: { reserva: { estado: "En curso" } } },
+      },
+      data: { estado: "libre", estadoAnterior: null },
+    });
+    if (liberadas.count) console.log(`  ✔ ${liberadas.count} habitaciones de demo pasan de "en limpieza" a libres`);
   }
   guardarManifiesto(manifiesto);
   if (noCerradas.length) {
@@ -474,6 +542,7 @@ async function sembrar() {
       }
       if (previa?.estado === "Confirmada") await anular(previa);
       const r = await crearReservaCaso(manifiesto, c);
+      await precargarMenor(manifiesto, r, c.clave);
       console.log(`  ✔ ${c.clave}) ${r.codigoConfirmacion} — ${c.descripcion}${conAviso(aviso)}`);
     });
   }

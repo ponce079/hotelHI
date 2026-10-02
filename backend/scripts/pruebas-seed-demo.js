@@ -146,7 +146,18 @@ async function main() {
   assert.equal(corrida.status, 0, corrida.salida);
   let m = manifiesto();
   for (const clave of [...CASOS_HOY, "f", "g", "i"]) assert.ok(m.reservas[clave], `falta el caso ${clave}`);
-  ok("seed inicial: todos los casos creados");
+  // Nombres y apellido separados (salvo e) y los menores de a y b precargados con su vínculo.
+  const huespedDe = async (clave) => (await p.reserva.findUnique({ where: { id: m.reservas[clave] }, include: { huesped: true } })).huesped;
+  const ha = await huespedDe("a");
+  assert.ok(ha.nombres && ha.apellido, "caso a con nombres y apellido separados");
+  assert.equal(ha.nombre, `${ha.nombres} ${ha.apellido}`);
+  const he = await huespedDe("e");
+  assert.equal(he.apellido, null, "el caso e conserva el nombre completo en un solo campo");
+  const menorDe = (clave) => p.ocupanteReserva.findFirst({ where: { reservaId: m.reservas[clave], responsableId: { not: null } } });
+  const [ma, mb] = [await menorDe("a"), await menorDe("b")];
+  assert.deepEqual([ma.vinculoResponsable, ma.autorizacionPresentada], ["Padre o madre", false]);
+  assert.deepEqual([mb.vinculoResponsable, mb.autorizacionPresentada], ["Otro familiar", true]);
+  ok("seed inicial: todos los casos creados, nombres y apellido separados (salvo e) y menores de a y b con su vínculo");
 
   // 2) Ensayo: check-in por la API de a, b y d (i ya está en curso).
   const ensayadas = await conServidor(async (url) => {
@@ -187,7 +198,8 @@ async function main() {
   assert.equal(casos.i.estado, "En curso");
   await personasLibres(m);
   assert.match(corrida.salida, /Persona que vuelve: DNI 99\d{6}/);
-  assert.match(corrida.salida, /Habitaciones libres para el walk-in:\n {2}Doble: .+\n {2}Simple: .+/);
+  // Puede crear habitaciones de demo en el camino ("＋ habitación …") si no alcanzan las libres.
+  assert.match(corrida.salida, /Habitaciones libres para el walk-in:\n( {2}＋ .+\n)* {2}Doble: .+\n( {2}＋ .+\n)* {2}Simple: .+/);
   ok("seed después de --limpiar: todos los casos listos, personas sin estadía en otra reserva y walk-in preparado");
 
   // 5) Todos los casos de hoy se pueden confirmar.
