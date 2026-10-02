@@ -465,10 +465,14 @@ export function reducer(estado, accion) {
     }
     // ---------------------------------------------------------------- respuestas del servidor
     case "erroresServidor": {
-      const { porHabitacion = {}, personas = [] } = accion;
+      const { porHabitacion = {}, ocupacionPorHabitacion = {}, personas = [] } = accion;
       return {
         ...estado,
-        habitaciones: estado.habitaciones.map((h) => ({ ...h, errorServidor: porHabitacion[h.clave] ?? null })),
+        habitaciones: estado.habitaciones.map((h) => ({
+          ...h,
+          errorServidor: porHabitacion[h.clave] ?? null,
+          errorOcupacion: ocupacionPorHabitacion[h.clave] ?? null,
+        })),
         filas: estado.filas.map((f) => ({ ...f, errorServidor: personas.includes(f.id) ? accion.mensajePersonas : null })),
       };
     }

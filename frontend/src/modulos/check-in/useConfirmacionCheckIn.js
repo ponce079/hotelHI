@@ -18,7 +18,13 @@ export function useConfirmacionCheckIn({ enviar, estado, dispatch, onExito }) {
     onError: (error) => {
       const r = interpretarErrorConfirmar(error, estado);
       setPanel(r.panel);
-      dispatch({ tipo: "erroresServidor", porHabitacion: r.porHabitacion, personas: r.personas, mensajePersonas: r.mensajePersonas });
+      dispatch({
+        tipo: "erroresServidor",
+        porHabitacion: r.porHabitacion,
+        ocupacionPorHabitacion: r.ocupacionPorHabitacion,
+        personas: r.personas,
+        mensajePersonas: r.mensajePersonas,
+      });
       if (r.recargarHabitaciones) queryClient.invalidateQueries({ queryKey: ["check-in", "libres"] });
     },
     onSettled: () => {

@@ -38,9 +38,9 @@ export function SeccionHuespedes({ estado, contexto, dispatch }) {
                   {h.capacidad != null ? ` · capacidad ${h.capacidad}` : ""}
                 </span>
               </div>
-              {h.errorServidor && (
+              {h.errorOcupacion && (
                 <p role="alert" className="rounded-md bg-error-suave px-2.5 py-1.5 text-[13.5px] text-error-texto">
-                  {h.errorServidor}
+                  {h.errorOcupacion}
                 </p>
               )}
               {filas.map((fila) => (

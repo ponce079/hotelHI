@@ -5,14 +5,16 @@ export function interpretarErrorConfirmar(error, estado) {
   const datos = error?.response?.data ?? {};
   const mensaje = datos.error ?? "No se pudo confirmar el check-in. Revisá la conexión y volvé a intentar.";
   const claveDe = (habitacionId) => estado.habitaciones.find((h) => h.habitacionId === habitacionId || h.habitacionIdAnterior === habitacionId)?.clave;
-  const resultado = { panel: { tipo: "mensaje", texto: mensaje }, porHabitacion: {}, personas: [], mensajePersonas: null, recargarHabitaciones: false };
+  // porHabitacion: errores de la habitación en sí (cambio de habitación); ocupacionPorHabitacion: de las
+  // personas que ingresan (se muestran en el grupo de huéspedes de esa habitación).
+  const resultado = { panel: { tipo: "mensaje", texto: mensaje }, porHabitacion: {}, ocupacionPorHabitacion: {}, personas: [], mensajePersonas: null, recargarHabitaciones: false };
 
   if (status === 400 && (datos.codigo === "OCUPACION_INVALIDA" || datos.codigo === "MOTIVO_TITULAR_REQUERIDO")) {
     const porHabitacion = datos.detalle?.porHabitacion ?? [];
     const generales = datos.detalle?.generales ?? [];
     for (const h of porHabitacion) {
       const clave = claveDe(h.habitacionId);
-      if (clave && h.errores?.length) resultado.porHabitacion[clave] = h.errores.join(" ");
+      if (clave && h.errores?.length) resultado.ocupacionPorHabitacion[clave] = h.errores.join(" ");
     }
     const mensajes = [...porHabitacion.flatMap((h) => h.errores ?? []), ...generales];
     resultado.panel = { tipo: "lista", titulo: "El servidor no aceptó la carga:", mensajes: mensajes.length ? mensajes : [mensaje] };
