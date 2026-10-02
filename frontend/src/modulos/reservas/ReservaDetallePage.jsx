@@ -14,7 +14,7 @@ import { PasoAPaso } from "../../componentes/PasoAPaso";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { Table } from "../../componentes/Table";
 import { Toast } from "../../componentes/Toast";
-import { formatearFechaSinHora, formatearTimestamp } from "../../lib/fechas";
+import { formatearFechaDdMmAaaa, formatearFechaHora } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { useVolver } from "../../lib/useVolver";
@@ -171,7 +171,6 @@ export function ReservaDetallePage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <EstadiaPanel reserva={reserva} />
       <div>
         <Button variante="fantasma" icono={ArrowLeft} onClick={volver}>
           Volver
@@ -187,8 +186,8 @@ export function ReservaDetallePage() {
             {reserva.cantidadHabitaciones > 1 && <Badge variante="info">Reserva grupal</Badge>}
           </div>
           <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-            HU 36 a 42 — {reserva.huesped?.nombre} · {formatearFechaSinHora(reserva.fechaDesde)} al{" "}
-            {formatearFechaSinHora(reserva.fechaHasta)}
+            {reserva.huesped?.nombre} · {formatearFechaDdMmAaaa(reserva.fechaDesde)} al{" "}
+            {formatearFechaDdMmAaaa(reserva.fechaHasta)}
           </p>
         </div>
         {(mostrarAccionCheckIn || editable || mostrarAjustarPrecio) && (
@@ -243,6 +242,9 @@ export function ReservaDetallePage() {
         </div>
       )}
 
+      {/* Personas de la estadía: debajo del encabezado (código, estado, Volver) y del avance. */}
+      <EstadiaPanel reserva={reserva} />
+
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="rounded-lg border border-borde bg-white p-5 lg:col-span-2">
           <h2 className="mb-4 flex items-center gap-2 font-heading text-[19px] font-semibold">
@@ -263,8 +265,8 @@ export function ReservaDetallePage() {
         <div className="rounded-lg border border-borde bg-white p-5">
           <h2 className="mb-4 font-heading text-[19px] font-semibold">Estadía</h2>
           <div className="flex flex-col gap-4">
-            <Dato etiqueta="Entrada">{formatearFechaSinHora(reserva.fechaDesde)}</Dato>
-            <Dato etiqueta="Salida">{formatearFechaSinHora(reserva.fechaHasta)}</Dato>
+            <Dato etiqueta="Entrada">{formatearFechaDdMmAaaa(reserva.fechaDesde)}</Dato>
+            <Dato etiqueta="Salida">{formatearFechaDdMmAaaa(reserva.fechaHasta)}</Dato>
             {reserva.planTarifario && (
               <Dato etiqueta="Plan tarifario">
                 {reserva.planTarifario.nombre}{" "}
@@ -279,7 +281,7 @@ export function ReservaDetallePage() {
               </p>
               <Cifra tamano={28}>{FORMATO_MONEDA.format(reserva.totalEstimadoAlojamiento)}</Cifra>
               <p className="mt-1 text-[11px] text-piedra">
-                Alojamiento: precio congelado por noche al confirmar (HU-96), no la tarifa de hoy.
+                Alojamiento: precio congelado por noche al confirmar, no la tarifa de hoy.
               </p>
             </div>
 
@@ -350,7 +352,7 @@ export function ReservaDetallePage() {
                         {(h.reservaNoches ?? []).map((n) => (
                           <div key={n.fecha} className="flex items-center justify-between gap-3 text-[12.5px]">
                             <span className="text-piedra">
-                              {formatearFechaSinHora(n.fecha)}
+                              {formatearFechaDdMmAaaa(n.fecha)}
                               {n.temporadaNombre ? ` · ${n.temporadaNombre}` : ""}
                               {n.origen === "MIGRACION" ? " · migrada" : ""}
                             </span>
@@ -358,7 +360,7 @@ export function ReservaDetallePage() {
                               <span
                                 className="flex items-center gap-2 font-mono"
                                 title={`Ajuste manual — ${n.motivoAjuste ?? "sin motivo"} · ${n.ajustadoPor ?? "—"} · ${
-                                  n.ajustadoEn ? formatearTimestamp(n.ajustadoEn) : "—"
+                                  n.ajustadoEn ? formatearFechaHora(n.ajustadoEn) : "—"
                                 }`}
                               >
                                 <span className="text-piedra line-through">{FORMATO_MONEDA.format(n.precioOriginal)}</span>
@@ -392,7 +394,7 @@ export function ReservaDetallePage() {
             )}
           </div>
           <p className="mb-4 text-[12px] text-piedra">
-            HU 61 a 63 — restaurante, spa, lavandería y minibar cargados a la cuenta de esta estadía.
+            Restaurante, spa, lavandería y minibar cargados a la cuenta de esta estadía.
           </p>
           <div className="mb-4 grid grid-cols-2 gap-3 md:grid-cols-5">
             <div className="rounded-lg border border-pino-300 bg-pino-100 p-4">
@@ -415,7 +417,7 @@ export function ReservaDetallePage() {
             vacio="Todavía no hay consumos registrados para esta estadía."
             renderFila={(c) => (
               <tr key={c.id} className="border-b border-borde last:border-0">
-                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px]">{formatearTimestamp(c.fechaHora)}</td>
+                <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px]">{formatearFechaHora(c.fechaHora)}</td>
                 <td className="px-3 py-2.5">
                   <Badge variante={TIPO_SERVICIO_BADGE[c.tipoServicio]}>{c.tipoServicio}</Badge>
                 </td>
@@ -437,8 +439,7 @@ export function ReservaDetallePage() {
           <Bell size={17} className="text-pino" /> Confirmaciones enviadas
         </h2>
         <p className="mb-4 text-[12px] text-piedra">
-          HU 41 — el proyecto no tiene proveedor de email/SMS configurado: queda el registro del envío, sin integración
-          real.
+          No hay un proveedor de correo o SMS configurado: queda el registro del envío, sin envío real.
         </p>
         <Table
           columnas={["Fecha", "Canal", "Destinatario", "Mensaje"]}
@@ -446,7 +447,7 @@ export function ReservaDetallePage() {
           vacio="Todavía no hay confirmaciones registradas."
           renderFila={(n) => (
             <tr key={n.id} className="border-b border-borde last:border-0">
-              <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px]">{formatearTimestamp(n.fechaEnvio)}</td>
+              <td className="whitespace-nowrap px-3 py-2.5 text-[12.5px]">{formatearFechaHora(n.fechaEnvio)}</td>
               <td className="px-3 py-2.5">
                 <Badge variante={n.canal === "Interno" ? "neutro" : "ok"}>{n.canal}</Badge>
               </td>

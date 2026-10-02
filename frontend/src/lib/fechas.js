@@ -172,3 +172,22 @@ export function edadEnFecha(nacimientoISO, fechaISO) {
 export function nochesEntre(desde, hasta) {
   return Math.round((comoFecha(String(hasta).slice(0, 10)) - comoFecha(String(desde).slice(0, 10))) / 86400000);
 }
+
+// Fecha y hora real (timestamps), en hora argentina: "02/10/2026 11:03".
+export function formatearFechaHora(valor) {
+  if (!valor) return "—";
+  const partes = Object.fromEntries(
+    new Intl.DateTimeFormat("es-AR", {
+      timeZone: ZONA_ARGENTINA,
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    })
+      .formatToParts(new Date(valor))
+      .map((p) => [p.type, p.value]),
+  );
+  return `${partes.day}/${partes.month}/${partes.year} ${partes.hour}:${partes.minute}`;
+}

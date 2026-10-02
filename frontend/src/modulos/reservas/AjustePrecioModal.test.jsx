@@ -44,14 +44,14 @@ beforeEach(() => {
 describe("AjustePrecioModal — selección de noches y vista previa automática", () => {
   it("lista las noches de la reserva con su precio actual", () => {
     renderModal();
-    expect(screen.getByText(/301 \(Doble\) · 10\/9\/2027/)).toBeInTheDocument();
-    expect(screen.getByText(/301 \(Doble\) · 11\/9\/2027/)).toBeInTheDocument();
+    expect(screen.getByText(/301 \(Doble\) · 10\/09\/2027/)).toBeInTheDocument();
+    expect(screen.getByText(/301 \(Doble\) · 11\/09\/2027/)).toBeInTheDocument();
   });
 
   it("con noche + modo + valor + motivo completos, consulta sola una vista previa (soloPrevia) y la muestra", async () => {
     renderModal();
 
-    fireEvent.click(screen.getByText(/10\/9\/2027/).closest("label").querySelector("input"));
+    fireEvent.click(screen.getByText(/10\/09\/2027/).closest("label").querySelector("input"));
     fireEvent.change(screen.getByLabelText(/Precio nuevo por noche/), { target: { value: "50" } });
     fireEvent.change(screen.getByLabelText(/Motivo/), { target: { value: "Cortesía por reclamo del huésped" } });
 
@@ -68,7 +68,7 @@ describe("AjustePrecioModal — selección de noches y vista previa automática"
   it("sin motivo (o motivo corto) no consulta la vista previa ni habilita Confirmar", async () => {
     renderModal();
 
-    fireEvent.click(screen.getByText(/10\/9\/2027/).closest("label").querySelector("input"));
+    fireEvent.click(screen.getByText(/10\/09\/2027/).closest("label").querySelector("input"));
     fireEvent.change(screen.getByLabelText(/Precio nuevo por noche/), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText(/Motivo/), { target: { value: "corto" } });
 
@@ -82,7 +82,7 @@ describe("AjustePrecioModal — selección de noches y vista previa automática"
     );
     const { onExito } = renderModal();
 
-    fireEvent.click(screen.getByText(/10\/9\/2027/).closest("label").querySelector("input"));
+    fireEvent.click(screen.getByText(/10\/09\/2027/).closest("label").querySelector("input"));
     fireEvent.change(screen.getByLabelText(/Precio nuevo por noche/), { target: { value: "0" } });
     fireEvent.change(screen.getByLabelText(/Motivo/), { target: { value: "Cortesía por reclamo del huésped" } });
     await screen.findByText("Vista previa");
@@ -97,7 +97,7 @@ describe("AjustePrecioModal — selección de noches y vista previa automática"
   it("modo descuento porcentual: valida entre 0 y 100 antes de habilitar la vista previa", async () => {
     renderModal();
 
-    fireEvent.click(screen.getByText(/10\/9\/2027/).closest("label").querySelector("input"));
+    fireEvent.click(screen.getByText(/10\/09\/2027/).closest("label").querySelector("input"));
     fireEvent.change(screen.getByLabelText("Modo *"), { target: { value: "DESCUENTO_PORCENTAJE" } });
     fireEvent.change(screen.getByLabelText("Motivo * (mínimo 10 caracteres)"), {
       target: { value: "Descuento negociado con el huésped" },

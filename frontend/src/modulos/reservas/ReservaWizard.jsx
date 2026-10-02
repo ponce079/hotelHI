@@ -9,7 +9,7 @@ import { Cifra } from "../../componentes/Cifra";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Table } from "../../componentes/Table";
-import { formatearFechaSinHora, hoyEnHoraLocal } from "../../lib/fechas";
+import { formatearFechaDdMmAaaa, hoyEnHoraLocal } from "../../lib/fechas";
 import { ESTADO_HABITACION_BADGE, ESTADO_HABITACION_LABEL } from "../habitaciones/habitaciones.constantes";
 import { MEDIOS_CON_TARJETA } from "../pagos-estadia/pagoEstadia.constantes";
 import { TarjetaSimuladaPanel } from "../pagos-estadia/TarjetaSimuladaPanel";
@@ -89,8 +89,8 @@ function calcularNoches(fechaDesde, fechaHasta) {
 function textoMotivoBloqueo(motivo) {
   if (!motivo) return null;
   if (motivo.tipo === "reserva") {
-    const desde = formatearFechaSinHora(motivo.fechaDesde);
-    const hasta = formatearFechaSinHora(motivo.fechaHasta);
+    const desde = formatearFechaDdMmAaaa(motivo.fechaDesde);
+    const hasta = formatearFechaDdMmAaaa(motivo.fechaHasta);
     return `Reservada — ${motivo.huespedNombre ?? "otro huésped"}, ${desde} al ${hasta} (${motivo.codigoConfirmacion})`;
   }
   return `No disponible — ${ESTADO_HABITACION_LABEL[motivo.estado]?.toLowerCase() ?? motivo.estado}`;
@@ -536,10 +536,10 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
     <fieldset disabled={mutacion.isPending || actualizandoIntento} className="flex min-w-0 flex-col gap-5 px-6 py-5">
       <p className="-mt-1 font-mono text-[11px] text-tinta/55">
         {esEdicion
-          ? "HU 37/96 — modificar fechas, habitaciones, plan o datos del huésped"
+          ? "Modificar fechas, habitaciones, plan o datos del huésped"
           : requiereSenia
-            ? "HU 36, 39, 41, 42, 88, 95 y 96 — plan, precio del motor y seña cobrada antes de confirmar"
-            : "HU 36, 39, 41, 42, 95 y 96 — plan y precio del motor validados antes de confirmar"}
+            ? "Plan, precio del motor y seña cobrada antes de confirmar"
+            : "Plan y precio del motor validados antes de confirmar"}
       </p>
 
       <div className="flex flex-wrap items-center gap-2 rounded-[18.4px] bg-hueso px-6 py-4">
