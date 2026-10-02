@@ -663,6 +663,97 @@ async function pruebas({ bar, nrf, temporada }) {
     void total;
     ok("un solo titular por habitación: alta, lote y titular automático no dejan dos (409); el cambio con motivo deja uno y queda auditado");
   }
+
+  // ---------------------------------------------------------------- editar y mover con la estadía en curso
+  {
+    const estadia = require("../src/modulos/estadia/estadia.servicio");
+    const { mover } = require("../src/modulos/estadia/moverOcupante");
+    const ficha = (pers, habitacionId, extra = {}) => ({ ...pers, habitacionId, operador: OPERADOR, ...extra });
+    const hA = await habitacion(doble, 3);
+    const hB = await habitacion(doble, 2);
+    const tA = persona(1, hA.id, 40, { esTitular: true });
+    const acomp = persona(2, hA.id, 38);
+    const b = persona(3, hB.id, 45, { esTitular: true });
+    const { reserva, total } = await reservar(
+      [
+        { habitacionId: hA.id, adultos: 2, menores: 0 },
+        { habitacionId: hB.id, adultos: 1, menores: 0 },
+      ],
+      { titular: tA },
+    );
+    await confirmar(reserva, {
+      habitaciones: [
+        { habitacionIdAnterior: hA.id, adultos: 2, menores: 0 },
+        { habitacionIdAnterior: hB.id, adultos: 1, menores: 0 },
+      ],
+      personas: [tA, acomp, b],
+      totalEsperado: total,
+    });
+    const alojada = (pers) =>
+      p.ocupanteReserva.findFirst({ where: { reservaId: reserva.id, numeroDocumento: pers.numeroDocumento, estado: "Alojado" } });
+    const [fT, fAcomp, fB] = [await alojada(tA), await alojada(acomp), await alojada(b)];
+    assert.ok(fT && fAcomp && fB && fAcomp.verificadoEn, "check-in con las tres personas alojadas y verificadas");
+
+    // Adulto responsable: solo para menores, y obligatorio para ellos.
+    await rechaza(() => estadia.guardar(reserva.id, null, ficha(persona(4, hA.id, 36), hA.id, { responsableId: fT.id })), 400, /Solo un menor/);
+    await rechaza(() => estadia.guardar(reserva.id, null, ficha(persona(5, hA.id, 10), hA.id)), 400, /adulto responsable/);
+    const menor = await estadia.guardar(reserva.id, null, ficha(persona(5, hA.id, 10), hA.id, { responsableId: fT.id }));
+
+    // Ingreso, salida y habitación de una persona alojada no se cambian desde "Editar".
+    await rechaza(() => estadia.guardar(reserva.id, fAcomp.id, ficha(acomp, hA.id, { fechaHasta: enDias(1) })), 409, /fechas de una persona alojada/);
+    await rechaza(() => estadia.guardar(reserva.id, fAcomp.id, ficha(acomp, hB.id, { motivo: "Prefiere otra" })), 409, /Mover a otra habitación/);
+
+    // Cambio de documento de una ficha verificada: motivo, evento con anterior y nuevo, vuelve a verificar.
+    const nuevoDocumento = documento();
+    await rechaza(() => estadia.guardar(reserva.id, fAcomp.id, ficha(acomp, hA.id, { numeroDocumento: nuevoDocumento })), 400, /motivo/);
+    await estadia.guardar(reserva.id, fAcomp.id, ficha(acomp, hA.id, { numeroDocumento: nuevoDocumento, motivoCambioIdentidad: "Error de tipeo en el check-in" }));
+    const acompCorregido = await p.ocupanteReserva.findUnique({ where: { id: fAcomp.id } });
+    assert.equal(acompCorregido.numeroDocumento, nuevoDocumento);
+    assert.equal(acompCorregido.verificadoEn, null, "vuelve a Datos por verificar");
+    assert.notEqual(acompCorregido.identidadActiva, fAcomp.identidadActiva);
+    const evDoc = await p.eventoEstadia.findFirst({ where: { reservaId: reserva.id, accion: "Cambio de documento" } });
+    const detDoc = JSON.parse(evDoc.detalle);
+    assert.deepEqual(
+      [detDoc.anterior.numeroDocumento, detDoc.nuevo.numeroDocumento, detDoc.motivo, evDoc.operador],
+      [acomp.numeroDocumento, nuevoDocumento, "Error de tipeo en el check-in", OPERADOR],
+    );
+    assert.deepEqual(Object.keys(detDoc).sort(), ["anterior", "motivo", "nuevo", "ocupanteId"]);
+
+    // Nombre: se guarda con evento de auditoría, sin motivo y sin perder la verificación.
+    await estadia.guardar(reserva.id, fB.id, ficha(b, hB.id, { nombre: "Corregido" }));
+    assert.ok((await p.ocupanteReserva.findUnique({ where: { id: fB.id } })).verificadoEn, "un cambio de nombre no pierde la verificación");
+    const evNombre = await p.eventoEstadia.findFirst({ where: { reservaId: reserva.id, accion: "Corrección de datos personales" } });
+    assert.deepEqual(JSON.parse(evNombre.detalle).anterior, { nombre: b.nombre });
+
+    // Mover a otra habitación: solo de la misma reserva, con motivo, capacidad y titular.
+    const ajena = await habitacion(doble, 3);
+    const moverA = (ocupanteId, habitacionId, extra = {}) =>
+      mover(reserva.id, ocupanteId, { habitacionId, motivo: "Pidió cambiar", operador: OPERADOR, ...extra });
+    await rechaza(() => moverA(fAcomp.id, ajena.id), 400, /no pertenece a esta reserva/);
+    await rechaza(() => moverA(fAcomp.id, hB.id, { motivo: "" }), 400, /motivo/);
+    await rechaza(() => moverA(fT.id, hB.id), 400, /quién queda como titular/);
+    await rechaza(() => moverA(fT.id, hB.id, { nuevoTitularId: menor.id }), 400, /18 años/);
+    await moverA(fT.id, hB.id, { nuevoTitularId: fAcomp.id });
+    const titulares = async (habitacionId) =>
+      (
+        await p.ocupanteReserva.findMany({
+          where: { reservaId: reserva.id, esTitular: true, estado: { in: ["Previsto", "Alojado"] }, asignaciones: { some: { habitacionId, hasta: null } } },
+        })
+      ).map((o) => o.id);
+    assert.deepEqual(await titulares(hA.id), [fAcomp.id], "queda el nuevo titular en la habitación que deja");
+    assert.deepEqual(await titulares(hB.id), [fB.id], "en el destino sigue su titular");
+    const evMover = await p.eventoEstadia.findFirst({ where: { reservaId: reserva.id, accion: "Cambio de habitación" } });
+    assert.deepEqual(JSON.parse(evMover.detalle), {
+      ocupanteId: fT.id,
+      desdeHabitacionId: hA.id,
+      habitacionId: hB.id,
+      motivo: "Pidió cambiar",
+      nuevoTitularId: fAcomp.id,
+    });
+    // hB ya tiene 2 de 2: no entra nadie más.
+    await rechaza(() => moverA(fAcomp.id, hB.id, { nuevoTitularId: fT.id }), 409, /capacidad/);
+    ok("estadía en curso: responsable solo para menores, fechas y habitación fijas en Editar, cambio de documento con motivo y mover respetando capacidad y titular");
+  }
 }
 
 // Servidor HTTP efímero con las rutas del check-in.

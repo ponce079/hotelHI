@@ -194,25 +194,62 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
         })
       : null;
     if (ocupanteId && !actual) throw new ErrorDeNegocio("Ocupante inexistente.", 404);
-    if (
-      actual?.estado === "Alojado" &&
-      (String(data.numeroDocumento || "")
-        .trim()
-        .toUpperCase()
-        .replace(/\s/g, "") !== actual.numeroDocumento ||
-        data.tipoDocumento !== actual.tipoDocumento ||
-        data.paisDocumento !== actual.paisDocumento)
-    )
-      throw new ErrorDeNegocio(
-        "La identidad de una persona alojada no se cambia. Registrá la salida antes de corregirla.",
-      );
     if (actual && ["Retirado", "Cancelado"].includes(actual.estado))
       throw new ErrorDeNegocio("No se modifica un registro finalizado.");
+    const alojado = actual?.estado === "Alojado";
+    const habitacionActual = actual?.asignaciones.find((a) => !a.hasta)?.habitacionId;
+    if (alojado) {
+      // Ingreso, salida y habitación de una persona alojada no se editan desde la ficha: para irse
+      // antes, "Registrar salida"; para quedarse más, se modifica la reserva; para cambiar de
+      // habitación, "Mover a otra habitación".
+      const dia = (v) => (v ? String(v instanceof Date ? v.toISOString() : v).slice(0, 10) : null);
+      if (
+        (data.fechaDesde && dia(data.fechaDesde) !== dia(actual.fechaDesde)) ||
+        (data.fechaHasta && dia(data.fechaHasta) !== dia(actual.fechaHasta))
+      )
+        throw new ErrorDeNegocio(
+          "Las fechas de una persona alojada no se cambian desde su ficha. Para irse antes, registrá la salida; para quedarse más, modificá la reserva.",
+          409,
+        );
+      if (data.habitacionId && Number(data.habitacionId) !== habitacionActual)
+        throw new ErrorDeNegocio("Para cambiar de habitación a una persona alojada, usá \"Mover a otra habitación\".", 409);
+      data = { ...data, fechaDesde: dia(actual.fechaDesde), fechaHasta: dia(actual.fechaHasta), habitacionId: habitacionActual };
+    }
     const p = normalizarPersona(data, r);
     const residencia = sacarResidencia(p);
     const habitacionId = id(data.habitacionId);
+    // Adulto responsable: solo para menores de 18 (a la fecha de ingreso), y en ese caso obligatorio.
+    const esMenorDeEdad = Boolean(p.fechaNacimiento && edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD);
+    if (!esMenorDeEdad && p.responsableId) {
+      const mensaje = "Solo un menor de 18 años lleva adulto responsable.";
+      throw new ErrorDeNegocio(mensaje, 400, { responsableId: mensaje });
+    }
+    // Cambio de identidad de una ficha verificada: motivo obligatorio, evento con valores anterior y
+    // nuevo, y la ficha vuelve a "Datos por verificar".
+    const CAMPOS_DOCUMENTO = ["tipoDocumento", "paisDocumento", "numeroDocumento"];
+    const cambiosDocumento = actual
+      ? CAMPOS_DOCUMENTO.filter((k) => (p[k] ?? null) !== (actual[k] ?? null))
+      : [];
+    const motivoCambioIdentidad = texto(data.motivoCambioIdentidad, "Motivo del cambio de documento", false, 500);
+    if (cambiosDocumento.length && actual.verificadoEn && !motivoCambioIdentidad) {
+      const mensaje = "Indicá el motivo del cambio de documento.";
+      throw new ErrorDeNegocio(
+        "Esta ficha ya estaba verificada: para cambiar el documento indicá el motivo.",
+        400,
+        { motivoCambioIdentidad: mensaje },
+      );
+    }
+    const CAMPOS_PERSONALES = ["nombre", "apellido", "fechaNacimiento"];
+    const valorPersonal = (v) => (v instanceof Date ? v.toISOString().slice(0, 10) : (v ?? null));
+    const cambiosPersonales = actual
+      ? CAMPOS_PERSONALES.filter((k) => actual[k] != null && valorPersonal(p[k]) !== valorPersonal(actual[k]))
+      : [];
     const { prepararContacto, comparteCorreo } = require("./contactoPersona");
     const { menor, responsable } = await prepararContacto(tx, r, p, actual, data, { edad, ErrorDeNegocio });
+    if (esMenorDeEdad && !p.responsableId) {
+      const mensaje = "Elegí el adulto responsable del menor.";
+      throw new ErrorDeNegocio("El menor necesita un adulto responsable.", 400, { responsableId: mensaje });
+    }
     if (p.email) {
       // La reserva ya está bloqueada: dos altas simultáneas no eluden este control.
       const correos = await tx.ocupanteReserva.findMany({
@@ -311,10 +348,17 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
       if (!["ocupada", "libre"].includes(h.estado))
         throw new ErrorDeNegocio("La habitación de destino no está disponible.");
     }
+    // Una ficha Prevista vuelve a verificarse ante cualquier cambio. Una persona alojada, solo si
+    // cambia su documento (los demás cambios quedan auditados en el historial).
+    const reverificar = !alojado || cambiosDocumento.length > 0;
     const saved = actual
       ? await tx.ocupanteReserva.update({
           where: { id: actual.id },
-          data: { ...p, verificadoEn: null, verificadoPor: null },
+          data: {
+            ...p,
+            ...(reverificar ? { verificadoEn: null, verificadoPor: null } : {}),
+            ...(alojado && cambiosDocumento.length ? { identidadActiva: identidad(p) } : {}),
+          },
         })
       : await tx.ocupanteReserva.create({ data: { ...p, reservaId } });
     if (!anterior || cambio) {
@@ -338,6 +382,31 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
       { ocupanteId: saved.id, habitacionId, cambio: Boolean(cambio) },
       operador,
     );
+    if (cambiosDocumento.length)
+      await evento(
+        tx,
+        reservaId,
+        "Cambio de documento",
+        {
+          ocupanteId: saved.id,
+          anterior: Object.fromEntries(CAMPOS_DOCUMENTO.map((k) => [k, actual[k] ?? null])),
+          nuevo: Object.fromEntries(CAMPOS_DOCUMENTO.map((k) => [k, p[k] ?? null])),
+          motivo: motivoCambioIdentidad,
+        },
+        operador,
+      );
+    if (cambiosPersonales.length)
+      await evento(
+        tx,
+        reservaId,
+        "Corrección de datos personales",
+        {
+          ocupanteId: saved.id,
+          anterior: Object.fromEntries(cambiosPersonales.map((k) => [k, valorPersonal(actual[k])])),
+          nuevo: Object.fromEntries(cambiosPersonales.map((k) => [k, valorPersonal(p[k])])),
+        },
+        operador,
+      );
     if (titularReemplazado)
       await evento(
         tx,

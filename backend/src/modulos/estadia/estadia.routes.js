@@ -49,6 +49,10 @@ router.post(
   "/:reservaId/ocupantes/:id/accion",
   handler((r) => s.accion(r.params.reservaId, r.params.id, r.body)),
 );
+router.post(
+  "/:reservaId/ocupantes/:id/mover",
+  handler((r) => require("./moverOcupante").mover(r.params.reservaId, r.params.id, r.body)),
+);
 router.get(
   "/:reservaId/historial",
   handler((r) => s.historial(r.params.reservaId)),
