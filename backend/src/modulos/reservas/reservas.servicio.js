@@ -256,8 +256,16 @@ function normalizarHuesped(data, fechaIngreso = hoyComoFechaUTC()) {
       "El contacto del huésped tiene que ser un correo válido o un teléfono (números, +, espacios o guiones)."
     );
   }
+  // Nombres y apellido por separado (mostrador y walk-in). Huesped.nombre sigue siendo el nombre
+  // completo ("nombres apellido") para comprobantes y búsquedas. Un cliente que manda solo
+  // `nombre` (por ejemplo, el e-commerce todavía) sigue funcionando como antes.
+  const separados = data.nombres !== undefined || data.apellido !== undefined;
+  const nombres = separados ? textoObligatorio(data.nombres, "Los nombres del huésped", LIMITES_RESERVA.nombres) : null;
+  const apellido = separados ? textoObligatorio(data.apellido, "El apellido del huésped", LIMITES_RESERVA.apellido) : null;
   return {
-    nombre: textoObligatorio(data.nombre, "El nombre del huésped", LIMITES_RESERVA.nombre),
+    ...(separados
+      ? { nombre: `${nombres} ${apellido}`, nombres, apellido }
+      : { nombre: textoObligatorio(data.nombre, "El nombre del huésped", LIMITES_RESERVA.nombre) }),
     ...(data.fechaNacimiento
       ? { fechaNacimiento: parsearFechaSinHora(data.fechaNacimiento, "La fecha de nacimiento del titular") }
       : {}),
@@ -355,6 +363,9 @@ function formatearReserva(reserva) {
       ? {
           id: reserva.huesped.id,
           nombre: reserva.huesped.nombre,
+          // Por separado si el huésped los tiene (desde la quinta corrección); null en huéspedes viejos.
+          nombres: reserva.huesped.nombres ?? null,
+          apellido: reserva.huesped.apellido ?? null,
           fechaNacimiento: reserva.huesped.fechaNacimiento ?? null,
           paisDocumento: reserva.huesped.paisDocumento ?? null,
           tipoDocumento: reserva.huesped.tipoDocumento,
@@ -783,6 +794,7 @@ async function resolverHuesped(tx, datos) {
     where: { id: existente.id },
     data: {
       nombre: datos.nombre,
+      ...(datos.nombres ? { nombres: datos.nombres, apellido: datos.apellido } : {}),
       ...(datos.fechaNacimiento ? { fechaNacimiento: datos.fechaNacimiento } : {}),
       contacto: datos.contacto ?? existente.contacto,
       preferencias: datos.preferencias ?? existente.preferencias,

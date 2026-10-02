@@ -470,6 +470,7 @@ async function pruebas({ bar, nrf, temporada }) {
     assert.equal(huespedReserva.identidadDocumento, claveDocumento(titular));
     assert.equal(await p.huesped.count({ where: { identidadDocumento: claveDocumento(titular) } }), 1, "no se duplica");
     assert.equal(huespedReserva.nombre, `${titular.nombre} ${titular.apellido}`, "se actualiza con lo declarado");
+    assert.deepEqual([huespedReserva.nombres, huespedReserva.apellido], [titular.nombre, titular.apellido], "walk-in: nombres y apellido separados");
     assert.equal(huespedReserva.contacto, "viejo@example.test", "un correo ya guardado no se pisa con el teléfono");
     // Persona nueva que solo deja teléfono: el contacto de su ficha es el teléfono.
     const nuevaSoloTelefono = await p.huesped.findUnique({ where: { identidadDocumento: claveDocumento(personas[3]) } });
@@ -1051,6 +1052,63 @@ async function pruebas({ bar, nrf, temporada }) {
       await p.temporada.delete({ where: { id: evento.id } });
     }
     ok("persona adicional con estadía mínima 3 y 1 noche restante: se registra con 1 cargo (sin el parámetro, la mínima se sigue exigiendo)");
+  }
+
+  // ---------------------------------------------------------------- nombres y apellido separados
+  {
+    const estadiaS = require("../src/modulos/estadia/estadia.servicio");
+    const { buscarPorDocumento } = require("../src/modulos/huespedes/huespedes.servicio");
+    const h = await habitacion(doble, 3);
+    const titular = persona(1, h.id, 40, { nombre: "María José", apellido: "de la Vega" });
+    const totalEsperado = await cotizar([{ habitacionId: h.id, adultos: 2, menores: 0 }], bar.id);
+    // Alta de mostrador con nombres y apellido por separado.
+    const alta = await reservas.crearReserva({
+      fechaDesde: enDias(0),
+      fechaHasta: enDias(2),
+      habitaciones: [{ habitacionId: h.id, adultos: 2, menores: 0 }],
+      planTarifarioId: bar.id,
+      totalEsperado,
+      huesped: {
+        nombres: titular.nombre,
+        apellido: titular.apellido,
+        tipoDocumento: "DNI",
+        paisDocumento: "AR",
+        numeroDocumento: titular.numeroDocumento,
+        fechaNacimiento: titular.fechaNacimiento,
+        contacto: "maria.vega@example.test",
+      },
+      origen: "RECEPCION",
+    });
+    const huesped = await p.huesped.findUnique({ where: { id: alta.huespedId } });
+    assert.deepEqual([huesped.nombres, huesped.apellido, huesped.nombre], ["María José", "de la Vega", "María José de la Vega"]);
+    const conDatos = await reservas.obtenerReserva(alta.id);
+    assert.deepEqual([conDatos.huesped.nombres, conDatos.huesped.apellido], ["María José", "de la Vega"]);
+    // Faltando uno de los dos, el alta se rechaza.
+    await assert.rejects(
+      () => reservas.crearReserva({ fechaDesde: enDias(0), fechaHasta: enDias(2), habitaciones: [{ habitacionId: h.id, adultos: 2, menores: 0 }], planTarifarioId: bar.id, totalEsperado, huesped: { nombres: "Ana", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99000001", fechaNacimiento: titular.fechaNacimiento, contacto: "+54 387 555-0000" }, origen: "RECEPCION" }),
+      /apellido del huésped es obligatorio/,
+    );
+    // Titular automático: cada uno en su campo.
+    await p.$transaction(async (tx) => {
+      const bloqueada = await estadiaS.bloquear(tx, alta.id);
+      await require("../src/modulos/estadia/titular.servicio").incorporarEnTransaccion(tx, bloqueada, huesped, OPERADOR);
+    });
+    const fichaTitular = await p.ocupanteReserva.findFirst({ where: { reservaId: alta.id, huespedId: huesped.id } });
+    assert.deepEqual([fichaTitular.nombre, fichaTitular.apellido], ["María José", "de la Vega"]);
+    // Editar el apellido de la ficha actualiza nombres, apellido y nombre del Huesped.
+    await estadiaS.guardar(alta.id, fichaTitular.id, { ...titular, apellido: "De La Vega Paz", habitacionId: h.id, operador: OPERADOR });
+    const editado = await p.huesped.findUnique({ where: { id: huesped.id } });
+    assert.deepEqual([editado.nombres, editado.apellido, editado.nombre], ["María José", "De La Vega Paz", "María José De La Vega Paz"]);
+    // Persona que vuelve sin ficha previa: nombres y apellido del Huesped; huésped viejo: nombre completo.
+    const nuevo = await p.huesped.create({ data: { nombre: "Lucas Prado", nombres: "Lucas", apellido: "Prado", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: documento(), identidadDocumento: null } });
+    await p.huesped.update({ where: { id: nuevo.id }, data: { identidadDocumento: claveDocumento(nuevo) } });
+    const encontrado = await buscarPorDocumento({ tipo: "DNI", pais: "AR", numero: nuevo.numeroDocumento });
+    assert.deepEqual([encontrado.nombre, encontrado.apellido], ["Lucas", "Prado"]);
+    const viejo = await p.huesped.create({ data: { nombre: "Rosa Inés Mamaní", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: documento() } });
+    await p.huesped.update({ where: { id: viejo.id }, data: { identidadDocumento: claveDocumento(viejo) } });
+    const encontradoViejo = await buscarPorDocumento({ tipo: "DNI", pais: "AR", numero: viejo.numeroDocumento });
+    assert.deepEqual([encontradoViejo.nombre, encontradoViejo.apellido], ["Rosa Inés Mamaní", null], "un nombre viejo no se parte");
+    ok("nombres y apellido separados: alta de mostrador, titular automático, edición de ficha sincronizada y persona que vuelve");
   }
 }
 

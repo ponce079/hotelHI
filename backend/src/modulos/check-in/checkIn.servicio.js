@@ -423,7 +423,8 @@ async function registrarCheckInWalkIn({
   const huespedDeLaReserva =
     huesped ??
     (titular && {
-      nombre: `${String(titular.nombre ?? "").trim()} ${String(titular.apellido ?? "").trim()}`.trim(),
+      nombres: String(titular.nombre ?? "").trim(),
+      apellido: String(titular.apellido ?? "").trim(),
       tipoDocumento: titular.tipoDocumento,
       numeroDocumento: titular.numeroDocumento,
       paisDocumento: titular.paisDocumento,

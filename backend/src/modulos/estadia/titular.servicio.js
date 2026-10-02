@@ -95,8 +95,11 @@ async function incorporarEnTransaccion(tx, reserva, huesped, operador, nueva = f
         reservaId: reserva.id,
         huespedId: huesped.id,
         esTitular: habitacionSinTitular(rh.habitacionId),
-        nombre: huesped.nombre,
-        apellido: "",
+        // Huésped con nombres y apellido separados: cada uno en su campo. Huésped viejo (solo el
+        // nombre completo): como siempre, todo en nombre y el check-in pide separarlo.
+        ...(huesped.nombres && huesped.apellido
+          ? { nombre: huesped.nombres, apellido: huesped.apellido }
+          : { nombre: huesped.nombre, apellido: "" }),
         ...(huesped.fechaNacimiento ? { fechaNacimiento: huesped.fechaNacimiento } : {}),
         tipoDocumento: huesped.tipoDocumento,
         ...(huesped.paisDocumento ? { paisDocumento: huesped.paisDocumento } : {}),

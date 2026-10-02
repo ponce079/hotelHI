@@ -64,6 +64,8 @@ const TIPO_NOTIFICACION_RESERVA = "Reserva";
 
 const LIMITES_RESERVA = {
   nombre: 120,
+  nombres: 80,
+  apellido: 80,
   numeroDocumento: 30,
   contacto: 190,
   preferencias: 2000,

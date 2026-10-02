@@ -366,6 +366,7 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
     }
     const personas = require("./persona.servicio");
     p.huespedId = await personas.vincularPersona(tx, r, p, actual);
+    await personas.sincronizarNombres(tx, p.huespedId, p);
     await personas.actualizarResidencia(tx, p.huespedId, residencia);
     const anterior = actual?.asignaciones.find((a) => !a.hasta);
     const cambio = anterior && anterior.habitacionId !== habitacionId;

@@ -49,8 +49,12 @@ async function buscarPorDocumento({ tipo, pais, numero } = {}) {
     tipoDocumento: huesped.tipoDocumento,
     paisDocumento: huesped.paisDocumento,
     numeroDocumento: huesped.numeroDocumento,
-    nombre: ultimaFicha?.nombre ?? huesped.nombre,
-    apellido: ultimaFicha?.apellido || null,
+    // Sin ficha previa: nombres y apellido del huésped; el nombre completo solo si no los tiene.
+    ...(ultimaFicha
+      ? { nombre: ultimaFicha.nombre, apellido: ultimaFicha.apellido || null }
+      : huesped.nombres && huesped.apellido
+        ? { nombre: huesped.nombres, apellido: huesped.apellido }
+        : { nombre: huesped.nombre, apellido: null }),
     fechaNacimiento: soloFecha(huesped.fechaNacimiento),
     nacionalidad: huesped.nacionalidad,
     paisResidencia: huesped.paisResidencia,
