@@ -12,6 +12,7 @@ import { PAISES_SELECTOR, buscarPaisOcupante } from "./ocupantesUbicacion";
 import { TIPOS_DOCUMENTO, ETIQUETAS_NUMERO_DOCUMENTO } from "../../lib/tiposDocumento";
 import { validarOcupante, pendientesParaIngreso } from "./validarOcupante";
 import { titularRegistrado } from "./titularRegistrado";
+import { formatearFechaHora } from "../../lib/fechas";
 import {
   reintentarLecturaEstadia as reintentarLectura,
   reintentarTitular,
@@ -29,11 +30,25 @@ function ErrorConsulta({ consulta, mensaje }) {
   );
 }
 const moneda = (v) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(v || 0);
-const detalleEvento = (e) => {
+// Nombre de la acción del historial en lenguaje de recepción.
+const ACCIONES_HISTORIAL = {
+  cancelar: "Ficha dada de baja",
+  retirar: "Salida registrada",
+  verificar: "Datos verificados",
+  ingresar: "Ingreso registrado",
+};
+const nombreDeOcupante = (personas, id) => {
+  const p = personas.find((x) => x.id === id);
+  return p ? `${p.nombre} ${p.apellido}`.trim() : null;
+};
+const detalleEvento = (e, personas = [], habitaciones = []) => {
   try {
     const d = JSON.parse(e.detalle);
+    const numero = habitaciones.find((h) => h.id === d.habitacionId)?.numero;
     return [
-      d.habitacionId ? `Habitación ID ${d.habitacionId}` : null,
+      d.ocupanteId ? nombreDeOcupante(personas, d.ocupanteId) : null,
+      d.anteriorId ? `antes: ${nombreDeOcupante(personas, d.anteriorId) ?? "otro titular"}` : null,
+      d.habitacionId ? `Habitación ${numero ?? d.habitacionId}` : null,
       d.motivo,
       d.monto != null ? moneda(d.monto) : null,
       d.devolver != null ? `Devolución ${moneda(d.devolver)}` : null,
@@ -45,7 +60,19 @@ const detalleEvento = (e) => {
     return "";
   }
 };
-const fecha = (v) => (v ? new Date(v).toLocaleString("es-AR") : "—");
+const fecha = (v) => formatearFechaHora(v);
+// Documento para mostrar: un menor registrado sin documento (con su justificación) no queda
+// como "pendiente".
+function documentoDe(p, reserva) {
+  if (p.numeroDocumento) return `${p.tipoDocumento ?? ""} ${p.numeroDocumento}`.trim();
+  if (p.motivoSinDocumento) {
+    const nacimiento = p.fechaNacimiento ? String(p.fechaNacimiento).slice(0, 10) : null;
+    const ingreso = String(p.fechaDesde ?? reserva.fechaDesde).slice(0, 10);
+    const menor = nacimiento && `${Number(nacimiento.slice(0, 4)) + 18}${nacimiento.slice(4)}` > ingreso;
+    return menor ? "Sin documento (menor)" : "Sin documento";
+  }
+  return "Documento pendiente";
+}
 const activa = (p) => p.asignaciones?.find((a) => !a.hasta);
 // Catálogo único de huésped y ocupantes (lib/tiposDocumento.js).
 const TIPOS_DOCUMENTO_OCUPANTE = TIPOS_DOCUMENTO;
@@ -136,6 +163,21 @@ export function PersonaFormulario({
   for (const [campo, dato] of Object.entries(erroresServidor)) {
     if (form[campo] === dato.valor) errores[campo] = dato.mensaje;
   }
+  // Un solo titular por habitación: marcar a esta persona reemplaza al titular actual de la
+  // habitación elegida. Con la estadía en curso, el motivo es obligatorio (queda en el historial).
+  const otroTitular = form.esTitular
+    ? personas.find(
+        (p) =>
+          p.id !== persona.id &&
+          p.esTitular &&
+          ["Previsto", "Alojado"].includes(p.estado) &&
+          Number(activa(p)?.habitacionId ?? p.habitacionId) === Number(form.habitacionId),
+      )
+    : null;
+  const reemplazaTitular = Boolean(otroTitular);
+  const motivoTitularObligatorio = reemplazaTitular && reserva.estado === "En curso";
+  if (motivoTitularObligatorio && !String(form.motivoCambioTitular ?? "").trim())
+    errores.motivoCambioTitular = "Indicá el motivo del cambio de titular.";
   const pendientesIngreso = pendientesParaIngreso(form);
   function propsCampo(campo) {
     const visible =
@@ -150,6 +192,7 @@ export function PersonaFormulario({
           habitacionId: "Habitación *",
           responsableId: "Adulto responsable (menores)",
           motivo: "Motivo del cambio de habitación",
+          motivoCambioTitular: "Motivo del cambio de titular",
         }[campo];
     if (campo === "numeroDocumento") etiqueta = ETIQUETAS_NUMERO_DOCUMENTO[form.tipoDocumento] || etiqueta;
     if (campo === "localidad" && (otraLocalidad || localidadLibre || paisManual.paisResidencia))
@@ -322,7 +365,7 @@ export function PersonaFormulario({
           e.currentTarget.elements.namedItem(camposInvalidos[0])?.focus();
           return;
         }
-        onGuardar(form);
+        onGuardar(reemplazaTitular ? { ...form, reemplazarTitular: true } : form);
       }}
       className="space-y-4 p-5"
     >
@@ -337,6 +380,21 @@ export function PersonaFormulario({
         />
         Titular de esta habitación
       </label>
+      {reemplazaTitular && (
+        <div className="space-y-2 rounded border border-laton-300 bg-laton-100 p-3 text-sm text-laton-700">
+          <p>
+            Hoy el titular de esta habitación es {otroTitular.nombre} {otroTitular.apellido}. Al guardar deja de serlo: hay un
+            solo titular por habitación.
+          </p>
+          <Input
+            {...propsCampo("motivoCambioTitular")}
+            label={`Motivo del cambio de titular${motivoTitularObligatorio ? " *" : " (opcional)"}`}
+            value={form.motivoCambioTitular || ""}
+            maxLength={500}
+            onChange={(e) => setForm((f) => ({ ...f, motivoCambioTitular: e.target.value }))}
+          />
+        </div>
+      )}
       {esTitular && <p className="text-sm">El titular debe tener al menos 18 años en la fecha de ingreso.</p>}
       {esMenor && (
         <label className="flex gap-2 text-sm">
@@ -460,6 +518,7 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
     },
   });
   const titularExistente = titularRegistrado(personas.data || [], reserva.huesped, titular.data?.ocupanteId);
+  const titularDeLaReservaActivo = titularExistente && titularExistente.estado !== "Cancelado" ? titularExistente : null;
   useEffect(() => {
     if (
       necesitaTitular &&
@@ -548,7 +607,10 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
       );
     },
   });
-  const listado = personas.data || [];
+  // Las fichas canceladas (por ejemplo, reemplazadas en el check-in) no se listan ni generan
+  // faltantes: quedan en el Historial con su motivo.
+  const todas = personas.data || [];
+  const listado = todas.filter((p) => p.estado !== "Cancelado");
   const errorCargaPersonas =
     preparandoTitular && titular.isError ? titular.error : personas.isError ? personas.error : null;
   const cargandoPersonas = personas.isFetching || (preparandoTitular && titular.isPending);
@@ -653,7 +715,7 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
                         {p.nombre} {p.apellido}
                       </strong>
                       {p.esTitular && <span className="ml-2 text-xs text-pino">Titular de habitación</span>}
-                      {titularExistente?.id === p.id && (
+                      {titularDeLaReservaActivo?.id === p.id && (
                         <span className="ml-2 text-xs text-pino">Titular de la reserva</span>
                       )}
                       {pendientesParaIngreso(p).length > 0 && (
@@ -662,7 +724,7 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
                         </p>
                       )}
                       <p className="text-sm">
-                        {p.tipoDocumento} {p.numeroDocumento || "Documento pendiente"} · {p.estado} ·{" "}
+                        {documentoDe(p, reserva)} · {p.estado} ·{" "}
                         {p.verificadoEn ? "Verificado" : "Datos por verificar"}
                       </p>
                       <p className="text-xs text-piedra">
@@ -828,8 +890,8 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
           {historial.isError && <ErrorConsulta consulta={historial} mensaje="No se pudo cargar el historial." />}
           {(historial.data || []).map((e) => (
             <p key={e.id} className="border-b border-borde py-2 text-sm">
-              {fecha(e.fecha)} · {e.accion} · {e.operador}
-              <span className="block text-xs text-piedra">{detalleEvento(e)}</span>
+              {fecha(e.fecha)} · {ACCIONES_HISTORIAL[e.accion] ?? e.accion} · {e.operador}
+              <span className="block text-xs text-piedra">{detalleEvento(e, todas, reserva.habitaciones)}</span>
             </p>
           ))}
         </>
