@@ -12,7 +12,8 @@ import { PAISES_SELECTOR, buscarPaisOcupante } from "./ocupantesUbicacion";
 import { TIPOS_DOCUMENTO, ETIQUETAS_NUMERO_DOCUMENTO } from "../../lib/tiposDocumento";
 import { validarOcupante, pendientesParaIngreso } from "./validarOcupante";
 import { titularRegistrado } from "./titularRegistrado";
-import { formatearFechaHora, formatearFechaDdMmAaaa, edadEnFecha } from "../../lib/fechas";
+import { formatearFechaHora, formatearFechaDdMmAaaa, edadEnFecha, hoyEnHoraLocal } from "../../lib/fechas";
+import { formatearPrecio } from "../../lib/moneda";
 import { MAYORIA_EDAD } from "../check-in/checkInPantalla.constantes";
 import {
   reintentarLecturaEstadia as reintentarLectura,
@@ -142,6 +143,67 @@ const esMenorDeEdad = (nacimiento, ingreso) => {
   const edad = fechaISO(nacimiento) && fechaISO(ingreso) ? edadEnFecha(fechaISO(nacimiento), fechaISO(ingreso)) : null;
   return edad !== null && edad < MAYORIA_EDAD;
 };
+// Quien se suma con la estadía en curso ingresa hoy, no en la fecha de entrada de la reserva.
+function ingresoPorDefecto(reserva) {
+  const desde = String(reserva.fechaDesde ?? "").slice(0, 10);
+  const hoy = hoyEnHoraLocal();
+  return reserva.estado === "En curso" && hoy > desde && hoy < String(reserva.fechaHasta ?? "").slice(0, 10)
+    ? hoy
+    : desde;
+}
+const CODIGO_PERSONA_ADICIONAL = "PERSONA_ADICIONAL_REQUIERE_CONFIRMACION";
+// Vista previa obligatoria de la persona adicional (supera la ocupación registrada de la habitación).
+export function PersonaAdicionalPrevia({ vista, nombre, pendiente = false, onConfirmar, onCancelar }) {
+  const conCargo = vista.noches.filter((n) => n.diferencia > 0);
+  const iguales = conCargo.length > 0 && conCargo.every((n) => n.diferencia === conCargo[0].diferencia);
+  return (
+    <div className="space-y-4 p-5">
+      <p className="text-sm">
+        Con {nombre || "esta persona"} la habitación {vista.numero} pasa de{" "}
+        {vista.ocupacionActual.adultos + vista.ocupacionActual.menores} a{" "}
+        {vista.ocupacionNueva.adultos + vista.ocupacionNueva.menores} personas. Ingresa ahora como alojada.
+      </p>
+      <div className="rounded border border-laton-300 bg-laton-100 p-3 text-sm text-laton-700">
+        {vista.categoria === "menor" ? (
+          <p>Menor sin cargo.</p>
+        ) : conCargo.length === 0 ? (
+          <p>Dentro de la ocupación base: no se genera cargo.</p>
+        ) : iguales ? (
+          <p>
+            +{formatearPrecio(conCargo[0].diferencia)} por noche × {conCargo.length}{" "}
+            {conCargo.length === 1 ? "noche" : "noches"} = <strong>{formatearPrecio(vista.total)}</strong>. Se carga en
+            la cuenta de la habitación como «Persona adicional».
+          </p>
+        ) : (
+          <>
+            <p>
+              Total <strong>{formatearPrecio(vista.total)}</strong>. Se carga en la cuenta de la habitación como
+              «Persona adicional».
+            </p>
+            <ul className="mt-2 space-y-0.5">
+              {vista.noches.map((n) => (
+                <li key={n.fecha}>
+                  Noche del {formatearFechaDdMmAaaa(n.fecha)}: +{formatearPrecio(n.diferencia)}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+      <p className="text-xs text-piedra">
+        El precio de la reserva no se recalcula: el cargo va a la cuenta de la habitación.
+      </p>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variante="secundario" onClick={onCancelar}>
+          Cancelar
+        </Button>
+        <Button type="button" cargando={pendiente} onClick={onConfirmar}>
+          Confirmar
+        </Button>
+      </div>
+    </div>
+  );
+}
 function Bloque({ titulo, children }) {
   return (
     <fieldset className="space-y-3 rounded border border-borde p-4">
@@ -173,7 +235,7 @@ export function PersonaFormulario({
     ...persona,
     habitacionId: activa(persona)?.habitacionId || persona.habitacionId || reserva.habitaciones[0]?.id || "",
     fechaNacimiento: persona.fechaNacimiento?.slice(0, 10) || "",
-    fechaDesde: (persona.fechaDesde || reserva.fechaDesde || "").slice(0, 10),
+    fechaDesde: (persona.fechaDesde || ingresoPorDefecto(reserva) || "").slice(0, 10),
     fechaHasta: (persona.fechaHasta || reserva.fechaHasta || "").slice(0, 10),
   }));
   const [otraLocalidad, setOtraLocalidad] = useState(() =>
@@ -761,6 +823,7 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
   const [cargoHabitacion, setCargoHabitacion] = useState(null);
   const [anular, setAnular] = useState(null);
   const [moviendo, setMoviendo] = useState(null);
+  const [adicional, setAdicional] = useState(null);
   const [motivo, setMotivo] = useState("");
   const [error, setError] = useState("");
   const puedeEditar =
@@ -855,15 +918,24 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
       return api.post(`/estadia/${reserva.id}/ocupantes/${data.id}/accion`, {
         accion: tipo,
         operador: usuario,
+        ...(data.confirmacionPersonaAdicional
+          ? { confirmacionPersonaAdicional: data.confirmacionPersonaAdicional }
+          : {}),
       });
     },
     onSuccess: () => {
       setEditor(null);
+      setAdicional(null);
       setAnular(null);
       setMotivo("");
       refrescar();
     },
     onError: (e, variables) => {
+      // Persona adicional: no es un error, es la vista previa que hay que confirmar.
+      if (e.response?.data?.codigo === CODIGO_PERSONA_ADICIONAL) {
+        setAdicional({ vista: e.response.data.detalle, variables });
+        return;
+      }
       setError(e.response?.data?.error || "No se pudo guardar el cambio.");
       setErroresServidor(
         Object.fromEntries(
@@ -1217,6 +1289,22 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
             refrescar();
           }}
         />
+      )}
+      {adicional && (
+        <Modal titulo="Persona adicional" onClose={() => setAdicional(null)}>
+          <PersonaAdicionalPrevia
+            vista={adicional.vista}
+            nombre={`${adicional.variables.data.nombre ?? ""} ${adicional.variables.data.apellido ?? ""}`.trim()}
+            pendiente={mutation.isPending}
+            onCancelar={() => setAdicional(null)}
+            onConfirmar={() =>
+              mutation.mutate({
+                ...adicional.variables,
+                data: { ...adicional.variables.data, confirmacionPersonaAdicional: adicional.vista.token },
+              })
+            }
+          />
+        </Modal>
       )}
       {anular && (
         <Modal titulo="Anular cargo" onClose={() => setAnular(null)}>

@@ -2,7 +2,7 @@ import { render, screen, within, waitFor, fireEvent } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, it, expect, beforeEach } from "vitest";
-import { EstadiaPanel, PersonaFormulario, MoverHabitacion } from "./EstadiaPanel";
+import { EstadiaPanel, PersonaFormulario, MoverHabitacion, PersonaAdicionalPrevia } from "./EstadiaPanel";
 import { api } from "../../lib/api";
 import { PAISES } from "../../lib/paises";
 // Formularios largos tipeados con userEvent: con la suite completa en paralelo superan a veces los
@@ -678,4 +678,92 @@ it("mover a otra habitación: solo habitaciones de la reserva, las completas no 
     nuevoTitularId: 39,
     operador: "Operador prueba",
   });
+});
+
+// ---------------------------------------------------------------- persona adicional con la estadía en curso
+const vistaAdulto = (noches) => ({
+  habitacionId: 10,
+  numero: "101",
+  categoria: "adulto",
+  ocupacionActual: { adultos: 2, menores: 0 },
+  ocupacionNueva: { adultos: 3, menores: 0 },
+  noches,
+  total: noches.reduce((a, n) => a + n.diferencia, 0),
+  token: "tok-1",
+});
+
+it("vista previa de la persona adicional: por noche × noches, detalle si cambian, menor y sin cargo", () => {
+  const { rerender } = render(
+    <PersonaAdicionalPrevia
+      vista={vistaAdulto([
+        { fecha: "2026-10-02", diferencia: 8800 },
+        { fecha: "2026-10-03", diferencia: 8800 },
+        { fecha: "2026-10-04", diferencia: 8800 },
+      ])}
+      nombre="Ana Pérez"
+      onConfirmar={() => {}}
+      onCancelar={() => {}}
+    />,
+  );
+  expect(screen.getByText(/\+\$ 8\.800 por noche × 3 noches =/)).toBeInTheDocument();
+  expect(screen.getByText("$ 26.400")).toBeInTheDocument();
+  expect(screen.getByText(/Se carga en la cuenta de la habitación como «Persona adicional»/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Confirmar" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Cancelar" })).toBeInTheDocument();
+
+  rerender(
+    <PersonaAdicionalPrevia
+      vista={vistaAdulto([
+        { fecha: "2026-10-02", diferencia: 8800 },
+        { fecha: "2026-10-03", diferencia: 11000 },
+      ])}
+      onConfirmar={() => {}}
+      onCancelar={() => {}}
+    />,
+  );
+  expect(screen.getByText("$ 19.800")).toBeInTheDocument();
+  expect(screen.getByText("Noche del 02/10/2026: +$ 8.800")).toBeInTheDocument();
+  expect(screen.getByText("Noche del 03/10/2026: +$ 11.000")).toBeInTheDocument();
+
+  rerender(
+    <PersonaAdicionalPrevia vista={{ ...vistaAdulto([]), categoria: "menor" }} onConfirmar={() => {}} onCancelar={() => {}} />,
+  );
+  expect(screen.getByText("Menor sin cargo.")).toBeInTheDocument();
+
+  rerender(
+    <PersonaAdicionalPrevia
+      vista={vistaAdulto([{ fecha: "2026-10-02", diferencia: 0 }])}
+      onConfirmar={() => {}}
+      onCancelar={() => {}}
+    />,
+  );
+  expect(screen.getByText("Dentro de la ocupación base: no se genera cargo.")).toBeInTheDocument();
+});
+
+it("Registrar ingreso de una persona adicional muestra la vista previa y confirma con el token", async () => {
+  const prevista = ocupante({ id: 45, nombre: "Ana", apellido: "Pérez", numeroDocumento: "30111222", estado: "Previsto", fechaNacimiento: "1990-01-01" });
+  api.get.mockImplementation(async (url) => ({ data: url.endsWith("/ocupantes") ? [adultoAlojado(), prevista] : [] }));
+  const vista = vistaAdulto([{ fecha: "2026-09-29", diferencia: 8800 }]);
+  api.post.mockReset();
+  api.post
+    .mockRejectedValueOnce({ response: { status: 409, data: { codigo: "PERSONA_ADICIONAL_REQUIERE_CONFIRMACION", detalle: vista, error: "x" } } })
+    .mockResolvedValue({ data: { ok: true } });
+  const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={cliente}>
+      <EstadiaPanel reserva={reserva} />
+    </QueryClientProvider>,
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "Registrar ingreso" }));
+  const dialogo = await screen.findByRole("dialog", { name: "Persona adicional" });
+  expect(within(dialogo).getByText(/\+\$ 8\.800 por noche × 1 noche =/)).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  await userEvent.click(within(dialogo).getByRole("button", { name: "Confirmar" }));
+  await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
+  expect(api.post).toHaveBeenLastCalledWith("/estadia/50/ocupantes/45/accion", {
+    accion: "ingresar",
+    operador: "Operador prueba",
+    confirmacionPersonaAdicional: "tok-1",
+  });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Persona adicional" })).not.toBeInTheDocument());
 });
