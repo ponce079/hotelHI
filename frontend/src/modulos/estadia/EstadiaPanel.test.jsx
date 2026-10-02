@@ -657,6 +657,7 @@ it("mover a otra habitación: solo habitaciones de la reserva, las completas no 
     </QueryClientProvider>,
   );
   const destino = screen.getByLabelText(/Habitación de destino/);
+  expect(screen.getByText("El precio de la estadía no se recalcula por este cambio.")).toBeInTheDocument();
   const opciones = within(destino).getAllByRole("option");
   expect(opciones.map((o) => o.textContent)).toEqual(["Elegí la habitación", "Habitación 102 · 1 de 1 · completa", "Habitación 103 · 0 de 2"]);
   expect(opciones[1]).toBeDisabled();

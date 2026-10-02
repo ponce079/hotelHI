@@ -724,6 +724,9 @@ export function MoverHabitacion({ persona, reserva, personas = [], onClose, onMo
           ))}
         </Select>
       )}
+      <p className="rounded border border-laton-300 bg-laton-100 p-3 text-sm text-laton-700">
+        El precio de la estadía no se recalcula por este cambio.
+      </p>
       <Input
         label="Motivo *"
         name="motivo"
