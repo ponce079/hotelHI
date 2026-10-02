@@ -70,8 +70,18 @@ function validarLote(reserva, entradas, existentes) {
       if (!adulto || !adulto.fechaNacimiento || edad(adulto.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD)
         throw new ErrorDeNegocio("El responsable debe ser un adulto de la misma reserva.");
     }
-    if (p.numeroDocumento && otros.some((o) => o.numeroDocumento && claveDeDocumento(o) === claveDeDocumento(p)))
-      throw new ErrorDeNegocio("Esta persona ya está registrada en la reserva.", 409);
+    if (p.numeroDocumento) {
+      // Repetida dentro del mismo envío (en la misma o en otra habitación): error de carga, 400.
+      const repetida = aceptadas.find((o) => o.numeroDocumento && claveDeDocumento(o) === claveDeDocumento(p));
+      if (repetida)
+        throw new ErrorDeNegocio(
+          `${p.nombre} ${p.apellido} figura dos veces en la lista (mismo documento ${p.tipoDocumento} ` +
+            `${p.numeroDocumento}). Cargá a cada persona una sola vez.`,
+          400,
+        );
+      if (existentes.some((o) => o.estado !== "Cancelado" && o.numeroDocumento && claveDeDocumento(o) === claveDeDocumento(p)))
+        throw new ErrorDeNegocio("Esta persona ya está registrada en la reserva.", 409);
+    }
     const enLaHabitacion = otros.filter(
       (o) => ACTIVOS.includes(o.estado ?? "Previsto") && o.habitacionId === rh.habitacionId,
     );
@@ -155,10 +165,22 @@ async function resolverHuespedes(tx, reserva, fichas) {
     const idPorIdentidad = new Map(creados.map((h) => [h.identidadDocumento, h.id]));
     for (const [clave, identidad] of conIdentidadNueva) resultado.set(clave, idPorIdentidad.get(identidad));
   }
+  // Persona que vuelve: su ficha se reutiliza y se actualiza con lo declarado ahora.
   const yaExistian = fichas.filter((ficha) => !conIdentidadNueva.has(ficha.id));
-  await personasServicio.actualizarResidenciaEnLote(
+  await personasServicio.actualizarFichasEnLote(
     tx,
-    yaExistian.map((ficha) => ({ huespedId: resultado.get(ficha.id), residencia: ficha.residencia })),
+    yaExistian.map((ficha) => {
+      const datos = personasServicio.datosDeHuesped(ficha);
+      return {
+        huespedId: resultado.get(ficha.id),
+        datos: {
+          nombre: datos.nombre,
+          fechaNacimiento: datos.fechaNacimiento,
+          contacto: datos.contacto,
+          ...ficha.residencia,
+        },
+      };
+    }),
   );
   return resultado;
 }
@@ -185,6 +207,27 @@ function filaDeOcupante(ficha, huespedId, responsableId, verificadoPor, ahora) {
   };
 }
 
+// Una persona alojada ahora en otra estadía (identidadActiva ocupada) no puede ingresar de
+// nuevo. La base igual lo impide con el índice único al ingresar; esto lo avisa antes y con
+// el nombre de la persona, en una sola consulta.
+async function rechazarYaAlojadas(tx, fichas) {
+  const identidades = fichas.map((f) => s.identidad(f)).filter(Boolean);
+  if (!identidades.length) return;
+  const alojadas = await tx.ocupanteReserva.findMany({
+    where: { identidadActiva: { in: identidades } },
+    select: { nombre: true, apellido: true, reserva: { select: { codigoConfirmacion: true } } },
+  });
+  if (alojadas.length) {
+    const quienes = alojadas
+      .map((p) => `${p.nombre} ${p.apellido}`.trim() + (p.reserva ? ` (reserva ${p.reserva.codigoConfirmacion})` : ""))
+      .join(", ");
+    throw new ErrorDeNegocio(
+      `Ya figura alojada en otra estadía: ${quienes}. Registrá su salida antes de volver a ingresarla.`,
+      409,
+    );
+  }
+}
+
 async function cargarPersonasEnLote(tx, reservaId, entradas, operador) {
   const reserva = await s.bloquear(tx, reservaId);
   if (!Array.isArray(entradas) || !entradas.length) throw new ErrorDeNegocio("Registrá las personas que ingresan.");
@@ -201,6 +244,7 @@ async function cargarPersonasEnLote(tx, reservaId, entradas, operador) {
   // Primero los que no dependen de nadie, después los menores a cargo de un adulto del lote.
   const ordenadas = [...entradas].sort((a, b) => Number(Boolean(a.responsableId)) - Number(Boolean(b.responsableId)));
   const fichas = validarLote(reserva, ordenadas, existentes).map((f) => ({ ...f, reservaId }));
+  await rechazarYaAlojadas(tx, fichas);
   const huespedes = await resolverHuespedes(tx, reserva, fichas);
   const ahora = new Date();
   const ocupantes = new Map();

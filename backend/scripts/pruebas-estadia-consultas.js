@@ -388,7 +388,7 @@ async function main() {
           huesped: { ...HUESPED },
           ...GARANTIA_OK,
         }),
-      /ya está registrada/,
+      (err) => err.statusCode === 400 && /figura dos veces en la lista/.test(err.message),
     );
   });
 

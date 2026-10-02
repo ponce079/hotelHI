@@ -138,6 +138,23 @@ async function actualizarResidenciaEnLote(tx, filas) {
   );
 }
 
+// Persona que vuelve: al reutilizar su ficha (misma identidad de documento) se actualizan
+// nombre, nacimiento, contacto y residencia con lo declarado ahora, en UNA sola sentencia.
+// Un dato vacío no borra el que ya estaba (COALESCE).
+const CAMPOS_FICHA = ["nombre", "fechaNacimiento", "contacto", ...CAMPOS_RESIDENCIA];
+async function actualizarFichasEnLote(tx, filas) {
+  const conDatos = filas.filter((fila) => fila.huespedId && CAMPOS_FICHA.some((campo) => fila.datos[campo]));
+  if (!conDatos.length) return;
+  const asignaciones = CAMPOS_FICHA.map((campo) => {
+    const cuando = conDatos.map((fila) => Prisma.sql`WHEN ${fila.huespedId} THEN ${fila.datos[campo] || null}`);
+    return Prisma.sql`${Prisma.raw(campo)} = COALESCE(CASE id ${Prisma.join(cuando, " ")} END, ${Prisma.raw(campo)})`;
+  });
+  const ids = conDatos.map((fila) => fila.huespedId);
+  await tx.$executeRaw(
+    Prisma.sql`UPDATE huespedes SET ${Prisma.join(asignaciones, ", ")} WHERE id IN (${Prisma.join(ids)})`,
+  );
+}
+
 // Nacionalidad, país de residencia, domicilio y localidad son datos de la persona:
 // viven en Huesped y la ficha guarda los últimos declarados. Un dato que no se
 // declara (vacío) no borra el que ya estaba.
@@ -154,6 +171,7 @@ module.exports = {
   normalizarPais,
   actualizarResidencia,
   actualizarResidenciaEnLote,
+  actualizarFichasEnLote,
   datosDeHuesped,
   esProvisoria,
   PREFIJO_SIN_DOCUMENTO,
