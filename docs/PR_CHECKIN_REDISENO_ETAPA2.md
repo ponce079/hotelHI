@@ -54,10 +54,17 @@ Reemplaza el asistente de 5 pasos del walk-in y la pantalla con modal del check-
 ## Datos de demo
 `npm run seed:checkin-demo`, con uso documentado en [docs/demo-checkin.md](demo-checkin.md).
 - Solo corre contra una base local, con fechas relativas e idempotente.
-- Lo de demo se reconoce por documentos `99…` y un manifiesto local por base (`backend/scripts/.demo-checkin.json`, ignorado por Git). `--limpiar` anula con baja lógica.
-- Casos a–g pedidos más **h** (3 adultos en no reembolsable). Con 2 adultos (c) la Doble ya los incluye y quitar a uno no cambia el precio con ninguna tarifa; h es el que muestra "Tarifa no reembolsable: el precio no baja".
+- Lo de demo se reconoce por documentos `99…` y un manifiesto local por base (`backend/scripts/.demo-checkin.json`, ignorado por Git).
+- **Secuencia de la mañana:** `npm run seed:checkin-demo -- --limpiar` y después `npm run seed:checkin-demo`. Deja todo usable aunque se haya ensayado antes:
+  - `--limpiar` anula las Confirmadas de demo y **cierra con el check-out real** las estadías de demo En curso (verificación "sin novedades", pago de demo en efectivo por el saldo, anotado en el manifiesto). Si alguna no se puede cerrar, la informa con el motivo y sigue. Nunca toca reservas que no sean de demo.
+  - El seed revisa las personas de cada caso antes de reutilizarlo o crearlo: si alguna sigue alojada en otra estadía, recrea el caso con personas nuevas (documentos `99…` distintos) y lo informa. Vale también para la persona que vuelve.
+  - Un error en un caso no corta el script: se informa, sigue con los demás, con las habitaciones del walk-in y con la impresión final, y sale con código distinto de 0.
+- **"Hoy" es el día de Argentina** (`lib/fechas.js`), a cualquier hora. Ya era así en el seed, en el endpoint de llegadas y en el encabezado de la pantalla. Se agregaron tests con instantes de madrugada: a las 02:43 del 03/10 da 03/10, y a las 23:59 del 02/10, que en UTC ya es 03/10, sigue dando 02/10.
+- Casos a–g pedidos, más **h** (3 adultos en no reembolsable) e **i** (en curso desde hoy, para la persona adicional). Con 2 adultos (c) la Doble ya los incluye y quitar a uno no cambia el precio con ninguna tarifa; h es el que muestra "Tarifa no reembolsable: el precio no baja".
 - **Caso f:** el check-out no emite comprobantes, así que la estadía anterior se arma con el flujo real y se corre 30 días atrás sin romper ninguna numeración. Sus pagos también se corren para no aparecer en la caja de hoy.
 - **Dónde se probó:** en `hotelhi_pruebas` recién cargada (catálogo + `seed-tarifas` + `seed-demo-salta`) y en `sgh_gimena`. En las dos, dos corridas seguidas sin duplicar nada y `--limpiar` sin tocar las reservas de `seed-demo-salta`.
+- **Test de la secuencia de la mañana (`npm run test:seed-demo`):** seed, check-in por la API de a, b y d, `--limpiar` y seed. Las estadías En curso de demo quedan cerradas, todos los casos aparecen y se confirman, y un seed sin limpiar recrea con personas nuevas sin cortarse.
+- **En `sgh_gimena`:** `--limpiar` cerró con check-out 968DD072, 9DA1868F y E7AC5CC5, y el seed siguiente dejó todos los casos, las habitaciones del walk-in y la persona que vuelve, con código de salida 0.
 
 ## Eliminado
 - `check-in/CheckInWalkIn.jsx` (asistente de 5 pasos) y `CheckInConReserva.jsx` (con el input "Documento presentado"), con sus tests.

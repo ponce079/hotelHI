@@ -6,12 +6,23 @@ Script: `backend/scripts/seed-checkin-demo.js` (`npm run seed:checkin-demo`). De
 
 1. Backend apuntando a la base **local** de la presentación (`backend/.env`, `DATABASE_URL` con `localhost` o `127.0.0.1`). El script se niega a correr contra cualquier otro host (misma guardia que `db:push`).
 2. Si la base es nueva: `node backend/scripts/seed-tarifas.js` y `node backend/scripts/seed-demo-salta.js` (como siempre).
-3. `npm run seed:checkin-demo`
+3. Desde `backend/`, en este orden:
+   ```
+   npm run seed:checkin-demo -- --limpiar
+   npm run seed:checkin-demo
+   ```
 4. Abrir **Check-in**. Tienen que verse seis llegadas de hoy y el aviso "Hay 1 reserva de días anteriores sin ingreso".
 
-Se puede correr las veces que haga falta: si los casos de hoy ya están, no crea nada nuevo (no duplica habitaciones, huéspedes ni reservas). Si se corre otro día, anula los casos del día anterior que quedaron Confirmados y crea los de hoy.
+El día es el de Argentina (`lib/fechas.js`), a cualquier hora: a las 02:43 del 03/10 dice 03/10.
 
-Para dejar todo como antes: `npm run seed:checkin-demo -- --limpiar`. Anula con baja lógica (motivo "Datos de demo") las reservas de demo Confirmadas y lista las que quedaron **En curso**, que hay que cerrar con check-out desde la pantalla. No borra nada.
+### Si ensayaste antes
+
+La misma secuencia deja todo usable, aunque en el ensayo se hayan hecho check-ins:
+- `--limpiar` anula (baja lógica, motivo "Datos de demo") las reservas de demo **Confirmadas** y **cierra con el flujo real de check-out** las estadías de demo **En curso**: verificación "sin novedades" de cada habitación, pago en **efectivo** por el saldo (queda anotado en el manifiesto como pago de demo) y confirmación del check-out. Las personas quedan retiradas, sin estadía activa. Si alguna no se puede cerrar sola, la lista con el motivo, sigue con las demás y termina con código de salida distinto de 0. No borra nada y nunca toca reservas que no sean de demo.
+- Después, el seed crea los casos de hoy. Antes de reutilizar o crear un caso, revisa sus personas: si alguna sigue alojada en otra estadía (por ejemplo, porque no se corrió `--limpiar`), el caso se recrea con **personas nuevas** (documentos `99…` distintos) y lo dice: `i) … — recreado con personas nuevas: las anteriores siguen alojadas en 968DD072`. Vale también para la persona que vuelve (caso f), que siempre queda sin estadía activa.
+- Un error en un caso no corta el script: se informa, se sigue con los demás casos, con las habitaciones del walk-in y con la impresión final, y el código de salida es distinto de 0.
+
+Se puede correr las veces que haga falta: si los casos de hoy ya están y sus personas están libres, no crea nada nuevo (no duplica habitaciones, huéspedes ni reservas).
 
 ## Casos
 
@@ -51,6 +62,8 @@ La estadía anterior se arma con el flujo real: alta, check-in con las personas,
 - La habitación vuelve a "libre" (la limpieza fue hace un mes).
 
 ## Probado
+
+- `npm run test:seed-demo` (base local de pruebas): seed → check-in por la API de los casos a, b y d (el i ya está en curso) → `--limpiar` → seed. Las estadías de demo en curso quedan cerradas, todos los casos aparecen, ninguna persona de un caso está alojada en otra estadía y los casos a, b, c, d, e y h se confirman por la API. Además, un seed sin limpiar después de confirmarlos recrea los casos con personas nuevas sin cortarse.
 
 - En una base recién cargada (`hotelhi_pruebas`: catálogo copiado + `seed-tarifas.js` + `seed-demo-salta.js`): dos corridas seguidas sin cambios en los conteos, `--limpiar` sin tocar las 7 reservas de `seed-demo-salta` y una nueva corrida que recrea los casos.
 - En `sgh_gimena`, con el inventario casi todo ocupado: crea las habitaciones 401 a 411 una sola vez; la segunda corrida no crea ninguna.
