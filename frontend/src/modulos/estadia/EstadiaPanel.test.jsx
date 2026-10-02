@@ -247,11 +247,11 @@ it("incorpora al titular automáticamente y permite completar los datos copiados
   });
   expect(onTitularPreparado).toHaveBeenCalledWith(50);
   expect(screen.getByText(/Falta completar:/)).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Verificar datos" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "Marcar documento verificado" })).toBeDisabled();
   await userEvent.click(screen.getByRole("button", { name: "Completar datos" }));
   expect(screen.getByLabelText("Nombre *")).toHaveValue("Ana Pérez");
   expect(screen.getByLabelText("Número de DNI")).toHaveValue("12345678");
-  expect(screen.getByLabelText("Correo electrónico")).toHaveValue("ana@example.com");
+  expect(screen.getByLabelText("Correo electrónico (opcional)")).toHaveValue("ana@example.com");
   await userEvent.clear(screen.getByLabelText("Nombre *"));
   await userEvent.type(screen.getByLabelText("Nombre *"), "Ana");
   await userEvent.type(screen.getByLabelText("Apellido *"), "Pérez");
@@ -309,7 +309,7 @@ it("detecta correo repetido antes de guardar y libera el formulario al corregirl
       onClose={() => {}}
     />,
   );
-  const email = screen.getByLabelText("Correo electrónico");
+  const email = screen.getByLabelText("Correo electrónico (opcional)");
   await userEvent.type(email, "test@gmail.com");
   expect(screen.getByText(/Este correo ya está registrado/)).toBeInTheDocument();
   await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
@@ -530,7 +530,9 @@ it("las fichas canceladas no se listan ni muestran faltantes; quedan en el Histo
     </QueryClientProvider>,
   );
   expect(await screen.findByText("María Gutiérrez")).toBeInTheDocument();
-  expect(screen.getAllByText(/Martín/)).toHaveLength(1);
+  expect(screen.getAllByText(/Martín/, { selector: "strong" })).toHaveLength(1);
+  // El menor muestra a su responsable (la ficha cancelada de Martín no se lista).
+  expect(screen.getByText("Responsable: Martín Gutiérrez")).toBeInTheDocument();
   expect(screen.queryByText(/Cancelado/)).not.toBeInTheDocument();
   expect(screen.queryByText(/Falta completar/)).not.toBeInTheDocument();
   expect(screen.getByText(/Sin documento \(menor\) · Alojado/)).toBeInTheDocument();
@@ -626,8 +628,18 @@ it("menor alojado: adulto responsable obligatorio y la justificación guardada a
   expect(onGuardar).not.toHaveBeenCalled();
   expect(screen.getAllByText("Elegí el adulto responsable del menor.").length).toBeGreaterThan(0);
   await userEvent.selectOptions(responsable, "38");
+  // El vínculo también es obligatorio; con "Otro familiar" pide la autorización.
   await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
-  expect(onGuardar).toHaveBeenCalledWith(expect.objectContaining({ responsableId: "38" }));
+  expect(onGuardar).not.toHaveBeenCalled();
+  await userEvent.selectOptions(screen.getByLabelText(/Vínculo con el menor \*/), "Otro familiar");
+  expect(screen.getByText("Pedí la autorización de los padres o tutores.")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("checkbox", { name: /Autorización presentada/ }));
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalledWith(
+    expect.objectContaining({ responsableId: "38", vinculoResponsable: "Otro familiar", autorizacionPresentada: true }),
+  );
 });
 
 it("cambiar el documento de una ficha verificada pide motivo y avisa que vuelve a verificarse", async () => {
@@ -793,4 +805,29 @@ it("Registrar salida pide confirmación: persona adicional baja la ocupación; d
   await waitFor(() =>
     expect(api.post).toHaveBeenCalledWith("/estadia/50/ocupantes/46/accion", { accion: "retirar", operador: "Operador prueba" }),
   );
+});
+
+it("«Marcar documento verificado» solo en fichas por verificar; el menor muestra responsable y vínculo", async () => {
+  const verificado = adultoAlojado();
+  const porVerificar = ocupante({ id: 39, nombre: "Marta", apellido: "Conte", numeroDocumento: "40236523", estado: "Alojado", fechaNacimiento: "1990-05-05", verificadoEn: null });
+  const menor = { ...menorAlojada(), vinculoResponsable: "Otro familiar", autorizacionPresentada: true };
+  api.get.mockImplementation(async (url) => ({ data: url.endsWith("/ocupantes") ? [verificado, porVerificar, menor] : [] }));
+  const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={cliente}>
+      <EstadiaPanel reserva={reserva} />
+    </QueryClientProvider>,
+  );
+  await screen.findByText("Marta Conte");
+  expect(screen.getAllByRole("button", { name: "Marcar documento verificado" })).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Verificar datos" })).not.toBeInTheDocument();
+  expect(screen.getByText("Responsable: Martín Gutiérrez · Otro familiar · Autorización presentada")).toBeInTheDocument();
+});
+
+it("ficha de ocupante: nombre y apellido con mayúscula inicial al salir del campo", async () => {
+  render(<PersonaFormulario reserva={reserva} persona={{}} personas={[]} onGuardar={() => {}} onClose={() => {}} />);
+  await userEvent.type(screen.getByLabelText("Apellido *"), "de la vega");
+  fireEvent.blur(screen.getByLabelText("Apellido *"));
+  expect(screen.getByLabelText("Apellido *")).toHaveValue("De la Vega");
+  expect(screen.getAllByText("* obligatorio").length).toBeGreaterThan(0);
 });

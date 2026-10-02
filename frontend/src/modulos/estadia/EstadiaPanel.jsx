@@ -16,6 +16,8 @@ import { titularRegistrado } from "./titularRegistrado";
 import { formatearFechaHora, formatearFechaDdMmAaaa, edadEnFecha, hoyEnHoraLocal } from "../../lib/fechas";
 import { formatearPrecio } from "../../lib/moneda";
 import { MAYORIA_EDAD } from "../check-in/checkInPantalla.constantes";
+import { formatearNombrePropio } from "../../lib/nombres";
+import { VINCULOS_RESPONSABLE, requiereAutorizacion } from "../../lib/vinculos";
 import {
   reintentarLecturaEstadia as reintentarLectura,
   reintentarTitular,
@@ -124,9 +126,9 @@ const CAMPOS_RESIDENCIA = [
   ["nacionalidad", "Nacionalidad", "text"],
   ["paisResidencia", "País de residencia", "text"],
   ["localidad", "Localidad", "text"],
-  ["domicilio", "Domicilio", "text"],
-  ["telefono", "Teléfono", "tel"],
-  ["email", "Correo electrónico", "email"],
+  ["domicilio", "Domicilio (opcional)", "text"],
+  ["telefono", "Teléfono (opcional)", "tel"],
+  ["email", "Correo electrónico (opcional)", "email"],
 ];
 const CAMPOS_FECHAS = [
   ["fechaDesde", "Ingreso previsto", "date", true],
@@ -216,10 +218,11 @@ export function PersonaAdicionalPrevia({ vista, nombre, pendiente = false, onCon
     </div>
   );
 }
-function Bloque({ titulo, children }) {
+function Bloque({ titulo, obligatorio = false, children }) {
   return (
     <fieldset className="space-y-3 rounded border border-borde p-4">
       <legend className="px-1 font-heading text-base">{titulo}</legend>
+      {obligatorio && <p className="text-xs text-piedra">* obligatorio</p>}
       {children}
     </fieldset>
   );
@@ -308,8 +311,12 @@ export function PersonaFormulario({
   const motivoTitularObligatorio = reemplazaTitular && reserva.estado === "En curso";
   if (motivoTitularObligatorio && !String(form.motivoCambioTitular ?? "").trim())
     errores.motivoCambioTitular = "Indicá el motivo del cambio de titular.";
-  // Adulto responsable: solo para menores, y obligatorio para ellos.
+  // Adulto responsable: solo para menores, y obligatorio para ellos, con su vínculo y, si es otro
+  // familiar u otro adulto a cargo, la autorización de los padres o tutores.
   if (esMenor && !form.responsableId) errores.responsableId = "Elegí el adulto responsable del menor.";
+  if (esMenor && !form.vinculoResponsable) errores.vinculoResponsable = "Indicá el vínculo con el menor.";
+  if (esMenor && requiereAutorizacion(form.vinculoResponsable) && !form.autorizacionPresentada)
+    errores.autorizacionPresentada = "Marcá la autorización presentada por los padres o tutores.";
   if (!esMenor) delete errores.responsableId;
   // Cambio de documento de una ficha verificada: pide motivo y la ficha vuelve a verificarse.
   const cambiaDocumento =
@@ -350,6 +357,8 @@ export function PersonaFormulario({
           motivo: "Motivo del cambio de habitación",
           motivoCambioTitular: "Motivo del cambio de titular",
           motivoCambioIdentidad: "Motivo del cambio de documento",
+          vinculoResponsable: "Vínculo con el menor *",
+          autorizacionPresentada: "Autorización presentada *",
         }[campo];
     if (campo === "numeroDocumento") etiqueta = ETIQUETAS_NUMERO_DOCUMENTO[form.tipoDocumento] || etiqueta;
     if (campo === "localidad" && (otraLocalidad || localidadLibre || paisManual.paisResidencia))
@@ -503,6 +512,11 @@ export function PersonaFormulario({
         maxLength={191}
         value={form[k] || ""}
         onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
+        onBlur={
+          k === "nombre" || k === "apellido"
+            ? (e) => setForm((f) => ({ ...f, [k]: formatearNombrePropio(e.target.value) }))
+            : undefined
+        }
       />
     );
   }
@@ -525,6 +539,8 @@ export function PersonaFormulario({
         const datos = {
           ...form,
           responsableId: esMenor ? form.responsableId : null,
+          vinculoResponsable: esMenor ? form.vinculoResponsable || null : null,
+          autorizacionPresentada: esMenor && requiereAutorizacion(form.vinculoResponsable) ? form.autorizacionPresentada === true : false,
           usarContactoResponsable: esMenor ? form.usarContactoResponsable : false,
           ...(reemplazaTitular ? { reemplazarTitular: true } : {}),
         };
@@ -543,7 +559,7 @@ export function PersonaFormulario({
       <p className="text-sm text-piedra">
         Los datos identifican al ocupante. Todos los cargos se asignan a la habitación.
       </p>
-      <Bloque titulo="Identidad">
+      <Bloque titulo="Identidad" obligatorio>
         <div className="grid gap-3 sm:grid-cols-2">
           {CAMPOS_IDENTIDAD.filter(
             ([k]) => k !== "motivoSinDocumento" || !String(form.numeroDocumento ?? "").trim(),
@@ -563,7 +579,45 @@ export function PersonaFormulario({
               ))}
             </Select>
           )}
+          {esMenor && (
+            <Select
+              {...propsCampo("vinculoResponsable")}
+              label="Vínculo con el menor *"
+              value={form.vinculoResponsable || ""}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  vinculoResponsable: e.target.value,
+                  autorizacionPresentada: requiereAutorizacion(e.target.value) ? f.autorizacionPresentada : false,
+                }))
+              }
+            >
+              <option value="">Elegí el vínculo</option>
+              {VINCULOS_RESPONSABLE.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </Select>
+          )}
         </div>
+        {esMenor && requiereAutorizacion(form.vinculoResponsable) && (
+          <div className="space-y-2 rounded border border-laton-300 bg-laton-100 p-3 text-sm text-laton-700">
+            <p>Pedí la autorización de los padres o tutores.</p>
+            <label className="flex items-center gap-2 font-semibold">
+              <input
+                type="checkbox"
+                name="autorizacionPresentada"
+                checked={Boolean(form.autorizacionPresentada)}
+                onChange={(e) => setForm((f) => ({ ...f, autorizacionPresentada: e.target.checked }))}
+              />
+              Autorización presentada *
+            </label>
+            {(intentoGuardar || tocados.autorizacionPresentada) && errores.autorizacionPresentada && (
+              <p className="text-error-texto">{errores.autorizacionPresentada}</p>
+            )}
+          </div>
+        )}
         {cambiaDocumento && (
           <div className="space-y-2 rounded border border-laton-300 bg-laton-100 p-3 text-sm text-laton-700">
             <p>Esta ficha ya estaba verificada. Al cambiar el documento vuelve a "Datos por verificar".</p>
@@ -608,7 +662,7 @@ export function PersonaFormulario({
         )}
         <div className="grid gap-3 sm:grid-cols-2">{CAMPOS_RESIDENCIA.map(renderCampo)}</div>
       </Bloque>
-      <Bloque titulo="Estadía">
+      <Bloque titulo="Estadía" obligatorio={!alojado}>
         {alojado ? (
           <>
             <dl className="grid gap-3 sm:grid-cols-2">
@@ -1080,6 +1134,13 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
                       <p className="text-sm">
                         {documentoDe(p, reserva)} · {p.estado} · {p.verificadoEn ? "Verificado" : "Datos por verificar"}
                       </p>
+                      {p.responsableId && (
+                        <p className="text-sm">
+                          Responsable: {nombreDeOcupante(todas, p.responsableId) ?? "—"}
+                          {p.vinculoResponsable ? ` · ${p.vinculoResponsable}` : ""}
+                          {p.autorizacionPresentada ? " · Autorización presentada" : ""}
+                        </p>
+                      )}
                       <p className="text-xs text-piedra">
                         Ingreso: {fecha(p.ingresoReal)} · Salida: {fecha(p.salidaReal)}
                       </p>
@@ -1098,13 +1159,15 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
                             >
                               {pendientesParaIngreso(p).length ? "Completar datos" : "Editar"}
                             </Button>
-                            <Button
-                              variante="secundario"
-                              disabled={mutation.isPending || pendientesParaIngreso(p).length > 0}
-                              onClick={() => mutation.mutate({ tipo: "verificar", data: p })}
-                            >
-                              Verificar datos
-                            </Button>
+                            {!p.verificadoEn && (
+                              <Button
+                                variante="secundario"
+                                disabled={mutation.isPending || pendientesParaIngreso(p).length > 0}
+                                onClick={() => mutation.mutate({ tipo: "verificar", data: p })}
+                              >
+                                Marcar documento verificado
+                              </Button>
+                            )}
                           </>
                         )}
                         {p.estado === "Previsto" && (
