@@ -4,3 +4,6 @@
 .env.estadia.local
 node_modules/
 docs/decisiones.md
+
+# Manifiesto local del seed de demo del check-in (ids creados en la base local)
+backend/scripts/.demo-checkin.json

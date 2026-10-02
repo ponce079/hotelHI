@@ -8,6 +8,7 @@
     "dev:estadia": "node scripts/estadia-local.cjs dev",
     "test:estadia": "node backend/scripts/pruebas-estadia-integracion.js",
     "test:checkin-rediseno": "node backend/scripts/pruebas-checkin-rediseno.js",
+    "seed:checkin-demo": "node backend/scripts/seed-checkin-demo.js",
     "test:consultas": "npm --prefix backend run test:consultas",
     "db:start": "node scripts/db-local.cjs",
     "db:stop": "node scripts/db-local.cjs stop",
