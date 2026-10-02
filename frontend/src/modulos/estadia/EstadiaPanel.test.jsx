@@ -2,7 +2,7 @@ import { render, screen, within, waitFor, fireEvent } from "@testing-library/rea
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, it, expect, beforeEach } from "vitest";
-import { EstadiaPanel, PersonaFormulario } from "./EstadiaPanel";
+import { EstadiaPanel, PersonaFormulario, MoverHabitacion } from "./EstadiaPanel";
 import { api } from "../../lib/api";
 import { PAISES } from "../../lib/paises";
 vi.mock("../../lib/api", () => ({
@@ -554,4 +554,124 @@ it("marcar a otra persona como titular con la estadía en curso pide el motivo y
   expect(onGuardar).toHaveBeenCalledWith(
     expect.objectContaining({ esTitular: true, reemplazarTitular: true, motivoCambioTitular: "El titular se retira antes" }),
   );
+});
+
+// ---------------------------------------------------------------- segunda corrección: editar con la estadía en curso
+const adultoAlojado = () =>
+  ocupante({
+    id: 38,
+    nombre: "Martín",
+    apellido: "Gutiérrez",
+    numeroDocumento: "30512874",
+    estado: "Alojado",
+    esTitular: true,
+    fechaNacimiento: "1984-10-01",
+    ingresoReal: "2026-09-28T17:05:00.000Z",
+  });
+const menorAlojada = () =>
+  ocupante({
+    id: 40,
+    nombre: "María",
+    apellido: "Gutiérrez",
+    numeroDocumento: null,
+    tipoDocumento: null,
+    paisDocumento: null,
+    motivoSinDocumento: "Menor sin documento presentado",
+    estado: "Alojado",
+    fechaNacimiento: "2018-03-14",
+    responsableId: 38,
+  });
+
+it("adulto alojado: sin adulto responsable, sin justificación con documento y la estadía en solo lectura", async () => {
+  const onGuardar = vi.fn();
+  const martin = adultoAlojado();
+  render(<PersonaFormulario reserva={reserva} persona={martin} personas={[martin, menorAlojada()]} onGuardar={onGuardar} onClose={() => {}} />);
+  expect(screen.queryByLabelText(/Adulto responsable/)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Justificación sin documento")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/Ingreso previsto/)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/Salida prevista/)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/^Habitación/)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/Motivo del cambio de habitación/)).not.toBeInTheDocument();
+  for (const bloque of ["Identidad", "Residencia y contacto", "Estadía"]) expect(screen.getByRole("group", { name: bloque })).toBeInTheDocument();
+  const estadia = within(screen.getByRole("group", { name: "Estadía" }));
+  expect(estadia.getByText("Habitación 101")).toBeInTheDocument();
+  expect(estadia.getByText(/^28\/09\/2026 \d{2}:\d{2}$/)).toBeInTheDocument();
+  expect(estadia.getByText("30/09/2026")).toBeInTheDocument();
+  expect(estadia.getByText("Titular · Responsable de: María Gutiérrez")).toBeInTheDocument();
+
+  // Al cambiar el nacimiento a 15 años aparece el adulto responsable, obligatorio.
+  fireEvent.change(screen.getByLabelText("Nacimiento"), { target: { value: "2011-06-01" } });
+  expect(screen.getByLabelText(/Adulto responsable \*/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Nacimiento"), { target: { value: "1984-10-01" } });
+  expect(screen.queryByLabelText(/Adulto responsable/)).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  const enviado = onGuardar.mock.calls[0][0];
+  expect(enviado.responsableId).toBeNull();
+  for (const campo of ["fechaDesde", "fechaHasta", "habitacionId"]) expect(enviado).not.toHaveProperty(campo);
+});
+
+it("menor alojado: adulto responsable obligatorio y la justificación guardada a la vista", async () => {
+  const onGuardar = vi.fn();
+  const martin = adultoAlojado();
+  const maria = { ...menorAlojada(), responsableId: null };
+  render(<PersonaFormulario reserva={reserva} persona={maria} personas={[martin, maria]} onGuardar={onGuardar} onClose={() => {}} />);
+  expect(screen.getByLabelText("Justificación sin documento")).toHaveValue("Menor sin documento presentado");
+  const responsable = screen.getByLabelText(/Adulto responsable \*/);
+  expect(within(responsable).getAllByRole("option").map((o) => o.textContent)).toEqual(["Elegí el adulto responsable", "Martín Gutiérrez"]);
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).not.toHaveBeenCalled();
+  expect(screen.getAllByText("Elegí el adulto responsable del menor.").length).toBeGreaterThan(0);
+  await userEvent.selectOptions(responsable, "38");
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalledWith(expect.objectContaining({ responsableId: "38" }));
+});
+
+it("cambiar el documento de una ficha verificada pide motivo y avisa que vuelve a verificarse", async () => {
+  const onGuardar = vi.fn();
+  const martin = adultoAlojado();
+  render(<PersonaFormulario reserva={reserva} persona={martin} personas={[martin]} onGuardar={onGuardar} onClose={() => {}} />);
+  expect(screen.queryByLabelText(/Motivo del cambio de documento/)).not.toBeInTheDocument();
+  const numero = screen.getByLabelText(/Número de DNI|Número de documento/);
+  await userEvent.clear(numero);
+  await userEvent.type(numero, "30512875");
+  expect(screen.getByText(/vuelve a "Datos por verificar"/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).not.toHaveBeenCalled();
+  await userEvent.type(screen.getByLabelText(/Motivo del cambio de documento \*/), "Error de tipeo");
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalledWith(expect.objectContaining({ numeroDocumento: "30512875", motivoCambioIdentidad: "Error de tipeo" }));
+});
+
+it("mover a otra habitación: solo habitaciones de la reserva, las completas no se ofrecen y el titular pide reemplazo", async () => {
+  const martin = adultoAlojado();
+  const marta = ocupante({ id: 39, nombre: "Marta", apellido: "Conte", numeroDocumento: "40236523", estado: "Alojado", fechaNacimiento: "1990-05-05" });
+  const reservaTres = { ...reserva, habitaciones: [...reserva.habitaciones, { id: 12, numero: "103", capacidad: 2 }] };
+  const enLa102 = ocupante({ id: 41, nombre: "Pablo", apellido: "Ríos", numeroDocumento: "28111222", estado: "Alojado", fechaNacimiento: "1980-01-01", asignaciones: [{ habitacionId: 11, hasta: null }] });
+  api.post.mockResolvedValue({ data: { ok: true } });
+  const onMovida = vi.fn();
+  const cliente = new QueryClient();
+  render(
+    <QueryClientProvider client={cliente}>
+      <MoverHabitacion persona={martin} reserva={reservaTres} personas={[martin, marta, enLa102]} onClose={() => {}} onMovida={onMovida} />
+    </QueryClientProvider>,
+  );
+  const destino = screen.getByLabelText(/Habitación de destino/);
+  const opciones = within(destino).getAllByRole("option");
+  expect(opciones.map((o) => o.textContent)).toEqual(["Elegí la habitación", "Habitación 102 · 1 de 1 · completa", "Habitación 103 · 0 de 2"]);
+  expect(opciones[1]).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Mover" }));
+  expect(api.post).not.toHaveBeenCalled();
+  expect(screen.getByText("Elegí quién queda como titular de la habitación que deja.")).toBeInTheDocument();
+  await userEvent.selectOptions(destino, "12");
+  await userEvent.selectOptions(screen.getByLabelText(/Nuevo titular/), "39");
+  await userEvent.type(screen.getByLabelText(/^Motivo \*/), "Pidió cambiar");
+  await userEvent.click(screen.getByRole("button", { name: "Mover" }));
+  await waitFor(() => expect(onMovida).toHaveBeenCalled());
+  expect(api.post).toHaveBeenCalledWith("/estadia/50/ocupantes/38/mover", {
+    habitacionId: 12,
+    motivo: "Pidió cambiar",
+    nuevoTitularId: 39,
+    operador: "Operador prueba",
+  });
 });
