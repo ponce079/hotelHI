@@ -176,7 +176,10 @@ async function pruebas({ bar, nrf, temporada }) {
     });
     assert.ok(evento, "la baja queda auditada con su motivo");
     assert.equal((await p.habitacion.findUnique({ where: { id: h.id } })).estado, "ocupada");
-    const garantias = await p.pagoEstadia.findMany({ where: { reservaId: reserva.id, concepto: "Garantía" }, include: { medios: true } });
+    const quienReservo = await p.huesped.findUnique({ where: { id: reserva.huespedId } });
+    assert.equal(quienReservo.contacto, "titular@example.test", "el correo de quien reservó se conserva");
+    assert.equal(quienReservo.localidad, "Salta", "y se completan sus datos declarados");
+    const garantias =await p.pagoEstadia.findMany({ where: { reservaId: reserva.id, concepto: "Garantía" }, include: { medios: true } });
     assert.equal(garantias.length, 1);
     assert.equal(Number(garantias[0].medios[0].importe), MONTO_GARANTIA);
     ok("1 — reserva 2 adultos + 1 menor confirmada con 3 personas en una llamada (En curso, verificadas, ocupada, una garantía)");
@@ -276,7 +279,21 @@ async function pruebas({ bar, nrf, temporada }) {
       },
     );
     assert.deepEqual(await foto(reserva.id), antes, "el 409 no escribe nada");
-    ok("4 — totalEsperado desactualizado: 409 PRECIO_CAMBIO y la reserva queda exactamente igual");
+    // Contrato HTTP que consume la etapa 2: { error, codigo, detalle }.
+    const respuesta = await conServidor(async (url) => {
+      const r = await fetch(`${url}/api/check-in/${reserva.id}/confirmar`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...cuerpo, operador: OPERADOR, ...GARANTIA }),
+      });
+      return { status: r.status, json: await r.json() };
+    });
+    assert.equal(respuesta.status, 409);
+    assert.equal(respuesta.json.codigo, "PRECIO_CAMBIO");
+    assert.deepEqual(Object.keys(respuesta.json.detalle).sort(), ["diferencia", "mensajeNoReembolsable", "totalAnterior", "totalNuevo"]);
+    assert.match(respuesta.json.error, /El total cambió/);
+    assert.deepEqual(await foto(reserva.id), antes, "tampoco por HTTP");
+    ok("4 — totalEsperado desactualizado: 409 PRECIO_CAMBIO (también por HTTP, con codigo y detalle) y la reserva queda exactamente igual");
 
     const base = { habitaciones: [{ habitacionIdAnterior: h.id, adultos: 3, menores: 0 }], totalEsperado: total };
     const tres = () => [titular, persona(2, h.id, 30), persona(3, h.id, 25)];
@@ -425,7 +442,10 @@ async function pruebas({ bar, nrf, temporada }) {
     assert.equal(huespedReserva.identidadDocumento, claveDocumento(titular));
     assert.equal(await p.huesped.count({ where: { identidadDocumento: claveDocumento(titular) } }), 1, "no se duplica");
     assert.equal(huespedReserva.nombre, `${titular.nombre} ${titular.apellido}`, "se actualiza con lo declarado");
-    assert.equal(huespedReserva.contacto, titular.telefono, "sin correo, el contacto es el teléfono");
+    assert.equal(huespedReserva.contacto, "viejo@example.test", "un correo ya guardado no se pisa con el teléfono");
+    // Persona nueva que solo deja teléfono: el contacto de su ficha es el teléfono.
+    const nuevaSoloTelefono = await p.huesped.findUnique({ where: { identidadDocumento: claveDocumento(personas[3]) } });
+    assert.equal(nuevaSoloTelefono.contacto, null, "un acompañante sin correo ni teléfono queda sin contacto");
     ok("9 — walk-in Doble (2+1) y Twin (2), mismo plan: una reserva, 5 ocupantes, un titular por habitación, total del cotizador, una garantía, titular solo con teléfono y Huesped reutilizado");
 
     const h3 = await habitacion(doble, 3);
@@ -541,6 +561,22 @@ async function pruebas({ bar, nrf, temporada }) {
     assert.equal(fila.senia.registrada, false);
     assert.equal((await apoyo.listarLlegadas({ q: titular.numeroDocumento })).reservas.length >= 1, true);
     ok("12 — llegadas: solo las de hoy, búsqueda por código o documento y aviso de Confirmadas anteriores que cuenta bien");
+  }
+}
+
+// Servidor HTTP efímero con las rutas del check-in.
+async function conServidor(fn) {
+  const express = require("express");
+  const app = express();
+  app.use(express.json());
+  app.use("/api/check-in", require("../src/modulos/check-in/checkIn.routes"));
+  const server = await new Promise((resolve) => {
+    const s = app.listen(0, "127.0.0.1", () => resolve(s));
+  });
+  try {
+    return await fn(`http://127.0.0.1:${server.address().port}`);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
   }
 }
 

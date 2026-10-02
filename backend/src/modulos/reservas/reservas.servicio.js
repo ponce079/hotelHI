@@ -765,11 +765,12 @@ async function reservarCodigoLibre(tx) {
 async function resolverHuesped(tx, datos) {
   const identidadDocumento = require("../estadia/persona.servicio").claveDocumento(datos);
   if (identidadDocumento) {
-    return tx.huesped.upsert({
-      where: { identidadDocumento },
-      update: datos,
-      create: { ...datos, identidadDocumento },
-    });
+    // Persona que vuelve: se reutiliza su ficha y se actualiza. El correo manda: un correo ya
+    // guardado no se reemplaza por un teléfono (por ejemplo, un walk-in que solo dejó teléfono).
+    const existente = await tx.huesped.findUnique({ where: { identidadDocumento } });
+    if (!existente) return tx.huesped.create({ data: { ...datos, identidadDocumento } });
+    const contacto = esEmail(datos.contacto) || !esEmail(existente.contacto) ? datos.contacto : existente.contacto;
+    return tx.huesped.update({ where: { id: existente.id }, data: { ...datos, contacto } });
   }
   const existente = await tx.huesped.findFirst({
     where: { tipoDocumento: datos.tipoDocumento, numeroDocumento: datos.numeroDocumento, paisDocumento: null },

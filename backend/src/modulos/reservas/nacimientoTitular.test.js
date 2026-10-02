@@ -2,6 +2,9 @@ jest.mock("../../lib/prisma", () => ({}));
 const { normalizarAltaReserva, hoyComoFechaUTC } = require("./reservas.servicio");
 const hoy = hoyComoFechaUTC();
 const iso = (d) => d.toISOString().slice(0, 10);
+// Nacimientos relativos a hoy (scripts/_fechasPrueba.js): nunca años fijos.
+const { haceAnios } = require("../../../scripts/_fechasPrueba");
+const ADULTO = haceAnios(36);
 const datos = {
   fechaDesde: iso(hoy),
   fechaHasta: iso(new Date(hoy.getTime() + 86400000)),
@@ -14,7 +17,7 @@ const datos = {
     tipoDocumento: "DNI",
     numeroDocumento: "30111222",
     contacto: "prueba@example.test",
-    fechaNacimiento: "1990-01-01",
+    fechaNacimiento: ADULTO,
   },
 };
 test("exige nacimiento y documento antes de crear reserva", () => {
@@ -27,10 +30,10 @@ test("exige nacimiento y documento antes de crear reserva", () => {
 });
 test("rechaza titular menor o nacimiento imposible y conserva la fecha normalizada", () => {
   expect(() =>
-    normalizarAltaReserva({ ...datos, huesped: { ...datos.huesped, fechaNacimiento: "2015-01-01" } }),
+    normalizarAltaReserva({ ...datos, huesped: { ...datos.huesped, fechaNacimiento: haceAnios(11) } }),
   ).toThrow(/18 años/);
   expect(() =>
     normalizarAltaReserva({ ...datos, huesped: { ...datos.huesped, fechaNacimiento: "1990-02-30" } }),
   ).toThrow();
-  expect(normalizarAltaReserva(datos).huesped.fechaNacimiento).toEqual(new Date("1990-01-01"));
+  expect(normalizarAltaReserva(datos).huesped.fechaNacimiento).toEqual(new Date(ADULTO));
 });

@@ -7,6 +7,7 @@ const s = require("./estadia.servicio");
 const { MAYORIA_EDAD } = require("../../lib/fechas");
 const personasServicio = require("./persona.servicio");
 const { comparteCorreo } = require("./contactoPersona");
+const { esEmail } = require("../../lib/contacto");
 
 const { ErrorDeNegocio, edad } = s;
 const normalizar = (v) =>
@@ -145,7 +146,8 @@ async function resolverHuespedes(tx, reserva, fichas) {
       normalizar(titular.numeroDocumento) === normalizar(ficha.numeroDocumento) &&
       (!titular.paisDocumento || personasServicio.normalizarPais(titular.paisDocumento) === datos.paisDocumento);
     if (esElTitular && !encontrado) {
-      await tx.huesped.update({ where: { id: titular.id }, data: { ...datos, identidadDocumento: identidad } });
+      const contacto = esEmail(ficha.email) || !esEmail(titular.contacto) ? datos.contacto : titular.contacto;
+      await tx.huesped.update({ where: { id: titular.id }, data: { ...datos, contacto, identidadDocumento: identidad } });
       resultado.set(ficha.id, titular.id);
     } else if (esElTitular && encontrado.id !== titular.id) {
       await tx.reserva.update({ where: { id: reserva.id }, data: { huespedId: encontrado.id } });
@@ -165,18 +167,24 @@ async function resolverHuespedes(tx, reserva, fichas) {
     const idPorIdentidad = new Map(creados.map((h) => [h.identidadDocumento, h.id]));
     for (const [clave, identidad] of conIdentidadNueva) resultado.set(clave, idPorIdentidad.get(identidad));
   }
-  // Persona que vuelve: su ficha se reutiliza y se actualiza con lo declarado ahora.
+  // Persona que vuelve: su ficha se reutiliza y se actualiza con lo declarado ahora. Contacto:
+  // el correo manda; un correo ya guardado no se pisa con un teléfono si ahora no declaró correo.
+  const contactoGuardado = new Map(existentes.map((h) => [h.id, h.contacto]));
+  if (titular) contactoGuardado.set(titular.id, titular.contacto);
   const yaExistian = fichas.filter((ficha) => !conIdentidadNueva.has(ficha.id));
   await personasServicio.actualizarFichasEnLote(
     tx,
     yaExistian.map((ficha) => {
       const datos = personasServicio.datosDeHuesped(ficha);
+      const huespedId = resultado.get(ficha.id);
+      const correoNuevo = esEmail(ficha.email);
+      const contacto = correoNuevo || !esEmail(contactoGuardado.get(huespedId)) ? datos.contacto : null;
       return {
-        huespedId: resultado.get(ficha.id),
+        huespedId,
         datos: {
           nombre: datos.nombre,
           fechaNacimiento: datos.fechaNacimiento,
-          contacto: datos.contacto,
+          contacto,
           ...ficha.residencia,
         },
       };
