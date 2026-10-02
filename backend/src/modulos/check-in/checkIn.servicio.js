@@ -288,13 +288,36 @@ async function confirmarCheckInConReserva({
 // cuando `fechaDesde` es hoy, que es siempre el caso acá — walk-in y
 // asignación manual son "ahora", nunca a futuro. No hay filtro propio que
 // reimplementar: si hubiera dos, correrían el riesgo de desincronizarse.
-async function listarHabitacionesLibresAhora({ fechaHasta, tipoHabitacionId, capacidadMinima }) {
-  return reservasServicio.consultarDisponibilidad({
+//
+// Rediseño del check-in: `adultos`/`menores` viajan al motor para que cada plan traiga el
+// total de ESA ocupación (y `planTarifarioId`), la capacidad mínima pasa a ser adultos +
+// menores, y `excluir` (ids separados por coma) saca las habitaciones ya elegidas para otra
+// habitación del mismo walk-in. Sin adultos se mantiene el comportamiento anterior (2/0).
+async function listarHabitacionesLibresAhora({ fechaHasta, tipoHabitacionId, capacidadMinima, adultos, menores, excluir }) {
+  const conOcupacion = adultos !== undefined && adultos !== "";
+  const cantAdultos = conOcupacion ? Number(adultos) : undefined;
+  const cantMenores = menores === undefined || menores === "" ? 0 : Number(menores);
+  if (conOcupacion && (!Number.isInteger(cantAdultos) || cantAdultos < 1))
+    throw new ErrorDeNegocio("Indicá al menos un adulto por habitación.");
+  if (!Number.isInteger(cantMenores) || cantMenores < 0) throw new ErrorDeNegocio("La cantidad de menores no es válida.");
+  const excluidas = new Set(
+    (Array.isArray(excluir) ? excluir : String(excluir ?? "").split(","))
+      .map((v) => Number(String(v).trim()))
+      .filter((v) => Number.isInteger(v) && v > 0)
+  );
+  const minimaPedida = capacidadMinima ? Number(capacidadMinima) : 0;
+  const minima = Math.max(minimaPedida || 0, conOcupacion ? cantAdultos + cantMenores : 0);
+  const resultado = await reservasServicio.consultarDisponibilidad({
     fechaDesde: hoyComoFechaISO(),
     fechaHasta,
     tipoHabitacionId,
-    capacidadMinima,
+    capacidadMinima: minima || undefined,
+    ...(conOcupacion ? { adultos: cantAdultos, menores: cantMenores } : {}),
   });
+  return {
+    ...resultado,
+    habitaciones: resultado.habitaciones.filter((h) => h.estado === "libre" && !excluidas.has(h.id)),
+  };
 }
 
 // --------------------------------------------------------------

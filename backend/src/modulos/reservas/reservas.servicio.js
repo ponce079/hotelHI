@@ -657,6 +657,12 @@ async function consultarDisponibilidad({
       }
     }
   }
+  // planTarifarioId en cada plan (una sola consulta para todos los tipos).
+  const planesConId = await conIdsDePlan([...cotizacionPorTipo.values()].flatMap((c) => c.planes));
+  const idPlanPorCodigo = new Map(planesConId.map((p) => [p.codigo, p.planTarifarioId]));
+  for (const cotizacion of cotizacionPorTipo.values()) {
+    cotizacion.planes = cotizacion.planes.map((p) => ({ ...p, planTarifarioId: idPlanPorCodigo.get(p.codigo) ?? null }));
+  }
 
   const disponibles = [];
   const todas = conOcupadas ? [] : undefined;
@@ -914,10 +920,24 @@ async function cotizarParaReserva(data) {
       : enteroPositivo(data.planTarifarioId, "planTarifarioId");
   const canal = data?.canal === "WEB" ? "WEB" : "RECEPCION";
 
-  return cotizarReservaEnvuelto(
+  const cotizacion = await cotizarReservaEnvuelto(
     { fechaDesde, fechaHasta, planTarifarioId, habitaciones, canal, fechaVenta: hoyComoFechaUTC() },
     prisma
   );
+  return { ...cotizacion, planes: await conIdsDePlan(cotizacion.planes) };
+}
+
+// El motor (cotizacion.servicio.js) identifica los planes por código; el alta necesita el id.
+// Suma `planTarifarioId` a cada plan con UNA consulta, sin tocar el motor (cambio aditivo).
+async function conIdsDePlan(planes, cliente = prisma) {
+  const codigos = [...new Set((planes ?? []).map((p) => p.codigo))];
+  if (codigos.length === 0) return planes ?? [];
+  const filas = await cliente.planTarifario.findMany({
+    where: { codigo: { in: codigos } },
+    select: { id: true, codigo: true },
+  });
+  const idPorCodigo = new Map(filas.map((f) => [f.codigo, f.id]));
+  return planes.map((p) => ({ ...p, planTarifarioId: idPorCodigo.get(p.codigo) ?? null }));
 }
 
 // Núcleo transaccional del alta. Público aparte de `crearReserva` para que
