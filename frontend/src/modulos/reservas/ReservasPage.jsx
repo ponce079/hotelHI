@@ -17,7 +17,7 @@ import { Select } from "../../componentes/Select";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { Table } from "../../componentes/Table";
 import { Toast } from "../../componentes/Toast";
-import { formatearFechaSinHora } from "../../lib/fechas";
+import { formatearFechaDdMmAaaa } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { ReservaWizard } from "./ReservaWizard";
@@ -124,7 +124,7 @@ export function ReservasPage() {
       <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
         <h1 className="font-heading text-[34px] font-semibold">Reservas</h1>
         <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
-          HU 36 a 42 — alta individual y grupal, disponibilidad, huéspedes y confirmación
+          Alta individual y grupal, disponibilidad, huéspedes y confirmación
         </p>
       </div>
 
@@ -259,7 +259,7 @@ export function ReservasPage() {
                     </div>
                   </td>
                   <td className="px-3 py-2.5 text-[13px]">
-                    {formatearFechaSinHora(reserva.fechaDesde)} → {formatearFechaSinHora(reserva.fechaHasta)}
+                    {formatearFechaDdMmAaaa(reserva.fechaDesde)} → {formatearFechaDdMmAaaa(reserva.fechaHasta)}
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-xs">{reserva.noches}</td>
                   <td className="px-3 py-2.5">

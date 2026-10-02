@@ -69,7 +69,18 @@ async function prepararIngreso(tx, reservaId, operador) {
     tx,
     reservaId,
     "Check-in: ocupantes registrados",
-    { ocupanteIds: presentes.map((p) => p.id) },
+    {
+      ocupanteIds: presentes.map((p) => p.id),
+      // Menores con su responsable, el vínculo y la autorización presentada (si correspondía).
+      menores: presentes
+        .filter((p) => p.responsableId)
+        .map((p) => ({
+          ocupanteId: p.id,
+          responsableId: p.responsableId,
+          vinculo: p.vinculoResponsable ?? null,
+          autorizacionPresentada: p.autorizacionPresentada === true,
+        })),
+    },
     operador || "Recepción",
   );
 }

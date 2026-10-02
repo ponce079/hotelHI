@@ -23,6 +23,7 @@ const menor = {
   fechaHasta: reserva.fechaHasta,
   habitacionId: 1,
   responsableId: 1,
+  vinculoResponsable: "Padre o madre",
 };
 test("titular exige nacimiento y 18 cumplidos, no 17", () => {
   expect(validarOcupante(menor, reserva, [], {}, {}, false, true).fechaNacimiento).toMatch(/18 años/);
@@ -40,8 +41,8 @@ test("contacto del responsable es opcional y copiarlo permite guardar al menor",
   });
   expect(opcion).not.toBeChecked();
   fireEvent.click(opcion);
-  expect(screen.getByLabelText("Correo electrónico")).toHaveValue(adulto.email);
-  expect(screen.getByLabelText("Teléfono")).toHaveValue(adulto.telefono);
+  expect(screen.getByLabelText("Correo electrónico (opcional)")).toHaveValue(adulto.email);
+  expect(screen.getByLabelText("Teléfono (opcional)")).toHaveValue(adulto.telefono);
   fireEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
   expect(guardar).toHaveBeenCalledWith(
     expect.objectContaining({

@@ -69,11 +69,15 @@ function normalizarHabitaciones(reserva, habitaciones) {
       "OCUPACION_INVALIDA",
     );
   const definitivas = resultado.map((h) => h.habitacionId);
-  if (new Set(definitivas).size !== definitivas.length)
-    throw error("La misma habitación quedó elegida para dos habitaciones de la reserva.", 409, "CAMBIO_HABITACION_INVALIDO");
+  const repetida = resultado.find((h, i) => definitivas.indexOf(h.habitacionId) !== i);
+  if (repetida)
+    throw error("La misma habitación quedó elegida para dos habitaciones de la reserva.", 409, "CAMBIO_HABITACION_INVALIDO", {
+      habitacionIdAnterior: repetida.anterior.id,
+    });
   return resultado;
 }
 
+// detalle.habitacionIdAnterior (aditivo, etapa 2): qué tarjeta de habitación marca la pantalla.
 // Reglas del cambio de habitación al ingresar: mismo tipo, activa, libre, no incluida ya en la
 // reserva y sin otra reserva encimada en ninguna noche de la estadía.
 async function validarCambiosDeHabitacion(cliente, reserva, cambios, nuevas) {
@@ -83,20 +87,26 @@ async function validarCambiosDeHabitacion(cliente, reserva, cambios, nuevas) {
     const nueva = porId.get(habitacionId);
     const quien = `la habitación ${anterior.numero}`;
     if (!nueva || !nueva.activo)
-      throw error(`La habitación elegida para reemplazar a ${quien} no existe o está dada de baja.`, 409, "CAMBIO_HABITACION_INVALIDO");
+      throw error(`La habitación elegida para reemplazar a ${quien} no existe o está dada de baja.`, 409, "CAMBIO_HABITACION_INVALIDO", {
+        habitacionIdAnterior: anterior.id,
+      });
     if (idsReserva.has(habitacionId))
-      throw error(`La habitación ${nueva.numero} ya forma parte de esta reserva.`, 409, "CAMBIO_HABITACION_INVALIDO");
+      throw error(`La habitación ${nueva.numero} ya forma parte de esta reserva.`, 409, "CAMBIO_HABITACION_INVALIDO", {
+        habitacionIdAnterior: anterior.id,
+      });
     if (nueva.tipoHabitacionId !== anterior.tipoHabitacionId)
       throw error(
         `La habitación ${nueva.numero} es de otro tipo: solo se puede cambiar ${quien} por una del mismo tipo (${anterior.tipo}).`,
         409,
         "CAMBIO_HABITACION_INVALIDO",
+        { habitacionIdAnterior: anterior.id },
       );
     if (!reservasServicio.esLibreAhora(nueva))
       throw error(
         `La habitación ${nueva.numero} no está libre (estado actual: ${nueva.estado}).`,
         409,
         "CAMBIO_HABITACION_INVALIDO",
+        { habitacionIdAnterior: anterior.id },
       );
   }
   const conflictos = await reservasServicio.buscarConflictos(cliente, {
@@ -112,6 +122,7 @@ async function validarCambiosDeHabitacion(cliente, reserva, cambios, nuevas) {
         `(reserva ${c.reserva?.codigoConfirmacion}).`,
       409,
       "CAMBIO_HABITACION_INVALIDO",
+      { habitacionIdAnterior: cambios.find((x) => x.habitacionId === c.habitacion?.id)?.anterior.id ?? null },
     );
   }
 }

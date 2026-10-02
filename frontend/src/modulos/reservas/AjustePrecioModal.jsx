@@ -6,7 +6,7 @@ import { Input } from "../../componentes/Input";
 import { MoneyInput } from "../../componentes/MoneyInput";
 import { Select } from "../../componentes/Select";
 import { Button } from "../../componentes/Button";
-import { formatearFechaSinHora } from "../../lib/fechas";
+import { formatearFechaDdMmAaaa } from "../../lib/fechas";
 import { ajustarPrecioReserva } from "./reservas.api";
 import { MODO_AJUSTE_PRECIO, MODOS_AJUSTE_PRECIO, MODO_AJUSTE_PRECIO_LABEL, LIMITES_TARIFAS } from "../tarifas/tarifas.constantes";
 
@@ -90,7 +90,7 @@ export function AjustePrecioModal({ reserva, onClose, onExito }) {
                       onChange={() => alternar(n.id)}
                       className="h-4 w-4 cursor-pointer accent-pino"
                     />
-                    {n.habitacionNumero} ({n.habitacionTipo}) · {formatearFechaSinHora(n.fecha)}
+                    {n.habitacionNumero} ({n.habitacionTipo}) · {formatearFechaDdMmAaaa(n.fecha)}
                     {n.ajustada && <span className="text-[11px] text-laton-700"> · ya ajustada</span>}
                   </span>
                   <span className="font-mono">{FORMATO_MONEDA.format(n.precioNoche)}</span>

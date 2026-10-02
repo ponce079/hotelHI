@@ -11,6 +11,8 @@
     "db:generate": "prisma generate",
     "test:integracion": "node scripts/pruebas-estadia-integracion.js",
     "test:checkin-rediseno": "node scripts/pruebas-checkin-rediseno.js",
+    "test:seed-demo": "node scripts/pruebas-seed-demo.js",
+    "seed:checkin-demo": "node scripts/seed-checkin-demo.js",
     "test:consultas": "node scripts/pruebas-estadia-consultas.js",
     "db:check": "node scripts/check-db.js",
     "db:push": "node scripts/db-push.js",

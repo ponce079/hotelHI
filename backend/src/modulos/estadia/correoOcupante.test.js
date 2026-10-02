@@ -21,7 +21,7 @@ const datos = {
 };
 function cliente(correos = []) {
   return {
-    huesped: { create: jest.fn().mockResolvedValue({ id: 8 }) },
+    huesped: { create: jest.fn().mockResolvedValue({ id: 8 }), update: jest.fn().mockResolvedValue({ id: 8 }) },
     $queryRaw: jest.fn().mockResolvedValue([]),
     reserva: { findUnique: jest.fn().mockResolvedValue(reserva) },
     ocupanteReserva: {

@@ -159,6 +159,7 @@ async function pruebas() {
     ficha(h1, undefined, {
       fechaNacimiento: haceAnios(11),
       responsableId: a.id,
+      vinculoResponsable: "Padre o madre",
       usarContactoResponsable: true,
     }),
   );
@@ -265,6 +266,7 @@ async function pruebas() {
     ...ficha(hw, undefined, {
       fechaNacimiento: haceAnios(11),
       responsableId: 1,
+      vinculoResponsable: "Padre o madre",
     }),
     id: 2,
   });
@@ -381,8 +383,13 @@ async function pruebas() {
   await verificar(ra);
   await assert.rejects(() => ingresar(ra, da.huesped.numeroDocumento), /exactamente un titular/);
   await s.guardar(ra.id, titularA.id, ficha(ha, da.huesped.numeroDocumento, { esTitular: true }));
-  const extra = await s.guardar(ra.id, null, ficha(ha, undefined, { esTitular: true }));
-  await verificar(ra);
+  // Un segundo titular en la misma habitación ya no se puede guardar (un solo titular activo).
+  await assert.rejects(
+    () => s.guardar(ra.id, null, ficha(ha, undefined, { esTitular: true })),
+    (e) => e.statusCode === 409 && e.codigo === "TITULAR_EXISTENTE",
+  );
+  // Acompañante sin verificar: la ampliación se calcula, pero el ingreso falla y se revierte todo.
+  const extra = await s.guardar(ra.id, null, ficha(ha, undefined, { esTitular: false }));
   let advertencia;
   try {
     await ingresar(ra, da.huesped.numeroDocumento);
@@ -400,10 +407,10 @@ async function pruebas() {
       operador: "Prueba",
       confirmacionAmpliacion: token,
     });
-  await assert.rejects(() => confirmarAmpliacion(advertencia.detalle.token), /exactamente un titular/);
+  await assert.rejects(() => confirmarAmpliacion(advertencia.detalle.token), /Verificá los datos/);
   assert.equal((await p.reservaHabitacion.findFirst({ where: { reservaId: ra.id } })).adultos, 1);
   assert.equal((await checkout.consolidarCargos(ra.id)).totalAdeudado, da.totalEsperado);
-  await s.guardar(ra.id, extra.id, ficha(ha, extra.numeroDocumento, { esTitular: false }));
+  void extra;
   await verificar(ra);
   const cotizada = await cotizarReserva({
     ...da,
@@ -418,7 +425,7 @@ async function pruebas() {
   );
   assert.equal((await p.reservaHabitacion.findFirst({ where: { reservaId: ra.id } })).adultos, 2);
   assert.equal((await s.listar(ra.id)).filter((x) => x.estado === "Alojado").length, 2);
-  console.log("OK: I1 ficha única; I2 cero/dos titulares; I4 advertencia, rollback y ampliación recotizada.");
+  console.log("OK: I1 ficha única; I2 cero titulares y segundo titular rechazado; I4 advertencia, rollback y ampliación recotizada.");
 
   // Tope de capacidad: nunca se amplía por encima de Habitacion.capacidad.
   const hk = await habitacion(3),
@@ -513,14 +520,69 @@ async function pruebas() {
   const server = await new Promise((resolve) => {
     const server = app.listen(0, "127.0.0.1", () => resolve(server));
   });
+  // Usuarios SOLO en la base local de pruebas, borrados al terminar (sin contraseñas reales).
+  const { firmarToken } = require("../src/modulos/usuarios/usuarios.seguridad");
+  const crearUsuario = (rol) =>
+    p.usuario.create({
+      data: {
+        usuario: `prueba-estadia-${rol}-${marca}`,
+        nombre: "Prueba",
+        apellido: "Estadía",
+        dni: `8${marca.slice(-7)}${rol.length}`,
+        passwordHash: "sin-contraseña",
+        rol,
+      },
+    });
+  const usuarios = {
+    recepcionista: await crearUsuario("recepcionista"),
+    gerente: await crearUsuario("gerente"),
+    housekeeping: await crearUsuario("housekeeping"),
+  };
+  const token = (rol) => firmarToken({ id: usuarios[rol].id, rol });
   try {
     const url = `http://127.0.0.1:${server.address().port}`;
-    for (const ruta of [
-      `/api/estadia/${rw.id}/ocupantes`,
-      `/api/estadia/${rw.id}/historial`,
-      "/api/consumos-servicios/hotel/resumen",
-    ])
-      assert.equal((await fetch(url + ruta)).status, 200);
+    const pedir = (ruta, { rol, metodo = "GET", cuerpo } = {}) =>
+      fetch(url + ruta, {
+        method: metodo,
+        headers: {
+          "Content-Type": "application/json",
+          ...(rol ? { Authorization: `Bearer ${token(rol)}` } : {}),
+        },
+        ...(cuerpo && metodo !== "GET" ? { body: JSON.stringify(cuerpo) } : {}),
+      });
+    const fichaRw = (await s.listar(rw.id)).find((o) => o.estado === "Alojado");
+    const rutasEstadia = [
+      ["GET", "/api/estadia/alojados"],
+      ["GET", `/api/estadia/${rw.id}/ocupantes`],
+      ["GET", `/api/estadia/${rw.id}/historial`],
+      ["POST", `/api/estadia/${rw.id}/titular`],
+      ["POST", `/api/estadia/${rw.id}/ocupantes`],
+      ["PUT", `/api/estadia/${rw.id}/ocupantes/${fichaRw.id}`],
+      ["POST", `/api/estadia/${rw.id}/ocupantes/${fichaRw.id}/accion`],
+      ["POST", `/api/estadia/${rw.id}/ocupantes/${fichaRw.id}/mover`],
+    ];
+    // Sin token: 401 en todas. Housekeeping: 403 en todas.
+    for (const [metodo, ruta] of rutasEstadia) {
+      assert.equal((await pedir(ruta, { metodo, cuerpo: {} })).status, 401, `${metodo} ${ruta} sin sesión`);
+      assert.equal((await pedir(ruta, { metodo, cuerpo: {}, rol: "housekeeping" })).status, 403, `${metodo} ${ruta} housekeeping`);
+    }
+    // Gerente: lee fichas e historial (detalle de la reserva), no escribe ni ve "Personas alojadas".
+    assert.equal((await pedir(`/api/estadia/${rw.id}/ocupantes`, { rol: "gerente" })).status, 200);
+    assert.equal((await pedir(`/api/estadia/${rw.id}/historial`, { rol: "gerente" })).status, 200);
+    assert.equal((await pedir("/api/estadia/alojados", { rol: "gerente" })).status, 403);
+    assert.equal((await pedir(`/api/estadia/${rw.id}/titular`, { rol: "gerente", metodo: "POST" })).status, 403);
+    for (const ruta of [`/api/estadia/${rw.id}/ocupantes`, `/api/estadia/${rw.id}/historial`, "/api/estadia/alojados"])
+      assert.equal((await pedir(ruta, { rol: "recepcionista" })).status, 200, ruta);
+    // El operador del evento sale de la sesión aunque el cuerpo mande otro.
+    const verificada = await pedir(`/api/estadia/${rw.id}/ocupantes/${fichaRw.id}/accion`, {
+      rol: "recepcionista",
+      metodo: "POST",
+      cuerpo: { accion: "verificar", operador: "Otra persona" },
+    });
+    assert.equal(verificada.status, 200);
+    const ultimo = await p.eventoEstadia.findFirst({ where: { reservaId: rw.id }, orderBy: { id: "desc" } });
+    assert.equal(ultimo.operador, usuarios.recepcionista.usuario);
+    assert.equal((await fetch(url + "/api/consumos-servicios/hotel/resumen")).status, 200);
     const res = await fetch(url + "/api/check-in/walk-in", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -529,8 +591,12 @@ async function pruebas() {
     assert.equal(res.status, 400);
   } finally {
     await new Promise((resolve) => server.close(resolve));
+    await p.usuario.deleteMany({ where: { id: { in: Object.values(usuarios).map((u) => u.id) } } });
   }
-  console.log("OK: rutas HTTP y rechazo de ocupación duplicada en contratos anteriores.");
+  console.log(
+    "OK: rutas HTTP: /api/estadia exige sesión (401) y rol (403), el operador sale de la sesión; " +
+      "rechazo de ocupación duplicada en contratos anteriores.",
+  );
 }
 async function main() {
   const restituir = await neutralizarModificadoresDeDiaSemana();

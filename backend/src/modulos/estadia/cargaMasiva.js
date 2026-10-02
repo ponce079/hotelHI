@@ -8,6 +8,7 @@ const { MAYORIA_EDAD } = require("../../lib/fechas");
 const personasServicio = require("./persona.servicio");
 const { comparteCorreo } = require("./contactoPersona");
 const { esEmail } = require("../../lib/contacto");
+const { titularActivoEn, errorTitularExistente } = require("./titularHabitacion");
 
 const { ErrorDeNegocio, edad } = s;
 const normalizar = (v) =>
@@ -89,9 +90,23 @@ function validarLote(reserva, entradas, existentes) {
     s.verificarCapacidad(rh, p, enLaHabitacion);
     if (esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD))
       throw new ErrorDeNegocio("El titular de habitacion debe tener 18 años cumplidos.");
+    // Un solo titular activo por habitación: ni contra las fichas que ya estaban ni dentro del envío.
+    if (esTitular) {
+      const otro = titularActivoEn(otros, rh.habitacionId);
+      if (otro)
+        throw errorTitularExistente(
+          ErrorDeNegocio,
+          rh.habitacion.numero,
+          otro,
+          "Marcá un solo titular por habitación o cambiá el titular desde la ficha de la estadía, con su motivo.",
+        );
+    }
+    s.validarVinculo(p);
     const ficha = {
       ...p,
       id: clave,
+      // Id temporal que mandó la pantalla: identifica la fila en los errores (PERSONA_ALOJADA).
+      idTemporal: entrada.id ?? indice + 1,
       esTitular,
       habitacionId: rh.habitacionId,
       responsableId: responsable ? responsable.id : null,
@@ -208,6 +223,8 @@ function filaDeOcupante(ficha, huespedId, responsableId, verificadoPor, ahora) {
     telefono: ficha.telefono,
     email: ficha.email,
     responsableId,
+    vinculoResponsable: ficha.vinculoResponsable ?? null,
+    autorizacionPresentada: ficha.autorizacionPresentada === true,
     fechaDesde: ficha.fechaDesde,
     fechaHasta: ficha.fechaHasta,
     verificadoPor,
@@ -223,16 +240,21 @@ async function rechazarYaAlojadas(tx, fichas) {
   if (!identidades.length) return;
   const alojadas = await tx.ocupanteReserva.findMany({
     where: { identidadActiva: { in: identidades } },
-    select: { nombre: true, apellido: true, reserva: { select: { codigoConfirmacion: true } } },
+    select: { nombre: true, apellido: true, identidadActiva: true, reserva: { select: { codigoConfirmacion: true } } },
   });
   if (alojadas.length) {
     const quienes = alojadas
       .map((p) => `${p.nombre} ${p.apellido}`.trim() + (p.reserva ? ` (reserva ${p.reserva.codigoConfirmacion})` : ""))
       .join(", ");
-    throw new ErrorDeNegocio(
+    const error = new ErrorDeNegocio(
       `Ya figura alojada en otra estadía: ${quienes}. Registrá su salida antes de volver a ingresarla.`,
       409,
     );
+    // Aditivo (etapa 2): qué filas del envío son, por su id temporal, para marcarlas en la pantalla.
+    const ocupadas = new Set(alojadas.map((p) => p.identidadActiva));
+    error.codigo = "PERSONA_ALOJADA";
+    error.detalle = { personas: fichas.filter((f) => ocupadas.has(s.identidad(f))).map((f) => f.idTemporal) };
+    throw error;
   }
 }
 

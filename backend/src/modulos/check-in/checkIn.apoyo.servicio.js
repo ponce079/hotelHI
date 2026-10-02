@@ -77,6 +77,8 @@ async function listarLlegadas({ q } = {}) {
         noches: calcularNoches(r.fechaDesde, r.fechaHasta),
         titular: {
           nombre: r.huesped?.nombre ?? null,
+          nombres: r.huesped?.nombres ?? null,
+          apellido: r.huesped?.apellido ?? null,
           tipoDocumento: r.huesped?.tipoDocumento ?? null,
           numeroDocumento: r.huesped?.numeroDocumento ?? null,
           paisDocumento: r.huesped?.paisDocumento ?? null,

@@ -6,12 +6,18 @@ import { Button } from "../../componentes/Button";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Modal } from "../../componentes/Modal";
+import { ConfirmDialog } from "../../componentes/ConfirmDialog";
 import { ConsumoModal } from "../servicios-adicionales/ConsumoModal";
 import { obtenerCuenta } from "../check-out/checkOut.api";
 import { PAISES_SELECTOR, buscarPaisOcupante } from "./ocupantesUbicacion";
 import { TIPOS_DOCUMENTO, ETIQUETAS_NUMERO_DOCUMENTO } from "../../lib/tiposDocumento";
 import { validarOcupante, pendientesParaIngreso } from "./validarOcupante";
 import { titularRegistrado } from "./titularRegistrado";
+import { formatearFechaHora, formatearFechaDdMmAaaa, edadEnFecha, hoyEnHoraLocal } from "../../lib/fechas";
+import { formatearPrecio } from "../../lib/moneda";
+import { MAYORIA_EDAD } from "../check-in/checkInPantalla.constantes";
+import { formatearNombrePropio } from "../../lib/nombres";
+import { VINCULOS_RESPONSABLE, requiereAutorizacion } from "../../lib/vinculos";
 import {
   reintentarLecturaEstadia as reintentarLectura,
   reintentarTitular,
@@ -29,11 +35,49 @@ function ErrorConsulta({ consulta, mensaje }) {
   );
 }
 const moneda = (v) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(v || 0);
-const detalleEvento = (e) => {
+// Nombre de la acción del historial en lenguaje de recepción.
+const ACCIONES_HISTORIAL = {
+  cancelar: "Ficha dada de baja",
+  retirar: "Salida registrada",
+  verificar: "Datos verificados",
+  ingresar: "Ingreso registrado",
+};
+const CAMPOS_EVENTO = {
+  tipoDocumento: "tipo",
+  paisDocumento: "país emisor",
+  numeroDocumento: "número",
+  nombre: "nombre",
+  apellido: "apellido",
+  fechaNacimiento: "nacimiento",
+};
+// "número: 30512874 → 30512875" (sin más datos que los que cambiaron).
+const cambiosEvento = (d) =>
+  d.anterior && d.nuevo
+    ? Object.keys(d.nuevo)
+        .filter((k) => d.anterior[k] !== d.nuevo[k])
+        .map((k) => {
+          const v = (x) => (x == null || x === "" ? "—" : k === "fechaNacimiento" ? formatearFechaDdMmAaaa(x) : x);
+          return `${CAMPOS_EVENTO[k] ?? k}: ${v(d.anterior[k])} → ${v(d.nuevo[k])}`;
+        })
+        .join(", ")
+    : null;
+const nombreDeOcupante = (personas, id) => {
+  const p = personas.find((x) => x.id === id);
+  return p ? `${p.nombre} ${p.apellido}`.trim() : null;
+};
+const detalleEvento = (e, personas = [], habitaciones = []) => {
   try {
     const d = JSON.parse(e.detalle);
+    const numero = habitaciones.find((h) => h.id === d.habitacionId)?.numero;
     return [
-      d.habitacionId ? `Habitación ID ${d.habitacionId}` : null,
+      d.ocupanteId ? nombreDeOcupante(personas, d.ocupanteId) : null,
+      d.anteriorId ? `antes: ${nombreDeOcupante(personas, d.anteriorId) ?? "otro titular"}` : null,
+      cambiosEvento(d),
+      d.desdeHabitacionId
+        ? `de la habitación ${habitaciones.find((h) => h.id === d.desdeHabitacionId)?.numero ?? d.desdeHabitacionId}`
+        : null,
+      d.habitacionId ? `${d.desdeHabitacionId ? "a la habitación" : "Habitación"} ${numero ?? d.habitacionId}` : null,
+      d.nuevoTitularId ? `nuevo titular: ${nombreDeOcupante(personas, d.nuevoTitularId) ?? "otra persona"}` : null,
       d.motivo,
       d.monto != null ? moneda(d.monto) : null,
       d.devolver != null ? `Devolución ${moneda(d.devolver)}` : null,
@@ -45,7 +89,19 @@ const detalleEvento = (e) => {
     return "";
   }
 };
-const fecha = (v) => (v ? new Date(v).toLocaleString("es-AR") : "—");
+const fecha = (v) => formatearFechaHora(v);
+// Documento para mostrar: un menor registrado sin documento (con su justificación) no queda
+// como "pendiente".
+function documentoDe(p, reserva) {
+  if (p.numeroDocumento) return `${p.tipoDocumento ?? ""} ${p.numeroDocumento}`.trim();
+  if (p.motivoSinDocumento) {
+    const nacimiento = p.fechaNacimiento ? String(p.fechaNacimiento).slice(0, 10) : null;
+    const ingreso = String(p.fechaDesde ?? reserva.fechaDesde).slice(0, 10);
+    const menor = nacimiento && `${Number(nacimiento.slice(0, 4)) + 18}${nacimiento.slice(4)}` > ingreso;
+    return menor ? "Sin documento (menor)" : "Sin documento";
+  }
+  return "Documento pendiente";
+}
 const activa = (p) => p.asignaciones?.find((a) => !a.hasta);
 // Catálogo único de huésped y ocupantes (lib/tiposDocumento.js).
 const TIPOS_DOCUMENTO_OCUPANTE = TIPOS_DOCUMENTO;
@@ -56,7 +112,8 @@ const ETIQUETAS_PAIS_MANUAL = {
   nacionalidad: "Nombre del país de la nacionalidad",
   paisResidencia: "Nombre del país de residencia",
 };
-const campos = [
+// El formulario se agrupa en tres bloques: Identidad · Residencia y contacto · Estadía.
+const CAMPOS_IDENTIDAD = [
   ["nombre", "Nombre", "text", true],
   ["apellido", "Apellido", "text", true],
   ["tipoDocumento", "Tipo de documento", "text"],
@@ -64,15 +121,120 @@ const campos = [
   ["paisDocumento", "País emisor", "text"],
   ["motivoSinDocumento", "Justificación sin documento", "text"],
   ["fechaNacimiento", "Nacimiento", "date"],
+];
+const CAMPOS_RESIDENCIA = [
   ["nacionalidad", "Nacionalidad", "text"],
   ["paisResidencia", "País de residencia", "text"],
   ["localidad", "Localidad", "text"],
-  ["domicilio", "Domicilio", "text"],
-  ["telefono", "Teléfono", "tel"],
-  ["email", "Correo electrónico", "email"],
+  ["domicilio", "Domicilio (opcional)", "text"],
+  ["telefono", "Teléfono (opcional)", "tel"],
+  ["email", "Correo electrónico (opcional)", "email"],
+];
+const CAMPOS_FECHAS = [
   ["fechaDesde", "Ingreso previsto", "date", true],
   ["fechaHasta", "Salida prevista", "date", true],
 ];
+const campos = [...CAMPOS_IDENTIDAD, ...CAMPOS_RESIDENCIA, ...CAMPOS_FECHAS];
+const CAMPOS_DOCUMENTO = ["tipoDocumento", "paisDocumento", "numeroDocumento"];
+const normalizarDocumento = (k, v) => {
+  const s = String(v ?? "").trim();
+  return k === "numeroDocumento" ? s.toUpperCase().replace(/\s/g, "") : s;
+};
+const fechaISO = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? "").slice(0, 10)) ? String(v).slice(0, 10) : null);
+// Menor de edad (MAYORIA_EDAD) a la fecha de ingreso, calculado mientras se tipea el nacimiento.
+const esMenorDeEdad = (nacimiento, ingreso) => {
+  const edad = fechaISO(nacimiento) && fechaISO(ingreso) ? edadEnFecha(fechaISO(nacimiento), fechaISO(ingreso)) : null;
+  return edad !== null && edad < MAYORIA_EDAD;
+};
+// Quien se suma con la estadía en curso ingresa hoy, no en la fecha de entrada de la reserva.
+function ingresoPorDefecto(reserva) {
+  const desde = String(reserva.fechaDesde ?? "").slice(0, 10);
+  const hoy = hoyEnHoraLocal();
+  return reserva.estado === "En curso" && hoy > desde && hoy < String(reserva.fechaHasta ?? "").slice(0, 10)
+    ? hoy
+    : desde;
+}
+const CODIGO_PERSONA_ADICIONAL = "PERSONA_ADICIONAL_REQUIERE_CONFIRMACION";
+// Qué pasa con la tarifa al registrar la salida. Antes de la salida prevista de la reserva: si la
+// persona entró como adicional, se anulan sus cargos de las noches que no usa y la ocupación
+// registrada baja en 1; si era de la reserva original, la tarifa no cambia.
+function mensajeSalida(persona, reserva) {
+  if (!persona) return "";
+  const anticipada = hoyEnHoraLocal() < String(reserva.fechaHasta ?? "").slice(0, 10);
+  if (!anticipada) return "Se registra la salida de la estadía.";
+  return persona.personaAdicional
+    ? "Se anulan sus cargos «Persona adicional» de las noches que no usa y la ocupación registrada de la habitación baja en 1."
+    : "La tarifa de la reserva no cambia por esta salida.";
+}
+// Vista previa obligatoria de la persona adicional (supera la ocupación registrada de la habitación).
+export function PersonaAdicionalPrevia({ vista, nombre, pendiente = false, onConfirmar, onCancelar }) {
+  const conCargo = vista.noches.filter((n) => n.diferencia > 0);
+  const iguales = conCargo.length > 0 && conCargo.every((n) => n.diferencia === conCargo[0].diferencia);
+  return (
+    <div className="space-y-4 p-5">
+      <p className="text-sm">
+        Con {nombre || "esta persona"} la habitación {vista.numero} pasa de{" "}
+        {vista.ocupacionActual.adultos + vista.ocupacionActual.menores} a{" "}
+        {vista.ocupacionNueva.adultos + vista.ocupacionNueva.menores} personas. Ingresa ahora como alojada.
+      </p>
+      <div className="rounded border border-laton-300 bg-laton-100 p-3 text-sm text-laton-700">
+        {vista.categoria === "menor" ? (
+          <p>Menor sin cargo.</p>
+        ) : conCargo.length === 0 ? (
+          <p>Dentro de la ocupación base: no se genera cargo.</p>
+        ) : iguales ? (
+          <p>
+            +{formatearPrecio(conCargo[0].diferencia)} por noche × {conCargo.length}{" "}
+            {conCargo.length === 1 ? "noche" : "noches"} = <strong>{formatearPrecio(vista.total)}</strong>. Se carga en
+            la cuenta de la habitación como «Persona adicional».
+          </p>
+        ) : (
+          <>
+            <p>
+              Total <strong>{formatearPrecio(vista.total)}</strong>. Se carga en la cuenta de la habitación como
+              «Persona adicional».
+            </p>
+            <ul className="mt-2 space-y-0.5">
+              {vista.noches.map((n) => (
+                <li key={n.fecha}>
+                  Noche del {formatearFechaDdMmAaaa(n.fecha)}: +{formatearPrecio(n.diferencia)}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+      <p className="text-xs text-piedra">
+        El precio de la reserva no se recalcula: el cargo va a la cuenta de la habitación.
+      </p>
+      <div className="flex justify-end gap-2">
+        <Button type="button" variante="secundario" onClick={onCancelar}>
+          Cancelar
+        </Button>
+        <Button type="button" cargando={pendiente} onClick={onConfirmar}>
+          Confirmar
+        </Button>
+      </div>
+    </div>
+  );
+}
+function Bloque({ titulo, obligatorio = false, children }) {
+  return (
+    <fieldset className="space-y-3 rounded border border-borde p-4">
+      <legend className="px-1 font-heading text-base">{titulo}</legend>
+      {obligatorio && <p className="text-xs text-piedra">* obligatorio</p>}
+      {children}
+    </fieldset>
+  );
+}
+function Dato({ etiqueta, children }) {
+  return (
+    <div>
+      <dt className="text-[12px] text-tinta/70">{etiqueta}</dt>
+      <dd className="text-sm">{children}</dd>
+    </div>
+  );
+}
 export function PersonaFormulario({
   persona = {},
   reserva,
@@ -88,7 +250,7 @@ export function PersonaFormulario({
     ...persona,
     habitacionId: activa(persona)?.habitacionId || persona.habitacionId || reserva.habitaciones[0]?.id || "",
     fechaNacimiento: persona.fechaNacimiento?.slice(0, 10) || "",
-    fechaDesde: (persona.fechaDesde || reserva.fechaDesde || "").slice(0, 10),
+    fechaDesde: (persona.fechaDesde || ingresoPorDefecto(reserva) || "").slice(0, 10),
     fechaHasta: (persona.fechaHasta || reserva.fechaHasta || "").slice(0, 10),
   }));
   const [otraLocalidad, setOtraLocalidad] = useState(() =>
@@ -104,10 +266,8 @@ export function PersonaFormulario({
   const localidadLibre = Boolean(paisResidencia && !paisResidencia.localidades.length);
   const [tocados, setTocados] = useState({});
   const [intentoGuardar, setIntentoGuardar] = useState(false);
-  const esMenor = Boolean(
-    form.fechaNacimiento &&
-    `${Number(form.fechaNacimiento.slice(0, 4)) + 18}${form.fechaNacimiento.slice(4)}` > form.fechaDesde,
-  );
+  const alojado = persona.estado === "Alojado";
+  const esMenor = esMenorDeEdad(form.fechaNacimiento, form.fechaDesde);
   const responsableContacto = personas.find((p) => String(p.id) === String(form.responsableId));
   useEffect(() => {
     if (form.usarContactoResponsable)
@@ -136,6 +296,51 @@ export function PersonaFormulario({
   for (const [campo, dato] of Object.entries(erroresServidor)) {
     if (form[campo] === dato.valor) errores[campo] = dato.mensaje;
   }
+  // Un solo titular por habitación: marcar a esta persona reemplaza al titular actual de la
+  // habitación elegida. Con la estadía en curso, el motivo es obligatorio (queda en el historial).
+  const otroTitular = form.esTitular
+    ? personas.find(
+        (p) =>
+          p.id !== persona.id &&
+          p.esTitular &&
+          ["Previsto", "Alojado"].includes(p.estado) &&
+          Number(activa(p)?.habitacionId ?? p.habitacionId) === Number(form.habitacionId),
+      )
+    : null;
+  const reemplazaTitular = Boolean(otroTitular);
+  const motivoTitularObligatorio = reemplazaTitular && reserva.estado === "En curso";
+  if (motivoTitularObligatorio && !String(form.motivoCambioTitular ?? "").trim())
+    errores.motivoCambioTitular = "Indicá el motivo del cambio de titular.";
+  // Adulto responsable: solo para menores, y obligatorio para ellos, con su vínculo y, si es otro
+  // familiar u otro adulto a cargo, la autorización de los padres o tutores.
+  if (esMenor && !form.responsableId) errores.responsableId = "Elegí el adulto responsable del menor.";
+  if (esMenor && !form.vinculoResponsable) errores.vinculoResponsable = "Indicá el vínculo con el menor.";
+  if (esMenor && requiereAutorizacion(form.vinculoResponsable) && !form.autorizacionPresentada)
+    errores.autorizacionPresentada = "Marcá la autorización presentada por los padres o tutores.";
+  if (!esMenor) delete errores.responsableId;
+  // Cambio de documento de una ficha verificada: pide motivo y la ficha vuelve a verificarse.
+  const cambiaDocumento =
+    Boolean(persona.id && persona.verificadoEn) &&
+    CAMPOS_DOCUMENTO.some((k) => normalizarDocumento(k, form[k]) !== normalizarDocumento(k, persona[k]));
+  if (cambiaDocumento && !String(form.motivoCambioIdentidad ?? "").trim())
+    errores.motivoCambioIdentidad = "Indicá el motivo del cambio de documento.";
+  const habitacionActual = activa(persona)?.habitacionId;
+  const cambiaHabitacion = Boolean(
+    persona.id && habitacionActual && Number(form.habitacionId) !== Number(habitacionActual),
+  );
+  const adultos = personas.filter(
+    (p) =>
+      p.id !== persona.id &&
+      !["Cancelado", "Retirado"].includes(p.estado) &&
+      fechaISO(p.fechaNacimiento) &&
+      !esMenorDeEdad(p.fechaNacimiento, form.fechaDesde),
+  );
+  const aCargo = persona.id
+    ? personas.filter(
+        (p) => String(p.responsableId) === String(persona.id) && !["Cancelado", "Retirado"].includes(p.estado),
+      )
+    : [];
+  const habitacionDeLaPersona = reserva.habitaciones.find((h) => Number(h.id) === Number(form.habitacionId));
   const pendientesIngreso = pendientesParaIngreso(form);
   function propsCampo(campo) {
     const visible =
@@ -150,6 +355,10 @@ export function PersonaFormulario({
           habitacionId: "Habitación *",
           responsableId: "Adulto responsable (menores)",
           motivo: "Motivo del cambio de habitación",
+          motivoCambioTitular: "Motivo del cambio de titular",
+          motivoCambioIdentidad: "Motivo del cambio de documento",
+          vinculoResponsable: "Vínculo con el menor *",
+          autorizacionPresentada: "Autorización presentada *",
         }[campo];
     if (campo === "numeroDocumento") etiqueta = ETIQUETAS_NUMERO_DOCUMENTO[form.tipoDocumento] || etiqueta;
     if (campo === "localidad" && (otraLocalidad || localidadLibre || paisManual.paisResidencia))
@@ -303,6 +512,11 @@ export function PersonaFormulario({
         maxLength={191}
         value={form[k] || ""}
         onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value }))}
+        onBlur={
+          k === "nombre" || k === "apellido"
+            ? (e) => setForm((f) => ({ ...f, [k]: formatearNombrePropio(e.target.value) }))
+            : undefined
+        }
       />
     );
   }
@@ -322,84 +536,211 @@ export function PersonaFormulario({
           e.currentTarget.elements.namedItem(camposInvalidos[0])?.focus();
           return;
         }
-        onGuardar(form);
+        const datos = {
+          ...form,
+          responsableId: esMenor ? form.responsableId : null,
+          vinculoResponsable: esMenor ? form.vinculoResponsable || null : null,
+          autorizacionPresentada: esMenor && requiereAutorizacion(form.vinculoResponsable) ? form.autorizacionPresentada === true : false,
+          usarContactoResponsable: esMenor ? form.usarContactoResponsable : false,
+          ...(reemplazaTitular ? { reemplazarTitular: true } : {}),
+        };
+        if (!cambiaDocumento) delete datos.motivoCambioIdentidad;
+        // Ingreso, salida y habitación de una persona alojada no se cambian desde acá.
+        if (alojado) {
+          delete datos.fechaDesde;
+          delete datos.fechaHasta;
+          delete datos.habitacionId;
+          delete datos.motivo;
+        }
+        onGuardar(datos);
       }}
       className="space-y-4 p-5"
     >
       <p className="text-sm text-piedra">
         Los datos identifican al ocupante. Todos los cargos se asignan a la habitación.
       </p>
-      <label className="flex gap-2 text-sm">
-        <input
-          type="checkbox"
-          checked={Boolean(form.esTitular)}
-          onChange={(e) => setForm((f) => ({ ...f, esTitular: e.target.checked }))}
-        />
-        Titular de esta habitación
-      </label>
-      {esTitular && <p className="text-sm">El titular debe tener al menos 18 años en la fecha de ingreso.</p>}
-      {esMenor && (
-        <label className="flex gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={Boolean(form.usarContactoResponsable)}
-            onChange={(e) =>
-              setForm((f) => ({
-                ...f,
-                usarContactoResponsable: e.target.checked,
-                email: "",
-                telefono: "",
-              }))
-            }
-          />
-          Usar correo y teléfono del adulto responsable (opcional)
-        </label>
-      )}
-      {esMenor && (
-        <p className="text-xs text-piedra">
-          Podés dejar el correo y teléfono vacíos. Si usás los del responsable, se copian los datos disponibles al
-          guardar.
-        </p>
-      )}
-      <div className="grid gap-3 sm:grid-cols-2">
-        {campos.map(renderCampo)}
-        <Select
-          {...propsCampo("habitacionId")}
-          label="Habitación *"
-          required
-          value={form.habitacionId}
-          onChange={(e) => setForm({ ...form, habitacionId: e.target.value })}
-        >
-          {reserva.habitaciones.map((h) => (
-            <option key={h.id} value={h.id}>
-              Habitación {h.numero} · capacidad {h.capacidad}
-            </option>
-          ))}
-        </Select>
-        <Select
-          {...propsCampo("responsableId")}
-          label="Adulto responsable (menores)"
-          value={form.responsableId || ""}
-          onChange={(e) => setForm({ ...form, responsableId: e.target.value })}
-        >
-          <option value="">Sin asignar</option>
-          {personas
-            .filter((p) => p.id !== persona.id && !["Cancelado", "Retirado"].includes(p.estado))
-            .map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.nombre} {p.apellido}
-              </option>
-            ))}
-        </Select>
-        {persona.id && (
-          <Input
-            {...propsCampo("motivo")}
-            label="Motivo del cambio de habitación"
-            value={form.motivo || ""}
-            onChange={(e) => setForm({ ...form, motivo: e.target.value })}
-          />
+      <Bloque titulo="Identidad" obligatorio>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {CAMPOS_IDENTIDAD.filter(
+            ([k]) => k !== "motivoSinDocumento" || !String(form.numeroDocumento ?? "").trim(),
+          ).map(renderCampo)}
+          {esMenor && (
+            <Select
+              {...propsCampo("responsableId")}
+              label="Adulto responsable *"
+              value={form.responsableId || ""}
+              onChange={(e) => setForm({ ...form, responsableId: e.target.value })}
+            >
+              <option value="">Elegí el adulto responsable</option>
+              {adultos.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nombre} {p.apellido}
+                </option>
+              ))}
+            </Select>
+          )}
+          {esMenor && (
+            <Select
+              {...propsCampo("vinculoResponsable")}
+              label="Vínculo con el menor *"
+              value={form.vinculoResponsable || ""}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  vinculoResponsable: e.target.value,
+                  autorizacionPresentada: requiereAutorizacion(e.target.value) ? f.autorizacionPresentada : false,
+                }))
+              }
+            >
+              <option value="">Elegí el vínculo</option>
+              {VINCULOS_RESPONSABLE.map((v) => (
+                <option key={v} value={v}>
+                  {v}
+                </option>
+              ))}
+            </Select>
+          )}
+        </div>
+        {esMenor && requiereAutorizacion(form.vinculoResponsable) && (
+          <div className="space-y-2 rounded border border-laton-300 bg-laton-100 p-3 text-sm text-laton-700">
+            <p>Pedí la autorización de los padres o tutores.</p>
+            <label className="flex items-center gap-2 font-semibold">
+              <input
+                type="checkbox"
+                name="autorizacionPresentada"
+                checked={Boolean(form.autorizacionPresentada)}
+                onChange={(e) => setForm((f) => ({ ...f, autorizacionPresentada: e.target.checked }))}
+              />
+              Autorización presentada *
+            </label>
+            {(intentoGuardar || tocados.autorizacionPresentada) && errores.autorizacionPresentada && (
+              <p className="text-error-texto">{errores.autorizacionPresentada}</p>
+            )}
+          </div>
         )}
-      </div>
+        {cambiaDocumento && (
+          <div className="space-y-2 rounded border border-laton-300 bg-laton-100 p-3 text-sm text-laton-700">
+            <p>Esta ficha ya estaba verificada. Al cambiar el documento vuelve a "Datos por verificar".</p>
+            <Input
+              {...propsCampo("motivoCambioIdentidad")}
+              label="Motivo del cambio de documento *"
+              value={form.motivoCambioIdentidad || ""}
+              maxLength={500}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  motivoCambioIdentidad: e.target.value,
+                }))
+              }
+            />
+          </div>
+        )}
+      </Bloque>
+      <Bloque titulo="Residencia y contacto">
+        {esMenor && (
+          <label className="flex gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(form.usarContactoResponsable)}
+              onChange={(e) =>
+                setForm((f) => ({
+                  ...f,
+                  usarContactoResponsable: e.target.checked,
+                  email: "",
+                  telefono: "",
+                }))
+              }
+            />
+            Usar correo y teléfono del adulto responsable (opcional)
+          </label>
+        )}
+        {esMenor && (
+          <p className="text-xs text-piedra">
+            Podés dejar el correo y teléfono vacíos. Si usás los del responsable, se copian los datos disponibles al
+            guardar.
+          </p>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2">{CAMPOS_RESIDENCIA.map(renderCampo)}</div>
+      </Bloque>
+      <Bloque titulo="Estadía" obligatorio={!alojado}>
+        {alojado ? (
+          <>
+            <dl className="grid gap-3 sm:grid-cols-2">
+              <Dato etiqueta="Habitación">
+                {habitacionDeLaPersona ? `Habitación ${habitacionDeLaPersona.numero}` : "—"}
+              </Dato>
+              <Dato etiqueta="Ingreso">{formatearFechaHora(persona.ingresoReal)}</Dato>
+              <Dato etiqueta="Salida prevista">{formatearFechaDdMmAaaa(reserva.fechaHasta)}</Dato>
+              <Dato etiqueta="Rol">
+                {[
+                  persona.esTitular ? "Titular" : null,
+                  aCargo.length
+                    ? `Responsable de: ${aCargo.map((p) => `${p.nombre} ${p.apellido}`.trim()).join(", ")}`
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "Acompañante"}
+              </Dato>
+            </dl>
+            <p className="text-xs text-piedra">
+              Para irse antes, usá "Registrar salida". Para quedarse más, se modifica la reserva. Para cambiar de
+              habitación, usá "Mover a otra habitación".
+            </p>
+          </>
+        ) : (
+          <div className="grid gap-3 sm:grid-cols-2">
+            {CAMPOS_FECHAS.map(renderCampo)}
+            <Select
+              {...propsCampo("habitacionId")}
+              label="Habitación *"
+              required
+              value={form.habitacionId}
+              onChange={(e) => setForm({ ...form, habitacionId: e.target.value })}
+            >
+              {reserva.habitaciones.map((h) => (
+                <option key={h.id} value={h.id}>
+                  Habitación {h.numero} · capacidad {h.capacidad}
+                </option>
+              ))}
+            </Select>
+            {cambiaHabitacion && (
+              <Input
+                {...propsCampo("motivo")}
+                label="Motivo del cambio de habitación"
+                value={form.motivo || ""}
+                onChange={(e) => setForm({ ...form, motivo: e.target.value })}
+              />
+            )}
+          </div>
+        )}
+        {/* El titular tiene que ser mayor de edad: a un menor no se le ofrece. */}
+        {(!esMenor || form.esTitular) && (
+          <label className="flex gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={Boolean(form.esTitular)}
+              onChange={(e) => setForm((f) => ({ ...f, esTitular: e.target.checked }))}
+            />
+            Titular de esta habitación
+          </label>
+        )}
+        {reemplazaTitular && (
+          <div className="space-y-2 rounded border border-laton-300 bg-laton-100 p-3 text-sm text-laton-700">
+            <p>
+              Hoy el titular de esta habitación es {otroTitular.nombre} {otroTitular.apellido}. Al guardar deja de
+              serlo: hay un solo titular por habitación.
+            </p>
+            <Input
+              {...propsCampo("motivoCambioTitular")}
+              label={`Motivo del cambio de titular${motivoTitularObligatorio ? " *" : " (opcional)"}`}
+              value={form.motivoCambioTitular || ""}
+              maxLength={500}
+              onChange={(e) => setForm((f) => ({ ...f, motivoCambioTitular: e.target.value }))}
+            />
+          </div>
+        )}
+        {esTitular && <p className="text-sm">El titular debe tener al menos 18 años en la fecha de ingreso.</p>}
+      </Bloque>
       {error && (
         <p role="alert" className="text-error-texto">
           {error}
@@ -428,6 +769,117 @@ export function PersonaFormulario({
   );
 }
 
+// Mover a una persona alojada a otra habitación de la MISMA reserva: con motivo, respetando la
+// capacidad y un titular por habitación (si se mueve al titular, se elige quién queda en su lugar).
+export function MoverHabitacion({ persona, reserva, personas = [], onClose, onMovida }) {
+  const { usuario } = useSesion();
+  const [destino, setDestino] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [nuevoTitularId, setNuevoTitularId] = useState("");
+  const [intento, setIntento] = useState(false);
+  const origen = activa(persona)?.habitacionId;
+  const activas = personas.filter((p) => ["Previsto", "Alojado"].includes(p.estado));
+  const enHabitacion = (habitacionId) => activas.filter((p) => activa(p)?.habitacionId === habitacionId);
+  const quedan = enHabitacion(origen).filter((p) => p.id !== persona.id);
+  const pideTitular = Boolean(persona.esTitular && quedan.length);
+  const candidatos = quedan.filter(
+    (p) => fechaISO(p.fechaNacimiento) && !esMenorDeEdad(p.fechaNacimiento, p.fechaDesde),
+  );
+  const opciones = reserva.habitaciones.filter((h) => h.id !== origen);
+  const errores = {};
+  if (!destino) errores.destino = "Elegí la habitación de destino.";
+  if (!motivo.trim()) errores.motivo = "Indicá el motivo del cambio de habitación.";
+  if (pideTitular && !nuevoTitularId)
+    errores.nuevoTitularId = "Elegí quién queda como titular de la habitación que deja.";
+  const mutacion = useMutation({
+    mutationFn: () =>
+      api.post(`/estadia/${reserva.id}/ocupantes/${persona.id}/mover`, {
+        habitacionId: Number(destino),
+        motivo: motivo.trim(),
+        ...(pideTitular ? { nuevoTitularId: Number(nuevoTitularId) } : {}),
+        operador: usuario,
+      }),
+    onSuccess: () => onMovida?.(),
+  });
+  const visible = (campo) => (intento ? errores[campo] : undefined);
+  return (
+    <form
+      noValidate
+      className="space-y-4 p-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        setIntento(true);
+        if (Object.keys(errores).length || mutacion.isPending) return;
+        mutacion.mutate();
+      }}
+    >
+      <p className="text-sm">
+        {persona.nombre} {persona.apellido} · hoy en la habitación{" "}
+        {reserva.habitaciones.find((h) => h.id === origen)?.numero ?? "—"}. Solo se puede mover a otra habitación de
+        esta reserva.
+      </p>
+      <Select
+        label="Habitación de destino *"
+        name="destino"
+        error={visible("destino")}
+        value={destino}
+        onChange={(e) => setDestino(e.target.value)}
+      >
+        <option value="">Elegí la habitación</option>
+        {opciones.map((h) => {
+          const ocupadas = enHabitacion(h.id).length;
+          return (
+            <option key={h.id} value={h.id} disabled={ocupadas >= h.capacidad}>
+              Habitación {h.numero} · {ocupadas} de {h.capacidad}
+              {ocupadas >= h.capacidad ? " · completa" : ""}
+            </option>
+          );
+        })}
+      </Select>
+      {pideTitular && (
+        <Select
+          label="Nuevo titular de la habitación que deja *"
+          name="nuevoTitularId"
+          error={visible("nuevoTitularId")}
+          value={nuevoTitularId}
+          onChange={(e) => setNuevoTitularId(e.target.value)}
+        >
+          <option value="">Elegí quién queda como titular</option>
+          {candidatos.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.nombre} {p.apellido}
+            </option>
+          ))}
+        </Select>
+      )}
+      <p className="rounded border border-laton-300 bg-laton-100 p-3 text-sm text-laton-700">
+        El precio de la estadía no se recalcula por este cambio.
+      </p>
+      <Input
+        label="Motivo *"
+        name="motivo"
+        error={visible("motivo")}
+        value={motivo}
+        maxLength={500}
+        onChange={(e) => setMotivo(e.target.value)}
+      />
+      {mutacion.isError && (
+        <p role="alert" className="text-error-texto">
+          {mutacion.error?.response?.data?.error || "No se pudo mover a la persona."}
+        </p>
+      )}
+      <div className="flex justify-end gap-2">
+        <Button type="button" variante="secundario" onClick={onClose}>
+          Cancelar
+        </Button>
+        <Button type="submit" cargando={mutacion.isPending}>
+          Mover
+        </Button>
+      </div>
+    </form>
+  );
+}
+
 export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado }) {
   const [erroresServidor, setErroresServidor] = useState({});
   const { usuario, puede } = useSesion();
@@ -436,6 +888,9 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
   const [editor, setEditor] = useState(null);
   const [cargoHabitacion, setCargoHabitacion] = useState(null);
   const [anular, setAnular] = useState(null);
+  const [moviendo, setMoviendo] = useState(null);
+  const [adicional, setAdicional] = useState(null);
+  const [saliendo, setSaliendo] = useState(null);
   const [motivo, setMotivo] = useState("");
   const [error, setError] = useState("");
   const puedeEditar =
@@ -460,6 +915,8 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
     },
   });
   const titularExistente = titularRegistrado(personas.data || [], reserva.huesped, titular.data?.ocupanteId);
+  const titularDeLaReservaActivo =
+    titularExistente && titularExistente.estado !== "Cancelado" ? titularExistente : null;
   useEffect(() => {
     if (
       necesitaTitular &&
@@ -528,15 +985,25 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
       return api.post(`/estadia/${reserva.id}/ocupantes/${data.id}/accion`, {
         accion: tipo,
         operador: usuario,
+        ...(data.confirmacionPersonaAdicional
+          ? { confirmacionPersonaAdicional: data.confirmacionPersonaAdicional }
+          : {}),
       });
     },
     onSuccess: () => {
       setEditor(null);
+      setAdicional(null);
+      setSaliendo(null);
       setAnular(null);
       setMotivo("");
       refrescar();
     },
     onError: (e, variables) => {
+      // Persona adicional: no es un error, es la vista previa que hay que confirmar.
+      if (e.response?.data?.codigo === CODIGO_PERSONA_ADICIONAL) {
+        setAdicional({ vista: e.response.data.detalle, variables });
+        return;
+      }
       setError(e.response?.data?.error || "No se pudo guardar el cambio.");
       setErroresServidor(
         Object.fromEntries(
@@ -548,7 +1015,10 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
       );
     },
   });
-  const listado = personas.data || [];
+  // Las fichas canceladas (por ejemplo, reemplazadas en el check-in) no se listan ni generan
+  // faltantes: quedan en el Historial con su motivo.
+  const todas = personas.data || [];
+  const listado = todas.filter((p) => p.estado !== "Cancelado");
   const errorCargaPersonas =
     preparandoTitular && titular.isError ? titular.error : personas.isError ? personas.error : null;
   const cargandoPersonas = personas.isFetching || (preparandoTitular && titular.isPending);
@@ -653,7 +1123,7 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
                         {p.nombre} {p.apellido}
                       </strong>
                       {p.esTitular && <span className="ml-2 text-xs text-pino">Titular de habitación</span>}
-                      {titularExistente?.id === p.id && (
+                      {titularDeLaReservaActivo?.id === p.id && (
                         <span className="ml-2 text-xs text-pino">Titular de la reserva</span>
                       )}
                       {pendientesParaIngreso(p).length > 0 && (
@@ -662,9 +1132,15 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
                         </p>
                       )}
                       <p className="text-sm">
-                        {p.tipoDocumento} {p.numeroDocumento || "Documento pendiente"} · {p.estado} ·{" "}
-                        {p.verificadoEn ? "Verificado" : "Datos por verificar"}
+                        {documentoDe(p, reserva)} · {p.estado} · {p.verificadoEn ? "Verificado" : "Datos por verificar"}
                       </p>
+                      {p.responsableId && (
+                        <p className="text-sm">
+                          Responsable: {nombreDeOcupante(todas, p.responsableId) ?? "—"}
+                          {p.vinculoResponsable ? ` · ${p.vinculoResponsable}` : ""}
+                          {p.autorizacionPresentada ? " · Autorización presentada" : ""}
+                        </p>
+                      )}
                       <p className="text-xs text-piedra">
                         Ingreso: {fecha(p.ingresoReal)} · Salida: {fecha(p.salidaReal)}
                       </p>
@@ -683,13 +1159,15 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
                             >
                               {pendientesParaIngreso(p).length ? "Completar datos" : "Editar"}
                             </Button>
-                            <Button
-                              variante="secundario"
-                              disabled={mutation.isPending || pendientesParaIngreso(p).length > 0}
-                              onClick={() => mutation.mutate({ tipo: "verificar", data: p })}
-                            >
-                              Verificar datos
-                            </Button>
+                            {!p.verificadoEn && (
+                              <Button
+                                variante="secundario"
+                                disabled={mutation.isPending || pendientesParaIngreso(p).length > 0}
+                                onClick={() => mutation.mutate({ tipo: "verificar", data: p })}
+                              >
+                                Marcar documento verificado
+                              </Button>
+                            )}
                           </>
                         )}
                         {p.estado === "Previsto" && (
@@ -709,12 +1187,20 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
                             </Button>
                           </>
                         )}
-                        {p.estado === "Alojado" && (
+                        {p.estado === "Alojado" && reserva.estado === "En curso" && reserva.habitaciones.length > 1 && (
                           <Button
                             variante="secundario"
                             disabled={mutation.isPending}
-                            onClick={() => mutation.mutate({ tipo: "retirar", data: p })}
+                            onClick={() => {
+                              setError("");
+                              setMoviendo(p);
+                            }}
                           >
+                            Mover a otra habitación
+                          </Button>
+                        )}
+                        {p.estado === "Alojado" && (
+                          <Button variante="secundario" disabled={mutation.isPending} onClick={() => setSaliendo(p)}>
                             Registrar salida
                           </Button>
                         )}
@@ -741,8 +1227,7 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
                   <div key={c.id} className="flex justify-between gap-3 border-t border-borde py-2">
                     <div>
                       <p className={c.anulado ? "line-through text-piedra" : ""}>
-                        {c.descripcion || c.tipoServicio} · {c.cantidad || 1} ×{" "}
-                        {moneda(c.precioUnitario ?? c.monto)} ·{" "}
+                        {c.descripcion || c.tipoServicio} · {c.cantidad || 1} × {moneda(c.precioUnitario ?? c.monto)} ·{" "}
                         <strong>{moneda(c.monto)}</strong>
                         {c.incluido ? " · Incluido en tarifa" : ""}
                       </p>
@@ -828,8 +1313,8 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
           {historial.isError && <ErrorConsulta consulta={historial} mensaje="No se pudo cargar el historial." />}
           {(historial.data || []).map((e) => (
             <p key={e.id} className="border-b border-borde py-2 text-sm">
-              {fecha(e.fecha)} · {e.accion} · {e.operador}
-              <span className="block text-xs text-piedra">{detalleEvento(e)}</span>
+              {fecha(e.fecha)} · {ACCIONES_HISTORIAL[e.accion] ?? e.accion} · {e.operador}
+              <span className="block text-xs text-piedra">{detalleEvento(e, todas, reserva.habitaciones)}</span>
             </p>
           ))}
         </>
@@ -853,6 +1338,20 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
           />
         </Modal>
       )}
+      {moviendo && (
+        <Modal titulo="Mover a otra habitación" onClose={() => setMoviendo(null)}>
+          <MoverHabitacion
+            persona={moviendo}
+            reserva={reserva}
+            personas={listado}
+            onClose={() => setMoviendo(null)}
+            onMovida={() => {
+              setMoviendo(null);
+              refrescar();
+            }}
+          />
+        </Modal>
+      )}
       {cargoHabitacion && (
         <ConsumoModal
           reserva={reserva}
@@ -864,6 +1363,32 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
           }}
         />
       )}
+      {adicional && (
+        <Modal titulo="Persona adicional" onClose={() => setAdicional(null)}>
+          <PersonaAdicionalPrevia
+            vista={adicional.vista}
+            nombre={`${adicional.variables.data.nombre ?? ""} ${adicional.variables.data.apellido ?? ""}`.trim()}
+            pendiente={mutation.isPending}
+            onCancelar={() => setAdicional(null)}
+            onConfirmar={() =>
+              mutation.mutate({
+                ...adicional.variables,
+                data: { ...adicional.variables.data, confirmacionPersonaAdicional: adicional.vista.token },
+              })
+            }
+          />
+        </Modal>
+      )}
+      <ConfirmDialog
+        abierto={Boolean(saliendo)}
+        titulo={`Registrar salida de ${saliendo ? `${saliendo.nombre} ${saliendo.apellido}`.trim() : ""}`}
+        mensaje={mensajeSalida(saliendo, reserva)}
+        textoConfirmar="Registrar salida"
+        variante="ok"
+        cargando={mutation.isPending}
+        onCancelar={() => setSaliendo(null)}
+        onConfirmar={() => mutation.mutate({ tipo: "retirar", data: saliendo })}
+      />
       {anular && (
         <Modal titulo="Anular cargo" onClose={() => setAnular(null)}>
           <div className="p-5 space-y-3">

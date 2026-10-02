@@ -22,6 +22,22 @@ function normalizarPais(valor) {
       .replace(/[\u0300-\u036f]/g, "")
   );
 }
+// Nombres y apellido de la persona para Huesped: si la ficha trae los dos, se guardan por separado
+// y `nombre` (el nombre completo que usan comprobantes y búsquedas) es "nombres apellido". Si falta
+// alguno (huésped viejo con el nombre completo en un solo campo) solo se arma `nombre`: nunca se
+// parte un nombre automáticamente.
+function nombresDeFicha(persona) {
+  const nombres = String(persona.nombre ?? "").trim();
+  const apellido = String(persona.apellido ?? "").trim();
+  if (nombres && apellido) return { nombre: `${nombres} ${apellido}`, nombres, apellido };
+  return { nombre: `${nombres} ${apellido}`.trim() };
+}
+// Toda edición o alta de ficha sincroniza nombres y apellido en Huesped (si la ficha los tiene).
+async function sincronizarNombres(tx, huespedId, persona) {
+  const datos = nombresDeFicha(persona);
+  if (!huespedId || !datos.apellido) return;
+  await tx.huesped.update({ where: { id: huespedId }, data: datos });
+}
 async function vincularPersona(tx, reserva, persona, actual) {
   const identidadDocumento = claveDocumento(persona);
   if (!identidadDocumento) {
@@ -30,7 +46,7 @@ async function vincularPersona(tx, reserva, persona, actual) {
     // para completarla después, sin inventar un número de identificación.
     const creada = await tx.huesped.create({
       data: {
-        nombre: `${persona.nombre} ${persona.apellido}`.trim(),
+        ...nombresDeFicha(persona),
         tipoDocumento: persona.tipoDocumento || "Sin documento",
         numeroDocumento: persona.numeroDocumento || "",
         paisDocumento: persona.paisDocumento || null,
@@ -61,7 +77,7 @@ async function vincularPersona(tx, reserva, persona, actual) {
     }
   }
   const datos = {
-    nombre: `${persona.nombre} ${persona.apellido}`.trim(),
+    ...nombresDeFicha(persona),
     tipoDocumento: persona.tipoDocumento,
     paisDocumento: normalizarPais(persona.paisDocumento),
     numeroDocumento: normalizar(persona.numeroDocumento),
@@ -97,7 +113,7 @@ async function vincularPersona(tx, reserva, persona, actual) {
   }
   const personaUnica = await tx.huesped.upsert({
     where: { identidadDocumento },
-    update: {},
+    update: nombresDeFicha(persona).apellido ? nombresDeFicha(persona) : {},
     create: { ...datos, identidadDocumento },
   });
   return personaUnica.id;
@@ -114,7 +130,7 @@ const esProvisoria = (huesped) =>
 
 function datosDeHuesped(persona) {
   return {
-    nombre: `${persona.nombre} ${persona.apellido}`.trim(),
+    ...nombresDeFicha(persona),
     tipoDocumento: persona.tipoDocumento,
     paisDocumento: normalizarPais(persona.paisDocumento),
     numeroDocumento: normalizar(persona.numeroDocumento),
@@ -139,9 +155,9 @@ async function actualizarResidenciaEnLote(tx, filas) {
 }
 
 // Persona que vuelve: al reutilizar su ficha (misma identidad de documento) se actualizan
-// nombre, nacimiento, contacto y residencia con lo declarado ahora, en UNA sola sentencia.
+// nombre (y nombres y apellido), nacimiento, contacto y residencia con lo declarado ahora, en UNA sola sentencia.
 // Un dato vacío no borra el que ya estaba (COALESCE).
-const CAMPOS_FICHA = ["nombre", "fechaNacimiento", "contacto", ...CAMPOS_RESIDENCIA];
+const CAMPOS_FICHA = ["nombre", "nombres", "apellido", "fechaNacimiento", "contacto", ...CAMPOS_RESIDENCIA];
 async function actualizarFichasEnLote(tx, filas) {
   const conDatos = filas.filter((fila) => fila.huespedId && CAMPOS_FICHA.some((campo) => fila.datos[campo]));
   if (!conDatos.length) return;
@@ -166,6 +182,8 @@ async function actualizarResidencia(tx, huespedId, residencia) {
 }
 
 module.exports = {
+  nombresDeFicha,
+  sincronizarNombres,
   claveDocumento,
   vincularPersona,
   normalizarPais,

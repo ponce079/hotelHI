@@ -1,6 +1,7 @@
 const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 const prisma = require("../../lib/prisma");
 const estadia = require("./estadia.servicio");
+const { titularActivoEn } = require("./titularHabitacion");
 const ACCION = "Titular incorporado como ocupante";
 const documento = (valor) =>
   String(valor || "")
@@ -49,12 +50,19 @@ async function incorporarEnTransaccion(tx, reserva, huesped, operador, nueva = f
       409,
     );
   let ocupante = personas.find((p) => p.huespedId === huesped.id) || coincidencias[0];
+  // Un solo titular activo por habitación: el titular de la reserva se marca titular de su
+  // habitación solo si esa habitación todavía no tiene uno (titularHabitacion.js).
+  const conHabitacion = personas.map((p) => ({ ...p, habitacionId: (p.asignaciones ?? []).find((a) => !a.hasta)?.habitacionId }));
+  const habitacionSinTitular = (habitacionId, excluirId) => !titularActivoEn(conHabitacion, habitacionId, excluirId);
   let creado = false;
   let aviso = null;
   if (ocupante && !ocupante.huespedId) {
     ocupante = await tx.ocupanteReserva.update({
       where: { id: ocupante.id },
-      data: { huespedId: huesped.id, esTitular: true },
+      data: {
+        huespedId: huesped.id,
+        esTitular: habitacionSinTitular(conHabitacion.find((p) => p.id === ocupante.id)?.habitacionId, ocupante.id),
+      },
     });
   }
   if (!ocupante) {
@@ -86,9 +94,12 @@ async function incorporarEnTransaccion(tx, reserva, huesped, operador, nueva = f
       data: {
         reservaId: reserva.id,
         huespedId: huesped.id,
-        esTitular: true,
-        nombre: huesped.nombre,
-        apellido: "",
+        esTitular: habitacionSinTitular(rh.habitacionId),
+        // Huésped con nombres y apellido separados: cada uno en su campo. Huésped viejo (solo el
+        // nombre completo): como siempre, todo en nombre y el check-in pide separarlo.
+        ...(huesped.nombres && huesped.apellido
+          ? { nombre: huesped.nombres, apellido: huesped.apellido }
+          : { nombre: huesped.nombre, apellido: "" }),
         ...(huesped.fechaNacimiento ? { fechaNacimiento: huesped.fechaNacimiento } : {}),
         tipoDocumento: huesped.tipoDocumento,
         ...(huesped.paisDocumento ? { paisDocumento: huesped.paisDocumento } : {}),

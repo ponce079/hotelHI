@@ -9,7 +9,7 @@ import { Cifra } from "../../componentes/Cifra";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Table } from "../../componentes/Table";
-import { formatearFechaSinHora, hoyEnHoraLocal } from "../../lib/fechas";
+import { formatearFechaDdMmAaaa, hoyEnHoraLocal } from "../../lib/fechas";
 import { ESTADO_HABITACION_BADGE, ESTADO_HABITACION_LABEL } from "../habitaciones/habitaciones.constantes";
 import { MEDIOS_CON_TARJETA } from "../pagos-estadia/pagoEstadia.constantes";
 import { TarjetaSimuladaPanel } from "../pagos-estadia/TarjetaSimuladaPanel";
@@ -24,6 +24,7 @@ import {
   TIPOS_DOCUMENTO,
 } from "./reservas.constantes";
 import { validarHuesped } from "./validarHuesped";
+import { formatearNombrePropio } from "../../lib/nombres";
 
 // Alta de reserva (HU-36) y edición de una existente (HU-37) en el mismo
 // wizard: los primeros pasos son idénticos, solo cambia con qué datos
@@ -45,7 +46,8 @@ const PASOS_CON_SENIA = [...PASOS_BASE, "Seña"];
 const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
 const HUESPED_VACIO = {
-  nombre: "",
+  nombres: "",
+  apellido: "",
   tipoDocumento: TIPOS_DOCUMENTO[0],
   numeroDocumento: "",
   contacto: "",
@@ -89,8 +91,8 @@ function calcularNoches(fechaDesde, fechaHasta) {
 function textoMotivoBloqueo(motivo) {
   if (!motivo) return null;
   if (motivo.tipo === "reserva") {
-    const desde = formatearFechaSinHora(motivo.fechaDesde);
-    const hasta = formatearFechaSinHora(motivo.fechaHasta);
+    const desde = formatearFechaDdMmAaaa(motivo.fechaDesde);
+    const hasta = formatearFechaDdMmAaaa(motivo.fechaHasta);
     return `Reservada — ${motivo.huespedNombre ?? "otro huésped"}, ${desde} al ${hasta} (${motivo.codigoConfirmacion})`;
   }
   return `No disponible — ${ESTADO_HABITACION_LABEL[motivo.estado]?.toLowerCase() ?? motivo.estado}`;
@@ -143,7 +145,10 @@ function estadoInicial(reserva, valoresIniciales) {
     planTarifarioId: reserva.planTarifarioId ?? "",
     planCodigo: reserva.planTarifario?.codigo ?? "",
     huesped: {
-      nombre: reserva.huesped?.nombre ?? "",
+      // Huésped viejo (solo el nombre completo): queda en Nombres y se completa el apellido a mano;
+      // no se parte automáticamente.
+      nombres: reserva.huesped?.nombres ?? reserva.huesped?.nombre ?? "",
+      apellido: reserva.huesped?.apellido ?? "",
       tipoDocumento: reserva.huesped?.tipoDocumento ?? TIPOS_DOCUMENTO[0],
       numeroDocumento: reserva.huesped?.numeroDocumento ?? "",
       fechaNacimiento: reserva.huesped?.fechaNacimiento?.slice(0, 10) ?? "",
@@ -180,7 +185,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   const [tiempoAgotado, setTiempoAgotado] = useState(false);
   const [resultadoIncierto, setResultadoIncierto] = useState(false);
   const [actualizandoIntento, setActualizandoIntento] = useState(false);
-  const [huespedTocado, setHuespedTocado] = useState({ nombre: false, numeroDocumento: false, contacto: false });
+  const [huespedTocado, setHuespedTocado] = useState({ nombres: false, apellido: false, numeroDocumento: false, contacto: false });
   const [intentoConfirmarHuesped, setIntentoConfirmarHuesped] = useState(false);
   const [medioSenia, setMedioSenia] = useState("");
   const [referenciaSenia, setReferenciaSenia] = useState(null);
@@ -343,7 +348,8 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
     habitaciones: form.habitaciones,
     planTarifarioId: form.planTarifarioId,
     huesped: {
-      nombre: form.huesped.nombre.trim(),
+      nombres: formatearNombrePropio(form.huesped.nombres),
+      apellido: formatearNombrePropio(form.huesped.apellido),
       tipoDocumento: form.huesped.tipoDocumento,
       numeroDocumento: form.huesped.numeroDocumento.trim(),
       fechaNacimiento: form.huesped.fechaNacimiento,
@@ -536,10 +542,10 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
     <fieldset disabled={mutacion.isPending || actualizandoIntento} className="flex min-w-0 flex-col gap-5 px-6 py-5">
       <p className="-mt-1 font-mono text-[11px] text-tinta/55">
         {esEdicion
-          ? "HU 37/96 — modificar fechas, habitaciones, plan o datos del huésped"
+          ? "Modificar fechas, habitaciones, plan o datos del huésped"
           : requiereSenia
-            ? "HU 36, 39, 41, 42, 88, 95 y 96 — plan, precio del motor y seña cobrada antes de confirmar"
-            : "HU 36, 39, 41, 42, 95 y 96 — plan y precio del motor validados antes de confirmar"}
+            ? "Plan, precio del motor y seña cobrada antes de confirmar"
+            : "Plan y precio del motor validados antes de confirmar"}
       </p>
 
       <div className="flex flex-wrap items-center gap-2 rounded-[18.4px] bg-hueso px-6 py-4">
@@ -851,15 +857,31 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       {/* Paso 4 — huésped */}
       {form.paso === PASO_HUESPED && (
         <div className="flex flex-col gap-4 rounded-[18.4px] bg-white px-6 py-[22px]">
+          <p className="text-[12px] text-piedra">* obligatorio</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <Input
-              label="Nombre y apellido *"
-              value={form.huesped.nombre}
-              maxLength={LIMITES_RESERVA.nombre}
-              onChange={(e) => actualizarHuesped("nombre", e.target.value)}
-              onBlur={() => tocarHuesped("nombre")}
-              error={errorHuesped("nombre")}
-              placeholder="Ana Pérez"
+              label="Nombres *"
+              value={form.huesped.nombres}
+              maxLength={LIMITES_RESERVA.nombres}
+              onChange={(e) => actualizarHuesped("nombres", e.target.value)}
+              onBlur={() => {
+                actualizarHuesped("nombres", formatearNombrePropio(form.huesped.nombres));
+                tocarHuesped("nombres");
+              }}
+              error={errorHuesped("nombres")}
+              placeholder="Ana María"
+            />
+            <Input
+              label="Apellido *"
+              value={form.huesped.apellido}
+              maxLength={LIMITES_RESERVA.apellido}
+              onChange={(e) => actualizarHuesped("apellido", e.target.value)}
+              onBlur={() => {
+                actualizarHuesped("apellido", formatearNombrePropio(form.huesped.apellido));
+                tocarHuesped("apellido");
+              }}
+              error={errorHuesped("apellido")}
+              placeholder="Pérez"
             />
             <PaisDocumentoReserva
               value={form.huesped.paisDocumento}
@@ -909,7 +931,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
             />
             {!esEdicion && (
               <Select
-                label="Enviar confirmación por"
+                label="Enviar confirmación por (opcional)"
                 value={form.canalConfirmacion}
                 onChange={(e) => actualizar("canalConfirmacion", e.target.value)}
               >
@@ -923,7 +945,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
           </div>
 
           <label className="flex flex-col gap-1.5 font-body text-sm">
-            <span className="text-[12px] text-tinta/70">Preferencias</span>
+            <span className="text-[12px] text-tinta/70">Preferencias (opcional)</span>
             <textarea
               rows={3}
               value={form.huesped.preferencias}
@@ -994,7 +1016,9 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
             <p className="mt-1 text-piedra">
               {elegidas.map((h) => `${h.info?.numero ?? h.habitacionId} (${h.info?.tipo ?? ""})`).join(", ") || "—"} · del{" "}
               {form.fechaDesde} al {form.fechaHasta} · {noches} noche{noches === 1 ? "" : "s"} ·{" "}
-              <span className="font-semibold text-tinta">{form.huesped.nombre}</span> · {planSeleccionado?.nombre ?? "—"} ·{" "}
+              <span className="font-semibold text-tinta">
+                {`${form.huesped.nombres} ${form.huesped.apellido}`.trim()}
+              </span> · {planSeleccionado?.nombre ?? "—"} ·{" "}
               <span className="font-semibold text-tinta">{FORMATO_MONEDA.format(totalEstadia)}</span>
             </p>
           </div>

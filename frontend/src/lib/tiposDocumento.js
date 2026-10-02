@@ -11,3 +11,12 @@ export const ETIQUETAS_NUMERO_DOCUMENTO = {
   "Libreta de Enrolamiento": "Número de libreta de enrolamiento",
   "Libreta Cívica": "Número de libreta cívica",
 };
+
+const comparable = (valor) => String(valor ?? "").trim().toLocaleUpperCase("es");
+
+// Valor canónico del catálogo o null (sin distinguir mayúsculas), igual que el backend.
+export function normalizarTipoDocumento(valor) {
+  const buscado = comparable(valor);
+  if (!buscado) return null;
+  return TIPOS_DOCUMENTO.find((tipo) => comparable(tipo) === buscado) ?? null;
+}

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "react-router-dom";
 import { api } from "../../lib/api";
+import { formatearFechaHora } from "../../lib/fechas";
 import { Input } from "../../componentes/Input";
 import { useSesion } from "../../lib/sesion";
 import { SinPermiso } from "../../componentes/SinPermiso";
@@ -37,7 +38,7 @@ export function AlojadosPage() {
                 Habitación {h?.numero || "Sin asignar"} · {p.reserva.codigoConfirmacion}
               </p>
               <p className="text-sm text-piedra">
-                {p.tipoDocumento} {p.numeroDocumento} · Ingreso {new Date(p.ingresoReal).toLocaleString("es-AR")}
+                {p.tipoDocumento} {p.numeroDocumento} · Ingreso {formatearFechaHora(p.ingresoReal)}
               </p>
             </Link>
           );
