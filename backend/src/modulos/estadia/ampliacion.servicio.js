@@ -1,5 +1,6 @@
 const { createHash } = require("node:crypto");
 const estadia = require("./estadia.servicio");
+const { EDAD_ADULTO_OCUPACION } = require("../../lib/fechas");
 
 // Se ejecuta con la reserva bloqueada y dentro de la transacción del check-in.
 async function ampliarSiCorresponde(tx, reservaId, confirmacion) {
@@ -33,7 +34,7 @@ async function ampliarSiCorresponde(tx, reservaId, confirmacion) {
       };
     ampliar = true;
     for (const persona of presentes) estadia.validarCompleto(persona);
-    const menores = presentes.filter((p) => estadia.edad(p.fechaNacimiento, p.fechaDesde) < 18).length;
+    const menores = presentes.filter((p) => estadia.edad(p.fechaNacimiento, p.fechaDesde) < EDAD_ADULTO_OCUPACION).length;
     return {
       habitacionId: rh.habitacionId,
       adultos: presentes.length - menores,

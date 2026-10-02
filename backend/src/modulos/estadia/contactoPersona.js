@@ -1,3 +1,4 @@
+const { MAYORIA_EDAD } = require("../../lib/fechas");
 const normalizar = (v) =>
   String(v || "")
     .trim()
@@ -11,11 +12,11 @@ async function prepararContacto(tx, r, p, actual, data, { edad, ErrorDeNegocio }
     (documentoTitular &&
       normalizar(p.numeroDocumento) === normalizar(documentoTitular) &&
       normalizar(p.tipoDocumento) === normalizar(r.huesped.tipoDocumento));
-  if (esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < 18))
+  if (esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD))
     throw new ErrorDeNegocio("El titular debe tener al menos 18 años al ingresar.", 400, {
       fechaNacimiento: "Completá una fecha de nacimiento válida: el titular debe tener al menos 18 años al ingresar.",
     });
-  const menor = p.fechaNacimiento && edad(p.fechaNacimiento, p.fechaDesde) < 18;
+  const menor = p.fechaNacimiento && edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD;
   const responsable = p.responsableId
     ? await tx.ocupanteReserva.findFirst({
         where: {
@@ -29,7 +30,7 @@ async function prepararContacto(tx, r, p, actual, data, { edad, ErrorDeNegocio }
     if (
       !menor ||
       !responsable?.fechaNacimiento ||
-      edad(responsable.fechaNacimiento, p.fechaDesde) < 18 ||
+      edad(responsable.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD ||
       responsable.id === actual?.id
     )
       throw new ErrorDeNegocio("Elegí un adulto responsable válido para compartir su contacto.", 400, {

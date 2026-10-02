@@ -4,6 +4,7 @@
 // una por una, pero se resuelven en memoria sobre lecturas agrupadas.
 const { randomUUID } = require("node:crypto");
 const s = require("./estadia.servicio");
+const { MAYORIA_EDAD } = require("../../lib/fechas");
 const personasServicio = require("./persona.servicio");
 const { comparteCorreo } = require("./contactoPersona");
 
@@ -33,18 +34,18 @@ function validarLote(reserva, entradas, existentes) {
     if (!rh) throw new ErrorDeNegocio("La habitación no pertenece a esta reserva.");
     const clave = `t${Number(entrada.id) || indice + 1}`;
     const responsable = entrada.responsableId ? porClave.get(`t${Number(entrada.responsableId)}`) : null;
-    const menor = p.fechaNacimiento && edad(p.fechaNacimiento, p.fechaDesde) < 18;
+    const menor = p.fechaNacimiento && edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD;
     const esTitular = entrada.esTitular === true;
     const comoTitularDeReserva =
       titularDeReserva &&
       normalizar(p.numeroDocumento) === normalizar(titularDeReserva.numeroDocumento) &&
       normalizar(p.tipoDocumento) === normalizar(titularDeReserva.tipoDocumento);
-    if ((esTitular || comoTitularDeReserva) && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < 18))
+    if ((esTitular || comoTitularDeReserva) && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD))
       throw new ErrorDeNegocio("El titular debe tener al menos 18 años al ingresar.", 400, {
         fechaNacimiento: "Completá una fecha de nacimiento válida: el titular debe tener al menos 18 años al ingresar.",
       });
     if (entrada.usarContactoResponsable === true) {
-      if (!menor || !responsable?.fechaNacimiento || edad(responsable.fechaNacimiento, p.fechaDesde) < 18)
+      if (!menor || !responsable?.fechaNacimiento || edad(responsable.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD)
         throw new ErrorDeNegocio("Elegí un adulto responsable válido para compartir su contacto.", 400, {
           responsableId: "Elegí el adulto responsable del menor.",
         });
@@ -66,7 +67,7 @@ function validarLote(reserva, entradas, existentes) {
     }
     if (entrada.responsableId) {
       const adulto = responsable && !responsable.responsableId ? responsable : null;
-      if (!adulto || !adulto.fechaNacimiento || edad(adulto.fechaNacimiento, p.fechaDesde) < 18)
+      if (!adulto || !adulto.fechaNacimiento || edad(adulto.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD)
         throw new ErrorDeNegocio("El responsable debe ser un adulto de la misma reserva.");
     }
     if (p.numeroDocumento && otros.some((o) => o.numeroDocumento && claveDeDocumento(o) === claveDeDocumento(p)))
@@ -75,7 +76,7 @@ function validarLote(reserva, entradas, existentes) {
       (o) => ACTIVOS.includes(o.estado ?? "Previsto") && o.habitacionId === rh.habitacionId,
     );
     s.verificarCapacidad(rh, p, enLaHabitacion);
-    if (esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < 18))
+    if (esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD))
       throw new ErrorDeNegocio("El titular de habitacion debe tener 18 años cumplidos.");
     const ficha = {
       ...p,
