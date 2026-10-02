@@ -11,13 +11,14 @@ export function SeccionHuespedes({ estado, contexto, dispatch }) {
   return (
     <Tarjeta titulo="Huéspedes">
       <div className="flex flex-col gap-3">
+        <p className="text-[12px] text-piedra">* obligatorio</p>
         {necesitaMotivo(estado, contexto) && (
           <div className="rounded-[12px] border border-laton-300 bg-laton-100 px-3.5 py-3">
             <b className="text-laton-700">El titular es distinto de quien reservó{quienReservo ? ` (${quienReservo})` : ""}</b>
             <div className="mt-2 max-w-[640px]">
               <Input
                 id="ci-motivo"
-                label="Motivo (queda registrado con tu usuario y la hora)"
+                label="Motivo * (queda registrado con tu usuario y la hora)"
                 value={estado.motivoTitularDistinto}
                 onChange={(e) => dispatch({ tipo: "motivo", valor: e.target.value })}
                 placeholder="Por ejemplo: reservó un familiar que no viaja"

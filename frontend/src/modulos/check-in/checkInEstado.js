@@ -31,6 +31,9 @@ const CAMPOS_VACIOS = {
   domicilio: "",
   telefono: "",
   email: "",
+  // Solo para menores de 18: vínculo del responsable (lib/vinculos.js) y autorización presentada.
+  vinculoResponsable: "",
+  autorizacionPresentada: false,
 };
 
 export function nuevaFila(tipo, habitacionClave, campos = {}, extra = {}) {
@@ -116,6 +119,8 @@ function camposDeOcupante(o) {
     domicilio: o.domicilio ?? "",
     telefono: o.telefono ?? "",
     email: o.email ?? "",
+    vinculoResponsable: o.vinculoResponsable ?? "",
+    autorizacionPresentada: Boolean(o.autorizacionPresentada),
   };
 }
 
@@ -178,7 +183,8 @@ export function estadoInicialReserva(reserva, ocupantes = []) {
   }));
 
   // Quien reservó, si todavía no tiene ficha: va en la primera fila adulta vacía de la primera
-  // habitación, como titular (el nombre viene completo en un solo campo).
+  // habitación, como titular. Con nombres y apellido separados, cada uno en su campo; un huésped
+  // viejo trae el nombre completo en un solo campo (y la fila pide separarlo).
   const huesped = reserva.huesped;
   if (huesped && !filas.some((f) => esQuienReservo(huesped, f.campos))) {
     const primera = habitaciones[0]?.clave;
@@ -194,8 +200,9 @@ export function estadoInicialReserva(reserva, ocupantes = []) {
           esTitular: true,
           campos: {
             ...f.campos,
-            nombre: huesped.nombre ?? "",
-            apellido: "",
+            ...(huesped.nombres && huesped.apellido
+              ? { nombre: huesped.nombres, apellido: huesped.apellido }
+              : { nombre: huesped.nombre ?? "", apellido: "" }),
             tipoDocumento: normalizarTipoDocumento(huesped.tipoDocumento) ?? huesped.tipoDocumento ?? "DNI",
             paisDocumento: codigoPais(huesped.paisDocumento) || huesped.paisDocumento || "AR",
             numeroDocumento: huesped.numeroDocumento ?? "",

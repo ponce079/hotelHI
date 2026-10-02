@@ -30,6 +30,9 @@ export function personasParaEnviar(estado, contexto) {
       domicilio: texto(campos.domicilio) || null,
       telefono: texto(campos.telefono) || null,
       email: texto(campos.email) || null,
+      // Vínculo del responsable con el menor (solo menores de 18) y autorización presentada.
+      vinculoResponsable: responsable ? campos.vinculoResponsable || null : null,
+      autorizacionPresentada: responsable ? campos.autorizacionPresentada === true : false,
     };
   });
 }

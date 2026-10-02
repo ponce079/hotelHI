@@ -57,7 +57,7 @@ function reservaCompleta() {
   const [titular, adulto2, menor] = e.filas;
   e = completar(e, titular.id, { nombre: "Martín", apellido: "Gutiérrez", nacionalidad: "AR", localidad: "Córdoba", domicilio: "Colón 1450", telefono: "+54 351 555-0182" });
   e = completar(e, adulto2.id, { numeroDocumento: "31784205", nombre: "Carolina", apellido: "Paz", fechaNacimiento: haceAnios(39) });
-  e = completar(e, menor.id, { nombre: "Tomás", apellido: "Gutiérrez", fechaNacimiento: haceAnios(8) });
+  e = completar(e, menor.id, { nombre: "Tomás", apellido: "Gutiérrez", fechaNacimiento: haceAnios(8), vinculoResponsable: "Padre o madre" });
   e = reducer(e, { tipo: "garantia", cambios: { garantiaConfirmada: true } });
   return e;
 }

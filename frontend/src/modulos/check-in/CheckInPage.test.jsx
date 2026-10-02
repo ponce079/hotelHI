@@ -100,7 +100,10 @@ function renderizar(ruta = "/check-in") {
 }
 
 const filas = () => [...document.querySelectorAll('[id^="ci-fila-"]')];
-const cambiar = (fila, etiqueta, valor) => fireEvent.change(within(fila).getByLabelText(etiqueta), { target: { value: valor } });
+// Rótulo con o sin el asterisco de obligatorio ("Nombre" o "Nombre *").
+const rotulo = (texto) => new RegExp(`^${texto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}( \\*)?$`);
+const cambiar = (fila, etiqueta, valor) =>
+  fireEvent.change(within(fila).getByLabelText(typeof etiqueta === "string" ? rotulo(etiqueta) : etiqueta), { target: { value: valor } });
 const botonConfirmar = () => screen.getByRole("button", { name: /Confirmar check-in|Confirmando/ });
 
 async function abrirReserva(codigo = "C43B1F20") {
@@ -121,6 +124,7 @@ function completarFamilia() {
   cambiar(menor, "Nombre", "Tomás");
   cambiar(menor, "Apellido", "Gutiérrez");
   cambiar(menor, "Nacimiento", haceAnios(8).texto.replace(/\//g, ""));
+  cambiar(menor, "Vínculo con el menor", "Padre o madre");
   fireEvent.click(screen.getByLabelText(/Confirmo que recibí/));
 }
 
@@ -160,13 +164,63 @@ describe("Check-in con reserva", () => {
     renderizar("/check-in?codigo=C43B1F20");
     await waitFor(() => expect(filas()).toHaveLength(3));
     const [titular, adulto2, menor] = filas();
-    expect(within(titular).getByLabelText("Nombre")).toHaveValue("Martín Gutiérrez");
-    expect(within(titular).getByLabelText("Nacimiento")).toHaveValue(haceAnios(42).texto);
+    expect(within(titular).getByLabelText(rotulo("Nombre"))).toHaveValue("Martín Gutiérrez");
+    expect(within(titular).getByLabelText(rotulo("Nacimiento"))).toHaveValue(haceAnios(42).texto);
     expect(within(titular).getByText("Titular de la reserva")).toBeInTheDocument();
     expect(within(titular).getByText(/El nombre viene completo desde la reserva/)).toBeInTheDocument();
     expect(within(adulto2).getByText("Adulto 2")).toBeInTheDocument();
     expect(within(menor).getByText("Menor 1")).toBeInTheDocument();
     expect(screen.getAllByText("$ 294.000").length).toBeGreaterThan(0);
+  });
+
+  it("reserva con nombres y apellido separados: el titular se precarga cada uno en su campo, sin aviso", async () => {
+    const huesped = { ...HUESPED, nombre: "Martín Gutiérrez", nombres: "Martín", apellido: "Gutiérrez" };
+    prepararReserva(reservaDe({ habitaciones: [HAB_270], huesped }), []);
+    renderizar("/check-in?codigo=C43B1F20");
+    await waitFor(() => expect(filas()).toHaveLength(3));
+    const [titular] = filas();
+    expect(within(titular).getByLabelText(rotulo("Nombre"))).toHaveValue("Martín");
+    expect(within(titular).getByLabelText(rotulo("Apellido"))).toHaveValue("Gutiérrez");
+    expect(within(titular).queryByText(/El nombre viene completo desde la reserva/)).not.toBeInTheDocument();
+  });
+
+  it("asteriscos según la fila, leyenda y mayúscula inicial al salir del campo", async () => {
+    prepararReserva(reservaDe({ habitaciones: [HAB_270] }), [fichaTitular()]);
+    renderizar("/check-in?codigo=C43B1F20");
+    await waitFor(() => expect(filas()).toHaveLength(3));
+    const [titular, adulto2, menor] = filas();
+    expect(screen.getByText("* obligatorio")).toBeInTheDocument();
+    // Teléfono: obligatorio solo para el titular de la reserva.
+    expect(within(titular).getByLabelText("Teléfono *")).toBeInTheDocument();
+    for (const etiqueta of ["Nombre *", "Apellido *", "Nacimiento *", "Número de documento *", "País emisor *"])
+      expect(within(adulto2).getByLabelText(etiqueta)).toBeInTheDocument();
+    expect(within(adulto2).queryByLabelText(/Vínculo con el menor/)).not.toBeInTheDocument();
+    // Menor: responsable y vínculo obligatorios; el documento es opcional.
+    expect(within(menor).getByLabelText("Adulto responsable *")).toBeInTheDocument();
+    expect(within(menor).getByLabelText("Vínculo con el menor *")).toBeInTheDocument();
+    // Mayúscula inicial al salir del campo, con partículas en minúscula.
+    cambiar(adulto2, "Apellido", "juan de la vega");
+    fireEvent.blur(within(adulto2).getByLabelText("Apellido *"));
+    expect(within(adulto2).getByLabelText("Apellido *")).toHaveValue("Juan de la Vega");
+  });
+
+  it("menor con «Otro adulto a cargo»: sin la autorización no deja confirmar; con la autorización confirma y la envía", async () => {
+    prepararReserva(reservaDe({ habitaciones: [HAB_270] }), [fichaTitular()]);
+    api.confirmarCheckInConReserva.mockResolvedValue({ ...reservaDe({ habitaciones: [HAB_270] }), estado: "En curso" });
+    renderizar("/check-in?codigo=C43B1F20");
+    await waitFor(() => expect(filas()).toHaveLength(3));
+    completarFamilia();
+    const menor = filas()[2];
+    cambiar(menor, "Vínculo con el menor", "Otro adulto a cargo");
+    expect(within(menor).getByText("Pedí la autorización de los padres o tutores.")).toBeInTheDocument();
+    expect(botonConfirmar()).toBeDisabled();
+    expect(screen.getByRole("button", { name: /la autorización de los padres o tutores/ })).toBeInTheDocument();
+    fireEvent.click(within(menor).getByLabelText("Autorización presentada *"));
+    await waitFor(() => expect(botonConfirmar()).toBeEnabled());
+    fireEvent.click(botonConfirmar());
+    await waitFor(() => expect(api.confirmarCheckInConReserva).toHaveBeenCalledTimes(1));
+    const cuerpo = api.confirmarCheckInConReserva.mock.calls[0][1];
+    expect(cuerpo.personas[2]).toMatchObject({ vinculoResponsable: "Otro adulto a cargo", autorizacionPresentada: true });
   });
 
   it("un solo envío con habitaciones, personas y totalEsperado; sin guardados por persona y sin doble envío", async () => {
@@ -188,7 +242,8 @@ describe("Check-in con reserva", () => {
     expect(cuerpo.habitaciones).toEqual([{ habitacionIdAnterior: 270, habitacionId: 270, adultos: 2, menores: 1 }]);
     expect(cuerpo.totalEsperado).toBe(294000);
     expect(cuerpo.personas).toHaveLength(3);
-    expect(cuerpo.personas[2]).toMatchObject({ motivoSinDocumento: "Menor sin documento presentado", nacionalidad: "AR", paisResidencia: "AR", responsableId: cuerpo.personas[0].id });
+    expect(cuerpo.personas[2]).toMatchObject({ motivoSinDocumento: "Menor sin documento presentado", nacionalidad: "AR", paisResidencia: "AR", responsableId: cuerpo.personas[0].id, vinculoResponsable: "Padre o madre", autorizacionPresentada: false });
+    expect(cuerpo.personas[0]).toMatchObject({ vinculoResponsable: null, autorizacionPresentada: false });
     expect(cuerpo.motivoTitularDistinto).toBeUndefined();
     await act(async () => resolver({ ...reservaDe({ habitaciones: [HAB_270] }), estado: "En curso" }));
     expect(await screen.findByText("Check-in confirmado · Habitación 270")).toBeInTheDocument();
@@ -219,7 +274,7 @@ describe("Check-in con reserva", () => {
       "✓ Ficha encontrada: Carolina Paz — datos completados · última estadía 12/07/2025",
     );
     expect(api.buscarHuespedPorDocumento).toHaveBeenCalledWith({ tipo: "DNI", pais: "AR", numero: "31784205" });
-    expect(within(adulto2).getByLabelText("Apellido")).toHaveValue("Paz");
+    expect(within(adulto2).getByLabelText(rotulo("Apellido"))).toHaveValue("Paz");
     expect(within(adulto2).getByText("Esta persona figura alojada en otra estadía.")).toBeInTheDocument();
   });
 
@@ -333,7 +388,7 @@ describe("Check-in con reserva", () => {
     expect(chipsTitular(g270)).toHaveLength(1);
     expect(chipsTitular(g208)).toHaveLength(1);
     const menor = within(g208).getByText("Menor 1").closest('[id^="ci-fila-"]');
-    const select = within(menor).getByLabelText("Adulto responsable");
+    const select = within(menor).getByLabelText(rotulo("Adulto responsable"));
     const opcion = within(select).getByRole("option", { name: "Martín Gutiérrez · Hab. 270" });
     fireEvent.change(select, { target: { value: opcion.value } });
     expect(select).toHaveValue(opcion.value);

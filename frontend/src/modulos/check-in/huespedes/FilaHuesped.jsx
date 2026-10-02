@@ -7,8 +7,11 @@ import { PAISES_SELECTOR } from "../../estadia/ocupantesUbicacion";
 import { Chip } from "../ui";
 import { MAYORIA_EDAD } from "../checkInPantalla.constantes";
 import { usePersonaQueVuelve } from "../usePersonaQueVuelve";
+import { formatearNombrePropio } from "../../../lib/nombres";
+import { VINCULOS_RESPONSABLE, requiereAutorizacion } from "../../../lib/vinculos";
 import {
   avisosDeFila,
+  camposObligatorios,
   edadDeFila,
   etiquetaFila,
   idCampo,
@@ -49,47 +52,86 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
   const esTitularReserva = titularDeLaReserva(estado, contexto).fila?.id === fila.id;
   const titularHabitacion = titularDeHabitacion(estado, fila.habitacionClave);
   const cambiar = (campo) => (valor) => dispatch({ tipo: "campo", filaId: fila.id, campo, valor });
+  // Asterisco en cada obligatorio, con las mismas reglas que bloquean la confirmación.
+  const obligatorios = camposObligatorios(estado, fila, contexto);
+  const rotulo = (nombre, texto) => (obligatorios.has(nombre) ? `${texto} *` : texto);
+  // Nombre y apellido con mayúscula inicial al salir del campo (partículas en minúscula).
+  const esNombre = (nombre) => nombre === "nombre" || nombre === "apellido";
   const campo = (nombre, label, extra = {}) => (
     <Input
       id={idCampo(fila.id, nombre)}
-      label={label}
+      label={rotulo(nombre, label)}
       value={fila.campos[nombre] ?? ""}
       onChange={(e) => cambiar(nombre)(nombre === "fechaNacimiento" ? mascaraFecha(e.target.value) : e.target.value)}
+      onBlur={esNombre(nombre) ? (e) => cambiar(nombre)(formatearNombrePropio(e.target.value)) : undefined}
       autoComplete="off"
       {...extra}
     />
   );
   const documento = (
     <>
-      <Select id={idCampo(fila.id, "tipoDocumento")} label="Tipo de documento" value={fila.campos.tipoDocumento} onChange={(e) => cambiar("tipoDocumento")(e.target.value)}>
+      <Select id={idCampo(fila.id, "tipoDocumento")} label={rotulo("tipoDocumento", "Tipo de documento")} value={fila.campos.tipoDocumento} onChange={(e) => cambiar("tipoDocumento")(e.target.value)}>
         {TIPOS_DOCUMENTO.map((t) => (
           <option key={t} value={t}>
             {t}
           </option>
         ))}
       </Select>
-      <SelectorPais id={idCampo(fila.id, "paisDocumento")} label="País emisor" valor={fila.campos.paisDocumento} onCambiar={cambiar("paisDocumento")} />
+      <SelectorPais id={idCampo(fila.id, "paisDocumento")} label={rotulo("paisDocumento", "País emisor")} valor={fila.campos.paisDocumento} onCambiar={cambiar("paisDocumento")} />
       {campo("numeroDocumento", "Número de documento")}
     </>
   );
   const herencia = textoHerencia(heredados);
   const opcionesResponsable = responsablesPosibles(estado, contexto, fila).filter((r) => r.id !== titularHabitacion?.id);
+  const vinculo = fila.campos.vinculoResponsable ?? "";
   const selectorResponsable = necesitaResponsable(fila, contexto) && (
-    <Select
-      id={idCampo(fila.id, "responsableId")}
-      label="Adulto responsable"
-      value={fila.responsableId ?? ""}
-      onChange={(e) => dispatch({ tipo: "responsable", filaId: fila.id, responsableId: e.target.value ? Number(e.target.value) : null })}
-    >
-      <option value="">
-        Titular de la habitación{titularHabitacion && nombreDeFila(titularHabitacion) ? ` (${nombreDeFila(titularHabitacion)})` : ""}
-      </option>
-      {opcionesResponsable.map((r) => (
-        <option key={r.id} value={r.id}>
-          {r.texto}
+    <>
+      <Select
+        id={idCampo(fila.id, "responsableId")}
+        label={rotulo("responsableId", "Adulto responsable")}
+        value={fila.responsableId ?? ""}
+        onChange={(e) => dispatch({ tipo: "responsable", filaId: fila.id, responsableId: e.target.value ? Number(e.target.value) : null })}
+      >
+        <option value="">
+          Titular de la habitación{titularHabitacion && nombreDeFila(titularHabitacion) ? ` (${nombreDeFila(titularHabitacion)})` : ""}
         </option>
-      ))}
-    </Select>
+        {opcionesResponsable.map((r) => (
+          <option key={r.id} value={r.id}>
+            {r.texto}
+          </option>
+        ))}
+      </Select>
+      <Select
+        id={idCampo(fila.id, "vinculoResponsable")}
+        label={rotulo("vinculoResponsable", "Vínculo con el menor")}
+        value={vinculo}
+        onChange={(e) => {
+          cambiar("vinculoResponsable")(e.target.value);
+          if (!requiereAutorizacion(e.target.value)) cambiar("autorizacionPresentada")(false);
+        }}
+      >
+        <option value="">Elegí…</option>
+        {VINCULOS_RESPONSABLE.map((v) => (
+          <option key={v} value={v}>
+            {v}
+          </option>
+        ))}
+      </Select>
+      {requiereAutorizacion(vinculo) && (
+        <div className="flex flex-col gap-1.5 rounded-md bg-laton-100 px-2.5 py-2 text-[13px] text-laton-700 [grid-column:1/-1]">
+          <span>Pedí la autorización de los padres o tutores.</span>
+          <label className="flex items-center gap-2 font-semibold">
+            <input
+              id={idCampo(fila.id, "autorizacionPresentada")}
+              type="checkbox"
+              checked={Boolean(fila.campos.autorizacionPresentada)}
+              onChange={(e) => cambiar("autorizacionPresentada")(e.target.checked)}
+            />
+            {rotulo("autorizacionPresentada", "Autorización presentada")}
+          </label>
+        </div>
+      )}
+    </>
   );
 
   return (
@@ -137,7 +179,7 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
             {campo("nombre", "Nombre")}
             {campo("apellido", "Apellido")}
             {campo("fechaNacimiento", "Nacimiento", { placeholder: "dd/mm/aaaa", inputMode: "numeric" })}
-            <SelectorPais id={idCampo(fila.id, "nacionalidad")} label="Nacionalidad" valor={fila.campos.nacionalidad} onCambiar={cambiar("nacionalidad")} />
+            <SelectorPais id={idCampo(fila.id, "nacionalidad")} label={rotulo("nacionalidad", "Nacionalidad")} valor={fila.campos.nacionalidad} onCambiar={cambiar("nacionalidad")} />
           </div>
           {selectorResponsable && <div className={`${GRILLA} mt-2.5`}>{selectorResponsable}</div>}
           {fila.esTitular && (
@@ -146,7 +188,7 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
                 {esTitularReserva ? "Residencia y contacto del titular de la reserva" : "Residencia del titular de la habitación"}
               </p>
               <div className={GRILLA}>
-                <SelectorPais id={idCampo(fila.id, "paisResidencia")} label="País de residencia" valor={fila.campos.paisResidencia} onCambiar={cambiar("paisResidencia")} />
+                <SelectorPais id={idCampo(fila.id, "paisResidencia")} label={rotulo("paisResidencia", "País de residencia")} valor={fila.campos.paisResidencia} onCambiar={cambiar("paisResidencia")} />
                 {campo("localidad", "Localidad")}
                 {campo("domicilio", "Domicilio")}
                 {campo("telefono", esTitularReserva ? "Teléfono" : "Teléfono (opcional)", { inputMode: "tel" })}
@@ -193,9 +235,9 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
       {fila.masDatos && !fila.esTitular && (
         <div className={`${GRILLA} mt-2`}>
           {fila.tipo === "menor" && (
-            <SelectorPais id={idCampo(fila.id, "nacionalidad")} label="Nacionalidad" valor={resolverCampos(estado, fila).campos.nacionalidad} onCambiar={cambiar("nacionalidad")} />
+            <SelectorPais id={idCampo(fila.id, "nacionalidad")} label={rotulo("nacionalidad", "Nacionalidad")} valor={resolverCampos(estado, fila).campos.nacionalidad} onCambiar={cambiar("nacionalidad")} />
           )}
-          <SelectorPais id={idCampo(fila.id, "paisResidencia")} label="País de residencia" valor={resolverCampos(estado, fila).campos.paisResidencia} onCambiar={cambiar("paisResidencia")} />
+          <SelectorPais id={idCampo(fila.id, "paisResidencia")} label={rotulo("paisResidencia", "País de residencia")} valor={resolverCampos(estado, fila).campos.paisResidencia} onCambiar={cambiar("paisResidencia")} />
           {fila.tipo === "adulto" && (
             <>
               {campo("telefono", "Teléfono (opcional)", { inputMode: "tel" })}

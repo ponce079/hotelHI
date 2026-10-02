@@ -5,6 +5,7 @@
 import { validarOcupante, pendientesParaIngreso } from "../estadia/validarOcupante";
 import { edadEnFecha, ddMmAaaaAISO } from "../../lib/fechas";
 import { nombrePais } from "../../lib/paises";
+import { requiereAutorizacion } from "../../lib/vinculos";
 import {
   EDAD_ADULTO_OCUPACION,
   MAYORIA_EDAD,
@@ -151,6 +152,8 @@ const NOMBRE_CAMPO = {
   telefono: "el teléfono",
   email: "un correo válido",
   responsableId: "el adulto responsable",
+  vinculoResponsable: "el vínculo con el menor",
+  autorizacionPresentada: "la autorización de los padres o tutores",
 };
 
 // Lo que pendientesParaIngreso informa, llevado al campo de la pantalla.
@@ -228,6 +231,12 @@ export function revisarFila(estado, fila, contexto) {
   if (fila.esTitular) {
     for (const campo of ["paisResidencia", "localidad", "domicilio"]) if (!texto(fila.campos[campo])) agregar(campo);
   }
+  // Menor de 18: vínculo del responsable y, si es otro familiar u otro adulto, la autorización.
+  if (necesitaResponsable(fila, contexto)) {
+    if (!texto(fila.campos.vinculoResponsable)) agregar("vinculoResponsable");
+    else if (requiereAutorizacion(fila.campos.vinculoResponsable) && !fila.campos.autorizacionPresentada)
+      agregar("autorizacionPresentada");
+  }
   const titularReserva = titularDeLaReserva(estado, contexto).fila;
   if (titularReserva?.id === fila.id && !telefonoValido(fila.campos.telefono)) agregar("telefono");
   else if (texto(fila.campos.telefono) && !telefonoValido(fila.campos.telefono)) agregar("telefono", "un teléfono válido");
@@ -247,6 +256,26 @@ export function revisarFila(estado, fila, contexto) {
   const edad = problemaDeEdad(fila, contexto);
   const estadoFila = faltan.length ? (faltan.length === 1 ? "Falta 1 dato" : `Faltan ${faltan.length} datos`) : edad ? "Revisá la edad" : "Completa";
   return { faltan, edad, estado: estadoFila, completa: !faltan.length && !edad };
+}
+
+// Campos obligatorios de la fila (los del asterisco), con las mismas reglas que revisarFila:
+// documento según la fila, residencia propia salvo que se herede, localidad y domicilio del
+// titular de la habitación, teléfono solo del titular de la reserva, responsable y vínculo solo
+// de menores de 18, y la autorización según el vínculo.
+export function camposObligatorios(estado, fila, contexto) {
+  const { heredados } = resolverCampos(estado, fila);
+  const obligatorios = new Set(["nombre", "apellido", "fechaNacimiento"]);
+  const conDocumento = fila.tipo === "adulto" || texto(fila.campos.numeroDocumento);
+  if (conDocumento) for (const campo of ["tipoDocumento", "paisDocumento", "numeroDocumento"]) obligatorios.add(campo);
+  for (const campo of ["nacionalidad", "paisResidencia"]) if (!heredados[campo]) obligatorios.add(campo);
+  if (fila.esTitular) for (const campo of ["paisResidencia", "localidad", "domicilio"]) obligatorios.add(campo);
+  if (titularDeLaReserva(estado, contexto).fila?.id === fila.id) obligatorios.add("telefono");
+  if (necesitaResponsable(fila, contexto)) {
+    obligatorios.add("responsableId");
+    obligatorios.add("vinculoResponsable");
+    if (requiereAutorizacion(fila.campos.vinculoResponsable)) obligatorios.add("autorizacionPresentada");
+  }
+  return obligatorios;
 }
 
 // Avisos informativos de la fila (no bloquean).
