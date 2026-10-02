@@ -248,6 +248,145 @@ async function anularConsumo(id, data) {
 }
 
 // --------------------------------------------------------------
+// Cargos en lote dentro de una transacción ajena (agregado para la persona
+// adicional de estadía, docs/PR_CHECKIN_REDISENO_ETAPA2.md). Mismas
+// validaciones que registrarConsumo/anularConsumo, pero SIN abrir
+// transacción ni volver a bloquear la reserva: quien llama ya tiene la
+// reserva bloqueada (SELECT … FOR UPDATE) y escribe todo junto. Un solo
+// createMany/updateMany y un solo evento por operación. registrarConsumo y
+// anularConsumo no cambian.
+// --------------------------------------------------------------
+
+// cargos: [{ fechaServicio, precioUnitario, cantidad?, descripcion?, claveOperacion? }]
+// Idempotente por claveOperacion: si un reintento trae claves ya registradas
+// en esta misma habitación, no las duplica (y devuelve también las previas).
+async function registrarCargosEnTransaccion(tx, data) {
+  const reservaId = enteroPositivo(data?.reservaId, "reservaId");
+  const habitacionId = enteroPositivo(data?.habitacionId, "habitacionId");
+  const tipoServicio = normalizarTipoServicio(data?.tipoServicio);
+  if (tipoServicio === "Minibar")
+    throw new ErrorDeNegocio("Los consumos de minibar se registran de a uno (descuentan stock).");
+  const registradoPor = textoObligatorio(data?.registradoPor, "registradoPor", 100);
+  const lista = Array.isArray(data?.cargos) ? data.cargos : [];
+  if (lista.length === 0) throw new ErrorDeNegocio("No hay cargos para registrar.");
+  const decimal = (n) => Number.isFinite(n) && Math.abs(n * 100 - Math.round(n * 100)) < 0.000001;
+  const { Decimal } = require("@prisma/client").Prisma;
+  const filas = lista.map((c) => {
+    const cantidad = Number(c?.cantidad ?? 1);
+    const precioUnitario = Number(c?.precioUnitario);
+    if (
+      !decimal(cantidad) ||
+      cantidad <= 0 ||
+      cantidad > 99999999 ||
+      !decimal(precioUnitario) ||
+      precioUnitario <= 0
+    )
+      throw new ErrorDeNegocio("Cantidad o precio unitario inválidos.");
+    const monto = new Decimal(cantidad).times(precioUnitario).toDecimalPlaces(2);
+    if (monto.greaterThan("9999999999.99")) throw new ErrorDeNegocio("El monto supera el máximo permitido.");
+    const fechaServicio = c?.fechaServicio ? new Date(c.fechaServicio) : new Date();
+    if (!Number.isFinite(fechaServicio.getTime())) throw new ErrorDeNegocio("Fecha del servicio inválida.");
+    return {
+      reservaId,
+      habitacionId,
+      tipoServicio,
+      registradoPor,
+      cantidad,
+      precioUnitario,
+      monto,
+      incluido: false,
+      descripcion: textoObligatorio(c?.descripcion || tipoServicio, "Descripción", 500),
+      fechaServicio,
+      claveOperacion: c?.claveOperacion ? textoObligatorio(c.claveOperacion, "Clave de operación", 100) : null,
+    };
+  });
+  const claves = filas.map((f) => f.claveOperacion).filter(Boolean);
+  if (new Set(claves).size !== claves.length) throw new ErrorDeNegocio("Hay claves de operación repetidas en el lote.");
+
+  const reserva = await tx.reserva.findUnique({ where: { id: reservaId }, include: { reservaHabitaciones: true } });
+  if (!reserva) throw new ErrorDeNegocio("Reserva inexistente.", 404);
+  if (reserva.estado === ESTADO_RESERVA.CERRADA)
+    throw new ErrorDeNegocio("No se pueden registrar cargos sobre una reserva cerrada.", 409);
+  if (reserva.estado !== ESTADO_RESERVA.EN_CURSO)
+    throw new ErrorDeNegocio('Solo se pueden registrar consumos con la reserva "En curso".');
+  if (!reserva.reservaHabitaciones.some((h) => h.habitacionId === habitacionId))
+    throw new ErrorDeNegocio("La habitación no pertenece a esta reserva.");
+  const desde = reserva.fechaDesde.toISOString().slice(0, 10);
+  const hasta = reserva.fechaHasta.toISOString().slice(0, 10);
+  for (const f of filas) {
+    const dia = f.fechaServicio.toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
+    if (dia < desde || dia > hasta)
+      throw new ErrorDeNegocio(`La fecha del servicio debe estar dentro de la estadía (${desde} al ${hasta}).`);
+  }
+
+  const previos = claves.length
+    ? await tx.consumoServicioAdicional.findMany({ where: { claveOperacion: { in: claves } } })
+    : [];
+  if (previos.some((p) => p.reservaId !== reservaId || p.habitacionId !== habitacionId))
+    throw new ErrorDeNegocio("Clave de operación usada en otra habitación.", 409);
+  const yaRegistradas = new Set(previos.map((p) => p.claveOperacion));
+  const nuevas = filas.filter((f) => !f.claveOperacion || !yaRegistradas.has(f.claveOperacion));
+  if (nuevas.length === 0) return { creados: 0, consumos: previos.map(formatearConsumo) };
+
+  await tx.consumoServicioAdicional.createMany({ data: nuevas });
+  const total = nuevas.reduce((acc, f) => acc.plus(f.monto), new Decimal(0));
+  await require("../estadia/estadia.servicio").evento(
+    tx,
+    reservaId,
+    "Agregar cargos",
+    { habitacionId, cantidad: nuevas.length, monto: total.toNumber(), descripcion: nuevas[0].descripcion },
+    registradoPor,
+  );
+  const consumos = claves.length
+    ? await tx.consumoServicioAdicional.findMany({
+        where: { claveOperacion: { in: claves } },
+        include: { articulo: true, habitacion: true },
+        orderBy: { fechaServicio: "asc" },
+      })
+    : [];
+  return { creados: nuevas.length, consumos: consumos.map(formatearConsumo) };
+}
+
+// Baja lógica (con motivo) de los cargos vigentes de una reserva que cumplan
+// el filtro: ids y/o prefijo de claveOperacion y/o fechaServicio desde.
+// Sin coincidencias no escribe nada (ni evento).
+async function anularCargosEnTransaccion(tx, data) {
+  const reservaId = enteroPositivo(data?.reservaId, "reservaId");
+  const motivo = textoObligatorio(data?.motivo, "Motivo", 500);
+  const operador = textoObligatorio(data?.operador, "Operador", 191);
+  const ids = Array.isArray(data?.ids) ? data.ids.map((v) => enteroPositivo(v, "id")) : null;
+  const prefijo = data?.claveOperacionPrefijo ? textoObligatorio(data.claveOperacionPrefijo, "Clave de operación", 100) : null;
+  if (!ids && !prefijo) throw new ErrorDeNegocio("Indicá qué cargos anular.");
+  const desde = data?.fechaServicioDesde ? new Date(data.fechaServicioDesde) : null;
+  if (desde && !Number.isFinite(desde.getTime())) throw new ErrorDeNegocio("Fecha inválida.");
+  const r = await tx.reserva.findUnique({ where: { id: reservaId } });
+  if (!r) throw new ErrorDeNegocio("Reserva inexistente.", 404);
+  if (r.estado !== "En curso") throw new ErrorDeNegocio("Solo se anulan cargos de estadías en curso.");
+  const where = {
+    reservaId,
+    anulado: false,
+    ...(ids ? { id: { in: ids } } : {}),
+    ...(prefijo ? { claveOperacion: { startsWith: prefijo } } : {}),
+    ...(desde ? { fechaServicio: { gte: desde } } : {}),
+  };
+  const objetivo = await tx.consumoServicioAdicional.findMany({ where, select: { id: true, habitacionId: true } });
+  if (objetivo.length === 0) return { anulados: 0, ids: [] };
+  const idsObjetivo = objetivo.map((c) => c.id);
+  await tx.consumoServicioAdicional.updateMany({
+    where: { id: { in: idsObjetivo }, anulado: false },
+    data: { anulado: true, anuladoEn: new Date(), anuladoPor: operador, motivoAnulacion: motivo },
+  });
+  await require("../estadia/estadia.servicio").evento(
+    tx,
+    reservaId,
+    "Anular cargos",
+    { consumoIds: idsObjetivo, habitacionId: objetivo[0].habitacionId, motivo },
+    operador,
+  );
+  return { anulados: idsObjetivo.length, ids: idsObjetivo };
+}
+
+// --------------------------------------------------------------
 // HU-63 — consulta de cargos acumulados (y contrato de salida hacia
 // Integrante 4, HU-48/HU-87 — ver Sprint3_..._CheckIn...md sección 4)
 // --------------------------------------------------------------
@@ -358,6 +497,8 @@ async function resumenConsumosHotel(filtros = {}) {
 module.exports = {
   anularConsumo,
   registrarConsumo,
+  registrarCargosEnTransaccion,
+  anularCargosEnTransaccion,
   listarPorReserva,
   resumenPorReserva,
   listarConsumosHotel,
