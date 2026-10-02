@@ -99,3 +99,76 @@ export function parsearDiasPlazo(texto) {
   const m = /^(\d+)/.exec((texto ?? "").trim());
   return m ? Number(m[1]) : null;
 }
+
+// ---------------------------------------------------------------------------
+// Check-in (pantalla única). Fechas "solo día" del backend (medianoche UTC) y
+// fechas tipeadas en dd/mm/aaaa. Siempre en UTC para no correr el día.
+// ---------------------------------------------------------------------------
+const DIAS_CORTOS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+const DIAS_LARGOS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const dos = (n) => String(n).padStart(2, "0");
+const comoFecha = (valor) => (valor instanceof Date ? valor : new Date(String(valor).length === 10 ? `${valor}T00:00:00Z` : valor));
+
+// "02/10/2026" (con ceros, a diferencia de formatearFechaSinHora).
+export function formatearFechaDdMmAaaa(valor) {
+  if (!valor) return "";
+  const d = comoFecha(valor);
+  return `${dos(d.getUTCDate())}/${dos(d.getUTCMonth() + 1)}/${d.getUTCFullYear()}`;
+}
+
+// "vie 02/10"
+export function formatearDiaCorto(valor) {
+  const d = comoFecha(valor);
+  return `${DIAS_CORTOS[d.getUTCDay()]} ${dos(d.getUTCDate())}/${dos(d.getUTCMonth() + 1)}`;
+}
+
+// "vie 02/10/2026"
+export function formatearDiaLargo(valor) {
+  const d = comoFecha(valor);
+  return `${DIAS_CORTOS[d.getUTCDay()]} ${formatearFechaDdMmAaaa(d)}`;
+}
+
+// "Jueves 01/10/2026" — fecha de operación del encabezado.
+export function formatearFechaOperacion(valor) {
+  const d = comoFecha(valor);
+  const dia = DIAS_LARGOS[d.getUTCDay()];
+  return `${dia.charAt(0).toUpperCase()}${dia.slice(1)} ${formatearFechaDdMmAaaa(d)}`;
+}
+
+// YYYY-MM-DD + n días (en UTC).
+export function sumarDiasISO(iso, dias) {
+  const d = comoFecha(String(iso).slice(0, 10));
+  return new Date(d.getTime() + dias * 86400000).toISOString().slice(0, 10);
+}
+
+// Máscara de un campo dd/mm/aaaa mientras se tipea.
+export function mascaraFecha(texto) {
+  const d = String(texto ?? "").replace(/\D/g, "").slice(0, 8);
+  if (d.length > 4) return `${d.slice(0, 2)}/${d.slice(2, 4)}/${d.slice(4)}`;
+  if (d.length > 2) return `${d.slice(0, 2)}/${d.slice(2)}`;
+  return d;
+}
+
+// "14/03/1987" -> "1987-03-14"; null si no es una fecha real.
+export function ddMmAaaaAISO(texto) {
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(String(texto ?? "").trim());
+  if (!m) return null;
+  const iso = `${m[3]}-${m[2]}-${m[1]}`;
+  const d = new Date(`${iso}T00:00:00Z`);
+  return Number.isFinite(d.getTime()) && d.toISOString().slice(0, 10) === iso ? iso : null;
+}
+
+// Años cumplidos en una fecha (las dos ISO YYYY-MM-DD).
+export function edadEnFecha(nacimientoISO, fechaISO) {
+  if (!nacimientoISO || !fechaISO) return null;
+  const n = comoFecha(String(nacimientoISO).slice(0, 10));
+  const f = comoFecha(String(fechaISO).slice(0, 10));
+  let edad = f.getUTCFullYear() - n.getUTCFullYear();
+  if (f.getUTCMonth() < n.getUTCMonth() || (f.getUTCMonth() === n.getUTCMonth() && f.getUTCDate() < n.getUTCDate())) edad--;
+  return edad;
+}
+
+// Noches entre dos fechas "solo día".
+export function nochesEntre(desde, hasta) {
+  return Math.round((comoFecha(String(hasta).slice(0, 10)) - comoFecha(String(desde).slice(0, 10))) / 86400000);
+}
