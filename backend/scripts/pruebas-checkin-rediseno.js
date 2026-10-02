@@ -590,6 +590,79 @@ async function pruebas({ bar, nrf, temporada }) {
     assert.equal((await apoyo.listarLlegadas({ q: titular.numeroDocumento })).reservas.length >= 1, true);
     ok("12 — llegadas: solo las de hoy, búsqueda por código o documento y aviso de Confirmadas anteriores que cuenta bien");
   }
+
+  // ---------------------------------------------------------------- un solo titular por habitación
+  {
+    const estadia = require("../src/modulos/estadia/estadia.servicio");
+    const { cargarPersonasEnLote } = require("../src/modulos/estadia/cargaMasiva");
+    const { incorporarEnTransaccion } = require("../src/modulos/estadia/titular.servicio");
+    const titularesActivos = async (reservaId, habitacionId) =>
+      p.ocupanteReserva.findMany({
+        where: { reservaId, esTitular: true, estado: { in: ["Previsto", "Alojado"] }, asignaciones: { some: { habitacionId, hasta: null } } },
+      });
+    const ficha = (pers, habitacionId, extra = {}) => ({ ...pers, habitacionId, operador: OPERADOR, ...extra });
+
+    // Antes del check-in: la reserva ya tiene al titular automático en la habitación.
+    const h = await habitacion(doble, 3);
+    const titular = persona(1, h.id, 40);
+    const { reserva, total } = await reservar([{ habitacionId: h.id, adultos: 2, menores: 0 }], { titular });
+    const otra = persona(2, h.id, 35, { esTitular: true });
+
+    // Camino 1: alta desde "Personas de la estadía" marcando titular → 409.
+    await rechaza(() => estadia.guardar(reserva.id, null, ficha(otra, h.id)), 409, /ya tiene titular \(Persona1/, "TITULAR_EXISTENTE");
+    // Camino 2: carga en lote con un titular cuando ya hay uno → 409.
+    await rechaza(
+      () => p.$transaction((tx) => cargarPersonasEnLote(tx, reserva.id, [{ ...otra, id: 9 }], OPERADOR)),
+      409,
+      /ya tiene titular/,
+      "TITULAR_EXISTENTE",
+    );
+    // Camino 3: titular automático de otra persona en una habitación con titular → entra sin marcar.
+    const otroHuesped = await p.huesped.create({
+      data: { nombre: "Otra Persona", tipoDocumento: "DNI", numeroDocumento: documento(), paisDocumento: "AR" },
+    });
+    await p.$transaction(async (tx) => {
+      const bloqueada = await estadia.bloquear(tx, reserva.id);
+      await incorporarEnTransaccion(tx, bloqueada, otroHuesped, OPERADOR);
+    });
+    assert.equal((await titularesActivos(reserva.id, h.id)).length, 1, "el titular automático no deja dos");
+    const automatica = await p.ocupanteReserva.findFirst({ where: { reservaId: reserva.id, huespedId: otroHuesped.id } });
+    assert.equal(automatica.esTitular, false);
+    await estadia.accion(reserva.id, automatica.id, { accion: "cancelar", operador: OPERADOR });
+    // Reemplazo explícito antes del check-in: un solo titular y evento registrado.
+    const nueva = await estadia.guardar(reserva.id, null, ficha(otra, h.id, { reemplazarTitular: true }));
+    const activos = await titularesActivos(reserva.id, h.id);
+    assert.deepEqual(activos.map((o) => o.id), [nueva.id]);
+    const evento = await p.eventoEstadia.findFirst({ where: { reservaId: reserva.id, accion: "Cambio de titular de habitación" } });
+    assert.equal(JSON.parse(evento.detalle).ocupanteId, nueva.id);
+    assert.equal(evento.operador, OPERADOR);
+
+    // Con la estadía en curso el cambio de titular exige motivo.
+    const h2 = await habitacion(doble, 3);
+    const t2 = persona(1, h2.id, 40, { esTitular: true });
+    const { reserva: r2, total: total2 } = await reservar([{ habitacionId: h2.id, adultos: 2, menores: 0 }], { titular: t2 });
+    const acompanante = persona(2, h2.id, 37);
+    await confirmar(r2, {
+      habitaciones: [{ habitacionIdAnterior: h2.id, adultos: 2, menores: 0 }],
+      personas: [t2, acompanante],
+      totalEsperado: total2,
+    });
+    const fichaAcompanante = await p.ocupanteReserva.findFirst({ where: { reservaId: r2.id, numeroDocumento: acompanante.numeroDocumento, estado: "Alojado" } });
+    const datosAcompanante = { ...acompanante, habitacionId: h2.id, operador: OPERADOR, esTitular: true };
+    await rechaza(() => estadia.guardar(r2.id, fichaAcompanante.id, datosAcompanante), 409, /Con la estadía en curso, para cambiarlo indicá el motivo/, "TITULAR_EXISTENTE");
+    await rechaza(() => estadia.guardar(r2.id, fichaAcompanante.id, { ...datosAcompanante, reemplazarTitular: true }), 409, /indicá el motivo/);
+    await estadia.guardar(r2.id, fichaAcompanante.id, { ...datosAcompanante, motivoCambioTitular: "El titular se retira antes" });
+    const activos2 = await titularesActivos(r2.id, h2.id);
+    assert.deepEqual(activos2.map((o) => o.id), [fichaAcompanante.id]);
+    const cambio = await p.eventoEstadia.findFirst({ where: { reservaId: r2.id, accion: "Cambio de titular de habitación" } });
+    assert.equal(JSON.parse(cambio.detalle).motivo, "El titular se retira antes");
+    assert.equal(cambio.operador, OPERADOR);
+    // Las fichas Canceladas no cuentan como titulares (la reemplazada en el check-in sigue esTitular).
+    const reemplazada = await p.ocupanteReserva.findFirst({ where: { reservaId: r2.id, estado: "Cancelado" } });
+    assert.equal(reemplazada.esTitular, true);
+    void total;
+    ok("un solo titular por habitación: alta, lote y titular automático no dejan dos (409); el cambio con motivo deja uno y queda auditado");
+  }
 }
 
 // Servidor HTTP efímero con las rutas del check-in.

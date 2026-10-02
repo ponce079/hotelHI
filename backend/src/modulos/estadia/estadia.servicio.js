@@ -282,6 +282,24 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
     p.esTitular = data.esTitular === undefined ? Boolean(actual?.esTitular) : data.esTitular === true;
     if (p.esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD))
       throw new ErrorDeNegocio("El titular de habitacion debe tener 18 años cumplidos.");
+    // Un solo titular activo por habitación. Reemplazar al que ya está se pide explícitamente
+    // (motivoCambioTitular, o reemplazarTitular antes del check-in) y con la estadía en curso el
+    // motivo es obligatorio. El anterior se desmarca en esta misma transacción.
+    let titularReemplazado = null;
+    const motivoCambioTitular = texto(data.motivoCambioTitular, "Motivo del cambio de titular", false, 500);
+    if (p.esTitular) {
+      const { titularActivo, errorTitularExistente } = require("./titularHabitacion");
+      const otro = await titularActivo(tx, reservaId, habitacionId, actual?.id);
+      if (otro) {
+        const numero = r.reservaHabitaciones.find((h) => h.habitacionId === habitacionId)?.habitacion.numero;
+        if (r.estado === "En curso" && !motivoCambioTitular)
+          throw errorTitularExistente(ErrorDeNegocio, numero, otro, "Con la estadía en curso, para cambiarlo indicá el motivo.");
+        if (!motivoCambioTitular && data.reemplazarTitular !== true)
+          throw errorTitularExistente(ErrorDeNegocio, numero, otro, "Para cambiarlo, confirmá el reemplazo del titular.");
+        await tx.ocupanteReserva.update({ where: { id: otro.id }, data: { esTitular: false } });
+        titularReemplazado = otro;
+      }
+    }
     const personas = require("./persona.servicio");
     p.huespedId = await personas.vincularPersona(tx, r, p, actual);
     await personas.actualizarResidencia(tx, p.huespedId, residencia);
@@ -320,6 +338,14 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
       { ocupanteId: saved.id, habitacionId, cambio: Boolean(cambio) },
       operador,
     );
+    if (titularReemplazado)
+      await evento(
+        tx,
+        reservaId,
+        "Cambio de titular de habitación",
+        { habitacionId, anteriorId: titularReemplazado.id, ocupanteId: saved.id, motivo: motivoCambioTitular || null },
+        operador,
+      );
     return conResidencia(
       await tx.ocupanteReserva.findUnique({
         where: { id: saved.id },

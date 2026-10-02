@@ -8,6 +8,7 @@ const { MAYORIA_EDAD } = require("../../lib/fechas");
 const personasServicio = require("./persona.servicio");
 const { comparteCorreo } = require("./contactoPersona");
 const { esEmail } = require("../../lib/contacto");
+const { titularActivoEn, errorTitularExistente } = require("./titularHabitacion");
 
 const { ErrorDeNegocio, edad } = s;
 const normalizar = (v) =>
@@ -89,6 +90,17 @@ function validarLote(reserva, entradas, existentes) {
     s.verificarCapacidad(rh, p, enLaHabitacion);
     if (esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD))
       throw new ErrorDeNegocio("El titular de habitacion debe tener 18 años cumplidos.");
+    // Un solo titular activo por habitación: ni contra las fichas que ya estaban ni dentro del envío.
+    if (esTitular) {
+      const otro = titularActivoEn(otros, rh.habitacionId);
+      if (otro)
+        throw errorTitularExistente(
+          ErrorDeNegocio,
+          rh.habitacion.numero,
+          otro,
+          "Marcá un solo titular por habitación o cambiá el titular desde la ficha de la estadía, con su motivo.",
+        );
+    }
     const ficha = {
       ...p,
       id: clave,

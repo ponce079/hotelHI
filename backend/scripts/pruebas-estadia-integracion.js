@@ -381,8 +381,13 @@ async function pruebas() {
   await verificar(ra);
   await assert.rejects(() => ingresar(ra, da.huesped.numeroDocumento), /exactamente un titular/);
   await s.guardar(ra.id, titularA.id, ficha(ha, da.huesped.numeroDocumento, { esTitular: true }));
-  const extra = await s.guardar(ra.id, null, ficha(ha, undefined, { esTitular: true }));
-  await verificar(ra);
+  // Un segundo titular en la misma habitación ya no se puede guardar (un solo titular activo).
+  await assert.rejects(
+    () => s.guardar(ra.id, null, ficha(ha, undefined, { esTitular: true })),
+    (e) => e.statusCode === 409 && e.codigo === "TITULAR_EXISTENTE",
+  );
+  // Acompañante sin verificar: la ampliación se calcula, pero el ingreso falla y se revierte todo.
+  const extra = await s.guardar(ra.id, null, ficha(ha, undefined, { esTitular: false }));
   let advertencia;
   try {
     await ingresar(ra, da.huesped.numeroDocumento);
@@ -400,10 +405,10 @@ async function pruebas() {
       operador: "Prueba",
       confirmacionAmpliacion: token,
     });
-  await assert.rejects(() => confirmarAmpliacion(advertencia.detalle.token), /exactamente un titular/);
+  await assert.rejects(() => confirmarAmpliacion(advertencia.detalle.token), /Verificá los datos/);
   assert.equal((await p.reservaHabitacion.findFirst({ where: { reservaId: ra.id } })).adultos, 1);
   assert.equal((await checkout.consolidarCargos(ra.id)).totalAdeudado, da.totalEsperado);
-  await s.guardar(ra.id, extra.id, ficha(ha, extra.numeroDocumento, { esTitular: false }));
+  void extra;
   await verificar(ra);
   const cotizada = await cotizarReserva({
     ...da,
@@ -418,7 +423,7 @@ async function pruebas() {
   );
   assert.equal((await p.reservaHabitacion.findFirst({ where: { reservaId: ra.id } })).adultos, 2);
   assert.equal((await s.listar(ra.id)).filter((x) => x.estado === "Alojado").length, 2);
-  console.log("OK: I1 ficha única; I2 cero/dos titulares; I4 advertencia, rollback y ampliación recotizada.");
+  console.log("OK: I1 ficha única; I2 cero titulares y segundo titular rechazado; I4 advertencia, rollback y ampliación recotizada.");
 
   // Tope de capacidad: nunca se amplía por encima de Habitacion.capacidad.
   const hk = await habitacion(3),

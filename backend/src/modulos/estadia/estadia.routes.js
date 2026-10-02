@@ -20,6 +20,7 @@ const handler = (fn) => async (req, res) => {
       });
     res.status(e.statusCode || 500).json({
       ...(e.statusCode && e.campos ? { campos: e.campos } : {}),
+      ...(e.statusCode && e.codigo ? { codigo: e.codigo, detalle: e.detalle } : {}),
       error: e.statusCode ? e.message : "No se pudo completar la operación de estadía.",
     });
   }
