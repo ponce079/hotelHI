@@ -161,8 +161,8 @@ async function confirmarConOcupacion(reserva, { operador, habitaciones, personas
   const cambioOcupacion = filas.some((f) => f.adultos !== f.anterior.adultos || f.menores !== f.anterior.menores);
   const ocupacionParaPrecio = filas.map((f) => ({ habitacionId: f.anterior.id, adultos: f.adultos, menores: f.menores }));
 
-  await prisma.$transaction(async (tx) => {
-    const { validarReservaVigente, ocuparHabitaciones } = require("./checkIn.servicio");
+  const { validarReservaVigente, ocuparHabitaciones, conConcurrenciaComo409 } = require("./checkIn.servicio");
+  await conConcurrenciaComo409(() => prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${reservaId} FOR UPDATE`;
     validarReservaVigente(await tx.reserva.findUnique({ where: { id: reservaId } }));
 
@@ -266,7 +266,7 @@ async function confirmarConOcupacion(reserva, { operador, habitaciones, personas
       tx,
       filas.map((f) => f.habitacionId),
     );
-  }, OPCIONES_TRANSACCION);
+  }, OPCIONES_TRANSACCION));
 }
 
 module.exports = { confirmarConOcupacion, MOTIVO_REEMPLAZO };

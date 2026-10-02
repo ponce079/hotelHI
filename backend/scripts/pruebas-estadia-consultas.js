@@ -8,6 +8,7 @@
 //   node scripts/pruebas-estadia-consultas.js
 
 const assert = require("assert");
+const { haceAnios } = require("./_fechasPrueba");
 const { crearBase, instalarDoble } = require("./_dobleSprint3");
 
 const base = crearBase();
@@ -43,7 +44,7 @@ function enDias(dias) {
 
 const HUESPED = {
   paisDocumento: "AR",
-  fechaNacimiento: "1990-01-01",
+  fechaNacimiento: haceAnios(36),
   nombre: "Ana Pérez",
   tipoDocumento: "DNI",
   numeroDocumento: "30111222",
@@ -367,12 +368,12 @@ async function main() {
           operador: "Prueba",
           personas,
           fechaHasta: enDias(2),
-          habitaciones: habs,
+          habitaciones: [{ ...habs[0], adultos: 2, menores: 1 }],
           ...precio,
           huesped: { ...HUESPED },
           ...GARANTIA_OK,
         }),
-      /como máximo 2 personas/,
+      /entran como máximo 2 personas y se indicaron 3/,
     );
     assert.equal(base._datos.ocupanteReserva.length, 0, "el rechazo no deja nada a medias");
   });
@@ -394,7 +395,7 @@ async function main() {
           huesped: { ...HUESPED },
           ...GARANTIA_OK,
         }),
-      (err) => err.statusCode === 400 && /figura dos veces en la lista/.test(err.message),
+      (err) => err.statusCode === 400 && /tienen el mismo documento/.test(err.message),
     );
   });
 

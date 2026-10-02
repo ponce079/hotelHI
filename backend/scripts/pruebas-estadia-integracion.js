@@ -3,6 +3,7 @@
 //
 //   ESTADIA_TEST_DATABASE_URL=mysql://usuario:clave@127.0.0.1:3306/hotelhi_pruebas npm run test:estadia
 const assert = require("node:assert/strict");
+const { haceAnios } = require("./_fechasPrueba");
 const entorno = require("./_entornoPruebas");
 entorno.cargarEntornoDePruebas();
 entorno.prepararEsquema();
@@ -86,7 +87,7 @@ async function pruebas() {
       planTarifarioId: plan.id,
       huesped: {
         paisDocumento: "AR",
-        fechaNacimiento: "1990-01-01",
+        fechaNacimiento: haceAnios(36),
         nombre: "Titular Prueba",
         tipoDocumento: "DNI",
         numeroDocumento: documento(),
@@ -103,9 +104,10 @@ async function pruebas() {
     tipoDocumento: "DNI",
     numeroDocumento: doc,
     paisDocumento: "AR",
-    fechaNacimiento: "1990-01-01",
+    fechaNacimiento: haceAnios(36),
     nacionalidad: "AR",
     paisResidencia: "AR",
+    telefono: "+54 387 555-0000",
     habitacionId: h.id,
     operador: "Prueba local",
     ...extra,
@@ -139,7 +141,7 @@ async function pruebas() {
   assert.equal(iso(new Date(r.huesped.fechaNacimiento)), d.huesped.fechaNacimiento);
   await assert.rejects(() => ingresar(r, d.huesped.numeroDocumento), /nombre y apellido|registradas/);
   await assert.rejects(
-    () => s.guardar(r.id, inicial[0].id, ficha(h1, d.huesped.numeroDocumento, { fechaNacimiento: "2015-01-01" })),
+    () => s.guardar(r.id, inicial[0].id, ficha(h1, d.huesped.numeroDocumento, { fechaNacimiento: haceAnios(11) })),
     /18 años/,
   );
   const a = await s.guardar(
@@ -155,7 +157,7 @@ async function pruebas() {
     r.id,
     null,
     ficha(h1, undefined, {
-      fechaNacimiento: "2015-01-01",
+      fechaNacimiento: haceAnios(11),
       responsableId: a.id,
       usarContactoResponsable: true,
     }),
@@ -256,12 +258,12 @@ async function pruebas() {
     personas: [{ ...ficha(hw, dw.huesped.numeroDocumento, { esTitular: true }), id: 1 }],
   };
   const antes = await p.reserva.count();
-  await assert.rejects(() => checkin.registrarCheckInWalkIn(walk), /registradas/);
+  await assert.rejects(() => checkin.registrarCheckInWalkIn(walk), /se cargaron 1 adulto y 0 menores/);
   assert.equal(await p.reserva.count(), antes);
   assert.equal((await p.habitacion.findUnique({ where: { id: hw.id } })).estado, "libre");
   walk.personas.push({
     ...ficha(hw, undefined, {
-      fechaNacimiento: "2015-01-01",
+      fechaNacimiento: haceAnios(11),
       responsableId: 1,
     }),
     id: 2,
