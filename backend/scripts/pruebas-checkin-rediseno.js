@@ -184,6 +184,29 @@ async function pruebas({ bar, nrf, temporada }) {
     assert.equal(Number(garantias[0].medios[0].importe), MONTO_GARANTIA);
     ok("1 — reserva 2 adultos + 1 menor confirmada con 3 personas en una llamada (En curso, verificadas, ocupada, una garantía)");
 
+    // ------------------------------------------------------------ PERSONA_ALOJADA (aditivo, etapa 2)
+    {
+      const otra = await habitacion(doble, 3);
+      const nuevoTitular = persona(7, otra.id, 33, { esTitular: true });
+      const { reserva: segunda, total: totalSegunda } = await reservar([{ habitacionId: otra.id, adultos: 2, menores: 0 }], {
+        titular: nuevoTitular,
+      });
+      const antesSegunda = await foto(segunda.id);
+      // La persona 2 de la primera reserva ya está alojada: se la carga como acompañante (id temporal 8).
+      const yaAlojada = { ...personas[1], id: 8, habitacionId: otra.id };
+      const err = await confirmar(segunda, {
+        habitaciones: [{ habitacionIdAnterior: otra.id, adultos: 2, menores: 0 }],
+        personas: [nuevoTitular, yaAlojada],
+        totalEsperado: totalSegunda,
+      }).catch((e) => e);
+      assert.equal(err.statusCode, 409);
+      assert.match(err.message, /Ya figura alojada en otra estadía/);
+      assert.equal(err.codigo, "PERSONA_ALOJADA");
+      assert.deepEqual(err.detalle, { personas: [8] });
+      assert.deepEqual(await foto(segunda.id), antesSegunda, "nada escrito");
+      ok("409 PERSONA_ALOJADA: mismo mensaje y status, con el id temporal de la fila en detalle.personas");
+    }
+
     // ------------------------------------------------------------ criterio 8 (sobre esta ficha)
     const encontrado = await huespedes.buscarPorDocumento({ tipo: "DNI", pais: "AR", numero: titular.numeroDocumento });
     assert.equal(encontrado.nombre, "Persona1");
@@ -354,6 +377,11 @@ async function pruebas({ bar, nrf, temporada }) {
     });
     await rechaza(() => confirmar(reserva, cambio(otroTipo)), 409, /es de otro tipo/, "CAMBIO_HABITACION_INVALIDO");
     await rechaza(() => confirmar(reserva, cambio(enMantenimiento)), 409, /no está libre/, "CAMBIO_HABITACION_INVALIDO");
+    // Aditivo de la etapa 2: el 409 dice qué habitación de la reserva marcar en la pantalla.
+    for (const destino of [otroTipo, enMantenimiento]) {
+      const err = await confirmar(reserva, cambio(destino)).catch((e) => e);
+      assert.deepEqual(err.detalle, { habitacionIdAnterior: a.id });
+    }
     // Ya incluida en la reserva: una reserva de dos habitaciones que intenta mover una sobre la otra.
     const c = await habitacion(doble, 3);
     const d = await habitacion(doble, 3);

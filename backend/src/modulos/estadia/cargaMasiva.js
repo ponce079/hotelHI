@@ -92,6 +92,8 @@ function validarLote(reserva, entradas, existentes) {
     const ficha = {
       ...p,
       id: clave,
+      // Id temporal que mandó la pantalla: identifica la fila en los errores (PERSONA_ALOJADA).
+      idTemporal: entrada.id ?? indice + 1,
       esTitular,
       habitacionId: rh.habitacionId,
       responsableId: responsable ? responsable.id : null,
@@ -223,16 +225,21 @@ async function rechazarYaAlojadas(tx, fichas) {
   if (!identidades.length) return;
   const alojadas = await tx.ocupanteReserva.findMany({
     where: { identidadActiva: { in: identidades } },
-    select: { nombre: true, apellido: true, reserva: { select: { codigoConfirmacion: true } } },
+    select: { nombre: true, apellido: true, identidadActiva: true, reserva: { select: { codigoConfirmacion: true } } },
   });
   if (alojadas.length) {
     const quienes = alojadas
       .map((p) => `${p.nombre} ${p.apellido}`.trim() + (p.reserva ? ` (reserva ${p.reserva.codigoConfirmacion})` : ""))
       .join(", ");
-    throw new ErrorDeNegocio(
+    const error = new ErrorDeNegocio(
       `Ya figura alojada en otra estadía: ${quienes}. Registrá su salida antes de volver a ingresarla.`,
       409,
     );
+    // Aditivo (etapa 2): qué filas del envío son, por su id temporal, para marcarlas en la pantalla.
+    const ocupadas = new Set(alojadas.map((p) => p.identidadActiva));
+    error.codigo = "PERSONA_ALOJADA";
+    error.detalle = { personas: fichas.filter((f) => ocupadas.has(s.identidad(f))).map((f) => f.idTemporal) };
+    throw error;
   }
 }
 
