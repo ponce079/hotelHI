@@ -1,5 +1,5 @@
 import { Fragment, useState } from "react";
-import { EstadiaPanel } from '../estadia/EstadiaPanel';
+import { EstadiaPanel } from "../estadia/EstadiaPanel";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Ban, BedDouble, Bell, ChevronDown, ChevronRight, DollarSign, LogIn, Pencil, Plus, User, UtensilsCrossed } from "lucide-react";

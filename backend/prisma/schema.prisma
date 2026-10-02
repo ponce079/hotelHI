@@ -634,6 +634,10 @@ model Huesped {
   identidadDocumento String? @unique @db.VarChar(64)
   ocupantes OcupanteReserva[]
   fechaNacimiento DateTime? @db.Date
+  nacionalidad    String?
+  paisResidencia  String?
+  domicilio       String?
+  localidad       String?
   id              Int       @id @default(autoincrement())
   nombre          String
   tipoDocumento   String
@@ -979,10 +983,6 @@ model OcupanteReserva {
   paisDocumento      String?
   motivoSinDocumento String?
   fechaNacimiento    DateTime?                      @db.Date
-  nacionalidad       String?
-  domicilio          String?
-  localidad          String?
-  paisResidencia     String?
   telefono           String?
   email              String?
   responsableId      Int?

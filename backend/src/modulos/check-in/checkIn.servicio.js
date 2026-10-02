@@ -1,4 +1,3 @@
-const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 // Check-in (HU-43 a HU-47).
 //
 // No tiene tabla propia (ver Modelo_de_Datos_Sprint3_Holiday_Inn.docx): es
@@ -11,7 +10,7 @@ const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 // sección 0): `reservasServicio.obtenerReserva/crearReservaEnTransaccion/
 // marcarEnCurso` son los mismos que ya usan y prueban Reservas.
 //
-// `Habitacion.estado: 'libre' → 'ocupada'` (HU-47, en ocuparHabitacion más
+// `Habitacion.estado: 'libre' → 'ocupada'` (HU-47, en ocuparHabitaciones más
 // abajo) se hace con un update directo, NO con
 // `habitacionesServicio.cambiarEstadoHabitacion` — corrección posterior:
 // esa función ahora valida una matriz de transiciones MANUALES (el
@@ -21,6 +20,7 @@ const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 // checkOut.servicio.js para sus propias transiciones de negocio.
 
 const prisma = require("../../lib/prisma");
+const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 const reservasServicio = require("../reservas/reservas.servicio");
 const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
 const { CONCEPTO_GARANTIA } = require("../pagos-estadia/pagoEstadia.constantes");
@@ -151,7 +151,10 @@ async function buscarReservaParaCheckIn({ id, codigo } = {}) {
 // exige que el importe no supere el saldo pendiente de la reserva, que es
 // exactamente la regla que no aplica acá (la garantía es plata aparte, no
 // un pago a cuenta del alojamiento). Sigue quedando como un PagoEstadia
-// real con el contrato de master; su reemplazo corresponde al modulo de Ricardo.
+// real (concepto Garantía) para que se vea en Movimientos de Pago y
+// consolidarCargos la tenga en cuenta como ya cobrada. Qué pasa con ella en
+// el check-out (devolverla si no hubo daños, descontarla si los hubo)
+// queda pendiente como otra tarea — esto solo cubre el cobro en el check-in.
 // --------------------------------------------------------------
 
 function validarGarantia({ garantiaConfirmada, medioGarantia, referenciaGarantia }) {
@@ -166,10 +169,12 @@ function validarGarantia({ garantiaConfirmada, medioGarantia, referenciaGarantia
   }
 }
 
-// La garantía comparte la transacción del check-in: cualquier fallo revierte
-// el ingreso, la ocupación de habitaciones y el registro del depósito.
-async function registrarGarantia(reservaId, { medioGarantia, referenciaGarantia }, tx) {
-  await tx.pagoEstadia.create({
+// Se llama DESPUÉS de que el check-in ya quedó confirmado (reserva "En
+// curso", habitación "ocupada"): si esto fallara, el check-in en sí no
+// queda a medio hacer — el recepcionista puede reintentar el cobro de la
+// garantía aparte, desde Pagos, sin tener que repetir el check-in.
+async function registrarGarantia(reservaId, { medioGarantia, referenciaGarantia }) {
+  await prisma.pagoEstadia.create({
     data: {
       reservaId,
       estado: "Pagado",
@@ -196,17 +201,26 @@ async function registrarGarantia(reservaId, { medioGarantia, referenciaGarantia 
 // pero el check-in ocupa la habitación DE INMEDIATO, hoy: si en el momento
 // de confirmar la habitación ya no está "libre" (pasó a mantenimiento, quedó
 // bloqueada, etc.), no tiene sentido pisarla a "ocupada" en silencio.
-async function ocuparHabitacion(tx, habitacionId) {
-  const habitacion = await tx.habitacion.findUnique({ where: { id: habitacionId } });
-  if (!habitacion) throw new ErrorDeNegocio("La habitación indicada no existe.", 404);
-  if (habitacion.estado !== "libre") {
-    throw new ErrorDeNegocio(
-      `La habitación ${habitacion.numero} no está libre (estado actual: "${habitacion.estado}") — no se puede completar el check-in.`
-    );
+//
+// Ocupa TODAS las habitaciones de la reserva con una lectura y una escritura
+// (antes: ocuparHabitacion, un findUnique y un update por habitación), para que
+// las consultas no crezcan con la cantidad de habitaciones.
+async function ocuparHabitaciones(tx, habitacionIds) {
+  const habitaciones = await tx.habitacion.findMany({ where: { id: { in: habitacionIds } } });
+  const porId = new Map(habitaciones.map((h) => [h.id, h]));
+  for (const habitacionId of habitacionIds) {
+    const habitacion = porId.get(habitacionId);
+    if (!habitacion) throw new ErrorDeNegocio("La habitación indicada no existe.", 404);
+    if (habitacion.estado !== "libre") {
+      throw new ErrorDeNegocio(
+        `La habitación ${habitacion.numero} no está libre (estado actual: "${habitacion.estado}") — ` +
+          "no se puede completar el check-in."
+      );
+    }
   }
   // Update directo, no `cambiarEstadoHabitacion` — ver el comentario del
   // encabezado de este archivo.
-  await tx.habitacion.update({ where: { id: habitacionId }, data: { estado: "ocupada" } });
+  await tx.habitacion.updateMany({ where: { id: { in: habitacionIds } }, data: { estado: "ocupada" } });
 }
 
 // --------------------------------------------------------------
@@ -245,19 +259,20 @@ async function confirmarCheckInConReserva({
   await prisma.$transaction(
     async (tx) => {
       await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${id} FOR UPDATE`;
-      const vigente = await tx.reserva.findUnique({where:{id}});
+      const vigente = await tx.reserva.findUnique({ where: { id } });
       validarReservaVigente(vigente);
-      await require('../estadia/ampliacion.servicio').ampliarSiCorresponde(tx, id, confirmacionAmpliacion);
-      await require('../estadia/ingreso').prepararIngreso(tx, id, operador);
+      await require("../estadia/ampliacion.servicio").ampliarSiCorresponde(tx, id, confirmacionAmpliacion);
+      await require("../estadia/ingreso").prepararIngreso(tx, id, operador);
       await reservasServicio.marcarEnCurso(id, tx);
-      for (const habitacion of reserva.habitaciones) {
-        await ocuparHabitacion(tx, habitacion.id);
-      }
-      await registrarGarantia(id, { medioGarantia, referenciaGarantia }, tx);
+      await ocuparHabitaciones(
+        tx,
+        reserva.habitaciones.map((habitacion) => habitacion.id)
+      );
     },
     OPCIONES_TRANSACCION
   );
 
+  await registrarGarantia(id, { medioGarantia, referenciaGarantia });
 
   return reservasServicio.obtenerReserva(id);
 }
@@ -325,18 +340,19 @@ async function registrarCheckInWalkIn({
     async (tx) => {
       // El walk-in ya trae todos los ocupantes completos; no crear un borrador adicional.
       const reserva = await reservasServicio.crearReservaEnTransaccion(tx, datos, { incluirTitular: false });
-      await require('../estadia/ingreso').cargarWalkIn(tx,reserva.id,personas,operador);
-      await require('../estadia/ingreso').prepararIngreso(tx,reserva.id,operador);
+      await require("../estadia/ingreso").cargarWalkIn(tx, reserva.id, personas, operador);
+      await require("../estadia/ingreso").prepararIngreso(tx, reserva.id, operador);
       await reservasServicio.marcarEnCurso(reserva.id, tx);
-      for (const habitacion of datos.habitaciones) {
-        await ocuparHabitacion(tx, habitacion.habitacionId);
-      }
-      await registrarGarantia(reserva.id, { medioGarantia, referenciaGarantia }, tx);
+      await ocuparHabitaciones(
+        tx,
+        datos.habitaciones.map((habitacion) => habitacion.habitacionId)
+      );
       return reserva.id;
     },
     OPCIONES_TRANSACCION
   );
 
+  await registrarGarantia(reservaId, { medioGarantia, referenciaGarantia });
 
   return reservasServicio.obtenerReserva(reservaId);
 }

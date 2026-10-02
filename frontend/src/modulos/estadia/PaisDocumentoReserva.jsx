@@ -1,12 +1,10 @@
 import { useState } from "react";
 import { Select } from "../../componentes/Select";
 import { Input } from "../../componentes/Input";
-import { PAISES_OCUPANTES, buscarPaisOcupante } from "./ocupantesUbicacion";
+import { PAISES_SELECTOR, buscarPaisOcupante } from "./ocupantesUbicacion";
 
 export function PaisDocumentoReserva({ value = "", onChange, onBlur, error }) {
-  const [manual, setManual] = useState(
-    Boolean(value && !buscarPaisOcupante(value)),
-  );
+  const [manual, setManual] = useState(Boolean(value && !buscarPaisOcupante(value)));
   return (
     <div className="space-y-2">
       <Select
@@ -20,7 +18,7 @@ export function PaisDocumentoReserva({ value = "", onChange, onBlur, error }) {
         }}
       >
         <option value="">Seleccionar país</option>
-        {PAISES_OCUPANTES.map((p) => (
+        {PAISES_SELECTOR.map((p) => (
           <option key={p.codigo} value={p.codigo}>
             {p.nombre}
           </option>

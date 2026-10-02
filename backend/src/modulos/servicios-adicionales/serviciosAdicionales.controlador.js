@@ -1,5 +1,5 @@
 const serviciosAdicionalesServicio = require("./serviciosAdicionales.servicio");
-const { responderEsperaConexion } = require('../../lib/erroresConexion');
+const { responderEsperaConexion } = require("../../lib/erroresConexion");
 
 function responderError(res, err, contexto, mensaje) {
   if (responderEsperaConexion(res, err)) return;

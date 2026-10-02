@@ -1,4 +1,4 @@
-const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
+const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 // src/modulos/movimientos-salida/movimientoSalida.servicio.js
 //
 // Lógica de negocio pura (HU-13: Movimiento de Salida). Mismo patrón que

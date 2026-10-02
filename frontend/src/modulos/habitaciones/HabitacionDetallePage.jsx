@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CargosHabitacion } from '../servicios-adicionales/CargosHabitacion';
+import { CargosHabitacion } from "../servicios-adicionales/CargosHabitacion";
 import { useParams, Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Pencil, Plus, RotateCw, Trash2, User, Wrench } from "lucide-react";
@@ -221,7 +221,9 @@ export function HabitacionDetallePage() {
         </div>
       )}
 
-      {ocupada && reservaActiva && puede('verConsumosServicio') && <CargosHabitacion reservaId={reservaActiva.id} habitacionId={habitacionId} />}
+      {ocupada && reservaActiva && puede("verConsumosServicio") && (
+        <CargosHabitacion reservaId={reservaActiva.id} habitacionId={habitacionId} />
+      )}
 
       {habitacion.estado === "bloqueada" && habitacion.motivoBloqueo && (
         <div

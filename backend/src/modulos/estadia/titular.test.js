@@ -22,9 +22,7 @@ function cliente(personas = [], evento = null) {
         ...data,
       })),
       findMany: jest.fn().mockResolvedValue(personas),
-      create: jest
-        .fn()
-        .mockImplementation(async ({ data }) => ({ id: 20, ...data })),
+      create: jest.fn().mockImplementation(async ({ data }) => ({ id: 20, ...data })),
     },
     eventoEstadia: {
       findFirst: jest.fn().mockResolvedValue(evento),
@@ -34,9 +32,10 @@ function cliente(personas = [], evento = null) {
 }
 test("incorpora al titular con datos conocidos y sin inventar apellido, país ni nacimiento", async () => {
   const tx = cliente();
-  await expect(
-    incorporarEnTransaccion(tx, reserva, huesped, "Recepción", true),
-  ).resolves.toMatchObject({ ocupanteId: 20, creado: true });
+  await expect(incorporarEnTransaccion(tx, reserva, huesped, "Recepción", true)).resolves.toMatchObject({
+    ocupanteId: 20,
+    creado: true,
+  });
   expect(tx.ocupanteReserva.create).toHaveBeenCalledWith(
     expect.objectContaining({
       data: expect.objectContaining({
@@ -62,16 +61,18 @@ test("reutiliza al titular ya cargado sin sobrescribir sus datos ni consumir otr
     fechaNacimiento: new Date("1980-01-01"),
   };
   const tx = cliente([p]);
-  expect(
-    await incorporarEnTransaccion(tx, reserva, huesped, "Recepción"),
-  ).toMatchObject({ ocupanteId: 7, creado: false });
+  expect(await incorporarEnTransaccion(tx, reserva, huesped, "Recepción")).toMatchObject({
+    ocupanteId: 7,
+    creado: false,
+  });
   expect(tx.ocupanteReserva.create).not.toHaveBeenCalled();
 });
 test("la FK evita duplicar al titular aunque se edite su documento", async () => {
   const tx = cliente([{ id: 7, huespedId: 9, esTitular: true }]);
-  expect(
-    await incorporarEnTransaccion(tx, reserva, huesped, "Prueba"),
-  ).toMatchObject({ ocupanteId: 7, incorporado: false });
+  expect(await incorporarEnTransaccion(tx, reserva, huesped, "Prueba")).toMatchObject({
+    ocupanteId: 7,
+    incorporado: false,
+  });
   expect(tx.ocupanteReserva.create).not.toHaveBeenCalled();
 });
 const ocupante = (id) => ({
@@ -86,9 +87,9 @@ test("titular más dos acompañantes ocupa la tercera plaza; no acepta una cuart
   await incorporarEnTransaccion(tx, reserva, huesped, "Recepción");
   expect(tx.ocupanteReserva.create).toHaveBeenCalledTimes(1);
   const llena = cliente([ocupante(1), ocupante(2), ocupante(3)]);
-  await expect(
-    incorporarEnTransaccion(llena, reserva, huesped, "Recepción"),
-  ).rejects.toMatchObject({ statusCode: 409 });
+  await expect(incorporarEnTransaccion(llena, reserva, huesped, "Recepción")).rejects.toMatchObject({
+    statusCode: 409,
+  });
   expect(llena.ocupanteReserva.create).not.toHaveBeenCalled();
 });
 test("en reservas grupales usa una habitación con plaza y conserva el correo compartido como aviso", async () => {

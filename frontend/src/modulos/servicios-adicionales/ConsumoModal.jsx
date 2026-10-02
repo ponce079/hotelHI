@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { validarFechaConsumo } from './validarFechaConsumo';
+import { validarFechaConsumo } from "./validarFechaConsumo";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Save, X } from "lucide-react";
 import { Modal } from "../../componentes/Modal";
@@ -34,11 +34,15 @@ const VACIO = {
 // por su cuenta y es la fuente de verdad real (ver resolverDepositoMinibar
 // en serviciosAdicionales.servicio.js); no se manda en el payload.
 export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito }) {
-  const habitacionInicial = habitacionIdInicial ? String(habitacionIdInicial) : reserva.habitaciones.length === 1 ? String(reserva.habitaciones[0].id) : "";
+  const habitacionInicial = habitacionIdInicial
+    ? String(habitacionIdInicial)
+    : reserva.habitaciones.length === 1
+      ? String(reserva.habitaciones[0].id)
+      : "";
   const [form, setForm] = useState({ ...VACIO, habitacionId: habitacionInicial });
   const [errores, setErrores] = useState({});
-  const [claveOperacion] = useState(()=>crypto.randomUUID());
-  const habitacionSeleccionada = reserva.habitaciones.find(h=>String(h.id)===form.habitacionId);
+  const [claveOperacion] = useState(() => crypto.randomUUID());
+  const habitacionSeleccionada = reserva.habitaciones.find((h) => String(h.id) === form.habitacionId);
   const queryClient = useQueryClient();
   const esMinibar = form.tipoServicio === "Minibar";
 
@@ -58,12 +62,12 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
         reservaId: reserva.id,
         habitacionId: Number(form.habitacionId),
         tipoServicio: form.tipoServicio,
-        precioUnitario: form.incluido ? Number(form.monto||0) : Number(form.monto),
+        precioUnitario: form.incluido ? Number(form.monto || 0) : Number(form.monto),
         cantidad: Number(form.cantidad),
         descripcion: form.descripcion || form.tipoServicio,
         incluido: form.incluido === true,
         claveOperacion,
-        ...(form.fechaServicio ? {fechaServicio:new Date(form.fechaServicio).toISOString()} : {}),
+        ...(form.fechaServicio ? { fechaServicio: new Date(form.fechaServicio).toISOString() } : {}),
         registradoPor: form.registradoPor.trim(),
       };
       if (esMinibar) {
@@ -125,8 +129,10 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
       <form onSubmit={handleSubmit}>
         <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2">
           <div className="rounded-lg border border-borde bg-hueso p-4 sm:col-span-2" aria-live="polite">
-            <p className="font-heading text-xl font-bold">{habitacionSeleccionada ? `Habitación ${habitacionSeleccionada.numero}` : 'Elegí una habitación'}</p>
-            <p className="mt-1 text-xs text-piedra">Titular: {reserva.huesped?.nombre || 'Sin titular informado'}</p>
+            <p className="font-heading text-xl font-bold">
+              {habitacionSeleccionada ? `Habitación ${habitacionSeleccionada.numero}` : "Elegí una habitación"}
+            </p>
+            <p className="mt-1 text-xs text-piedra">Titular: {reserva.huesped?.nombre || "Sin titular informado"}</p>
           </div>
           {errores.general && <p className="sm:col-span-2 text-sm text-error-texto">{errores.general}</p>}
 
@@ -187,11 +193,44 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
             </>
           )}
 
-          <Input label="Descripción del cargo" value={form.descripcion||''} onChange={e=>cambiar('descripcion',e.target.value)} maxLength={500}/>
-          <Input label="Fecha del servicio" type="datetime-local" value={form.fechaServicio||''} error={errores.fechaServicio || validarFechaConsumo(reserva, form.fechaServicio)} onChange={e=>cambiar('fechaServicio',e.target.value)}/>
-          {!esMinibar&&<Input label="Cantidad *" type="number" min="0.01" step="0.01" value={form.cantidad} onChange={e=>cambiar('cantidad',e.target.value)} error={errores.cantidad}/>}
-          <label className="text-sm"><input type="checkbox" checked={form.incluido||false} onChange={e=>cambiar('incluido',e.target.checked)}/> Incluido en la tarifa (sin cargo)</label>
-          <MoneyInput label="Precio unitario *" value={form.monto} onChange={(v) => cambiar("monto", v)} error={errores.monto} />
+          <Input
+            label="Descripción del cargo"
+            value={form.descripcion || ""}
+            onChange={(e) => cambiar("descripcion", e.target.value)}
+            maxLength={500}
+          />
+          <Input
+            label="Fecha del servicio"
+            type="datetime-local"
+            value={form.fechaServicio || ""}
+            error={errores.fechaServicio || validarFechaConsumo(reserva, form.fechaServicio)}
+            onChange={(e) => cambiar("fechaServicio", e.target.value)}
+          />
+          {!esMinibar && (
+            <Input
+              label="Cantidad *"
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={form.cantidad}
+              onChange={(e) => cambiar("cantidad", e.target.value)}
+              error={errores.cantidad}
+            />
+          )}
+          <label className="text-sm">
+            <input
+              type="checkbox"
+              checked={form.incluido || false}
+              onChange={(e) => cambiar("incluido", e.target.checked)}
+            />{" "}
+            Incluido en la tarifa (sin cargo)
+          </label>
+          <MoneyInput
+            label="Precio unitario *"
+            value={form.monto}
+            onChange={(v) => cambiar("monto", v)}
+            error={errores.monto}
+          />
 
           <div className={esMinibar ? "" : "sm:col-span-2"}>
             <Input

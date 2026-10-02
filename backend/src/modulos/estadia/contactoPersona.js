@@ -3,14 +3,7 @@ const normalizar = (v) =>
     .trim()
     .toUpperCase()
     .replace(/\s/g, "");
-async function prepararContacto(
-  tx,
-  r,
-  p,
-  actual,
-  data,
-  { edad, ErrorDeNegocio },
-) {
+async function prepararContacto(tx, r, p, actual, data, { edad, ErrorDeNegocio }) {
   const documentoTitular = r.huesped?.numeroDocumento;
   const esTitular =
     actual?.esTitular ||
@@ -18,18 +11,10 @@ async function prepararContacto(
     (documentoTitular &&
       normalizar(p.numeroDocumento) === normalizar(documentoTitular) &&
       normalizar(p.tipoDocumento) === normalizar(r.huesped.tipoDocumento));
-  if (
-    esTitular &&
-    (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < 18)
-  )
-    throw new ErrorDeNegocio(
-      "El titular debe tener al menos 18 años al ingresar.",
-      400,
-      {
-        fechaNacimiento:
-          "Completá una fecha de nacimiento válida: el titular debe tener al menos 18 años al ingresar.",
-      },
-    );
+  if (esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < 18))
+    throw new ErrorDeNegocio("El titular debe tener al menos 18 años al ingresar.", 400, {
+      fechaNacimiento: "Completá una fecha de nacimiento válida: el titular debe tener al menos 18 años al ingresar.",
+    });
   const menor = p.fechaNacimiento && edad(p.fechaNacimiento, p.fechaDesde) < 18;
   const responsable = p.responsableId
     ? await tx.ocupanteReserva.findFirst({
@@ -47,11 +32,9 @@ async function prepararContacto(
       edad(responsable.fechaNacimiento, p.fechaDesde) < 18 ||
       responsable.id === actual?.id
     )
-      throw new ErrorDeNegocio(
-        "Elegí un adulto responsable válido para compartir su contacto.",
-        400,
-        { responsableId: "Elegí el adulto responsable del menor." },
-      );
+      throw new ErrorDeNegocio("Elegí un adulto responsable válido para compartir su contacto.", 400, {
+        responsableId: "Elegí el adulto responsable del menor.",
+      });
     p.email = responsable.email || null;
     p.telefono = responsable.telefono || null;
   }

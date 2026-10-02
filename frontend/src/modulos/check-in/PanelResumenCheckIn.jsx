@@ -13,7 +13,15 @@ function CampoResumen({ label, valor }) {
 
 // Panel fijo de la columna derecha de Check-in (con reserva) — ancho fijo,
 // no se achica ni se estira con el contenido del formulario a su lado.
-export function PanelResumenCheckIn({ reserva, garantiaConfirmada, medioGarantia, puedeConfirmar, cargando, onConfirmar, motivosBloqueo = [] }) {
+export function PanelResumenCheckIn({
+  reserva,
+  garantiaConfirmada,
+  medioGarantia,
+  puedeConfirmar,
+  cargando,
+  onConfirmar,
+  motivosBloqueo = [],
+}) {
   return (
     <aside className="flex flex-[0_0_360px] flex-col overflow-hidden rounded-lg border border-borde bg-white">
       <div className="bg-laton-700 px-[26px] py-5">
@@ -33,11 +41,28 @@ export function PanelResumenCheckIn({ reserva, garantiaConfirmada, medioGarantia
         <CampoResumen label="Garantía de pago" valor={garantiaConfirmada ? medioGarantia : "Pendiente"} />
       </div>
       <div className="px-6 pb-6">
-        {motivosBloqueo.length > 0 && !cargando && <div id="check-in-pendientes" role="status" className="mb-4 rounded-md border border-borde bg-hueso p-3 text-sm">
-          <p className="font-semibold">Para habilitar el check-in:</p>
-          <ul className="mt-2 list-disc space-y-2 pl-4">{motivosBloqueo.map(motivo => <li key={motivo}>{motivo}</li>)}</ul>
-        </div>}
-        <Button icono={DoorOpen} className="w-full justify-center" aria-describedby={motivosBloqueo.length > 0 && !cargando ? 'check-in-pendientes' : undefined} cargando={cargando} disabled={!puedeConfirmar} onClick={onConfirmar}>
+        {motivosBloqueo.length > 0 && !cargando && (
+          <div
+            id="check-in-pendientes"
+            role="status"
+            className="mb-4 rounded-md border border-borde bg-hueso p-3 text-sm"
+          >
+            <p className="font-semibold">Para habilitar el check-in:</p>
+            <ul className="mt-2 list-disc space-y-2 pl-4">
+              {motivosBloqueo.map((motivo) => (
+                <li key={motivo}>{motivo}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <Button
+          icono={DoorOpen}
+          className="w-full justify-center"
+          aria-describedby={motivosBloqueo.length > 0 && !cargando ? "check-in-pendientes" : undefined}
+          cargando={cargando}
+          disabled={!puedeConfirmar}
+          onClick={onConfirmar}
+        >
           Confirmar check-in
         </Button>
       </div>

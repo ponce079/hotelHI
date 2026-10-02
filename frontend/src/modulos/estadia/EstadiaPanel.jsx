@@ -8,7 +8,7 @@ import { Select } from "../../componentes/Select";
 import { Modal } from "../../componentes/Modal";
 import { ConsumoModal } from "../servicios-adicionales/ConsumoModal";
 import { obtenerCuenta } from "../check-out/checkOut.api";
-import { PAISES_OCUPANTES, buscarPaisOcupante } from "./ocupantesUbicacion";
+import { PAISES_SELECTOR, buscarPaisOcupante } from "./ocupantesUbicacion";
 import { validarOcupante, pendientesParaIngreso } from "./validarOcupante";
 import { titularRegistrado } from "./titularRegistrado";
 import {
@@ -19,26 +19,15 @@ import {
 
 function ErrorConsulta({ consulta, mensaje }) {
   return (
-    <div
-      role="alert"
-      className="rounded border border-error bg-error-suave p-3 text-sm text-error-texto"
-    >
+    <div role="alert" className="rounded border border-error bg-error-suave p-3 text-sm text-error-texto">
       <p>{consulta.error?.response?.data?.error || mensaje}</p>
-      <Button
-        className="mt-2"
-        variante="secundario"
-        cargando={consulta.isFetching}
-        onClick={() => consulta.refetch()}
-      >
+      <Button className="mt-2" variante="secundario" cargando={consulta.isFetching} onClick={() => consulta.refetch()}>
         Volver a cargar
       </Button>
     </div>
   );
 }
-const moneda = (v) =>
-  new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(
-    v || 0,
-  );
+const moneda = (v) => new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS" }).format(v || 0);
 const detalleEvento = (e) => {
   try {
     const d = JSON.parse(e.detalle);
@@ -63,6 +52,13 @@ const ETIQUETAS_NUMERO_DOCUMENTO = {
   Pasaporte: "Número de pasaporte",
   NIE: "Número de NIE",
   TIE: "Número de TIE",
+};
+// Campos que se eligen del catálogo de países (con "Otro país" para valores que no figuren en él).
+const CAMPOS_PAIS = ["paisDocumento", "nacionalidad", "paisResidencia"];
+const ETIQUETAS_PAIS_MANUAL = {
+  paisDocumento: "Nombre del país emisor",
+  nacionalidad: "Nombre del país de la nacionalidad",
+  paisResidencia: "Nombre del país de residencia",
 };
 const campos = [
   ["nombre", "Nombre", "text", true],
@@ -94,42 +90,29 @@ export function PersonaFormulario({
 }) {
   const [form, setForm] = useState(() => ({
     ...persona,
-    habitacionId:
-      activa(persona)?.habitacionId ||
-      persona.habitacionId ||
-      reserva.habitaciones[0]?.id ||
-      "",
+    habitacionId: activa(persona)?.habitacionId || persona.habitacionId || reserva.habitaciones[0]?.id || "",
     fechaNacimiento: persona.fechaNacimiento?.slice(0, 10) || "",
     fechaDesde: (persona.fechaDesde || reserva.fechaDesde || "").slice(0, 10),
     fechaHasta: (persona.fechaHasta || reserva.fechaHasta || "").slice(0, 10),
   }));
   const [otraLocalidad, setOtraLocalidad] = useState(() =>
-    Boolean(
-      persona.localidad &&
-      !buscarPaisOcupante(persona.paisResidencia)?.localidades.includes(
-        persona.localidad,
-      ),
-    ),
+    Boolean(persona.localidad && !buscarPaisOcupante(persona.paisResidencia)?.localidades.includes(persona.localidad)),
   );
   const [paisManual, setPaisManual] = useState(() => ({
-    paisDocumento: Boolean(
-      persona.paisDocumento && !buscarPaisOcupante(persona.paisDocumento),
-    ),
-    paisResidencia: Boolean(
-      persona.paisResidencia && !buscarPaisOcupante(persona.paisResidencia),
-    ),
+    paisDocumento: Boolean(persona.paisDocumento && !buscarPaisOcupante(persona.paisDocumento)),
+    paisResidencia: Boolean(persona.paisResidencia && !buscarPaisOcupante(persona.paisResidencia)),
+    nacionalidad: Boolean(persona.nacionalidad && !buscarPaisOcupante(persona.nacionalidad)),
   }));
   const paisResidencia = buscarPaisOcupante(form.paisResidencia);
+  // Solo algunos países tienen localidades sugeridas: en los demás la localidad se escribe.
+  const localidadLibre = Boolean(paisResidencia && !paisResidencia.localidades.length);
   const [tocados, setTocados] = useState({});
   const [intentoGuardar, setIntentoGuardar] = useState(false);
   const esMenor = Boolean(
     form.fechaNacimiento &&
-    `${Number(form.fechaNacimiento.slice(0, 4)) + 18}${form.fechaNacimiento.slice(4)}` >
-      form.fechaDesde,
+    `${Number(form.fechaNacimiento.slice(0, 4)) + 18}${form.fechaNacimiento.slice(4)}` > form.fechaDesde,
   );
-  const responsableContacto = personas.find(
-    (p) => String(p.id) === String(form.responsableId),
-  );
+  const responsableContacto = personas.find((p) => String(p.id) === String(form.responsableId));
   useEffect(() => {
     if (form.usarContactoResponsable)
       setForm((f) => ({
@@ -151,7 +134,7 @@ export function PersonaFormulario({
     personas,
     persona,
     paisManual,
-    otraLocalidad,
+    otraLocalidad || localidadLibre,
     esTitular || form.esTitular,
   );
   for (const [campo, dato] of Object.entries(erroresServidor)) {
@@ -162,8 +145,7 @@ export function PersonaFormulario({
     const visible =
       intentoGuardar ||
       tocados[campo] ||
-      (["email", "numeroDocumento", "habitacionId"].includes(campo) &&
-        form[campo]) ||
+      (["email", "numeroDocumento", "habitacionId"].includes(campo) && form[campo]) ||
       erroresServidor[campo];
     const definicion = campos.find((c) => c[0] === campo);
     let etiqueta = definicion
@@ -173,15 +155,10 @@ export function PersonaFormulario({
           responsableId: "Adulto responsable (menores)",
           motivo: "Motivo del cambio de habitación",
         }[campo];
-    if (campo === "numeroDocumento")
-      etiqueta = ETIQUETAS_NUMERO_DOCUMENTO[form.tipoDocumento] || etiqueta;
-    if (campo === "localidad" && (otraLocalidad || paisManual.paisResidencia))
+    if (campo === "numeroDocumento") etiqueta = ETIQUETAS_NUMERO_DOCUMENTO[form.tipoDocumento] || etiqueta;
+    if (campo === "localidad" && (otraLocalidad || localidadLibre || paisManual.paisResidencia))
       etiqueta = "Nombre de la localidad";
-    if (paisManual[campo])
-      etiqueta =
-        campo === "paisDocumento"
-          ? "Nombre del país emisor"
-          : "Nombre del país de residencia";
+    if (paisManual[campo]) etiqueta = ETIQUETAS_PAIS_MANUAL[campo];
     return {
       name: campo,
       error: visible ? errores[campo] : undefined,
@@ -201,7 +178,7 @@ export function PersonaFormulario({
   }
 
   function renderCampo([k, label, type, required]) {
-    if (k === "paisDocumento" || k === "paisResidencia") {
+    if (CAMPOS_PAIS.includes(k)) {
       const pais = buscarPaisOcupante(form[k]);
       return (
         <div key={k} className="space-y-2">
@@ -216,7 +193,7 @@ export function PersonaFormulario({
             }}
           >
             <option value="">Seleccionar país</option>
-            {PAISES_OCUPANTES.map((p) => (
+            {PAISES_SELECTOR.map((p) => (
               <option key={p.codigo} value={p.codigo}>
                 {p.nombre}
               </option>
@@ -226,11 +203,7 @@ export function PersonaFormulario({
           {paisManual[k] && (
             <Input
               {...propsCampo(k)}
-              label={
-                k === "paisDocumento"
-                  ? "Nombre del país emisor"
-                  : "Nombre del país de residencia"
-              }
+              label={ETIQUETAS_PAIS_MANUAL[k]}
               required
               pattern={".*\\S.*"}
               maxLength={191}
@@ -243,7 +216,7 @@ export function PersonaFormulario({
       );
     }
     if (k === "localidad") {
-      if (paisManual.paisResidencia) {
+      if (paisManual.paisResidencia || localidadLibre) {
         return (
           <Input
             key={k}
@@ -255,9 +228,7 @@ export function PersonaFormulario({
             maxLength={191}
             value={form.localidad || ""}
             placeholder="Ingresá la localidad de residencia"
-            onChange={(e) =>
-              setForm((f) => ({ ...f, localidad: e.target.value }))
-            }
+            onChange={(e) => setForm((f) => ({ ...f, localidad: e.target.value }))}
           />
         );
       }
@@ -277,9 +248,7 @@ export function PersonaFormulario({
             }}
           >
             <option value="">
-              {form.paisResidencia
-                ? "Seleccionar localidad"
-                : "Primero seleccioná el país de residencia"}
+              {form.paisResidencia ? "Seleccionar localidad" : "Primero seleccioná el país de residencia"}
             </option>
             {(paisResidencia?.localidades || []).map((localidad) => (
               <option key={localidad} value={localidad}>
@@ -296,9 +265,7 @@ export function PersonaFormulario({
               maxLength={191}
               value={form.localidad || ""}
               placeholder="Ingresá la localidad de residencia"
-              onChange={(e) =>
-                setForm((f) => ({ ...f, localidad: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, localidad: e.target.value }))}
             />
           )}
         </div>
@@ -311,17 +278,14 @@ export function PersonaFormulario({
           {...propsCampo(k)}
           label={label}
           value={form.tipoDocumento || ""}
-          onChange={(e) =>
-            setForm((f) => ({ ...f, tipoDocumento: e.target.value }))
-          }
+          onChange={(e) => setForm((f) => ({ ...f, tipoDocumento: e.target.value }))}
         >
           <option value="">Seleccionar tipo de documento</option>
-          {form.tipoDocumento &&
-            !TIPOS_DOCUMENTO_OCUPANTE.includes(form.tipoDocumento) && (
-              <option value={form.tipoDocumento} disabled>
-                {form.tipoDocumento} (registrado anteriormente)
-              </option>
-            )}
+          {form.tipoDocumento && !TIPOS_DOCUMENTO_OCUPANTE.includes(form.tipoDocumento) && (
+            <option value={form.tipoDocumento} disabled>
+              {form.tipoDocumento} (registrado anteriormente)
+            </option>
+          )}
           {TIPOS_DOCUMENTO_OCUPANTE.map((tipo) => (
             <option key={tipo} value={tipo}>
               {tipo}
@@ -330,25 +294,15 @@ export function PersonaFormulario({
         </Select>
       );
     }
-    const etiqueta =
-      k === "numeroDocumento"
-        ? ETIQUETAS_NUMERO_DOCUMENTO[form.tipoDocumento] || label
-        : label;
+    const etiqueta = k === "numeroDocumento" ? ETIQUETAS_NUMERO_DOCUMENTO[form.tipoDocumento] || label : label;
     return (
       <Input
         key={k}
         {...propsCampo(k)}
         label={etiqueta + (required ? " *" : "")}
-        placeholder={
-          k === "numeroDocumento"
-            ? `Ingresá el ${etiqueta.replace("Número", "número")}`
-            : undefined
-        }
+        placeholder={k === "numeroDocumento" ? `Ingresá el ${etiqueta.replace("Número", "número")}` : undefined}
         type={type}
-        disabled={
-          Boolean(form.usarContactoResponsable) &&
-          ["email", "telefono"].includes(k)
-        }
+        disabled={Boolean(form.usarContactoResponsable) && ["email", "telefono"].includes(k)}
         required={required}
         maxLength={191}
         value={form[k] || ""}
@@ -377,24 +331,17 @@ export function PersonaFormulario({
       className="space-y-4 p-5"
     >
       <p className="text-sm text-piedra">
-        Los datos identifican al ocupante. Todos los cargos se asignan a la
-        habitación.
+        Los datos identifican al ocupante. Todos los cargos se asignan a la habitación.
       </p>
       <label className="flex gap-2 text-sm">
         <input
           type="checkbox"
           checked={Boolean(form.esTitular)}
-          onChange={(e) =>
-            setForm((f) => ({ ...f, esTitular: e.target.checked }))
-          }
+          onChange={(e) => setForm((f) => ({ ...f, esTitular: e.target.checked }))}
         />
         Titular de esta habitación
       </label>
-      {esTitular && (
-        <p className="text-sm">
-          El titular debe tener al menos 18 años en la fecha de ingreso.
-        </p>
-      )}
+      {esTitular && <p className="text-sm">El titular debe tener al menos 18 años en la fecha de ingreso.</p>}
       {esMenor && (
         <label className="flex gap-2 text-sm">
           <input
@@ -414,8 +361,8 @@ export function PersonaFormulario({
       )}
       {esMenor && (
         <p className="text-xs text-piedra">
-          Podés dejar el correo y teléfono vacíos. Si usás los del responsable,
-          se copian los datos disponibles al guardar.
+          Podés dejar el correo y teléfono vacíos. Si usás los del responsable, se copian los datos disponibles al
+          guardar.
         </p>
       )}
       <div className="grid gap-3 sm:grid-cols-2">
@@ -441,11 +388,7 @@ export function PersonaFormulario({
         >
           <option value="">Sin asignar</option>
           {personas
-            .filter(
-              (p) =>
-                p.id !== persona.id &&
-                !["Cancelado", "Retirado"].includes(p.estado),
-            )
+            .filter((p) => p.id !== persona.id && !["Cancelado", "Retirado"].includes(p.estado))
             .map((p) => (
               <option key={p.id} value={p.id}>
                 {p.nombre} {p.apellido}
@@ -468,14 +411,13 @@ export function PersonaFormulario({
       )}
       {intentoGuardar && Object.keys(errores).length > 0 && (
         <p role="alert" className="text-error-texto">
-          No se pudo guardar. Revisá los {Object.keys(errores).length} campos
-          señalados.
+          No se pudo guardar. Revisá los {Object.keys(errores).length} campos señalados.
         </p>
       )}
       {pendientesIngreso.length > 0 && (
         <p className="rounded border border-borde bg-hueso p-3 text-sm">
-          Podés guardar los datos pendientes. Antes de verificar e ingresar
-          faltará completar: {pendientesIngreso.join(", ")}.
+          Podés guardar los datos pendientes. Antes de verificar e ingresar faltará completar:{" "}
+          {pendientesIngreso.join(", ")}.
         </p>
       )}
       <div className="flex justify-end gap-2">
@@ -490,11 +432,7 @@ export function PersonaFormulario({
   );
 }
 
-export function EstadiaPanel({
-  reserva,
-  soloPersonas = false,
-  onTitularPreparado,
-}) {
+export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado }) {
   const [erroresServidor, setErroresServidor] = useState({});
   const { usuario, puede } = useSesion();
   const qc = useQueryClient();
@@ -505,24 +443,18 @@ export function EstadiaPanel({
   const [motivo, setMotivo] = useState("");
   const [error, setError] = useState("");
   const puedeEditar =
-    (puede("gestionarReservas") || puede("gestionarCheckIn")) &&
-    ["Confirmada", "En curso"].includes(reserva.estado);
-  const puedeCargos =
-    puede("registrarConsumoServicio") && reserva.estado === "En curso";
+    (puede("gestionarReservas") || puede("gestionarCheckIn")) && ["Confirmada", "En curso"].includes(reserva.estado);
+  const puedeCargos = puede("registrarConsumoServicio") && reserva.estado === "En curso";
   const puedeCuenta = puede("verPagosEstadia");
   const intentoTitular = useRef(null);
   const necesitaTitular = puedeEditar && Boolean(reserva.huesped);
   const personas = useQuery({
     queryKey: ["ocupantes", reserva.id],
-    queryFn: () =>
-      api.get(`/estadia/${reserva.id}/ocupantes`).then((r) => r.data),
+    queryFn: () => api.get(`/estadia/${reserva.id}/ocupantes`).then((r) => r.data),
     retry: reintentarLectura,
   });
   const titular = useMutation({
-    mutationFn: () =>
-      api
-        .post(`/estadia/${reserva.id}/titular`, { operador: usuario })
-        .then((r) => r.data),
+    mutationFn: () => api.post(`/estadia/${reserva.id}/titular`, { operador: usuario }).then((r) => r.data),
     retry: reintentarTitular,
     retryDelay: demoraReintentoTitular,
     onSuccess: async () => {
@@ -531,11 +463,7 @@ export function EstadiaPanel({
       onTitularPreparado?.(reserva.id);
     },
   });
-  const titularExistente = titularRegistrado(
-    personas.data || [],
-    reserva.huesped,
-    titular.data?.ocupanteId,
-  );
+  const titularExistente = titularRegistrado(personas.data || [], reserva.huesped, titular.data?.ocupanteId);
   useEffect(() => {
     if (
       necesitaTitular &&
@@ -547,26 +475,11 @@ export function EstadiaPanel({
       intentoTitular.current = reserva.id;
       titular.mutate();
     }
-  }, [
-    necesitaTitular,
-    reserva.id,
-    titular.mutate,
-    personas.isSuccess,
-    personas.isFetching,
-    titularExistente,
-  ]);
+  }, [necesitaTitular, reserva.id, titular.mutate, personas.isSuccess, personas.isFetching, titularExistente]);
   useEffect(() => {
-    if (necesitaTitular && personas.isSuccess && titularExistente)
-      onTitularPreparado?.(reserva.id);
-  }, [
-    necesitaTitular,
-    personas.isSuccess,
-    titularExistente?.id,
-    reserva.id,
-    onTitularPreparado,
-  ]);
-  const preparandoTitular =
-    necesitaTitular && !titularExistente && !titular.isSuccess;
+    if (necesitaTitular && personas.isSuccess && titularExistente) onTitularPreparado?.(reserva.id);
+  }, [necesitaTitular, personas.isSuccess, titularExistente?.id, reserva.id, onTitularPreparado]);
+  const preparandoTitular = necesitaTitular && !titularExistente && !titular.isSuccess;
   const cuenta = useQuery({
     queryKey: ["check-out", "cuenta", String(reserva.id)],
     queryFn: () => obtenerCuenta(reserva.id),
@@ -575,20 +488,13 @@ export function EstadiaPanel({
   });
   const cargos = useQuery({
     queryKey: ["consumos-servicios", "detalle", reserva.id],
-    queryFn: () =>
-      api
-        .get("/consumos-servicios", { params: { reservaId: reserva.id } })
-        .then((r) => r.data),
-    enabled:
-      !soloPersonas &&
-      puede("verConsumosServicio") &&
-      tab === "Cargos por habitación",
+    queryFn: () => api.get("/consumos-servicios", { params: { reservaId: reserva.id } }).then((r) => r.data),
+    enabled: !soloPersonas && puede("verConsumosServicio") && tab === "Cargos por habitación",
     retry: reintentarLectura,
   });
   const historial = useQuery({
     queryKey: ["estadia-historial", reserva.id],
-    queryFn: () =>
-      api.get(`/estadia/${reserva.id}/historial`).then((r) => r.data),
+    queryFn: () => api.get(`/estadia/${reserva.id}/historial`).then((r) => r.data),
     enabled: tab === "Historial",
     retry: reintentarLectura,
   });
@@ -648,13 +554,8 @@ export function EstadiaPanel({
   });
   const listado = personas.data || [];
   const errorCargaPersonas =
-    preparandoTitular && titular.isError
-      ? titular.error
-      : personas.isError
-        ? personas.error
-        : null;
-  const cargandoPersonas =
-    personas.isFetching || (preparandoTitular && titular.isPending);
+    preparandoTitular && titular.isError ? titular.error : personas.isError ? personas.error : null;
+  const cargandoPersonas = personas.isFetching || (preparandoTitular && titular.isPending);
   function recuperarPersonas() {
     if (cargandoPersonas) return;
     // Si el POST perdió la respuesta, se recupera el mismo titular; nunca
@@ -670,18 +571,12 @@ export function EstadiaPanel({
           ? ["Personas"]
           : [
               "Personas",
-              ...(puede("verConsumosServicio")
-                ? ["Cargos por habitación"]
-                : []),
+              ...(puede("verConsumosServicio") ? ["Cargos por habitación"] : []),
               ...(puedeCuenta ? ["Cuenta"] : []),
               "Historial",
             ]
         ).map((t) => (
-          <Button
-            key={t}
-            variante={tab === t ? "ok" : "secundario"}
-            onClick={() => setTab(t)}
-          >
+          <Button key={t} variante={tab === t ? "ok" : "secundario"} onClick={() => setTab(t)}>
             {t}
           </Button>
         ))}
@@ -701,24 +596,17 @@ export function EstadiaPanel({
             </p>
           )}
           {errorCargaPersonas && (
-            <div
-              role="alert"
-              className="rounded border border-error p-3 text-error-texto"
-            >
+            <div role="alert" className="rounded border border-error p-3 text-error-texto">
               <p>
                 {errorCargaPersonas.response?.data?.error ||
-                  "Se interrumpió la carga de personas. Cuando el servidor esté disponible, volvé a cargar para continuar."}
+                  "Se interrumpió la carga de personas. " +
+                    "Cuando el servidor esté disponible, volvé a cargar para continuar."}
               </p>
               <p className="mt-1 text-sm">
-                Agregar persona se habilita al recuperar al titular y el listado
-                de ocupantes. No vuelvas a crear la reserva.
+                Agregar persona se habilita al recuperar al titular y el listado de ocupantes. No vuelvas a crear la
+                reserva.
               </p>
-              <Button
-                variante="secundario"
-                className="mt-2"
-                cargando={cargandoPersonas}
-                onClick={recuperarPersonas}
-              >
+              <Button variante="secundario" className="mt-2" cargando={cargandoPersonas} onClick={recuperarPersonas}>
                 Volver a cargar personas
               </Button>
             </div>
@@ -732,15 +620,13 @@ export function EstadiaPanel({
             <div>
               <h2 className="font-heading text-xl">Personas de la estadía</h2>
               <p className="text-sm text-piedra">
-                El titular se incorpora con los datos de la reserva. Completá
-                los pendientes y verificá a cada persona antes del ingreso.
+                El titular se incorpora con los datos de la reserva. Completá los pendientes y verificá a cada persona
+                antes del ingreso.
               </p>
             </div>
             {puedeEditar && (
               <Button
-                disabled={
-                  !personas.isSuccess || cargandoPersonas || preparandoTitular
-                }
+                disabled={!personas.isSuccess || cargandoPersonas || preparandoTitular}
                 onClick={() => {
                   setEditor({});
                   setError("");
@@ -752,60 +638,39 @@ export function EstadiaPanel({
             )}
           </div>
           {personas.isLoading && <p>Cargando personas…</p>}
-          {!listado.length &&
-            personas.isSuccess &&
-            !cargandoPersonas &&
-            !preparandoTitular && (
-              <p className="text-piedra">
-                Todavía no se registraron ocupantes. El titular aparecerá al
-                terminar su incorporación.
-              </p>
-            )}
+          {!listado.length && personas.isSuccess && !cargandoPersonas && !preparandoTitular && (
+            <p className="text-piedra">
+              Todavía no se registraron ocupantes. El titular aparecerá al terminar su incorporación.
+            </p>
+          )}
           {reserva.habitaciones.map((h) => (
             <div key={h.id} className="rounded border border-borde p-3">
               <h3 className="font-semibold">
                 Habitación {h.numero} · capacidad {h.capacidad}
               </h3>
               {listado
-                .filter(
-                  (p) =>
-                    (activa(p) || p.asignaciones?.at(-1))?.habitacionId ===
-                    h.id,
-                )
+                .filter((p) => (activa(p) || p.asignaciones?.at(-1))?.habitacionId === h.id)
                 .map((p) => (
-                  <div
-                    key={p.id}
-                    className="border-t border-borde py-3 flex flex-wrap justify-between gap-2"
-                  >
+                  <div key={p.id} className="border-t border-borde py-3 flex flex-wrap justify-between gap-2">
                     <div>
                       <strong>
                         {p.nombre} {p.apellido}
                       </strong>
-                      {p.esTitular && (
-                        <span className="ml-2 text-xs text-pino">
-                          Titular de habitación
-                        </span>
-                      )}
+                      {p.esTitular && <span className="ml-2 text-xs text-pino">Titular de habitación</span>}
                       {titularExistente?.id === p.id && (
-                        <span className="ml-2 text-xs text-pino">
-                          Titular de la reserva
-                        </span>
+                        <span className="ml-2 text-xs text-pino">Titular de la reserva</span>
                       )}
                       {pendientesParaIngreso(p).length > 0 && (
                         <p className="text-sm text-error-texto">
-                          Falta completar: {pendientesParaIngreso(p).join(", ")}
-                          .
+                          Falta completar: {pendientesParaIngreso(p).join(", ")}.
                         </p>
                       )}
                       <p className="text-sm">
-                        {p.tipoDocumento}{" "}
-                        {p.numeroDocumento || "Documento pendiente"} ·{" "}
-                        {p.estado} ·{" "}
+                        {p.tipoDocumento} {p.numeroDocumento || "Documento pendiente"} · {p.estado} ·{" "}
                         {p.verificadoEn ? "Verificado" : "Datos por verificar"}
                       </p>
                       <p className="text-xs text-piedra">
-                        Ingreso: {fecha(p.ingresoReal)} · Salida:{" "}
-                        {fecha(p.salidaReal)}
+                        Ingreso: {fecha(p.ingresoReal)} · Salida: {fecha(p.salidaReal)}
                       </p>
                     </div>
                     {puedeEditar && (
@@ -820,19 +685,12 @@ export function EstadiaPanel({
                                 setEditor(p);
                               }}
                             >
-                              {pendientesParaIngreso(p).length
-                                ? "Completar datos"
-                                : "Editar"}
+                              {pendientesParaIngreso(p).length ? "Completar datos" : "Editar"}
                             </Button>
                             <Button
                               variante="secundario"
-                              disabled={
-                                mutation.isPending ||
-                                pendientesParaIngreso(p).length > 0
-                              }
-                              onClick={() =>
-                                mutation.mutate({ tipo: "verificar", data: p })
-                              }
+                              disabled={mutation.isPending || pendientesParaIngreso(p).length > 0}
+                              onClick={() => mutation.mutate({ tipo: "verificar", data: p })}
                             >
                               Verificar datos
                             </Button>
@@ -841,23 +699,15 @@ export function EstadiaPanel({
                         {p.estado === "Previsto" && (
                           <>
                             <Button
-                              disabled={
-                                !p.verificadoEn ||
-                                reserva.estado !== "En curso" ||
-                                mutation.isPending
-                              }
-                              onClick={() =>
-                                mutation.mutate({ tipo: "ingresar", data: p })
-                              }
+                              disabled={!p.verificadoEn || reserva.estado !== "En curso" || mutation.isPending}
+                              onClick={() => mutation.mutate({ tipo: "ingresar", data: p })}
                             >
                               Registrar ingreso
                             </Button>
                             <Button
                               variante="secundario"
                               disabled={mutation.isPending}
-                              onClick={() =>
-                                mutation.mutate({ tipo: "cancelar", data: p })
-                              }
+                              onClick={() => mutation.mutate({ tipo: "cancelar", data: p })}
                             >
                               Cancelar ingreso
                             </Button>
@@ -867,9 +717,7 @@ export function EstadiaPanel({
                           <Button
                             variante="secundario"
                             disabled={mutation.isPending}
-                            onClick={() =>
-                              mutation.mutate({ tipo: "retirar", data: p })
-                            }
+                            onClick={() => mutation.mutate({ tipo: "retirar", data: p })}
                           >
                             Registrar salida
                           </Button>
@@ -884,44 +732,26 @@ export function EstadiaPanel({
       )}
       {tab === "Cargos por habitación" && (
         <>
-          {cargos.isError && (
-            <ErrorConsulta
-              consulta={cargos}
-              mensaje="No se pudieron cargar los cargos."
-            />
-          )}
+          {cargos.isError && <ErrorConsulta consulta={cargos} mensaje="No se pudieron cargar los cargos." />}
           {reserva.habitaciones.map((h) => (
-            <div
-              key={h.id}
-              className="border border-borde rounded p-4 space-y-3"
-            >
+            <div key={h.id} className="border border-borde rounded p-4 space-y-3">
               <div className="flex justify-between">
                 <h3 className="font-semibold">Habitación {h.numero}</h3>
-                {puedeCargos && (
-                  <Button onClick={() => setCargoHabitacion(h.id)}>
-                    Agregar cargo
-                  </Button>
-                )}
+                {puedeCargos && <Button onClick={() => setCargoHabitacion(h.id)}>Agregar cargo</Button>}
               </div>
               {(cargos.data || [])
                 .filter((c) => c.habitacionId === h.id)
                 .map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex justify-between gap-3 border-t border-borde py-2"
-                  >
+                  <div key={c.id} className="flex justify-between gap-3 border-t border-borde py-2">
                     <div>
-                      <p
-                        className={c.anulado ? "line-through text-piedra" : ""}
-                      >
+                      <p className={c.anulado ? "line-through text-piedra" : ""}>
                         {c.descripcion || c.tipoServicio} · {c.cantidad || 1} ×{" "}
                         {moneda(c.precioUnitario ?? c.monto)} ·{" "}
                         <strong>{moneda(c.monto)}</strong>
                         {c.incluido ? " · Incluido en tarifa" : ""}
                       </p>
                       <p className="text-xs text-piedra">
-                        {fecha(c.fechaServicio || c.fechaHora)} · Registró:{" "}
-                        {c.registradoPor}
+                        {fecha(c.fechaServicio || c.fechaHora)} · Registró: {c.registradoPor}
                         {c.anulado ? ` · Anulado: ${c.motivoAnulacion}` : ""}
                       </p>
                     </div>
@@ -952,25 +782,14 @@ export function EstadiaPanel({
       )}
       {tab === "Cuenta" && (
         <>
-          {cuenta.isError && (
-            <ErrorConsulta
-              consulta={cuenta}
-              mensaje="No se pudo cargar la cuenta."
-            />
-          )}
+          {cuenta.isError && <ErrorConsulta consulta={cuenta} mensaje="No se pudo cargar la cuenta." />}
           {cuenta.data && (
             <>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr>
-                      {[
-                        "Habitación",
-                        "Alojamiento",
-                        "Adicionales",
-                        "Revisión",
-                        "Total",
-                      ].map((t) => (
+                      {["Habitación", "Alojamiento", "Adicionales", "Revisión", "Total"].map((t) => (
                         <th key={t} className="text-left p-2">
                           {t}
                         </th>
@@ -997,14 +816,12 @@ export function EstadiaPanel({
                 </table>
               </div>
               <p>
-                Total reserva:{" "}
-                <strong>{moneda(cuenta.data.totalAdeudado)}</strong> · Pagado:{" "}
-                {moneda(cuenta.data.totalPagado)} · Saldo:{" "}
-                <strong>{moneda(cuenta.data.saldo)}</strong>
+                Total reserva: <strong>{moneda(cuenta.data.totalAdeudado)}</strong> · Pagado:{" "}
+                {moneda(cuenta.data.totalPagado)} · Saldo: <strong>{moneda(cuenta.data.saldo)}</strong>
               </p>
               <p className="text-xs text-piedra">
-                Los pagos pertenecen a la reserva. Los cargos históricos sin
-                habitación identificada se incluyen en el total general.
+                Los pagos pertenecen a la reserva. Los cargos históricos sin habitación identificada se incluyen en el
+                total general.
               </p>
             </>
           )}
@@ -1012,18 +829,11 @@ export function EstadiaPanel({
       )}
       {tab === "Historial" && (
         <>
-          {historial.isError && (
-            <ErrorConsulta
-              consulta={historial}
-              mensaje="No se pudo cargar el historial."
-            />
-          )}
+          {historial.isError && <ErrorConsulta consulta={historial} mensaje="No se pudo cargar el historial." />}
           {(historial.data || []).map((e) => (
             <p key={e.id} className="border-b border-borde py-2 text-sm">
               {fecha(e.fecha)} · {e.accion} · {e.operador}
-              <span className="block text-xs text-piedra">
-                {detalleEvento(e)}
-              </span>
+              <span className="block text-xs text-piedra">{detalleEvento(e)}</span>
             </p>
           ))}
         </>
@@ -1062,15 +872,9 @@ export function EstadiaPanel({
         <Modal titulo="Anular cargo" onClose={() => setAnular(null)}>
           <div className="p-5 space-y-3">
             <p>
-              Se anula el cargo de {moneda(anular.monto)}. El producto consumido
-              no vuelve automáticamente al stock.
+              Se anula el cargo de {moneda(anular.monto)}. El producto consumido no vuelve automáticamente al stock.
             </p>
-            <Input
-              label="Motivo *"
-              value={motivo}
-              onChange={(e) => setMotivo(e.target.value)}
-              maxLength={500}
-            />
+            <Input label="Motivo *" value={motivo} onChange={(e) => setMotivo(e.target.value)} maxLength={500} />
             {error && <p role="alert">{error}</p>}
             <Button
               disabled={!motivo.trim()}

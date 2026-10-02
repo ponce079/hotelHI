@@ -19,14 +19,7 @@ const persona = (nacimiento) => ({
 });
 test("titular menor y nacimiento ausente se rechazan; 18 cumplidos se acepta", async () => {
   await expect(
-    prepararContacto(
-      tx,
-      { id: 1 },
-      persona("2008-10-02"),
-      { id: 1, esTitular: true },
-      {},
-      reglas,
-    ),
+    prepararContacto(tx, { id: 1 }, persona("2008-10-02"), { id: 1, esTitular: true }, {}, reglas),
   ).rejects.toThrow(/18 años/);
   await expect(
     prepararContacto(
@@ -39,31 +32,15 @@ test("titular menor y nacimiento ausente se rechazan; 18 cumplidos se acepta", a
     ),
   ).rejects.toThrow(/18 años/);
   await expect(
-    prepararContacto(
-      tx,
-      { id: 1 },
-      persona("2008-10-01"),
-      { id: 1, esTitular: true },
-      {},
-      reglas,
-    ),
+    prepararContacto(tx, { id: 1 }, persona("2008-10-01"), { id: 1, esTitular: true }, {}, reglas),
   ).resolves.toBeDefined();
 });
 test("menor copia contacto del responsable, no valores inventados por el cliente", async () => {
   const p = { ...persona("2015-01-01"), email: "otro@example.test" };
-  await prepararContacto(
-    tx,
-    { id: 1 },
-    p,
-    null,
-    { usarContactoResponsable: true },
-    reglas,
-  );
+  await prepararContacto(tx, { id: 1 }, p, null, { usarContactoResponsable: true }, reglas);
   expect(p).toMatchObject({ email: adulto.email, telefono: adulto.telefono });
   expect(comparteCorreo(adulto, p, null, true, adulto)).toBe(true);
-  expect(
-    comparteCorreo({ id: 3, responsableId: 2 }, p, null, true, adulto),
-  ).toBe(true);
+  expect(comparteCorreo({ id: 3, responsableId: 2 }, p, null, true, adulto)).toBe(true);
   expect(comparteCorreo({ id: 4 }, p, null, true, adulto)).toBe(false);
 });
 test("contactos ausentes son opcionales; rechaza compartir sin responsable adulto", async () => {
@@ -74,23 +51,9 @@ test("contactos ausentes son opcionales; rechaza compartir sin responsable adult
       findFirst: async () => ({ ...adulto, email: null, telefono: null }),
     },
   };
-  await prepararContacto(
-    sinContacto,
-    { id: 1 },
-    p,
-    null,
-    { usarContactoResponsable: true },
-    reglas,
-  );
+  await prepararContacto(sinContacto, { id: 1 }, p, null, { usarContactoResponsable: true }, reglas);
   expect(p).toMatchObject({ email: null, telefono: null });
   await expect(
-    prepararContacto(
-      tx,
-      { id: 1 },
-      { ...p, responsableId: null },
-      null,
-      { usarContactoResponsable: true },
-      reglas,
-    ),
+    prepararContacto(tx, { id: 1 }, { ...p, responsableId: null }, null, { usarContactoResponsable: true }, reglas),
   ).rejects.toThrow(/responsable/);
 });

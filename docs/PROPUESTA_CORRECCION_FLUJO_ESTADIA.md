@@ -1,4 +1,4 @@
-> Documento historico. Para la version actual, garantia delegada a Ricardo y pruebas locales, ver [revision del 1/10/2026](REVISION_ESTADIA_2026-10-01.md).
+> **Documento histórico.** Describe un estado anterior de la rama y, en varios puntos, contradice la versión vigente: la garantía queda a cargo de Ricardo y se conserva como en master; nacionalidad, país de residencia, domicilio y localidad viven en `Huesped`; la ampliación de estadía todavía no está desplegada en la base compartida; las pruebas de integración usan la base local de `ESTADIA_TEST_DATABASE_URL`. La referencia es la [revisión del 1/10/2026](REVISION_ESTADIA_2026-10-01.md).
 
 # Revisión y propuesta de corrección del flujo de estadía
 

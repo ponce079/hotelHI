@@ -71,7 +71,14 @@ async function esperaError(fn, textoEsperado) {
   throw new Error(`Se esperaba un error que mencionara "${textoEsperado}", pero no falló`);
 }
 
-const HUESPED = { paisDocumento:"AR", fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
+const HUESPED = {
+  paisDocumento: "AR",
+  fechaNacimiento: "1990-01-01",
+  nombre: "Ana Pérez",
+  tipoDocumento: "DNI",
+  numeroDocumento: "30111222",
+  contacto: "ana@mail.com",
+};
 
 // --------------------------------------------------------------
 // Fixture mínima de tarifas (Etapa 4A) — crearReserva ahora pasa por el
@@ -215,12 +222,16 @@ async function main() {
     // El huésped llega, hace check-in normalmente — la seña ya cobrada sigue
     // contando en la cuenta consolidada sin que nadie tenga que volver a
     // cargarla.
-    await require('./_ocupantesFixture').completarFixture(reserva, reserva.habitaciones.map(h=>({habitacionId:h.id,adultos:h.adultos,menores:h.menores})));
+    await require("./_ocupantesFixture").completarFixture(
+      reserva,
+      reserva.habitaciones.map((h) => ({ habitacionId: h.id, adultos: h.adultos, menores: h.menores })),
+    );
     await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
       numeroDocumentoIngresado: "30111222",
       garantiaConfirmada: true,
-      medioGarantia: "Tarjeta crédito", referenciaGarantia: "PRUEBA-LOCAL",
+      medioGarantia: "Tarjeta crédito",
+      referenciaGarantia: "PRUEBA-LOCAL",
     });
 
     const cuenta = await checkOutServicio.consolidarCargos(reserva.id);

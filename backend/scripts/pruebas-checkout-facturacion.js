@@ -70,7 +70,14 @@ async function esperaError(fn, textoEsperado) {
   throw new Error(`Se esperaba un error que mencionara "${textoEsperado}", pero no falló`);
 }
 
-const HUESPED = { paisDocumento:"AR", fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
+const HUESPED = {
+  paisDocumento: "AR",
+  fechaNacimiento: "1990-01-01",
+  nombre: "Ana Pérez",
+  tipoDocumento: "DNI",
+  numeroDocumento: "30111222",
+  contacto: "ana@mail.com",
+};
 const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Tarjeta crédito", referenciaGarantia: "PRUEBA-LOCAL" };
 
 // --------------------------------------------------------------
@@ -149,15 +156,15 @@ async function crearReservaEnCurso({ numero, precioPorNoche = 10000, noches = 2 
     totalEsperado: cotizacion.planes[0]?.total ?? 0,
     huesped: { ...HUESPED },
   });
-  await require('./_ocupantesFixture').completarFixture(reserva, habitaciones);
+  await require("./_ocupantesFixture").completarFixture(reserva, habitaciones);
   await checkInServicio.confirmarCheckInConReserva({
     reservaId: reserva.id,
     numeroDocumentoIngresado: HUESPED.numeroDocumento,
     ...GARANTIA_OK,
   });
   // Aislar las pruebas de pagos: anular el deposito previo con el contrato publico.
-  const garantia = base._datos.pagoEstadia.find(p => p.reservaId === reserva.id && p.concepto === 'Garantía');
-  await pagoEstadiaServicio.anularPago(garantia.id, 'Fixture: verificar pagos sin deposito previo');
+  const garantia = base._datos.pagoEstadia.find((p) => p.reservaId === reserva.id && p.concepto === "Garantía");
+  await pagoEstadiaServicio.anularPago(garantia.id, "Fixture: verificar pagos sin deposito previo");
   return { habitacion, reserva };
 }
 
@@ -330,7 +337,8 @@ async function main() {
       assert.equal(rechazadas.length, 1, "la otra tiene que rechazarse, no colarse");
       assert.ok(
         rechazadas[0].reason.message.toLowerCase().includes("saldo pendiente"),
-        `el rechazo tiene que ser por el recálculo fresco del saldo, no por otro motivo — fue: "${rechazadas[0].reason.message}"`
+        "el rechazo tiene que ser por el recálculo fresco del saldo, no por otro motivo — " +
+          `fue: "${rechazadas[0].reason.message}"`,
       );
 
       // Lo cobrado nunca puede superar la deuda real, sea cual sea el

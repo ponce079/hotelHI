@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
-import { api } from '../../lib/api';
-vi.mock('../../lib/api',()=>({api:{get:vi.fn(),post:vi.fn()}}));
-vi.mock('../../lib/sesion',()=>({useSesion:()=>({usuario:'Recepción',puede:()=>true})}));
+import { api } from "../../lib/api";
+vi.mock("../../lib/api", () => ({ api: { get: vi.fn(), post: vi.fn() } }));
+vi.mock("../../lib/sesion", () => ({ useSesion: () => ({ usuario: "Recepción", puede: () => true }) }));
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
@@ -22,7 +22,7 @@ const RESERVA = {
   estado: "Confirmada",
   cantidadHabitaciones: 1,
   huesped: { nombre: "Marcos Beltrán", tipoDocumento: "DNI", numeroDocumento: "30111222" },
-  habitaciones: [{ id:1,numero: "301", tipo: "Doble", tipoHabitacionId: 10,capacidad:2,adultos:1,menores:0 }],
+  habitaciones: [{ id: 1, numero: "301", tipo: "Doble", tipoHabitacionId: 10, capacidad: 2, adultos: 1, menores: 0 }],
   fechaDesde: "2026-09-21T00:00:00.000Z",
   fechaHasta: "2026-09-22T00:00:00.000Z",
   noches: 1,
@@ -43,8 +43,23 @@ function renderComponente(props = {}) {
 beforeEach(() => {
   vi.clearAllMocks();
   listarLlegadasPendientes.mockResolvedValue([]);
-  api.post.mockResolvedValue({data:{ocupanteId:1,creado:false}});
-  api.get.mockResolvedValue({data:[{id:1,esTitular:true,nombre:'Marcos',apellido:'Beltrán',estado:'Previsto',fechaNacimiento:'1990-01-01',fechaDesde:'2020-01-01',fechaHasta:'2099-01-01',verificadoEn:'2026-01-01',asignaciones:[{habitacionId:1,hasta:null}]}]});
+  api.post.mockResolvedValue({ data: { ocupanteId: 1, creado: false } });
+  api.get.mockResolvedValue({
+    data: [
+      {
+        id: 1,
+        esTitular: true,
+        nombre: "Marcos",
+        apellido: "Beltrán",
+        estado: "Previsto",
+        fechaNacimiento: "1990-01-01",
+        fechaDesde: "2020-01-01",
+        fechaHasta: "2099-01-01",
+        verificadoEn: "2026-01-01",
+        asignaciones: [{ habitacionId: 1, hasta: null }],
+      },
+    ],
+  });
 });
 
 // RecepcionistaInicio.jsx (Inicio del Recepcionista) linkea a
@@ -153,24 +168,43 @@ describe("CheckInConReserva — lista por defecto de llegadas pendientes", () =>
 // mano para Efectivo/Transferencia, ni se autoriza el total de la reserva
 // para tarjeta. Los 4 terminan en un PagoEstadia real por ese mismo monto.
 describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel", () => {
-  it('habilita una habitación triple y explica el bloqueo hasta verificar a las tres personas',async()=>{
-    const triple={...RESERVA,habitaciones:[{id:1,numero:'301',tipo:'Triple',capacidad:3,adultos:3,menores:0}]};
-    buscarReservaParaCheckIn.mockResolvedValue({reserva:triple,puedeIniciarCheckIn:true});
-    const personas=[1,2,3].map(id=>({id,esTitular:id===1,nombre:`Persona ${id}`,apellido:'Prueba',estado:'Previsto',fechaNacimiento:'1990-01-01',fechaDesde:'2020-01-01',fechaHasta:'2099-01-01',nacionalidad:'AR',paisResidencia:'AR',tipoDocumento:'DNI',numeroDocumento:String(id),paisDocumento:'AR',verificadoEn:id===3?null:'2026-01-01',asignaciones:[{habitacionId:1,hasta:null}]}));
-    api.get.mockImplementation(()=>Promise.resolve({data:personas.map(p=>({...p}))}));
-    api.post.mockImplementation(async(url)=>{
-      if(url.endsWith('/accion'))personas[2].verificadoEn='2026-01-01';
-      return {data:{ocupanteId:1}};
+  it("habilita una habitación triple y explica el bloqueo hasta verificar a las tres personas", async () => {
+    const triple = {
+      ...RESERVA,
+      habitaciones: [{ id: 1, numero: "301", tipo: "Triple", capacidad: 3, adultos: 3, menores: 0 }],
+    };
+    buscarReservaParaCheckIn.mockResolvedValue({ reserva: triple, puedeIniciarCheckIn: true });
+    const personas = [1, 2, 3].map((id) => ({
+      id,
+      esTitular: id === 1,
+      nombre: `Persona ${id}`,
+      apellido: "Prueba",
+      estado: "Previsto",
+      fechaNacimiento: "1990-01-01",
+      fechaDesde: "2020-01-01",
+      fechaHasta: "2099-01-01",
+      nacionalidad: "AR",
+      paisResidencia: "AR",
+      tipoDocumento: "DNI",
+      numeroDocumento: String(id),
+      paisDocumento: "AR",
+      verificadoEn: id === 3 ? null : "2026-01-01",
+      asignaciones: [{ habitacionId: 1, hasta: null }],
+    }));
+    api.get.mockImplementation(() => Promise.resolve({ data: personas.map((p) => ({ ...p })) }));
+    api.post.mockImplementation(async (url) => {
+      if (url.endsWith("/accion")) personas[2].verificadoEn = "2026-01-01";
+      return { data: { ocupanteId: 1 } };
     });
-    renderComponente({codigoPreseleccionado:'RS-HOY01'});
-    await screen.findByText('Persona 3 Prueba');
-    fireEvent.change(screen.getByLabelText(/Documento presentado/),{target:{value:'30111222'}});
-    fireEvent.click(screen.getByRole('checkbox'));
+    renderComponente({ codigoPreseleccionado: "RS-HOY01" });
+    await screen.findByText("Persona 3 Prueba");
+    fireEvent.change(screen.getByLabelText(/Documento presentado/), { target: { value: "30111222" } });
+    fireEvent.click(screen.getByRole("checkbox"));
     expect(await screen.findByText(/1 persona\(s\) pendiente\(s\) de verificar/)).toBeInTheDocument();
-    expect(screen.getByRole('button',{name:'Confirmar check-in'})).toBeDisabled();
-    fireEvent.click(screen.getAllByRole('button',{name:'Verificar datos'})[2]);
-    await waitFor(()=>expect(screen.getByRole('button',{name:'Confirmar check-in'})).toBeEnabled());
-    expect(screen.queryByText('Para habilitar el check-in:')).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirmar check-in" })).toBeDisabled();
+    fireEvent.click(screen.getAllByRole("button", { name: "Verificar datos" })[2]);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Confirmar check-in" })).toBeEnabled());
+    expect(screen.queryByText("Para habilitar el check-in:")).not.toBeInTheDocument();
   });
   it("con Efectivo (default) muestra el monto fijo y una casilla de confirmación manual, no la terminal de tarjeta", async () => {
     buscarReservaParaCheckIn.mockResolvedValue({ reserva: RESERVA, puedeIniciarCheckIn: true, motivoBloqueo: null });
@@ -214,7 +248,7 @@ describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel
     // El resto del formulario ya estaba OK (mismo documento que la reserva)
     // — con la tarjeta autorizada, "Confirmar check-in" tiene que habilitarse.
     fireEvent.change(screen.getByLabelText(/Documento presentado/), { target: { value: "30111222" } });
-    await waitFor(()=>expect(screen.getByRole("button", { name: "Confirmar check-in" })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Confirmar check-in" })).toBeEnabled());
   });
 
   it("confirmar con Efectivo manda medioGarantia y sin referenciaGarantia al backend (el monto ya no lo manda el cliente)", async () => {
@@ -227,10 +261,10 @@ describe("CheckInConReserva — garantía con tarjeta reusa TarjetaSimuladaPanel
 
     fireEvent.change(screen.getByLabelText(/Documento presentado/), { target: { value: "30111222" } });
     fireEvent.click(screen.getByRole("checkbox"));
-    expect(screen.getByRole('button',{name:'Confirmar check-in'})).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Confirmar check-in" })).toBeDisabled();
 
     const boton = screen.getByRole("button", { name: "Confirmar check-in" });
-    await waitFor(()=>expect(boton).toBeEnabled());
+    await waitFor(() => expect(boton).toBeEnabled());
     fireEvent.click(boton);
 
     await screen.findAllByText(/Check-in confirmado/);

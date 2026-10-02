@@ -25,9 +25,12 @@ const adapter = new PrismaMariaDb(
     user: decodeURIComponent(dbUrl.username),
     password: decodeURIComponent(dbUrl.password),
     database: dbUrl.pathname.replace(/^\//, ""),
-    ssl: process.env.DATABASE_SSL === 'false' ? false : {
-      rejectUnauthorized: false,
-    },
+    ssl:
+      process.env.DATABASE_SSL === "false"
+        ? false
+        : {
+            rejectUnauthorized: false,
+          },
     // Una transacción ocupa una conexión hasta finalizar. Permitimos una
     // segunda para lecturas concurrentes; el límite sigue siendo por proceso.
     // Puede bajarse a 1 si el cupo compartido lo requiere.
@@ -57,6 +60,6 @@ const adapter = new PrismaMariaDb(
   }
 );
 
-const prisma = new PrismaClient({ adapter, transactionOptions: require('./constantes').OPCIONES_TRANSACCION });
+const prisma = new PrismaClient({ adapter, transactionOptions: require("./constantes").OPCIONES_TRANSACCION });
 
 module.exports = prisma;

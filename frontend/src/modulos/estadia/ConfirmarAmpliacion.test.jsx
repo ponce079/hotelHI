@@ -22,8 +22,6 @@ it("muestra el cambio y solo envía la aceptación al presionar el botón", () =
   expect(screen.getByText("Nuevo total")).toBeInTheDocument();
   expect(screen.getByText("Se perderá el ajuste manual.")).toBeInTheDocument();
   expect(onConfirmar).not.toHaveBeenCalled();
-  fireEvent.click(
-    screen.getByRole("button", { name: /Aceptar nueva cotización/ }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: /Aceptar nueva cotización/ }));
   expect(onConfirmar).toHaveBeenCalledWith("cotizacion-vigente");
 });

@@ -110,8 +110,8 @@ async function completarPasos1a4() {
   fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
 
   fireEvent.change(await screen.findByLabelText("Nombre y apellido *"), { target: { value: "Ana Pérez" } });
-  fireEvent.change(screen.getByLabelText("País emisor del documento *"), {target:{value:"AR"}});
-  fireEvent.change(screen.getByLabelText("Fecha de nacimiento del titular *"), {target:{value:"1990-01-01"}});
+  fireEvent.change(screen.getByLabelText("País emisor del documento *"), { target: { value: "AR" } });
+  fireEvent.change(screen.getByLabelText("Fecha de nacimiento del titular *"), { target: { value: "1990-01-01" } });
   fireEvent.change(screen.getByLabelText("Número *"), { target: { value: "30111222" } });
   fireEvent.change(screen.getByLabelText("Correo electrónico *"), { target: { value: "ana@mail.com" } });
 }
@@ -272,68 +272,78 @@ describe("ReservaWizard — vencimiento del guardado", () => {
   async function enviar() {
     renderWizard();
     await completarPasos1a4();
-    fireEvent.click(screen.getByRole('button', { name: 'Siguiente' }));
-    fireEvent.change(await screen.findByLabelText('Medio de pago de la seña *'), { target: { value: 'Efectivo' } });
-    fireEvent.click(screen.getByRole('checkbox'));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+    fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+    fireEvent.change(await screen.findByLabelText("Medio de pago de la seña *"), { target: { value: "Efectivo" } });
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
   }
-  const vencido = { response: { status: 408, data: { codigo: 'RESERVA_TIEMPO_AGOTADO', error: 'Se terminó el tiempo de guardado (1 minuto).' } } };
+  const vencido = {
+    response: {
+      status: 408,
+      data: { codigo: "RESERVA_TIEMPO_AGOTADO", error: "Se terminó el tiempo de guardado (1 minuto)." },
+    },
+  };
 
-  it('conserva datos, actualiza disponibilidad y permite un segundo intento explícito', async () => {
+  it("conserva datos, actualiza disponibilidad y permite un segundo intento explícito", async () => {
     crearReservaConSena.mockRejectedValueOnce(vencido).mockResolvedValueOnce(RESERVA_CREADA);
     await enviar();
-    await screen.findByRole('alert');
-    expect(screen.getByRole('button', { name: 'Confirmar reserva' })).toBeDisabled();
+    await screen.findByRole("alert");
+    expect(screen.getByRole("button", { name: "Confirmar reserva" })).toBeDisabled();
     const consultas = consultarDisponibilidad.mock.calls.length;
-    fireEvent.click(screen.getByRole('button', { name: /Actualizar disponibilidad para reintentar/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Actualizar disponibilidad para reintentar/ }));
     await waitFor(() => expect(screen.queryByText(/El intento venció/)).not.toBeInTheDocument());
     expect(consultarDisponibilidad.mock.calls.length).toBeGreaterThan(consultas);
     expect(crearReservaConSena).toHaveBeenCalledTimes(1);
-    fireEvent.click(await screen.findByText('Best Available Rate'));
-    fireEvent.click(screen.getByRole('button',{name:'Siguiente'}));
-    fireEvent.click(screen.getByRole('button',{name:'Siguiente'}));
-    expect(screen.getByRole('checkbox')).not.toBeChecked();
-    fireEvent.click(screen.getByRole('checkbox'));
-    fireEvent.click(screen.getByRole('button', { name: 'Confirmar reserva' }));
+    fireEvent.click(await screen.findByText("Best Available Rate"));
+    fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+    fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+    expect(screen.getByRole("checkbox")).not.toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
     await waitFor(() => expect(crearReservaConSena).toHaveBeenCalledTimes(2));
     expect(crearReservaConSena.mock.calls[1][0]).toEqual(crearReservaConSena.mock.calls[0][0]);
   });
 
-  it('si actualizar falla conserva el bloqueo; si la habitación se ocupó vuelve a selección', async () => {
+  it("si actualizar falla conserva el bloqueo; si la habitación se ocupó vuelve a selección", async () => {
     crearReservaConSena.mockRejectedValueOnce(vencido);
     await enviar();
-    await screen.findByRole('alert');
-    consultarDisponibilidad.mockRejectedValueOnce(new Error('Sin conexión'));
-    fireEvent.click(screen.getByRole('button', { name: /Actualizar disponibilidad para reintentar/ }));
+    await screen.findByRole("alert");
+    consultarDisponibilidad.mockRejectedValueOnce(new Error("Sin conexión"));
+    fireEvent.click(screen.getByRole("button", { name: /Actualizar disponibilidad para reintentar/ }));
     await screen.findByText(/No se pudo actualizar/);
-    expect(screen.getByRole('button', { name: 'Confirmar reserva' })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Confirmar reserva" })).toBeDisabled();
     consultarDisponibilidad.mockResolvedValueOnce({ ...DISPONIBILIDAD, habitaciones: [], todas: [] });
-    fireEvent.click(screen.getByRole('button', { name: /Actualizar disponibilidad para reintentar/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Actualizar disponibilidad para reintentar/ }));
     await screen.findByText(/La disponibilidad cambió/);
-    expect(screen.getByRole('button', { name: 'Siguiente' })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Siguiente" })).toBeDisabled();
     expect(crearReservaConSena).toHaveBeenCalledTimes(1);
   });
 
-  it('sin respuesta del servidor no ofrece reintento ni afirma que no se guardó', async () => {
-    crearReservaConSena.mockRejectedValueOnce(new Error('Network Error'));
+  it("sin respuesta del servidor no ofrece reintento ni afirma que no se guardó", async () => {
+    crearReservaConSena.mockRejectedValueOnce(new Error("Network Error"));
     await enviar();
     await screen.findByText(/Revisá el listado de reservas/);
-    expect(screen.getByRole('button', { name: 'Confirmar reserva' })).toBeDisabled();
-    expect(screen.queryByRole('button', { name: /Actualizar disponibilidad para reintentar/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Confirmar reserva" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: /Actualizar disponibilidad para reintentar/ })).not.toBeInTheDocument();
     expect(screen.queryByText(/No se guardó nada/)).not.toBeInTheDocument();
   });
 
-  it('bloquea los controles mientras el servidor sigue procesando y acepta el éxito', async () => {
+  it("bloquea los controles mientras el servidor sigue procesando y acepta el éxito", async () => {
     let resolver;
-    crearReservaConSena.mockImplementationOnce(() => new Promise((resolve) => { resolver = resolve; }));
+    crearReservaConSena.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolver = resolve;
+        }),
+    );
     await enviar();
-    await screen.findByRole('status');
-    expect(screen.getByRole('button', { name: 'Cancelar' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Atrás' })).toBeDisabled();
-    expect(screen.getByLabelText('Medio de pago de la seña *')).toBeDisabled();
+    await screen.findByRole("status");
+    expect(screen.getByRole("button", { name: "Cancelar" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Atrás" })).toBeDisabled();
+    expect(screen.getByLabelText("Medio de pago de la seña *")).toBeDisabled();
     expect(crearReservaConSena).toHaveBeenCalledTimes(1);
     await act(async () => resolver(RESERVA_CREADA));
-    await waitFor(() => expect(screen.queryByRole('status')).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
   });
 });
 
@@ -373,7 +383,15 @@ describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin 
     habitaciones: [{ id: 1, numero: "101", tipo: "Doble", tipoHabitacionId: 10, adultos: 2, menores: 0 }],
     planTarifarioId: 1,
     planTarifario: { id: 1, codigo: "BAR", nombre: "Best Available Rate", reembolsable: true },
-    huesped: { paisDocumento:"AR", fechaNacimiento:"1990-01-01", nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com", preferencias: "" },
+    huesped: {
+      paisDocumento: "AR",
+      fechaNacimiento: "1990-01-01",
+      nombre: "Ana Pérez",
+      tipoDocumento: "DNI",
+      numeroDocumento: "30111222",
+      contacto: "ana@mail.com",
+      preferencias: "",
+    },
   };
 
   it("edición: sin 'Seña', y el paso de huésped confirma directo ('Guardar cambios')", async () => {

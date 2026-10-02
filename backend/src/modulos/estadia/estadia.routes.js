@@ -15,13 +15,12 @@ const handler = (fn) => async (req, res) => {
       return res.status(503).json({
         codigo: "ESQUEMA_ESTADIA_INCOMPLETO",
         error:
-          "La base de datos no tiene todas las tablas o columnas de estadía. Se debe completar la actualización de la base antes de continuar.",
+          "La base de datos no tiene todas las tablas o columnas de estadía. " +
+          "Se debe completar la actualización de la base antes de continuar.",
       });
     res.status(e.statusCode || 500).json({
       ...(e.statusCode && e.campos ? { campos: e.campos } : {}),
-      error: e.statusCode
-        ? e.message
-        : "No se pudo completar la operación de estadía.",
+      error: e.statusCode ? e.message : "No se pudo completar la operación de estadía.",
     });
   }
 };
@@ -35,12 +34,7 @@ router.get(
 );
 router.post(
   "/:reservaId/titular",
-  handler((r) =>
-    require("./titular.servicio").asegurarTitular(
-      r.params.reservaId,
-      r.body.operador,
-    ),
-  ),
+  handler((r) => require("./titular.servicio").asegurarTitular(r.params.reservaId, r.body.operador)),
 );
 router.post(
   "/:reservaId/ocupantes",

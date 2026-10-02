@@ -1,5 +1,7 @@
 const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 const prisma = require("../../lib/prisma");
+const { codigoPais } = require("../../lib/paises");
+const { CAMPOS_RESIDENCIA } = require("./persona.servicio");
 function identidad(p) {
   return p.numeroDocumento
     ? require("node:crypto")
@@ -25,26 +27,19 @@ class ErrorDeNegocio extends Error {
 }
 const id = (v) => {
   const n = Number(v);
-  if (!Number.isSafeInteger(n) || n < 1)
-    throw new ErrorDeNegocio("Identificador inválido.");
+  if (!Number.isSafeInteger(n) || n < 1) throw new ErrorDeNegocio("Identificador inválido.");
   return n;
 };
 function texto(v, campo, obligatorio = false, max = 191) {
   const s = String(v ?? "").trim();
   if ((obligatorio && !s) || s.length > max)
-    throw new ErrorDeNegocio(
-      `${campo}: valor inválido (máximo ${max} caracteres).`,
-    );
+    throw new ErrorDeNegocio(`${campo}: valor inválido (máximo ${max} caracteres).`);
   return s || null;
 }
 function fecha(v, campo) {
   const s = String(v ?? "").slice(0, 10);
   const d = new Date(`${s}T00:00:00Z`);
-  if (
-    !/^\d{4}-\d{2}-\d{2}$/.test(s) ||
-    !Number.isFinite(d.getTime()) ||
-    d.toISOString().slice(0, 10) !== s
-  )
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s) || !Number.isFinite(d.getTime()) || d.toISOString().slice(0, 10) !== s)
     throw new ErrorDeNegocio(`${campo}: fecha inválida.`);
   return d;
 }
@@ -52,34 +47,18 @@ function edad(nacimiento, en) {
   let n = en.getUTCFullYear() - nacimiento.getUTCFullYear();
   if (
     en.getUTCMonth() < nacimiento.getUTCMonth() ||
-    (en.getUTCMonth() === nacimiento.getUTCMonth() &&
-      en.getUTCDate() < nacimiento.getUTCDate())
+    (en.getUTCMonth() === nacimiento.getUTCMonth() && en.getUTCDate() < nacimiento.getUTCDate())
   )
     n--;
   return n;
 }
 function normalizarPersona(d, reserva) {
-  const fechaDesde = fecha(
-    d.fechaDesde || reserva.fechaDesde.toISOString(),
-    "Ingreso previsto",
-  );
-  const fechaHasta = fecha(
-    d.fechaHasta || reserva.fechaHasta.toISOString(),
-    "Salida prevista",
-  );
-  if (
-    fechaHasta <= fechaDesde ||
-    fechaDesde < reserva.fechaDesde ||
-    fechaHasta > reserva.fechaHasta
-  )
-    throw new ErrorDeNegocio(
-      "Las fechas del ocupante deben estar dentro de la reserva.",
-    );
-  const nacimiento = d.fechaNacimiento
-    ? fecha(d.fechaNacimiento, "Nacimiento")
-    : null;
-  if (nacimiento && nacimiento > new Date())
-    throw new ErrorDeNegocio("La fecha de nacimiento no puede ser futura.");
+  const fechaDesde = fecha(d.fechaDesde || reserva.fechaDesde.toISOString(), "Ingreso previsto");
+  const fechaHasta = fecha(d.fechaHasta || reserva.fechaHasta.toISOString(), "Salida prevista");
+  if (fechaHasta <= fechaDesde || fechaDesde < reserva.fechaDesde || fechaHasta > reserva.fechaHasta)
+    throw new ErrorDeNegocio("Las fechas del ocupante deben estar dentro de la reserva.");
+  const nacimiento = d.fechaNacimiento ? fecha(d.fechaNacimiento, "Nacimiento") : null;
+  if (nacimiento && nacimiento > new Date()) throw new ErrorDeNegocio("La fecha de nacimiento no puede ser futura.");
   const r = {
     nombre: texto(d.nombre, "Nombre", true),
     apellido: texto(d.apellido, "Apellido", true),
@@ -100,8 +79,8 @@ function normalizarPersona(d, reserva) {
     "email",
   ])
     r[k] = texto(d[k], k);
-  if (r.numeroDocumento)
-    r.numeroDocumento = r.numeroDocumento.toUpperCase().replace(/\s/g, "");
+  for (const k of ["nacionalidad", "paisResidencia"]) r[k] = codigoPais(r[k]) || r[k];
+  if (r.numeroDocumento) r.numeroDocumento = r.numeroDocumento.toUpperCase().replace(/\s/g, "");
   if (r.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.email))
     throw new ErrorDeNegocio("Correo electrónico inválido.", 400, {
       email: "Ingresá un correo electrónico válido.",
@@ -133,18 +112,37 @@ async function evento(tx, reservaId, accion, detalle, operador) {
     },
   });
 }
-const includePersona = { asignaciones: { orderBy: { desde: "asc" } } };
+const includePersona = {
+  asignaciones: { orderBy: { desde: "asc" } },
+  huesped: { select: { id: true, nacionalidad: true, paisResidencia: true, domicilio: true, localidad: true } },
+};
+// Los datos de residencia viven en Huesped. Hacia afuera (API) siguen viéndose
+// en la ficha del ocupante, con los mismos nombres de siempre.
+function conResidencia(persona) {
+  if (!persona) return persona;
+  const { huesped, ...propios } = persona;
+  for (const campo of CAMPOS_RESIDENCIA) propios[campo] = huesped?.[campo] ?? propios[campo] ?? null;
+  return propios;
+}
+function sacarResidencia(persona) {
+  const residencia = {};
+  for (const campo of CAMPOS_RESIDENCIA) {
+    residencia[campo] = persona[campo];
+    delete persona[campo];
+  }
+  return residencia;
+}
 async function listar(reservaId) {
-  return prisma.ocupanteReserva.findMany({
+  const personas = await prisma.ocupanteReserva.findMany({
     where: { reservaId: id(reservaId) },
     include: includePersona,
     orderBy: { id: "asc" },
   });
+  return personas.map(conResidencia);
 }
 async function capacidad(tx, r, habitacionId, persona, excluirId) {
   const rh = r.reservaHabitaciones.find((h) => h.habitacionId === habitacionId);
-  if (!rh)
-    throw new ErrorDeNegocio("La habitación no pertenece a esta reserva.");
+  if (!rh) throw new ErrorDeNegocio("La habitación no pertenece a esta reserva.");
   const otras = await tx.ocupanteReserva.findMany({
     where: {
       reservaId: r.id,
@@ -153,15 +151,16 @@ async function capacidad(tx, r, habitacionId, persona, excluirId) {
       asignaciones: { some: { habitacionId, hasta: null } },
     },
   });
+  verificarCapacidad(rh, persona, otras);
+}
+// Sin consultas: la usa también la carga en lote (cargaMasiva.js).
+function verificarCapacidad(rh, persona, otras) {
   const eventos = [
     { fecha: persona.fechaDesde, delta: 1 },
     { fecha: persona.fechaHasta, delta: -1 },
   ];
   for (const p of otras) {
-    eventos.push(
-      { fecha: p.fechaDesde, delta: 1 },
-      { fecha: p.fechaHasta, delta: -1 },
-    );
+    eventos.push({ fecha: p.fechaDesde, delta: 1 }, { fecha: p.fechaHasta, delta: -1 });
   }
   eventos.sort((a, b) => a.fecha - b.fecha || a.delta - b.delta);
   let ocupados = 0;
@@ -185,8 +184,7 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
           include: includePersona,
         })
       : null;
-    if (ocupanteId && !actual)
-      throw new ErrorDeNegocio("Ocupante inexistente.", 404);
+    if (ocupanteId && !actual) throw new ErrorDeNegocio("Ocupante inexistente.", 404);
     if (
       actual?.estado === "Alojado" &&
       (String(data.numeroDocumento || "")
@@ -202,16 +200,10 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
     if (actual && ["Retirado", "Cancelado"].includes(actual.estado))
       throw new ErrorDeNegocio("No se modifica un registro finalizado.");
     const p = normalizarPersona(data, r);
+    const residencia = sacarResidencia(p);
     const habitacionId = id(data.habitacionId);
     const { prepararContacto, comparteCorreo } = require("./contactoPersona");
-    const { menor, responsable } = await prepararContacto(
-      tx,
-      r,
-      p,
-      actual,
-      data,
-      { edad, ErrorDeNegocio },
-    );
+    const { menor, responsable } = await prepararContacto(tx, r, p, actual, data, { edad, ErrorDeNegocio });
     if (p.email) {
       // La reserva ya está bloqueada: dos altas simultáneas no eluden este control.
       const correos = await tx.ocupanteReserva.findMany({
@@ -228,12 +220,10 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
           (otro) =>
             String(otro.email || "")
               .trim()
-              .toLowerCase() === p.email.toLowerCase() &&
-            !comparteCorreo(otro, p, actual, menor, responsable),
+              .toLowerCase() === p.email.toLowerCase() && !comparteCorreo(otro, p, actual, menor, responsable),
         )
       ) {
-        const mensaje =
-          "Este correo ya está registrado en otro ocupante de la reserva.";
+        const mensaje = "Este correo ya está registrado en otro ocupante de la reserva.";
         throw new ErrorDeNegocio(mensaje, 409, { email: mensaje });
       }
     }
@@ -251,9 +241,7 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
         edad(adulto.fechaNacimiento, p.fechaDesde) < 18 ||
         adulto.id === actual?.id
       )
-        throw new ErrorDeNegocio(
-          "El responsable debe ser un adulto de la misma reserva.",
-        );
+        throw new ErrorDeNegocio("El responsable debe ser un adulto de la misma reserva.");
     }
     if (
       p.numeroDocumento &&
@@ -268,10 +256,7 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
         },
       }))
     )
-      throw new ErrorDeNegocio(
-        "Esta persona ya está registrada en la reserva.",
-        409,
-      );
+      throw new ErrorDeNegocio("Esta persona ya está registrada en la reserva.", 409);
     if (
       actual &&
       (await tx.ocupanteReserva.count({
@@ -283,39 +268,21 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
       })) &&
       (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < 18)
     )
-      throw new ErrorDeNegocio(
-        "El responsable de menores debe conservar su condición de adulto.",
-      );
+      throw new ErrorDeNegocio("El responsable de menores debe conservar su condición de adulto.");
     await capacidad(tx, r, habitacionId, p, actual?.id);
-    p.esTitular =
-      data.esTitular === undefined
-        ? Boolean(actual?.esTitular)
-        : data.esTitular === true;
-    if (
-      p.esTitular &&
-      (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < 18)
-    )
-      throw new ErrorDeNegocio(
-        "El titular de habitacion debe tener 18 años cumplidos.",
-      );
-    p.huespedId = await require("./persona.servicio").vincularPersona(
-      tx,
-      r,
-      p,
-      actual,
-    );
+    p.esTitular = data.esTitular === undefined ? Boolean(actual?.esTitular) : data.esTitular === true;
+    if (p.esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < 18))
+      throw new ErrorDeNegocio("El titular de habitacion debe tener 18 años cumplidos.");
+    const personas = require("./persona.servicio");
+    p.huespedId = await personas.vincularPersona(tx, r, p, actual);
+    await personas.actualizarResidencia(tx, p.huespedId, residencia);
     const anterior = actual?.asignaciones.find((a) => !a.hasta);
     const cambio = anterior && anterior.habitacionId !== habitacionId;
-    if (cambio && !texto(data.motivo, "Motivo"))
-      throw new ErrorDeNegocio("Indicá el motivo del cambio de habitación.");
+    if (cambio && !texto(data.motivo, "Motivo")) throw new ErrorDeNegocio("Indicá el motivo del cambio de habitación.");
     if (actual?.estado === "Alojado" && cambio) {
-      const h = r.reservaHabitaciones.find(
-        (h) => h.habitacionId === habitacionId,
-      ).habitacion;
+      const h = r.reservaHabitaciones.find((h) => h.habitacionId === habitacionId).habitacion;
       if (!["ocupada", "libre"].includes(h.estado))
-        throw new ErrorDeNegocio(
-          "La habitación de destino no está disponible.",
-        );
+        throw new ErrorDeNegocio("La habitación de destino no está disponible.");
     }
     const saved = actual
       ? await tx.ocupanteReserva.update({
@@ -344,29 +311,23 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
       { ocupanteId: saved.id, habitacionId, cambio: Boolean(cambio) },
       operador,
     );
-    return tx.ocupanteReserva.findUnique({
-      where: { id: saved.id },
-      include: includePersona,
-    });
+    return conResidencia(
+      await tx.ocupanteReserva.findUnique({
+        where: { id: saved.id },
+        include: includePersona,
+      }),
+    );
   };
-  return cliente
-    ? ejecutar(cliente)
-    : prisma.$transaction(ejecutar, OPCIONES_TRANSACCION);
+  return cliente ? ejecutar(cliente) : prisma.$transaction(ejecutar, OPCIONES_TRANSACCION);
 }
 function validarCompleto(p) {
   if (!String(p.nombre || "").trim() || !String(p.apellido || "").trim())
     throw new ErrorDeNegocio("Completá nombre y apellido del ocupante.");
-  if (!p.fechaNacimiento || !p.nacionalidad || !p.paisResidencia)
-    throw new ErrorDeNegocio(
-      "Completá nacimiento, nacionalidad y país de residencia.",
-    );
-  if (
-    !(p.tipoDocumento && p.numeroDocumento && p.paisDocumento) &&
-    !p.motivoSinDocumento
-  )
-    throw new ErrorDeNegocio(
-      "Completá el documento y su país emisor o justificá la excepción.",
-    );
+  const { nacionalidad, paisResidencia } = conResidencia(p);
+  if (!p.fechaNacimiento || !nacionalidad || !paisResidencia)
+    throw new ErrorDeNegocio("Completá nacimiento, nacionalidad y país de residencia.");
+  if (!(p.tipoDocumento && p.numeroDocumento && p.paisDocumento) && !p.motivoSinDocumento)
+    throw new ErrorDeNegocio("Completá el documento y su país emisor o justificá la excepción.");
   if (edad(p.fechaNacimiento, p.fechaDesde) < 18 && !p.responsableId)
     throw new ErrorDeNegocio("El menor necesita un adulto responsable.");
 }
@@ -382,22 +343,16 @@ async function accion(reservaId, ocupanteId, data) {
     const operador = texto(data.operador, "Operador", true);
     let cambio = {};
     if (data.accion === "verificar") {
-      if (!["Previsto", "Alojado"].includes(p.estado))
-        throw new ErrorDeNegocio("Ocupante finalizado.");
+      if (!["Previsto", "Alojado"].includes(p.estado)) throw new ErrorDeNegocio("Ocupante finalizado.");
       validarCompleto(p);
       cambio = { verificadoPor: operador, verificadoEn: new Date() };
     } else if (data.accion === "ingresar") {
       if (r.estado !== "En curso" || p.estado !== "Previsto" || !p.verificadoEn)
-        throw new ErrorDeNegocio(
-          "Se requiere check-in de la reserva y datos verificados.",
-        );
+        throw new ErrorDeNegocio("Se requiere check-in de la reserva y datos verificados.");
       const hoy = new Date().toLocaleDateString("en-CA", {
         timeZone: "America/Argentina/Buenos_Aires",
       });
-      if (
-        hoy < p.fechaDesde.toISOString().slice(0, 10) ||
-        hoy >= p.fechaHasta.toISOString().slice(0, 10)
-      )
+      if (hoy < p.fechaDesde.toISOString().slice(0, 10) || hoy >= p.fechaHasta.toISOString().slice(0, 10))
         throw new ErrorDeNegocio("El ingreso está fuera del período previsto.");
       validarCompleto(p);
       const a = p.asignaciones.find((a) => !a.hasta);
@@ -408,33 +363,27 @@ async function accion(reservaId, ocupanteId, data) {
           where: { id: p.responsableId, reservaId, estado: "Alojado" },
         }))
       )
-        throw new ErrorDeNegocio(
-          "Primero debe ingresar el adulto responsable.",
-        );
+        throw new ErrorDeNegocio("Primero debe ingresar el adulto responsable.");
       cambio = {
         estado: "Alojado",
         ingresoReal: new Date(),
         identidadActiva: identidad(p),
       };
     } else if (data.accion === "retirar") {
-      if (p.estado !== "Alojado")
-        throw new ErrorDeNegocio("La persona no está alojada.");
+      if (p.estado !== "Alojado") throw new ErrorDeNegocio("La persona no está alojada.");
       if (
         await tx.ocupanteReserva.count({
           where: { responsableId: p.id, reservaId, estado: "Alojado" },
         })
       )
-        throw new ErrorDeNegocio(
-          "Retirá primero a los menores a cargo o asignales otro responsable.",
-        );
+        throw new ErrorDeNegocio("Retirá primero a los menores a cargo o asignales otro responsable.");
       cambio = {
         estado: "Retirado",
         salidaReal: new Date(),
         identidadActiva: null,
       };
     } else if (data.accion === "cancelar") {
-      if (p.estado !== "Previsto")
-        throw new ErrorDeNegocio("Solo se cancela un ingreso pendiente.");
+      if (p.estado !== "Previsto") throw new ErrorDeNegocio("Solo se cancela un ingreso pendiente.");
       if (
         await tx.ocupanteReserva.count({
           where: {
@@ -458,16 +407,12 @@ async function accion(reservaId, ocupanteId, data) {
   }, OPCIONES_TRANSACCION);
 }
 async function alojados(q = "") {
-  return prisma.ocupanteReserva.findMany({
+  const personas = await prisma.ocupanteReserva.findMany({
     where: {
       estado: "Alojado",
       ...(q
         ? {
-            OR: [
-              { nombre: { contains: q } },
-              { apellido: { contains: q } },
-              { numeroDocumento: { contains: q } },
-            ],
+            OR: [{ nombre: { contains: q } }, { apellido: { contains: q } }, { numeroDocumento: { contains: q } }],
           }
         : {}),
     },
@@ -483,6 +428,7 @@ async function alojados(q = "") {
     orderBy: { apellido: "asc" },
     take: 500,
   });
+  return personas.map(conResidencia);
 }
 async function historial(reservaId) {
   return prisma.eventoEstadia.findMany({
@@ -493,6 +439,12 @@ async function historial(reservaId) {
 }
 module.exports = {
   identidad,
+  CAMPOS_RESIDENCIA,
+  conResidencia,
+  sacarResidencia,
+  includePersona,
+  verificarCapacidad,
+  idValido: id,
   ErrorDeNegocio,
   normalizarPersona,
   edad,

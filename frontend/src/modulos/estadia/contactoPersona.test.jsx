@@ -25,31 +25,15 @@ const menor = {
   responsableId: 1,
 };
 test("titular exige nacimiento y 18 cumplidos, no 17", () => {
+  expect(validarOcupante(menor, reserva, [], {}, {}, false, true).fechaNacimiento).toMatch(/18 años/);
   expect(
-    validarOcupante(menor, reserva, [], {}, {}, false, true).fechaNacimiento,
-  ).toMatch(/18 años/);
-  expect(
-    validarOcupante(
-      { ...menor, fechaNacimiento: "2008-10-01" },
-      reserva,
-      [],
-      {},
-      {},
-      false,
-      true,
-    ).fechaNacimiento,
+    validarOcupante({ ...menor, fechaNacimiento: "2008-10-01" }, reserva, [], {}, {}, false, true).fechaNacimiento,
   ).toBeUndefined();
 });
 test("contacto del responsable es opcional y copiarlo permite guardar al menor", () => {
   const guardar = vi.fn();
   render(
-    <PersonaFormulario
-      persona={menor}
-      reserva={reserva}
-      personas={[adulto]}
-      onGuardar={guardar}
-      onClose={() => {}}
-    />,
+    <PersonaFormulario persona={menor} reserva={reserva} personas={[adulto]} onGuardar={guardar} onClose={() => {}} />,
   );
   const opcion = screen.getByRole("checkbox", {
     name: /Usar correo y teléfono/,

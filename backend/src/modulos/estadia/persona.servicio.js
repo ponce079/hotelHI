@@ -1,4 +1,6 @@
 const { createHash } = require("node:crypto");
+const { Prisma } = require("@prisma/client");
+const { codigoPais } = require("../../lib/paises");
 const normalizar = (v) =>
   String(v || "")
     .trim()
@@ -7,26 +9,17 @@ const normalizar = (v) =>
 function claveDocumento(p) {
   if (!p.tipoDocumento || !p.paisDocumento || !p.numeroDocumento) return null;
   return createHash("sha256")
-    .update(
-      [p.tipoDocumento, normalizarPais(p.paisDocumento), p.numeroDocumento]
-        .map(normalizar)
-        .join("|"),
-    )
+    .update([p.tipoDocumento, normalizarPais(p.paisDocumento), p.numeroDocumento].map(normalizar).join("|"))
     .digest("hex");
 }
+// Cualquier país del catálogo ISO se reduce a su código; lo que no está en el
+// catálogo conserva la clave de texto de siempre (mayúsculas, sin tildes ni espacios).
 function normalizarPais(valor) {
-  const clave = normalizar(valor)
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
   return (
-    {
-      ARGENTINA: "AR",
-      BRASIL: "BR",
-      CHILE: "CL",
-      URUGUAY: "UY",
-      PARAGUAY: "PY",
-      BOLIVIA: "BO",
-    }[clave] || clave
+    codigoPais(valor) ||
+    normalizar(valor)
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
   );
 }
 async function vincularPersona(tx, reserva, persona, actual) {
@@ -54,7 +47,7 @@ async function vincularPersona(tx, reserva, persona, actual) {
     const existente = await tx.huesped.findUnique({
       where: { identidadDocumento },
     });
-    if (previa && !previa.identidadDocumento && !existente) {
+    if (previa && esProvisoria(previa) && !existente) {
       await tx.huesped.update({
         where: { id: previa.id },
         data: {
@@ -81,10 +74,8 @@ async function vincularPersona(tx, reserva, persona, actual) {
   if (
     titular &&
     normalizar(titular.tipoDocumento) === normalizar(persona.tipoDocumento) &&
-    normalizar(titular.numeroDocumento) ===
-      normalizar(persona.numeroDocumento) &&
-    (!titular.paisDocumento ||
-      normalizarPais(titular.paisDocumento) === datos.paisDocumento)
+    normalizar(titular.numeroDocumento) === normalizar(persona.numeroDocumento) &&
+    (!titular.paisDocumento || normalizarPais(titular.paisDocumento) === datos.paisDocumento)
   ) {
     const existente = await tx.huesped.findUnique({
       where: { identidadDocumento },
@@ -111,4 +102,60 @@ async function vincularPersona(tx, reserva, persona, actual) {
   });
   return personaUnica.id;
 }
-module.exports = { claveDocumento, vincularPersona, normalizarPais };
+
+const CAMPOS_RESIDENCIA = ["nacionalidad", "paisResidencia", "domicilio", "localidad"];
+
+// La carga en lote necesita encontrar de nuevo las fichas que acaba de crear, y una persona
+// sin documento no tiene una clave natural. Su ficha lleva una identidad provisoria única
+// (nunca un número de documento inventado); se reemplaza cuando se completa el documento.
+const PREFIJO_SIN_DOCUMENTO = "SIN-DOC:";
+const esProvisoria = (huesped) =>
+  !huesped?.identidadDocumento || huesped.identidadDocumento.startsWith(PREFIJO_SIN_DOCUMENTO);
+
+function datosDeHuesped(persona) {
+  return {
+    nombre: `${persona.nombre} ${persona.apellido}`.trim(),
+    tipoDocumento: persona.tipoDocumento,
+    paisDocumento: normalizarPais(persona.paisDocumento),
+    numeroDocumento: normalizar(persona.numeroDocumento),
+    fechaNacimiento: persona.fechaNacimiento,
+    contacto: persona.email || persona.telefono || null,
+  };
+}
+
+// Mismo efecto que actualizarResidencia para muchas fichas, con UNA sola sentencia:
+// la cantidad de consultas no crece con la cantidad de personas.
+async function actualizarResidenciaEnLote(tx, filas) {
+  const conDatos = filas.filter((fila) => CAMPOS_RESIDENCIA.some((campo) => fila.residencia[campo]));
+  if (!conDatos.length) return;
+  const asignaciones = CAMPOS_RESIDENCIA.map((campo) => {
+    const cuando = conDatos.map((fila) => Prisma.sql`WHEN ${fila.huespedId} THEN ${fila.residencia[campo] || null}`);
+    return Prisma.sql`${Prisma.raw(campo)} = COALESCE(CASE id ${Prisma.join(cuando, " ")} END, ${Prisma.raw(campo)})`;
+  });
+  const ids = conDatos.map((fila) => fila.huespedId);
+  await tx.$executeRaw(
+    Prisma.sql`UPDATE huespedes SET ${Prisma.join(asignaciones, ", ")} WHERE id IN (${Prisma.join(ids)})`,
+  );
+}
+
+// Nacionalidad, país de residencia, domicilio y localidad son datos de la persona:
+// viven en Huesped y la ficha guarda los últimos declarados. Un dato que no se
+// declara (vacío) no borra el que ya estaba.
+async function actualizarResidencia(tx, huespedId, residencia) {
+  const datos = {};
+  for (const campo of CAMPOS_RESIDENCIA) if (residencia[campo]) datos[campo] = residencia[campo];
+  if (!Object.keys(datos).length) return;
+  await tx.huesped.update({ where: { id: huespedId }, data: datos });
+}
+
+module.exports = {
+  claveDocumento,
+  vincularPersona,
+  normalizarPais,
+  actualizarResidencia,
+  actualizarResidenciaEnLote,
+  datosDeHuesped,
+  esProvisoria,
+  PREFIJO_SIN_DOCUMENTO,
+  CAMPOS_RESIDENCIA,
+};
