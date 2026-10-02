@@ -5,6 +5,7 @@ const { CAMPOS_RESIDENCIA } = require("./persona.servicio");
 const { MAYORIA_EDAD, edadEn } = require("../../lib/fechas");
 const { TIPOS_DOCUMENTO, normalizarTipoDocumento } = require("../../lib/tiposDocumento");
 const { esEmail, esTelefono } = require("../../lib/contacto");
+const personaAdicional = require("./personaAdicional");
 function identidad(p) {
   return p.numeroDocumento
     ? require("node:crypto")
@@ -218,6 +219,9 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
     const p = normalizarPersona(data, r);
     const residencia = sacarResidencia(p);
     const habitacionId = id(data.habitacionId);
+    // Una persona que se suma con la estadía en curso ingresa desde hoy, no desde la entrada de la reserva.
+    const hoy = require("../../lib/fechas").hoyComoFechaUTC();
+    if (!actual && r.estado === "En curso" && p.fechaDesde < hoy && hoy < p.fechaHasta) p.fechaDesde = hoy;
     // Adulto responsable: solo para menores de 18 (a la fecha de ingreso), y en ese caso obligatorio.
     const esMenorDeEdad = Boolean(p.fechaNacimiento && edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD);
     if (!esMenorDeEdad && p.responsableId) {
@@ -337,6 +341,21 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
         titularReemplazado = otro;
       }
     }
+    // Persona adicional con la estadía en curso: supera la ocupación registrada de la habitación.
+    // Entra Alojada en el momento, con la vista previa del cargo confirmada (capacidad ya controlada).
+    let adicional = null;
+    if (!actual && r.estado === "En curso") {
+      adicional = await personaAdicional.evaluar(tx, r, habitacionId, p, { ErrorDeNegocio });
+      if (adicional) {
+        validarCompleto({ ...p, ...residencia });
+        if (
+          p.responsableId &&
+          !(await tx.ocupanteReserva.findFirst({ where: { id: p.responsableId, reservaId, estado: "Alojado" } }))
+        )
+          throw new ErrorDeNegocio("Primero debe ingresar el adulto responsable.");
+        personaAdicional.exigirConfirmacion(adicional, data.confirmacionPersonaAdicional, ErrorDeNegocio);
+      }
+    }
     const personas = require("./persona.servicio");
     p.huespedId = await personas.vincularPersona(tx, r, p, actual);
     await personas.actualizarResidencia(tx, p.huespedId, residencia);
@@ -360,7 +379,21 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
             ...(alojado && cambiosDocumento.length ? { identidadActiva: identidad(p) } : {}),
           },
         })
-      : await tx.ocupanteReserva.create({ data: { ...p, reservaId } });
+      : await tx.ocupanteReserva.create({
+          data: {
+            ...p,
+            reservaId,
+            ...(adicional
+              ? {
+                  estado: "Alojado",
+                  ingresoReal: new Date(),
+                  identidadActiva: identidad(p),
+                  verificadoEn: new Date(),
+                  verificadoPor: operador,
+                }
+              : {}),
+          },
+        });
     if (!anterior || cambio) {
       if (anterior)
         await tx.asignacionOcupanteHabitacion.update({
@@ -382,6 +415,10 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
       { ocupanteId: saved.id, habitacionId, cambio: Boolean(cambio) },
       operador,
     );
+    if (adicional) {
+      await evento(tx, reservaId, "ingresar", { ocupanteId: saved.id }, operador);
+      await personaAdicional.aplicar(tx, r, adicional, saved, operador, evento);
+    }
     if (cambiosDocumento.length)
       await evento(
         tx,
@@ -446,6 +483,7 @@ async function accion(reservaId, ocupanteId, data) {
     if (!p) throw new ErrorDeNegocio("Ocupante inexistente.", 404);
     const operador = texto(data.operador, "Operador", true);
     let cambio = {};
+    let adicional = null;
     if (data.accion === "verificar") {
       if (!["Previsto", "Alojado"].includes(p.estado)) throw new ErrorDeNegocio("Ocupante finalizado.");
       validarCompleto(p);
@@ -468,6 +506,8 @@ async function accion(reservaId, ocupanteId, data) {
         }))
       )
         throw new ErrorDeNegocio("Primero debe ingresar el adulto responsable.");
+      adicional = await personaAdicional.evaluar(tx, r, a.habitacionId, p, { excluirId: p.id, ErrorDeNegocio });
+      if (adicional) personaAdicional.exigirConfirmacion(adicional, data.confirmacionPersonaAdicional, ErrorDeNegocio);
       cambio = {
         estado: "Alojado",
         ingresoReal: new Date(),
@@ -507,6 +547,9 @@ async function accion(reservaId, ocupanteId, data) {
         data: { hasta: new Date() },
       });
     await evento(tx, reservaId, data.accion, { ocupanteId: p.id }, operador);
+    if (adicional) await personaAdicional.aplicar(tx, r, adicional, p, operador, evento);
+    // Salida anticipada de una persona adicional: se anulan los cargos de las noches que no usa.
+    if (data.accion === "retirar") await personaAdicional.anularNochesNoUsadas(tx, reservaId, p.id, operador);
     return { ok: true };
   }, OPCIONES_TRANSACCION);
 }

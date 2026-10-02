@@ -697,7 +697,10 @@ async function pruebas({ bar, nrf, temporada }) {
     // Adulto responsable: solo para menores, y obligatorio para ellos.
     await rechaza(() => estadia.guardar(reserva.id, null, ficha(persona(4, hA.id, 36), hA.id, { responsableId: fT.id })), 400, /Solo un menor/);
     await rechaza(() => estadia.guardar(reserva.id, null, ficha(persona(5, hA.id, 10), hA.id)), 400, /adulto responsable/);
-    const menor = await estadia.guardar(reserva.id, null, ficha(persona(5, hA.id, 10), hA.id, { responsableId: fT.id }));
+    // Supera la ocupación registrada (2 + 0): entra como persona adicional, con su vista previa.
+    const datosMenor = ficha(persona(5, hA.id, 10), hA.id, { responsableId: fT.id });
+    const vistaMenor = await estadia.guardar(reserva.id, null, datosMenor).catch((e) => e.detalle);
+    const menor = await estadia.guardar(reserva.id, null, { ...datosMenor, confirmacionPersonaAdicional: vistaMenor.token });
 
     // Ingreso, salida y habitación de una persona alojada no se cambian desde "Editar".
     await rechaza(() => estadia.guardar(reserva.id, fAcomp.id, ficha(acomp, hA.id, { fechaHasta: enDias(1) })), 409, /fechas de una persona alojada/);
@@ -753,6 +756,232 @@ async function pruebas({ bar, nrf, temporada }) {
     // hB ya tiene 2 de 2: no entra nadie más.
     await rechaza(() => moverA(fAcomp.id, hB.id, { nuevoTitularId: fT.id }), 409, /capacidad/);
     ok("estadía en curso: responsable solo para menores, fechas y habitación fijas en Editar, cambio de documento con motivo y mover respetando capacidad y titular");
+  }
+
+  // ---------------------------------------------------------------- cargos en lote (servicio de cargos)
+  const estadiaS = require("../src/modulos/estadia/estadia.servicio");
+  const servicioCargos = require("../src/modulos/servicios-adicionales/serviciosAdicionales.servicio");
+  // Reserva doble En curso con 2 adultos alojados (check-in de hoy).
+  async function enCurso({ noches = 3, capacidad = 3 } = {}) {
+    const h = await habitacion(doble, capacidad);
+    const t = persona(1, h.id, 40, { esTitular: true });
+    const acomp = persona(2, h.id, 38);
+    const { reserva, total } = await reservar([{ habitacionId: h.id, adultos: 2, menores: 0 }], { titular: t, noches });
+    await confirmar(reserva, {
+      habitaciones: [{ habitacionIdAnterior: h.id, adultos: 2, menores: 0 }],
+      personas: [t, acomp],
+      totalEsperado: total,
+    });
+    const titular = await p.ocupanteReserva.findFirst({ where: { reservaId: reserva.id, numeroDocumento: t.numeroDocumento, estado: "Alojado" } });
+    return { reserva: await p.reserva.findUnique({ where: { id: reserva.id } }), h, titular };
+  }
+  // "Un día después": corre un día hacia atrás la reserva, sus noches, sus fichas y sus cargos.
+  async function correrUnDia(reservaId) {
+    const menos = (d) => (d ? new Date(d.getTime() - 86400000) : d);
+    const r = await p.reserva.findUnique({ where: { id: reservaId }, include: { reservaHabitaciones: true } });
+    await p.reserva.update({ where: { id: reservaId }, data: { fechaDesde: menos(r.fechaDesde), fechaHasta: menos(r.fechaHasta) } });
+    const ids = r.reservaHabitaciones.map((rh) => rh.id);
+    await p.$executeRawUnsafe(
+      `UPDATE reservas_noche SET fecha = DATE_SUB(fecha, INTERVAL 1 DAY) WHERE reservaHabitacionId IN (${ids.join(",")}) ORDER BY fecha ASC`,
+    );
+    for (const o of await p.ocupanteReserva.findMany({ where: { reservaId } }))
+      await p.ocupanteReserva.update({ where: { id: o.id }, data: { fechaDesde: menos(o.fechaDesde), fechaHasta: menos(o.fechaHasta) } });
+    for (const c of await p.consumoServicioAdicional.findMany({ where: { reservaId } }))
+      await p.consumoServicioAdicional.update({ where: { id: c.id }, data: { fechaServicio: menos(c.fechaServicio) } });
+  }
+  {
+    const { reserva, h } = await enCurso();
+    const eventos = (accion) => p.eventoEstadia.count({ where: { reservaId: reserva.id, accion } });
+    const dia = (n) => new Date(`${enDias(n)}T12:00:00-03:00`);
+    const lote = (cargosLote, extra = {}) =>
+      p.$transaction((tx) =>
+        servicioCargos.registrarCargosEnTransaccion(tx, {
+          reservaId: reserva.id,
+          habitacionId: h.id,
+          tipoServicio: "Otro",
+          registradoPor: OPERADOR,
+          cargos: cargosLote,
+          ...extra,
+        }),
+      );
+    const clave = (n) => `prueba-lote:${marca}:${n}`;
+    const dos = [
+      { fechaServicio: dia(0), precioUnitario: 1500.5, descripcion: "Cargo de prueba", claveOperacion: clave(0) },
+      { fechaServicio: dia(1), precioUnitario: 1500.5, descripcion: "Cargo de prueba", claveOperacion: clave(1) },
+    ];
+    assert.equal((await lote(dos)).creados, 2);
+    // Un reintento con las mismas claves no duplica ni registra otro evento.
+    const reintento = await lote(dos);
+    assert.equal(reintento.creados, 0);
+    assert.equal(reintento.consumos.length, 2);
+    assert.equal(await p.consumoServicioAdicional.count({ where: { claveOperacion: { in: [clave(0), clave(1)] } } }), 2);
+    assert.equal(await eventos("Agregar cargos"), 1);
+    const guardados = await p.consumoServicioAdicional.findMany({ where: { claveOperacion: { in: [clave(0), clave(1)] } } });
+    assert.ok(guardados.every((c) => Number(c.monto) === 1500.5 && c.tipoServicio === "Otro" && !c.anulado));
+    // Mismas validaciones que registrarConsumo.
+    await rechaza(() => lote([{ fechaServicio: dia(0), precioUnitario: 0 }]), 400, /precio unitario/);
+    await rechaza(() => lote([{ fechaServicio: dia(0), precioUnitario: 10 }], { tipoServicio: "Minibar" }), 400, /minibar/);
+    await rechaza(() => lote([{ fechaServicio: dia(9), precioUnitario: 10 }]), 400, /dentro de la estadía/);
+    await rechaza(() => lote([{ fechaServicio: dia(0), precioUnitario: 10 }], { tipoServicio: "Casino" }), 400, /tipoServicio/);
+    // Anulación en lote: prefijo + desde una fecha, baja lógica con motivo y un evento.
+    const anular = (extra) =>
+      p.$transaction((tx) =>
+        servicioCargos.anularCargosEnTransaccion(tx, { reservaId: reserva.id, motivo: "Prueba", operador: OPERADOR, ...extra }),
+      );
+    const anulacion = await anular({ claveOperacionPrefijo: `prueba-lote:${marca}:`, fechaServicioDesde: new Date(`${enDias(1)}T00:00:00-03:00`) });
+    assert.equal(anulacion.anulados, 1);
+    const [c0, c1] = await p.consumoServicioAdicional.findMany({ where: { claveOperacion: { in: [clave(0), clave(1)] } }, orderBy: { fechaServicio: "asc" } });
+    assert.equal(c0.anulado, false);
+    assert.deepEqual([c1.anulado, c1.motivoAnulacion, c1.anuladoPor], [true, "Prueba", OPERADOR]);
+    assert.equal((await anular({ claveOperacionPrefijo: `prueba-lote:${marca}:`, fechaServicioDesde: new Date(`${enDias(1)}T00:00:00-03:00`) })).anulados, 0);
+    assert.equal(await eventos("Anular cargos"), 1);
+    await rechaza(() => anular({}), 400, /qué cargos/);
+    ok("cargos en lote: createMany idempotente por claveOperacion, mismas validaciones y anulación en lote con motivo, un evento por operación");
+  }
+
+  // ---------------------------------------------------------------- persona adicional con la estadía en curso
+  {
+    const adicionales = (reservaId) =>
+      p.consumoServicioAdicional.findMany({ where: { reservaId, claveOperacion: { startsWith: "persona-adicional:" } }, orderBy: { fechaServicio: "asc" } });
+    const nochesDe = async (reservaId) =>
+      (
+        await p.reservaNoche.findMany({ where: { reservaHabitacion: { reservaId } }, orderBy: { fecha: "asc" } })
+      ).map((n) => [n.fecha.toISOString(), Number(n.precioNoche)]);
+
+    // Criterio 1: doble con 2 adultos, salida en 3 noches, hoy la primera → 3 cargos.
+    const { reserva, h, titular } = await enCurso({ noches: 3 });
+    const nochesAntes = await nochesDe(reserva.id);
+    const tercero = persona(3, h.id, 30);
+    const alta = (pers, extra = {}) => estadiaS.guardar(reserva.id, null, { ...pers, habitacionId: h.id, operador: OPERADOR, ...extra });
+    let vista;
+    await assert.rejects(
+      () => alta(tercero),
+      (e) => {
+        assert.equal(e.statusCode, 409);
+        assert.equal(e.codigo, "PERSONA_ADICIONAL_REQUIERE_CONFIRMACION");
+        vista = e.detalle;
+        return true;
+      },
+    );
+    assert.equal(vista.categoria, "adulto");
+    assert.deepEqual(vista.noches.map((n) => n.fecha), [enDias(0), enDias(1), enDias(2)]);
+    assert.ok(vista.noches.every((n) => n.diferencia > 0), "con 3 adultos en una base 2 hay diferencia");
+    assert.equal(vista.total, vista.noches.reduce((a, n) => a + n.diferencia, 0));
+    assert.equal(await p.ocupanteReserva.count({ where: { reservaId: reserva.id, numeroDocumento: tercero.numeroDocumento } }), 0, "sin confirmar no escribe");
+    await rechaza(() => alta(tercero, { confirmacionPersonaAdicional: "otra" }), 409, /supera la ocupación registrada/);
+    const ficha = await alta(tercero, { confirmacionPersonaAdicional: vista.token });
+    assert.equal(ficha.estado, "Alojado");
+    assert.ok(ficha.ingresoReal && ficha.verificadoEn);
+    const cargos3 = await adicionales(reserva.id);
+    assert.equal(cargos3.length, 3);
+    assert.ok(cargos3.every((c) => c.tipoServicio === "Otro" && c.descripcion === `Persona adicional — ${tercero.nombre} ${tercero.apellido}` && !c.anulado));
+    assert.deepEqual(cargos3.map((c) => c.claveOperacion), [0, 1, 2].map((n) => `persona-adicional:${ficha.id}:${enDias(n)}`));
+    assert.deepEqual(cargos3.map((c) => Number(c.monto)), vista.noches.map((n) => n.diferencia));
+    assert.deepEqual(await nochesDe(reserva.id), nochesAntes, "ReservaNoche no se recotiza");
+    const rh = await p.reservaHabitacion.findFirst({ where: { reservaId: reserva.id } });
+    assert.deepEqual([rh.adultos, rh.menores], [3, 0], "ocupación registrada actualizada");
+    const evento = await p.eventoEstadia.findFirst({ where: { reservaId: reserva.id, accion: "Persona adicional" } });
+    assert.deepEqual(JSON.parse(evento.detalle), { ocupanteId: ficha.id, habitacionId: h.id, categoria: "adulto", noches: 3, monto: vista.total });
+    assert.equal(evento.operador, OPERADOR);
+
+    // Criterio 5: capacidad superada → no deja agregar (antes de la vista previa).
+    await rechaza(() => alta(persona(4, h.id, 33)), 409, /supera su capacidad/);
+
+    // Criterio 4: un día después, salida anticipada → se anulan las noches no usadas, la usada queda.
+    await correrUnDia(reserva.id);
+    await estadiaS.accion(reserva.id, ficha.id, { accion: "retirar", operador: OPERADOR });
+    const despues = await adicionales(reserva.id);
+    assert.deepEqual(despues.map((c) => c.anulado), [false, true, true]);
+    assert.ok(despues.filter((c) => c.anulado).every((c) => c.motivoAnulacion === "Salida anticipada" && c.anuladoPor === OPERADOR));
+    // Retirar a alguien sin cargos adicionales no anula nada.
+    const anuladosAntes = await p.consumoServicioAdicional.count({ where: { reservaId: reserva.id, anulado: true } });
+    const acompanante = await p.ocupanteReserva.findFirst({ where: { reservaId: reserva.id, estado: "Alojado", esTitular: false } });
+    await estadiaS.accion(reserva.id, acompanante.id, { accion: "retirar", operador: OPERADOR });
+    assert.equal(await p.consumoServicioAdicional.count({ where: { reservaId: reserva.id, anulado: true } }), anuladosAntes);
+    void titular;
+    ok("persona adicional: vista previa obligatoria, 3 cargos por noche, ficha Alojada, ReservaNoche intacta, capacidad y salida anticipada");
+  }
+  {
+    // Criterio 2: mismo caso un día después → 2 cargos (hoy y mañana).
+    const { reserva, h } = await enCurso({ noches: 3 });
+    await correrUnDia(reserva.id);
+    const r = await p.reserva.findUnique({ where: { id: reserva.id } });
+    const tercero = persona(3, h.id, 30);
+    const alta = (extra = {}) => estadiaS.guardar(reserva.id, null, { ...tercero, habitacionId: h.id, operador: OPERADOR, ...extra });
+    const vista = await alta().catch((e) => e.detalle);
+    assert.deepEqual(vista.noches.map((n) => n.fecha), [enDias(0), enDias(1)]);
+    const ficha = await alta({ confirmacionPersonaAdicional: vista.token });
+    assert.equal(ficha.fechaDesde.toISOString().slice(0, 10), enDias(0), "ingresa desde hoy");
+    assert.equal(
+      await p.consumoServicioAdicional.count({ where: { reservaId: reserva.id, claveOperacion: { startsWith: `persona-adicional:${ficha.id}:` } } }),
+      2,
+    );
+    void r;
+    ok("persona adicional un día después: 2 cargos (hoy y mañana)");
+  }
+  {
+    // Criterio 3: un menor que supera la ocupación → vista previa "menor", sin cargos.
+    const { reserva, h, titular } = await enCurso({ noches: 3 });
+    const menor = persona(3, h.id, 8, { responsableId: titular.id });
+    const alta = (extra = {}) => estadiaS.guardar(reserva.id, null, { ...menor, habitacionId: h.id, operador: OPERADOR, ...extra });
+    const vista = await alta().catch((e) => {
+      assert.equal(e.codigo, "PERSONA_ADICIONAL_REQUIERE_CONFIRMACION");
+      return e.detalle;
+    });
+    assert.deepEqual([vista.categoria, vista.total, vista.noches.length], ["menor", 0, 0]);
+    const ficha = await alta({ confirmacionPersonaAdicional: vista.token });
+    assert.equal(ficha.estado, "Alojado");
+    assert.equal(await p.consumoServicioAdicional.count({ where: { reservaId: reserva.id, claveOperacion: { startsWith: "persona-adicional:" } } }), 0);
+    const rh = await p.reservaHabitacion.findFirst({ where: { reservaId: reserva.id } });
+    assert.deepEqual([rh.adultos, rh.menores], [2, 1]);
+    ok("persona adicional menor: vista previa sin cargo, entra alojado y la ocupación suma un menor");
+  }
+  {
+    // "Registrar ingreso" de una ficha Prevista que supera la ocupación: misma vista previa y cargos.
+    const { reserva, h } = await enCurso({ noches: 2 });
+    const extra = persona(3, h.id, 29);
+    const nacimiento = new Date(`${extra.fechaNacimiento}T00:00:00Z`);
+    const huesped = await p.huesped.create({
+      data: {
+        nombre: `${extra.nombre} ${extra.apellido}`,
+        tipoDocumento: extra.tipoDocumento,
+        numeroDocumento: extra.numeroDocumento,
+        paisDocumento: extra.paisDocumento,
+        identidadDocumento: claveDocumento(extra),
+        fechaNacimiento: nacimiento,
+        nacionalidad: "AR",
+        paisResidencia: "AR",
+        localidad: "Salta",
+      },
+    });
+    const prevista = await p.ocupanteReserva.create({
+      data: {
+        huespedId: huesped.id,
+        nombre: extra.nombre,
+        apellido: extra.apellido,
+        tipoDocumento: extra.tipoDocumento,
+        numeroDocumento: extra.numeroDocumento,
+        paisDocumento: extra.paisDocumento,
+        telefono: extra.telefono,
+        reservaId: reserva.id,
+        fechaNacimiento: nacimiento,
+        fechaDesde: reserva.fechaDesde,
+        fechaHasta: reserva.fechaHasta,
+        verificadoEn: new Date(),
+        verificadoPor: OPERADOR,
+        asignaciones: { create: { habitacionId: h.id } },
+      },
+    });
+    const ingresar = (extraDatos = {}) => estadiaS.accion(reserva.id, prevista.id, { accion: "ingresar", operador: OPERADOR, ...extraDatos });
+    const vista = await ingresar().catch((e) => {
+      assert.equal(e.codigo, "PERSONA_ADICIONAL_REQUIERE_CONFIRMACION");
+      return e.detalle;
+    });
+    assert.equal(vista.noches.length, 2);
+    await ingresar({ confirmacionPersonaAdicional: vista.token });
+    assert.equal((await p.ocupanteReserva.findUnique({ where: { id: prevista.id } })).estado, "Alojado");
+    assert.equal(await p.consumoServicioAdicional.count({ where: { reservaId: reserva.id, claveOperacion: { startsWith: `persona-adicional:${prevista.id}:` } } }), 2);
+    ok("persona adicional por Registrar ingreso: vista previa y 2 cargos");
   }
 }
 
