@@ -1,0 +1,996 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boceto Check-in SGH</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Source+Sans+3:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: barra lateral verde fija + contenido en una columna de secciones + barra de confirmación fija abajo. Estilo del SGH actual (un solo tema, claro). */
+:root{
+  --verde-900:#163124; --verde-800:#1e4130; --verde-700:#28543f; --verde-600:#2f6a4f; --verde-100:#e3eee7; --verde-50:#f1f6f3;
+  --crema:#f5f0e6; --papel:#ffffff; --tinta:#1c2420; --tinta-2:#55615a; --tinta-3:#87918b;
+  --borde:#e6dfd1; --borde-2:#d3cab7;
+  --ok:#2b7649; --ok-bg:#e2f1e7; --aviso:#8f5d0e; --aviso-bg:#fbefd6; --nota:#fff7cf; --nota-borde:#e6cf6e;
+  --serif:'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --sans:'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
+  --radio:14px; --lateral:236px;
+  color-scheme: light;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{background:var(--crema);color:var(--tinta)}
+body{font-family:var(--sans);font-size:15px;line-height:1.45}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--verde-600);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+
+/* Estructura */
+.app{display:grid;grid-template-columns:var(--lateral) minmax(0,1fr);min-height:100vh}
+.lateral{background:var(--verde-900);color:#dfe9e3;padding:22px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:22px}
+.marca{padding:0 10px}
+.marca b{font-family:var(--serif);font-size:26px;font-weight:600;color:#fff;letter-spacing:.5px;display:block}
+.marca span{font-size:13px;color:#a9c1b4}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav a{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;color:#cfdcd5;text-decoration:none;font-size:14.5px}
+.nav a::before{content:"";width:6px;height:6px;border-radius:50%;background:#5f8a74}
+.nav a.activo{background:var(--verde-700);color:#fff;font-weight:600}
+.nav a.activo::before{background:#cfe8d8}
+.usuario{margin-top:auto;padding:12px;border-top:1px solid #2c4c3c;font-size:13px;color:#a9c1b4}
+.usuario b{color:#fff;display:block;font-weight:600}
+
+.principal{padding:26px 32px 150px;min-width:0}
+.contenido{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.encabezado{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+h1{font-family:var(--serif);font-weight:600;font-size:32px;margin:0;line-height:1.1;text-wrap:balance}
+.sub{color:var(--tinta-2);margin-top:4px}
+.btn-notas{border:1px solid var(--nota-borde);background:var(--nota);border-radius:999px;padding:6px 14px;font-size:13px;color:#6b5810}
+
+.pestanas{display:flex;gap:6px;background:#ebe4d6;padding:5px;border-radius:12px;width:max-content;max-width:100%}
+.pestanas button{border:0;background:transparent;padding:9px 18px;border-radius:9px;font-weight:600;color:var(--tinta-2)}
+.pestanas button[aria-selected="true"]{background:var(--papel);color:var(--verde-800);box-shadow:0 1px 3px rgba(40,30,10,.12)}
+.pestanas .cuenta{display:inline-block;margin-left:6px;background:var(--verde-100);color:var(--verde-700);border-radius:999px;padding:0 8px;font-size:12.5px}
+
+.tarjeta{background:var(--papel);border:1px solid var(--borde);border-radius:var(--radio);padding:20px 22px;position:relative}
+.tarjeta-cab{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+h2{font-family:var(--serif);font-weight:600;font-size:21px;margin:0}
+h3{font-family:var(--serif);font-weight:600;font-size:17px;margin:0}
+.ayuda{color:var(--tinta-2);font-size:13.5px}
+.nota{display:block;background:var(--nota);border:1px dashed var(--nota-borde);color:#5e4e10;font-size:12.5px;border-radius:8px;padding:6px 10px;margin-top:12px}
+.nota::before{content:"Nota de diseño · ";font-weight:700}
+body.sin-notas .nota{display:none}
+
+/* Llegadas */
+.buscador{display:flex;align-items:center;gap:8px;border:1px solid var(--borde-2);border-radius:10px;padding:7px 12px;background:var(--papel);min-width:280px}
+.buscador input{border:0;outline:0;flex:1;min-width:0;background:transparent}
+.tabla-envoltura{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th{text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--tinta-3);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--borde)}
+td{padding:11px 10px;border-bottom:1px solid var(--borde);white-space:nowrap}
+tbody tr{cursor:pointer}
+tbody tr:hover td{background:var(--verde-50)}
+tbody tr.sel td{background:var(--verde-100)}
+tbody tr.sel td:first-child{box-shadow:inset 3px 0 0 var(--verde-600)}
+tbody tr.hecha{cursor:default;color:var(--tinta-3)}
+tbody tr.hecha:hover td{background:transparent}
+.codigo{font-weight:700;letter-spacing:.03em}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 10px;font-size:12.5px;font-weight:600;white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok)}
+.chip.aviso{background:var(--aviso-bg);color:var(--aviso)}
+.chip.neutro{background:#efeae0;color:var(--tinta-2)}
+.chip.verde{background:var(--verde-100);color:var(--verde-700)}
+
+/* Resumen */
+.resumen{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px 22px}
+.dato small{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--tinta-3);font-weight:600}
+.dato b{font-weight:600}
+.dato .total{font-family:var(--serif);font-size:22px;font-weight:600}
+.dato .detalle{display:block;font-size:13px;color:var(--tinta-2)}
+.asignada{margin-top:16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap;background:var(--verde-50);border:1px solid var(--verde-100);border-radius:12px;padding:12px 16px}
+.asignada .nro{font-family:var(--serif);font-size:30px;font-weight:600;color:var(--verde-800);line-height:1}
+.asignada .info{flex:1;min-width:200px}
+.btn{border:1px solid var(--borde-2);background:var(--papel);border-radius:10px;padding:8px 14px;font-weight:600}
+.btn:hover{border-color:var(--verde-600)}
+.btn.primario{background:var(--verde-700);border-color:var(--verde-700);color:#fff}
+.btn.primario:hover{background:var(--verde-800)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.texto{border:0;background:transparent;color:var(--verde-700);padding:6px 4px;text-decoration:underline;text-underline-offset:3px}
+.cambio-hab{margin-top:12px;display:flex;gap:10px;flex-wrap:wrap}
+.op-hab{border:1px solid var(--borde-2);background:var(--papel);border-radius:10px;padding:8px 14px;text-align:left}
+.op-hab b{font-family:var(--serif);font-size:18px;margin-right:6px}
+.op-hab span{font-size:13px;color:var(--tinta-2)}
+.op-hab:disabled{opacity:.55;cursor:not-allowed}
+
+/* Walk-in: estadía */
+.estadia{display:flex;gap:22px;flex-wrap:wrap;align-items:flex-end}
+.control small{display:block;font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--tinta-3);font-weight:600;margin-bottom:5px}
+.fijo{border:1px solid var(--borde);background:#f7f4ee;border-radius:10px;padding:8px 14px;font-weight:600}
+.paso{display:flex;align-items:center;border:1px solid var(--borde-2);border-radius:10px;overflow:hidden;background:var(--papel)}
+.paso button{border:0;background:transparent;width:36px;height:38px;font-size:18px;color:var(--verde-700)}
+.paso button:hover{background:var(--verde-50)}
+.paso button:disabled{color:var(--tinta-3);cursor:not-allowed;background:transparent}
+.paso output{min-width:44px;text-align:center;font-weight:600;padding:0 6px}
+.paso.ancho output{min-width:150px}
+.leyenda{font-size:13px;color:var(--tinta-2);padding-bottom:9px}
+
+/* Walk-in: habitaciones */
+.grupo-tipo{border-top:1px solid var(--borde);padding-top:14px;margin-top:14px}
+.grupo-tipo:first-of-type{border-top:0;padding-top:0;margin-top:0}
+.tipo-cab{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.tipo-cab span{font-size:13.5px;color:var(--tinta-2)}
+.habs{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.hab{border:1px solid var(--borde);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;background:#fdfcf9}
+.hab.sel{border-color:var(--verde-600);box-shadow:0 0 0 1px var(--verde-600);background:var(--papel)}
+.hab.no{opacity:.6}
+.hab-cab{display:flex;align-items:center;gap:10px}
+.hab-cab b{font-family:var(--serif);font-size:22px;font-weight:600;color:var(--verde-800)}
+.hab-cab span:not(.chip){font-size:13px;color:var(--tinta-2);flex:1}
+.tarifas{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.tarifa{border:1px solid var(--borde-2);border-radius:10px;background:var(--papel);padding:9px 11px;text-align:left;display:flex;flex-direction:column;gap:2px}
+.tarifa:hover:not(:disabled){border-color:var(--verde-600)}
+.tarifa.sel{background:var(--verde-700);border-color:var(--verde-700);color:#fff}
+.tarifa.sel .t-cond{color:#d3e6da}
+.tarifa:disabled{cursor:not-allowed}
+.t-nom{font-weight:600;font-size:14px}
+.t-cond{font-size:12px;color:var(--tinta-2);line-height:1.3}
+.t-precio{font-family:var(--serif);font-size:19px;font-weight:600;margin-top:4px}
+.excluidas{margin-top:14px;font-size:13px;color:var(--tinta-3)}
+
+/* Huéspedes */
+.huespedes{display:flex;flex-direction:column;gap:12px}
+.huesped{border:1px solid var(--borde);border-radius:12px;padding:12px 14px;background:#fdfcf9}
+.huesped.completa{background:var(--papel)}
+.h-cab{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+.h-cab strong{font-family:var(--serif);font-size:16.5px;font-weight:600}
+.estado{margin-left:auto;display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--tinta-2)}
+.estado i{width:16px;height:16px;border-radius:50%;border:2px solid var(--borde-2);display:inline-grid;place-items:center;font-style:normal;font-size:10px;line-height:1}
+.huesped.completa .estado{color:var(--ok)}
+.huesped.completa .estado i{border-color:var(--ok);background:var(--ok);color:#fff}
+.huesped.completa .estado i::after{content:"✓"}
+.campos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px 12px}
+.campos.doc{grid-template-columns:110px minmax(140px,1.1fr) minmax(140px,1fr) minmax(140px,1.2fr) minmax(140px,1.2fr) minmax(130px,.9fr) minmax(140px,1fr)}
+.campos.menor{grid-template-columns:minmax(140px,1.2fr) minmax(140px,1.2fr) minmax(130px,.9fr) 2fr}
+.campos.titular{grid-template-columns:minmax(140px,1fr) minmax(140px,1fr) minmax(200px,1.6fr) minmax(150px,1fr) minmax(200px,1.4fr)}
+.subtitulo{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--tinta-3);font-weight:600;margin:12px 0 6px}
+.campo{display:flex;flex-direction:column;gap:3px;min-width:0}
+.campo label{font-size:12.5px;color:var(--tinta-2);font-weight:500}
+.campo input,.campo select{border:1px solid var(--borde-2);border-radius:8px;padding:7px 9px;background:var(--papel);min-width:0;width:100%}
+.campo input:focus,.campo select:focus{outline:2px solid var(--verde-100);border-color:var(--verde-600)}
+.campo.lleno input,.campo.lleno select{background:#fbfaf6}
+.ficha{display:flex;align-items:center;gap:8px;background:var(--ok-bg);color:var(--ok);border-radius:8px;padding:6px 10px;font-size:13.5px;margin-bottom:10px}
+.ficha b{color:#1f5c37}
+.aviso-fila{background:var(--aviso-bg);color:var(--aviso);border-radius:8px;padding:6px 10px;font-size:13.5px;margin-top:10px}
+.doc-opc{align-self:end}
+.agregar{border:1px dashed var(--borde-2);border-radius:12px;padding:12px 14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.agregar.abierto{border-style:solid;background:var(--verde-50);border-color:var(--verde-100)}
+.agregar .msg{flex:1;min-width:240px}
+.prueba{font-size:13px;color:var(--tinta-2);background:#f3efe6;border-radius:8px;padding:6px 10px}
+.prueba code{font-weight:700;color:var(--tinta)}
+
+/* Garantía */
+.gar-linea{display:flex;align-items:center;gap:12px;flex-wrap:wrap;border:1px solid var(--borde);border-radius:12px;padding:10px 14px;background:#fdfcf9}
+.marca-t{font-weight:800;letter-spacing:.05em;font-size:13px;background:#1d2b5c;color:#fff;border-radius:5px;padding:3px 7px}
+.gar-linea .esp{flex:1}
+.gar-ok{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--ok);font-weight:600}
+.opciones{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px}
+.opcion{display:flex;align-items:center;gap:8px;border:1px solid var(--borde-2);border-radius:10px;padding:8px 14px;cursor:pointer;background:var(--papel)}
+.opcion:has(input:checked){border-color:var(--verde-600);background:var(--verde-50)}
+.gar-form{display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap}
+.gar-form .campo{width:200px}
+.gar-form .campo.corto{width:110px}
+
+/* Confirmado */
+.confirmado{background:var(--ok-bg);border:1px solid #bfdfca;border-radius:var(--radio);padding:22px;display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+.confirmado .tilde{width:46px;height:46px;border-radius:50%;background:var(--ok);color:#fff;display:grid;place-items:center;font-size:24px}
+.confirmado h2{color:#1f5c37}
+
+/* Barra fija */
+.barra{position:fixed;left:var(--lateral);right:0;bottom:0;background:var(--papel);border-top:1px solid var(--borde-2);box-shadow:0 -6px 18px rgba(40,30,10,.07);padding:12px 32px calc(12px + env(safe-area-inset-bottom,0px));z-index:10}
+.barra-in{max-width:1240px;margin:0 auto;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:22px}
+@media (max-width:1000px){.barra-in{grid-template-columns:1fr}}
+.b-resumen{display:flex;gap:18px;flex-wrap:wrap;align-items:baseline}
+.b-resumen .total{font-family:var(--serif);font-size:21px;font-weight:600}
+.b-resumen span{color:var(--tinta-2);font-size:14px}
+.b-resumen b{color:var(--tinta)}
+.b-faltan{min-width:0;font-size:14px}
+.b-faltan ul{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:4px 14px}
+.b-faltan li{color:var(--aviso)}
+.b-faltan li button{border:0;background:none;padding:0;color:inherit;text-decoration:underline dotted;text-underline-offset:3px;text-align:left}
+.b-faltan .listo{color:var(--ok);font-weight:600}
+.b-faltan .tit{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--tinta-3);font-weight:600;display:block}
+.btn.confirmar{padding:12px 22px;font-size:15.5px}
+.destello{animation:destello 1.2s ease}
+@keyframes destello{0%{box-shadow:0 0 0 3px rgba(47,106,79,.45)}100%{box-shadow:0 0 0 0 rgba(47,106,79,0)}}
+@media (prefers-reduced-motion:reduce){.destello{animation:none}html{scroll-behavior:auto}}
+html{scroll-behavior:smooth}
+
+
+/* v2: grupos por habitación, acciones por fila, plan único */
+.grupo-hab{border:1px solid var(--borde);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:12px;background:#fbf9f4}
+.grupo-cab{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.grupo-cab .nro-hab{font-family:var(--serif);font-size:22px;font-weight:600;color:var(--verde-800)}
+.acciones-fila{display:flex;gap:2px;align-items:center}
+.acciones-fila .btn.texto{font-size:13px;padding:2px 6px}
+.motivo{border:1px solid var(--nota-borde);background:#fffbea;border-radius:12px;padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.motivo input{border:1px solid var(--borde-2);border-radius:8px;padding:7px 9px;width:100%}
+.plan-toggle{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
+.plan-op{border:1px solid var(--borde-2);border-radius:12px;padding:10px 14px;background:var(--papel);text-align:left;display:flex;flex-direction:column;gap:2px}
+.plan-op[aria-pressed="true"]{border-color:var(--verde-700);box-shadow:0 0 0 1px var(--verde-700);background:var(--verde-50)}
+.bloque-hab{border-top:1px solid var(--borde);padding-top:14px;margin-top:14px}
+.bloque-hab:first-of-type{border-top:0;padding-top:0;margin-top:0}
+.bloque-cab{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.habs.chicas{grid-template-columns:repeat(auto-fill,minmax(220px,1fr))}
+.hab .elegir{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.hab .total-hab{font-family:var(--serif);font-size:20px;font-weight:600}
+.elegida{display:flex;align-items:center;gap:14px;flex-wrap:wrap;background:var(--verde-50);border:1px solid var(--verde-100);border-radius:12px;padding:10px 14px}
+.elegida b.n{font-family:var(--serif);font-size:24px;color:var(--verde-800)}
+.ocup-filas{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.ocup-fila{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.ocup-fila .et{min-width:110px;font-weight:600}
+.aviso-caja{background:var(--aviso-bg);color:var(--aviso);border-radius:10px;padding:8px 12px;font-size:14px}
+.campo select.resp{max-width:100%}
+
+@media (max-width:1100px){
+  .campos.doc,.campos.titular,.campos.menor{grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}
+}
+@media (max-width:900px){
+  .app{grid-template-columns:1fr}
+  .lateral{position:static;height:auto;flex-direction:row;align-items:center;flex-wrap:wrap;padding:12px 16px;gap:12px}
+  .nav{flex-direction:row;flex-wrap:wrap}
+  .nav a{padding:6px 10px;font-size:13.5px}
+  .usuario{display:none}
+  .principal{padding:18px 16px 230px}
+  .barra{left:0;padding-left:16px;padding-right:16px}
+  .tarifas{grid-template-columns:1fr}
+  .habs{grid-template-columns:1fr}
+  .buscador{min-width:0;width:100%}
+}
+</style>
+
+<div class="app">
+  <aside class="lateral">
+    <div class="marca"><b>SGH</b><span>Holiday Inn Salta</span></div>
+    <nav class="nav" aria-label="Menú principal">
+      <a href="#" onclick="return false">Inicio</a>
+      <a href="#" onclick="return false">Reservas</a>
+      <a href="#" class="activo" onclick="return false">Check-in</a>
+      <a href="#" onclick="return false">Check-out</a>
+      <a href="#" onclick="return false">Habitaciones</a>
+      <a href="#" onclick="return false">Huéspedes</a>
+      <a href="#" onclick="return false">Tarifas</a>
+      <a href="#" onclick="return false">Facturación</a>
+      <a href="#" onclick="return false">Housekeeping</a>
+    </nav>
+    <div class="usuario"><b>recepcionista.prueba</b>Recepción · turno mañana</div>
+  </aside>
+
+  <main class="principal">
+    <div class="contenido">
+      <div class="encabezado">
+        <div>
+          <h1>Check-in</h1>
+          <div class="sub" id="fecha-hoy"></div>
+        </div>
+        <button class="btn-notas" id="btn-notas" type="button">Ocultar notas de diseño</button>
+      </div>
+
+      <div class="pestanas" role="tablist">
+        <button role="tab" id="tab-res" aria-selected="true" type="button">Llegadas de hoy <span class="cuenta" id="cuenta-llegadas"></span></button>
+        <button role="tab" id="tab-wi" aria-selected="false" type="button">Walk-in</button>
+      </div>
+
+      <!-- PESTAÑA: LLEGADAS DE HOY -->
+      <section id="panel-res" role="tabpanel" class="contenido" style="max-width:none">
+        <div class="tarjeta">
+          <div class="tarjeta-cab">
+            <h2>Llegadas de hoy</h2>
+            <label class="buscador"><span aria-hidden="true">⌕</span><input id="buscar" placeholder="Buscar por código, apellido o documento"></label>
+          </div>
+          <div class="tabla-envoltura">
+            <table>
+              <thead><tr><th>Código</th><th>Titular</th><th>Habitación</th><th>Estadía</th><th>Ocupación</th><th>Garantía</th><th>Estado</th></tr></thead>
+              <tbody id="lista-llegadas"></tbody>
+            </table>
+          </div>
+          <div class="aviso-caja" id="aviso-anteriores" style="margin-top:12px"></div>
+          <span class="nota">El check-in arranca desde la lista del día: un clic abre la reserva debajo. No hay que buscarla ni volver a cargarla.</span>
+        </div>
+        <div id="res-checkin" class="contenido" style="max-width:none"></div>
+      </section>
+
+      <!-- PESTAÑA: WALK-IN -->
+      <section id="panel-wi" role="tabpanel" class="contenido" style="max-width:none" hidden>
+        <div id="wi-checkin" class="contenido" style="max-width:none"></div>
+      </section>
+    </div>
+  </main>
+</div>
+
+<div class="barra" role="region" aria-label="Resumen y confirmación">
+  <div class="barra-in">
+    <div class="b-resumen num" id="b-resumen"></div>
+    <div class="b-faltan" id="b-faltan"></div>
+    <button class="btn primario confirmar" id="btn-confirmar" type="button" disabled>Confirmar check-in</button>
+  </div>
+</div>
+
+<script>
+/* ================= Datos de ejemplo ================= */
+const HOY = new Date(Date.UTC(2026, 9, 2));
+const DIAS = ['dom','lun','mar','mié','jue','vie','sáb'];
+const DIAS_L = ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'];
+const GARANTIA = 30000;
+const EDAD_ADULTO = 13, MAYORIA = 18;
+
+const TIPOS = {
+  doble:   {nombre:'Doble',    base:2, bar:98000,  extra:22000, cama:'Cama matrimonial y sofá cama'},
+  twin:    {nombre:'Twin',     base:2, bar:92000,  extra:0,     cama:'Dos camas individuales'},
+  familiar:{nombre:'Familiar', base:2, bar:128000, extra:22000, cama:'Matrimonial y dos individuales'},
+  suite:   {nombre:'Suite',    base:2, bar:165000, extra:28000, cama:'Cama king y living'}
+};
+const PLANES = {
+  BAR:{nombre:'Tarifa flexible', cond:'Cancelación sin cargo hasta 48 h antes'},
+  NRF:{nombre:'No reembolsable', cond:'Sin cambios ni devolución'}
+};
+const HABS = [
+  {n:'270',t:'doble',piso:2,cap:3,vista:'Vista a la ciudad'},
+  {n:'315',t:'doble',piso:3,cap:3,vista:'Vista al cerro San Bernardo'},
+  {n:'318',t:'doble',piso:3,cap:3,vista:'Vista al cerro San Bernardo'},
+  {n:'320',t:'doble',piso:3,cap:3,vista:'Vista a la ciudad'},
+  {n:'204',t:'twin',piso:2,cap:2,vista:'Vista interna'},
+  {n:'208',t:'twin',piso:2,cap:2,vista:'Vista a la ciudad'},
+  {n:'210',t:'twin',piso:2,cap:2,vista:'Vista a la ciudad'},
+  {n:'410',t:'familiar',piso:4,cap:5,vista:'Vista al cerro San Bernardo',ocupada:true},
+  {n:'412',t:'familiar',piso:4,cap:5,vista:'Vista a la ciudad'},
+  {n:'501',t:'suite',piso:5,cap:3,vista:'Vista al cerro San Bernardo'},
+  {n:'502',t:'suite',piso:5,cap:3,vista:'Vista a la ciudad'}
+];
+const habDe = n => HABS.find(h => h.n === n);
+const PAISES = [['AR','Argentina'],['BO','Bolivia'],['BR','Brasil'],['CL','Chile'],['PY','Paraguay'],['PE','Perú'],['UY','Uruguay'],['ES','España'],['IT','Italia'],['FR','Francia'],['DE','Alemania'],['US','Estados Unidos']];
+const DOCS = [['DNI','DNI'],['Pasaporte','Pasaporte'],['Cédula de identidad','Cédula de identidad'],['Libreta de Enrolamiento','Libreta de Enrolamiento'],['Libreta Cívica','Libreta Cívica']];
+const FICHAS = {
+  'DNI|AR|31784205':{nombre:'Carolina',apellido:'Paz',nacimiento:'14/03/1987',nacionalidad:'AR',ultima:'12/07/2025'},
+  'DNI|AR|27093318':{nombre:'Raúl',apellido:'Ibarra',nacimiento:'03/11/1979',nacionalidad:'AR',residencia:'AR',localidad:'San Salvador de Jujuy',domicilio:'Belgrano 845',telefono:'+54 388 555-0147',correo:'raul.ibarra@correo.com.ar',ultima:'21/04/2026'}
+};
+const RESERVAS = [
+  {cod:'C43B1F20',noches:3,plan:'BAR',origen:'Sitio web',creada:'14/09/2026',
+   habs:[{n:'270',ad:2,me:1}], senia:{txt:'VISA ****4242 · aut. 5521',ok:true}, tarjeta:{marca:'VISA',ult:'4242',vence:'08/28'},
+   tit:{docTipo:'DNI',paisEmisor:'AR',docNum:'30512874',nombre:'Martín Gutiérrez',apellido:'',nacimiento:'22/08/1984',nacionalidad:'AR',residencia:'AR',localidad:'Córdoba',domicilio:'Av. Colón 1450, 3° B',telefono:'+54 351 555-0182',correo:'martin.gutierrez@correo.com.ar'}},
+  {cod:'F2B90E11',noches:2,plan:'BAR',origen:'Teléfono',creada:'25/09/2026',
+   habs:[{n:'315',ad:2,me:0},{n:'208',ad:1,me:1}], senia:{txt:'Transferencia · $ 80.000',ok:true}, tarjeta:null,
+   tit:{docTipo:'DNI',paisEmisor:'AR',docNum:'25331908',nombre:'Sofía',apellido:'Ruiz Díaz',nacimiento:'09/04/1978',nacionalidad:'AR',residencia:'AR',localidad:'Mendoza',domicilio:'San Martín 2210',telefono:'+54 261 555-0110',correo:''}},
+  {cod:'K7D2A981',noches:2,plan:'NRF',origen:'Teléfono',creada:'20/09/2026',
+   habs:[{n:'204',ad:2,me:0}], senia:{txt:'MASTERCARD ****5100 · aut. 8830',ok:true}, tarjeta:{marca:'MASTERCARD',ult:'5100',vence:'03/27'},
+   tit:{docTipo:'DNI',paisEmisor:'AR',docNum:'35218664',nombre:'Lucía Fernández',apellido:'',nacimiento:'05/02/1991',nacionalidad:'AR',residencia:'AR',localidad:'Rosario',domicilio:'Bv. Oroño 980',telefono:'+54 341 555-0133',correo:'lucia.fernandez@correo.com.ar'}},
+  {cod:'R19E4C07',noches:1,plan:'BAR',origen:'Mostrador',creada:'29/09/2026',
+   habs:[{n:'501',ad:1,me:0}], senia:null, tarjeta:null,
+   tit:{docTipo:'Pasaporte',paisEmisor:'CL',docNum:'FX2290417',nombre:'Pedro Vargas',apellido:'',nacimiento:'17/06/1975',nacionalidad:'CL',residencia:'CL',localidad:'Antofagasta',domicilio:'Av. Grecia 1220',telefono:'+56 55 555 0190',correo:'pvargas@correo.cl'}},
+  {cod:'T08A6D12',noches:5,plan:'NRF',origen:'Agencia',creada:'11/08/2026',hecha:'11:42',
+   habs:[{n:'410',ad:2,me:2}], senia:{txt:'VISA ****7781 · aut. 1190',ok:true}, tarjeta:{marca:'VISA',ult:'7781',vence:'05/28'},
+   tit:{docTipo:'Pasaporte',paisEmisor:'IT',docNum:'YA8812044',nombre:'Giulia Rossi',apellido:''}}
+];
+const ANTERIORES_PENDIENTES = 1;
+
+/* ================= Utilidades ================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const dia = (d,n) => new Date(d.getTime() + n*86400000);
+const dd = n => String(n).padStart(2,'0');
+const fFecha = d => dd(d.getUTCDate())+'/'+dd(d.getUTCMonth()+1)+'/'+d.getUTCFullYear();
+const fCorta = d => DIAS[d.getUTCDay()]+' '+dd(d.getUTCDate())+'/'+dd(d.getUTCMonth()+1);
+const fDia = d => DIAS[d.getUTCDay()]+' '+fFecha(d);
+const plata = n => '$ ' + String(Math.round(Math.abs(n))).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const r100 = n => Math.round(n/100)*100;
+const plural = (n,s,p) => n + ' ' + (n===1 ? s : p);
+const ocup = (a,m) => plural(a,'adulto','adultos') + (m ? ' · ' + plural(m,'menor','menores') : '');
+const listaY = a => a.length < 2 ? a.join('') : a.slice(0,-1).join(', ') + ' y ' + a[a.length-1];
+function precioNoche(tipo, ad, plan){
+  const t = TIPOS[tipo]; const p = t.bar + t.extra*Math.max(0, ad - t.base);
+  return plan === 'NRF' ? r100(p*0.85) : p;
+}
+function edad(nac){
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(nac||''); if(!m) return null;
+  let e = HOY.getUTCFullYear() - +m[3];
+  if (HOY.getUTCMonth()+1 < +m[2] || (HOY.getUTCMonth()+1 === +m[2] && HOY.getUTCDate() < +m[1])) e--;
+  return e;
+}
+const claveDoc = f => `${f.docTipo||''}|${f.paisEmisor||''}|${(f.docNum||'').replace(/[^0-9A-Za-z]/g,'').toUpperCase()}`;
+const nombreDe = g => ((g.f.nombre||'') + ' ' + (g.f.apellido||'')).trim();
+let UID = 1;
+
+/* ================= Estado ================= */
+const estado = { tab:'res', sel:'C43B1F20', buscar:'', res:{}, wi:null, accion:{res:null, wi:null}, notas:true, verTodo:false };
+
+function nuevoHuesped(tipo, pre){
+  if (tipo === 'menor') return {id:UID++, tipo, titular:false, f:{docTipo:'DNI', paisEmisor:'AR'}, resp:null, docOpc:false, ficha:null};
+  return {id:UID++, tipo, titular:false, f: pre ? {...pre} : {docTipo:'DNI', paisEmisor:'AR', nacionalidad:'AR', residencia:'AR'}, ficha:null, precargado:!!pre};
+}
+function armar(ad, me, pre, prev){
+  prev = prev || [];
+  const pa = prev.filter(g=>g.tipo==='adulto'), pm = prev.filter(g=>g.tipo==='menor');
+  const out = [];
+  for (let i=0;i<ad;i++) out.push(pa[i] || nuevoHuesped('adulto', i===0 ? pre : null));
+  for (let i=0;i<me;i++) out.push(pm[i] || nuevoHuesped('menor'));
+  if (!out.some(g=>g.titular && g.tipo==='adulto') && out[0]) out[0].titular = true;
+  out.forEach(g => { if (g.tipo==='menor') g.titular = false; });
+  return out;
+}
+function estRes(cod){
+  if (!estado.res[cod]){
+    const r = RESERVAS.find(x=>x.cod===cod);
+    estado.res[cod] = {
+      rooms: r.habs.map((h,idx) => ({habAnt:h.n, hab:h.n, ad:h.ad, me:h.me, adOrig:h.ad, meOrig:h.me, cambiando:false, guests: armar(h.ad, h.me, idx===0 ? r.tit : null)})),
+      gar:{modo:'tarjeta', titular:'', numero:'', vence:'', hecho:null}, motivo:'', confirmado:false};
+  }
+  return estado.res[cod];
+}
+function nuevoWalkin(){
+  return {noches:2, plan:'BAR', rooms:[{ad:2, me:1, hab:null, editando:false, guests:armar(2,1,null)}],
+    gar:{modo:'tarjeta', titular:'', numero:'', vence:'', hecho:null}, aviso:'', confirmado:false};
+}
+estado.wi = nuevoWalkin();
+
+function ctx(c){
+  if (c === 'wi'){ const w = estado.wi; return {c, st:w, rooms:w.rooms, noches:w.noches, plan:w.plan, tarjeta:null, r:null}; }
+  const r = RESERVAS.find(x=>x.cod===estado.sel); const s = estRes(r.cod);
+  return {c, st:s, rooms:s.rooms, noches:r.noches, plan:r.plan, tarjeta:r.tarjeta, r};
+}
+/* habitaciones asignadas a llegadas de hoy (para excluirlas) */
+function asignadas(excepto){
+  const set = new Set();
+  RESERVAS.forEach(r => { if (r.cod === excepto) return;
+    const s = estado.res[r.cod]; (s ? s.rooms.map(x=>x.hab) : r.habs.map(x=>x.n)).forEach(n=>set.add(n)); });
+  return set;
+}
+/* precio por noche de una habitación; con NRF la ocupación menor no baja el precio */
+function nocheRoom(C, room, ad){
+  if (!room.hab) return 0;
+  const t = habDe(room.hab).t; const a = ad ?? room.ad;
+  const p = precioNoche(t, a, C.plan);
+  return (C.c === 'res' && C.plan === 'NRF') ? Math.max(p, precioNoche(t, room.adOrig, C.plan)) : p;
+}
+const totalCtx = C => C.rooms.reduce((s,room) => s + nocheRoom(C, room) * C.noches, 0);
+
+/* ================= Reglas de huéspedes ================= */
+const REQ_AD = ['docNum','paisEmisor','nombre','apellido','nacimiento','nacionalidad'];
+const REQ_TIT_HAB = ['residencia','localidad','domicilio'];
+const REQ_ME = ['nombre','apellido','nacimiento'];
+const NOMBRE_CAMPO = {docNum:'el documento',paisEmisor:'el país emisor',nombre:'el nombre',apellido:'el apellido',nacimiento:'la fecha de nacimiento',
+  nacionalidad:'la nacionalidad',residencia:'el país de residencia',localidad:'la localidad',domicilio:'el domicilio',telefono:'el teléfono',correo:'un correo válido'};
+
+/* quién es el "titular de la reserva": el titular de habitación que coincide con quien reservó; si no, el de la primera habitación */
+function titularReserva(C){
+  if (C.c === 'res'){
+    const k = claveDoc(C.r.tit);
+    for (let ri=0; ri<C.rooms.length; ri++){ const i = C.rooms[ri].guests.findIndex(g=>g.titular && claveDoc(g.f)===k); if (i>=0) return {ri, i, coincide:true}; }
+  }
+  const i0 = C.rooms[0] ? C.rooms[0].guests.findIndex(g=>g.titular) : -1;
+  return {ri:0, i:i0, coincide:false};
+}
+const necesitaMotivo = C => C.c === 'res' && !titularReserva(C).coincide;
+function etiqueta(room, i){
+  const g = room.guests[i]; let n = 0;
+  for (let k=0;k<=i;k++) if (room.guests[k].tipo === g.tipo) n++;
+  return (g.tipo === 'adulto' ? 'Adulto ' : 'Menor ') + n;
+}
+const nombreHab = (C, ri) => C.c === 'res' || C.rooms[ri].hab ? `Hab. ${C.rooms[ri].hab}` : `Habitación ${ri+1}`;
+function valido(k, v){
+  v = (v||'').trim();
+  if (k === 'correo') return !v || /.+@.+\..+/.test(v);
+  if (!v) return false;
+  if (k === 'nacimiento') return /^\d{2}\/\d{2}\/\d{4}$/.test(v);
+  return true;
+}
+function requeridos(C, ri, i){
+  const g = C.rooms[ri].guests[i];
+  if (g.tipo === 'menor') return REQ_ME;
+  let req = REQ_AD.slice();
+  if (g.titular) req = req.concat(REQ_TIT_HAB);
+  const tr = titularReserva(C);
+  if (tr.ri === ri && tr.i === i) req = req.concat(['telefono']);
+  return req.concat(['correo']);
+}
+const faltanDe = (C, ri, i) => requeridos(C, ri, i).filter(k => !valido(k, C.rooms[ri].guests[i].f[k]));
+function problemasEdad(C, ri, i){
+  const g = C.rooms[ri].guests[i]; const e = edad(g.f.nacimiento); if (e === null) return null;
+  if (g.tipo === 'menor' && e >= EDAD_ADULTO) return `Tiene ${e} años: desde los ${EDAD_ADULTO} se registra como adulto y paga tarifa de adulto.`;
+  if (g.tipo === 'adulto' && e < EDAD_ADULTO) return `Tiene ${e} años: se registra como menor (sin cargo).`;
+  if (g.titular && e < MAYORIA) return `Tiene ${e} años: el titular de la habitación tiene que ser mayor de ${MAYORIA}.`;
+  return null;
+}
+/* adultos que pueden ser responsables de un menor (18+ o sin edad cargada) en toda la reserva */
+function responsables(C){
+  const out = [];
+  C.rooms.forEach((room, ri) => room.guests.forEach((g, i) => {
+    if (g.tipo !== 'adulto') return; const e = edad(g.f.nacimiento);
+    if (e === null || e >= MAYORIA) out.push({id:g.id, txt:`${nombreDe(g) || etiqueta(room,i)} · ${nombreHab(C, ri)}`});
+  }));
+  return out;
+}
+
+/* ================= Filas de huéspedes ================= */
+function opciones(lista, v){ return lista.map(([c,n]) => `<option value="${esc(c)}"${c===v?' selected':''}>${esc(n)}</option>`).join(''); }
+function campo(c, ri, i, g, k, label, tipo, extra){
+  const id = `${c}-${ri}-${i}-${k}`; const v = g.f[k] || '';
+  let control;
+  if (tipo === 'pais') control = `<select id="${id}" data-ri="${ri}" data-i="${i}" data-k="${k}"><option value="">Elegí…</option>${opciones(PAISES, v)}</select>`;
+  else if (tipo === 'doc') control = `<select id="${id}" data-ri="${ri}" data-i="${i}" data-k="${k}">${opciones(DOCS, v)}</select>`;
+  else control = `<input id="${id}" data-ri="${ri}" data-i="${i}" data-k="${k}" value="${esc(v)}" ${extra||''}>`;
+  return `<div class="campo${v ? ' lleno' : ''}"><label for="${id}">${label}</label>${control}</div>`;
+}
+function filaHTML(C, ri, i){
+  const c = C.c, room = C.rooms[ri], g = room.guests[i], et = etiqueta(room, i);
+  const tr = titularReserva(C); const esTitRes = tr.ri === ri && tr.i === i;
+  const adultosHab = room.guests.filter(x=>x.tipo==='adulto').length;
+  const e = edad(g.f.nacimiento);
+  const puedeTitular = g.tipo==='adulto' && !g.titular && (e === null || e >= MAYORIA);
+  const puedeQuitar = !g.titular && !(g.tipo==='adulto' && adultosHab <= 1);
+  let h = `<div class="huesped" id="${c}-fila-${ri}-${i}">
+    <div class="h-cab"><strong>${et}</strong>${g.titular ? `<span class="chip verde">${esTitRes ? 'Titular de la reserva' : 'Titular de la habitación'}</span>` : ''}
+    ${g.precargado ? '<span class="chip neutro">Datos tomados de la reserva</span>' : ''}
+    <span class="acciones-fila">${puedeTitular ? `<button type="button" class="btn texto" data-act="titular" data-ri="${ri}" data-i="${i}">Marcar como titular</button>` : ''}${puedeQuitar ? `<button type="button" class="btn texto" data-act="quitar" data-ri="${ri}" data-i="${i}">Quitar</button>` : ''}</span>
+    <span class="estado"><i></i><span class="estado-txt"></span></span></div>
+    <div class="ficha" hidden></div>`;
+  if (g.tipo === 'adulto'){
+    h += `<div class="campos doc">
+      ${campo(c,ri,i,g,'docTipo','Tipo','doc')}
+      ${campo(c,ri,i,g,'paisEmisor','País emisor','pais')}
+      ${campo(c,ri,i,g,'docNum','Número de documento','txt','autocomplete="off"')}
+      ${campo(c,ri,i,g,'nombre','Nombre','txt')}
+      ${campo(c,ri,i,g,'apellido','Apellido','txt')}
+      ${campo(c,ri,i,g,'nacimiento','Nacimiento','txt','placeholder="dd/mm/aaaa" inputmode="numeric"')}
+      ${campo(c,ri,i,g,'nacionalidad','Nacionalidad','pais')}
+    </div>`;
+    if (g.titular) h += `<div class="subtitulo">${esTitRes ? 'Residencia y contacto del titular de la reserva' : 'Residencia del titular de la habitación'}</div>
+      <div class="campos titular">
+      ${campo(c,ri,i,g,'residencia','País de residencia','pais')}
+      ${campo(c,ri,i,g,'localidad','Localidad','txt')}
+      ${campo(c,ri,i,g,'domicilio','Domicilio','txt')}
+      ${campo(c,ri,i,g,'telefono', esTitRes ? 'Teléfono' : 'Teléfono (opcional)','txt','inputmode="tel"')}
+      ${campo(c,ri,i,g,'correo','Correo (opcional)','txt','inputmode="email"')}
+    </div>`;
+  } else {
+    const resp = responsables(C); const tit = room.guests.find(x=>x.titular);
+    const optsResp = `<option value="">Titular de la habitación${tit && nombreDe(tit) ? ' (' + esc(nombreDe(tit)) + ')' : ''}</option>` +
+      resp.filter(x => !tit || x.id !== tit.id).map(x => `<option value="${x.id}"${String(g.resp)===String(x.id)?' selected':''}>${esc(x.txt)}</option>`).join('');
+    h += `<div class="campos menor">
+      ${campo(c,ri,i,g,'nombre','Nombre','txt')}
+      ${campo(c,ri,i,g,'apellido','Apellido','txt')}
+      ${campo(c,ri,i,g,'nacimiento','Nacimiento','txt','placeholder="dd/mm/aaaa" inputmode="numeric"')}
+      <div class="campo"><label for="${c}-${ri}-${i}-resp">Adulto responsable</label><select class="resp" id="${c}-${ri}-${i}-resp" data-ri="${ri}" data-i="${i}" data-k="resp">${optsResp}</select></div>
+    </div>
+    <div style="margin-top:6px">${g.docOpc ? '' : `<button type="button" class="btn texto" data-act="doc-opc" data-ri="${ri}" data-i="${i}">Agregar documento (recomendado)</button>`}</div>`;
+    if (g.docOpc) h += `<div class="campos doc" style="margin-top:10px">${campo(c,ri,i,g,'docTipo','Tipo','doc')}${campo(c,ri,i,g,'paisEmisor','País emisor','pais')}${campo(c,ri,i,g,'docNum','Número de documento','txt')}</div>`;
+  }
+  return h + `<div class="aviso-fila" hidden></div></div>`;
+}
+function actualizarFila(c, ri, i){
+  const C = ctx(c); const g = C.rooms[ri].guests[i]; const fila = document.getElementById(`${c}-fila-${ri}-${i}`); if (!fila) return;
+  const f = faltanDe(C, ri, i); const pe = problemasEdad(C, ri, i);
+  const ok = f.length === 0 && !pe;
+  fila.classList.toggle('completa', ok);
+  fila.querySelector('.estado-txt').textContent = ok ? 'Completa' : f.length === 0 ? 'Revisá la edad' : (f.length === 1 ? 'Falta 1 dato' : `Faltan ${f.length} datos`);
+  const fi = fila.querySelector('.ficha');
+  if (g.ficha){ fi.hidden = false; fi.innerHTML = `✓ <span>Ficha encontrada: <b>${esc(nombreDe(g))}</b> — datos completados · última estadía ${g.ficha}</span>`; }
+  else fi.hidden = true;
+  const av = fila.querySelector('.aviso-fila');
+  let txt = pe;
+  if (!txt && g.precargado && !g.f.apellido && /\s/.test((g.f.nombre||'').trim())) txt = 'El nombre viene completo desde la reserva: separá nombre y apellido según el documento.';
+  av.hidden = !txt; av.textContent = txt || '';
+  fila.querySelectorAll('.campo').forEach(cp => { const el = cp.querySelector('input,select'); if (el && el.dataset.k !== 'resp') cp.classList.toggle('lleno', !!el.value); });
+}
+function renderHuespedes(c){
+  const C = ctx(c); const cont = document.getElementById(`${c}-huespedes`); if (!cont) return;
+  let html = '';
+  if (necesitaMotivo(C)){
+    html += `<div class="motivo"><b>El titular es distinto de quien reservó (${esc((C.r.tit.nombre + ' ' + (C.r.tit.apellido||'')).trim())})</b>
+      <label class="ayuda" for="res-motivo">Indicá el motivo. Queda registrado con tu usuario y la hora.</label>
+      <input id="res-motivo" data-motivo="1" value="${esc(C.st.motivo)}" placeholder="Por ejemplo: reservó un familiar que no viaja"></div>`;
+  }
+  html += C.rooms.map((room, ri) => {
+    const h = room.hab ? habDe(room.hab) : null;
+    return `<div class="grupo-hab" id="${c}-grupo-${ri}">
+      <div class="grupo-cab"><span class="nro-hab">${h ? h.n : 'Habitación ' + (ri+1)}</span><b>${h ? TIPOS[h.t].nombre : 'Sin elegir'}</b><span class="ayuda">${ocup(room.ad, room.me)}${h ? ' · capacidad ' + h.cap : ''}</span></div>
+      ${room.guests.map((_, i) => filaHTML(C, ri, i)).join('')}
+      <div class="agregar" id="${c}-ag-${ri}"></div></div>`;
+  }).join('');
+  cont.innerHTML = html;
+  C.rooms.forEach((room, ri) => { room.guests.forEach((_, i) => actualizarFila(c, ri, i)); renderAccion(c, ri); });
+}
+function mascaraFecha(v){
+  const d = v.replace(/\D/g,'').slice(0,8);
+  return d.length > 4 ? d.slice(0,2)+'/'+d.slice(2,4)+'/'+d.slice(4) : d.length > 2 ? d.slice(0,2)+'/'+d.slice(2) : d;
+}
+function buscarFicha(c, ri, i){
+  const C = ctx(c); const g = C.rooms[ri].guests[i];
+  const fi = FICHAS[claveDoc(g.f)];
+  if (fi && g.ficha !== fi.ultima){
+    const claves = g.titular ? REQ_AD.concat(REQ_TIT_HAB, ['telefono','correo']) : REQ_AD;
+    claves.forEach(k => { if (fi[k] !== undefined) g.f[k] = fi[k]; });
+    g.ficha = fi.ultima;
+    claves.forEach(k => { const el = document.getElementById(`${c}-${ri}-${i}-${k}`); if (el && k !== 'docNum') el.value = g.f[k] || ''; });
+    const fila = document.getElementById(`${c}-fila-${ri}-${i}`); fila.classList.remove('destello'); void fila.offsetWidth; fila.classList.add('destello');
+  } else if (!fi && g.ficha) g.ficha = null;
+}
+function enlazarHuespedes(c){
+  const cont = document.getElementById(`${c}-huespedes`); if (!cont || cont.dataset.enlazado) return;
+  cont.dataset.enlazado = '1';
+  const onEdit = e => {
+    const el = e.target;
+    if (el.dataset && el.dataset.motivo){ ctx(c).st.motivo = el.value; actualizarBarra(); return; }
+    if (!el.dataset || !el.dataset.k) return;
+    const ri = +el.dataset.ri, i = +el.dataset.i, k = el.dataset.k; const C = ctx(c); const g = C.rooms[ri].guests[i];
+    if (k === 'resp'){ g.resp = el.value || null; actualizarBarra(); return; }
+    let v = el.value;
+    if (k === 'nacimiento'){ v = mascaraFecha(v); el.value = v; }
+    const antesMotivo = necesitaMotivo(C);
+    g.f[k] = v;
+    if (k === 'docNum' || k === 'docTipo' || k === 'paisEmisor') buscarFicha(c, ri, i);
+    if (necesitaMotivo(C) !== antesMotivo){ renderHuespedes(c); document.getElementById(el.id)?.focus(); actualizarBarra(); return; }
+    actualizarFila(c, ri, i); actualizarBarra();
+  };
+  cont.addEventListener('input', onEdit);
+  cont.addEventListener('change', e => { if (e.target.tagName === 'SELECT') onEdit(e); });
+  cont.addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    const C = ctx(c); const ri = +b.dataset.ri, i = +b.dataset.i; const act = b.dataset.act;
+    if (act === 'doc-opc'){ C.rooms[ri].guests[i].docOpc = true; renderHuespedes(c); document.getElementById(`${c}-${ri}-${i}-docNum`)?.focus(); return; }
+    if (act === 'titular'){ C.rooms[ri].guests.forEach((g,k) => g.titular = (k === i)); renderHuespedes(c); actualizarBarra(); return; }
+    if (act === 'quitar'){ estado.accion[c] = {ri, tipo:'quitar', i}; renderHuespedes(c); return; }
+    if (act === 'abrir'){ estado.accion[c] = {ri, tipo:'elegir'}; renderAccion(c, ri); return; }
+    if (act === 'tipo'){ estado.accion[c] = {ri, tipo:b.dataset.t}; renderAccion(c, ri); return; }
+    if (act === 'cancelar'){ estado.accion[c] = null; renderHuespedes(c); return; }
+    if (act === 'confirmar') aplicarAccion(c);
+  });
+}
+
+/* ================= Agregar / quitar huésped (con vista previa) ================= */
+function renderAccion(c, ri){
+  const el = document.getElementById(`${c}-ag-${ri}`); if (!el) return;
+  const C = ctx(c); const room = C.rooms[ri]; const a = estado.accion[c] && estado.accion[c].ri === ri ? estado.accion[c] : null;
+  el.classList.toggle('abierto', !!a);
+  if (!a){ el.innerHTML = `<button type="button" class="btn" data-act="abrir" data-ri="${ri}">＋ Agregar huésped</button><span class="ayuda">Para quien no estaba en la reserva. Se recotiza antes de sumarlo.</span>`; return; }
+  if (a.tipo === 'elegir'){ el.innerHTML = `<span class="msg">¿A quién agregás en ${nombreHab(C, ri)}?</span><button type="button" class="btn" data-act="tipo" data-t="adulto" data-ri="${ri}">Adulto (13 años o más)</button><button type="button" class="btn" data-act="tipo" data-t="menor" data-ri="${ri}">Menor (0 a 12 años)</button><button type="button" class="btn texto" data-act="cancelar">Cancelar</button>`; return; }
+  const h = room.hab ? habDe(room.hab) : null;
+  let msg, puede = true;
+  if (a.tipo === 'quitar'){
+    const g = room.guests[a.i]; const quien = nombreDe(g) ? `${etiqueta(room, a.i)} (${esc(nombreDe(g))})` : etiqueta(room, a.i);
+    if (g.tipo === 'menor' || !h) msg = `Se quita a ${quien}. ${g.tipo === 'menor' ? 'No cambia el precio.' : ''}`;
+    else {
+      const dif = nocheRoom(C, room, room.ad - 1) - nocheRoom(C, room);
+      msg = dif < 0 ? `Se quita a ${quien}: <b>−${plata(-dif)} por noche (−${plata(-dif*C.noches)} en total)</b>.`
+          : C.plan === 'NRF' && precioNoche(h.t, room.ad - 1, 'NRF') < precioNoche(h.t, room.ad, 'NRF') ? `Se quita a ${quien}. <b>Tarifa no reembolsable: el precio no baja.</b>`
+          : `Se quita a ${quien}. No cambia el precio (ocupación dentro de la base de la habitación).`;
+    }
+    el.innerHTML = `<span class="msg">${msg} Confirmá para recotizar.</span><button type="button" class="btn primario" data-act="confirmar">Confirmar y recotizar</button><button type="button" class="btn texto" data-act="cancelar">Cancelar</button>`;
+    return;
+  }
+  const ad = room.ad + (a.tipo==='adulto'?1:0), me = room.me + (a.tipo==='menor'?1:0);
+  if (h && ad + me > h.cap){ puede = false; msg = `La habitación ${h.n} admite hasta ${h.cap} personas. Para sumar a alguien más, cambiá de habitación.`; }
+  else if (!h) msg = `Se agrega 1 ${a.tipo}. El precio se ve al elegir la habitación.`;
+  else {
+    const dif = nocheRoom(C, room, ad) - nocheRoom(C, room);
+    msg = dif > 0 ? `Se agrega 1 ${a.tipo} en ${h.n}: <b>+${plata(dif)} por noche (${plata(dif*C.noches)} en total)</b>. Confirmá para recotizar.`
+                  : `Se agrega 1 ${a.tipo} en ${h.n}: <b>sin cargo adicional</b>. Confirmá para actualizar la ocupación.`;
+  }
+  el.innerHTML = `<span class="msg">${msg}</span>${puede ? '<button type="button" class="btn primario" data-act="confirmar">Confirmar y recotizar</button>' : ''}<button type="button" class="btn texto" data-act="cancelar">Cancelar</button>`;
+}
+function aplicarAccion(c){
+  const C = ctx(c); const a = estado.accion[c]; if (!a) return; const room = C.rooms[a.ri];
+  if (a.tipo === 'quitar'){
+    const g = room.guests[a.i]; room.guests.splice(a.i, 1);
+    if (g.tipo === 'adulto') room.ad--; else room.me--;
+    C.rooms.forEach(r => r.guests.forEach(x => { if (String(x.resp) === String(g.id)) x.resp = null; }));
+  } else {
+    if (a.tipo === 'adulto') room.ad++; else room.me++;
+    room.guests = armar(room.ad, room.me, null, room.guests);
+  }
+  estado.accion[c] = null;
+  if (c === 'wi'){ revisarCapacidadWi(); renderWalkin(); }
+  else { renderResumen(); renderHuespedes(c); }
+  actualizarBarra();
+}
+
+/* ================= Garantía (lugar reservado) ================= */
+function marcaTarjeta(num){ const d = num.replace(/\D/g,''); return d[0]==='4'?'VISA':d[0]==='5'?'MASTERCARD':d[0]==='3'?'AMEX':'Tarjeta'; }
+function renderGarantia(c){
+  const C = ctx(c); const el = document.getElementById(`${c}-garantia`); if (!el) return;
+  const g = C.st.gar;
+  const ayuda = `<p class="ayuda" style="margin:10px 0 0">Se preautoriza, no se cobra. Se libera o se aplica al saldo al hacer el check-out.</p>`;
+  if (g.hecho){ el.innerHTML = `<div class="gar-linea"><div class="gar-ok">✓ ${esc(g.hecho)}</div><span class="esp"></span><button type="button" class="btn texto" data-act="deshacer">Deshacer (boceto)</button></div>${ayuda}`; return; }
+  if (C.tarjeta){
+    const t = C.tarjeta;
+    el.innerHTML = `<div class="gar-linea"><span class="marca-t">${t.marca}</span><b class="num">••••${t.ult}</b><span class="ayuda">vence ${t.vence} · registrada en la reserva</span><span class="esp"></span>
+      <button type="button" class="btn primario" data-act="preautorizar">Preautorizar ${plata(GARANTIA)}</button></div>${ayuda}`;
+    return;
+  }
+  const n = g.numero.replace(/\D/g,''); const ok = g.titular.trim() && n.length >= 15 && /^\d{2}\/\d{2}$/.test(g.vence);
+  el.innerHTML = `<div class="opciones" role="radiogroup">
+      <label class="opcion"><input type="radio" name="${c}-modo" value="tarjeta" ${g.modo==='tarjeta'?'checked':''}> Tarjeta de crédito</label>
+      <label class="opcion"><input type="radio" name="${c}-modo" value="efectivo" ${g.modo==='efectivo'?'checked':''}> Depósito en efectivo</label>
+    </div>` + (g.modo === 'tarjeta' ? `
+    <div class="gar-form">
+      <div class="campo"><label for="${c}-g-titular">Titular de la tarjeta</label><input id="${c}-g-titular" data-g="titular" value="${esc(g.titular)}"></div>
+      <div class="campo"><label for="${c}-g-numero">Número</label><input id="${c}-g-numero" data-g="numero" value="${esc(g.numero)}" inputmode="numeric" placeholder="0000 0000 0000 0000"></div>
+      <div class="campo corto"><label for="${c}-g-vence">Vencimiento</label><input id="${c}-g-vence" data-g="vence" value="${esc(g.vence)}" inputmode="numeric" placeholder="mm/aa"></div>
+      <button type="button" class="btn primario" data-act="preautorizar" ${ok?'':'disabled'}>Preautorizar ${plata(GARANTIA)}</button>
+    </div>${ayuda}` : `
+    <div class="gar-form"><span>Depósito de <b>${plata(GARANTIA)}</b> en efectivo, con recibo. Se devuelve o se aplica al hacer el check-out.</span>
+      <button type="button" class="btn primario" data-act="efectivo">Registrar depósito</button></div>`);
+}
+function enlazarGarantia(c){
+  const el = document.getElementById(`${c}-garantia`); if (!el || el.dataset.enlazado) return;
+  el.dataset.enlazado = '1';
+  el.addEventListener('click', e => {
+    const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
+    const C = ctx(c); const g = C.st.gar;
+    if (b.dataset.act === 'preautorizar') g.hecho = `Preautorizado ${plata(GARANTIA)} · ${C.tarjeta ? C.tarjeta.marca + ' ••••' + C.tarjeta.ult : marcaTarjeta(g.numero) + ' ••••' + g.numero.replace(/\D/g,'').slice(-4)} · código de autorización 482915`;
+    if (b.dataset.act === 'efectivo') g.hecho = `Depósito de ${plata(GARANTIA)} registrado · recibo D-000184`;
+    if (b.dataset.act === 'deshacer') g.hecho = null;
+    renderGarantia(c); actualizarBarra();
+  });
+  el.addEventListener('change', e => { if (e.target.type === 'radio'){ ctx(c).st.gar.modo = e.target.value; renderGarantia(c); actualizarBarra(); } });
+  el.addEventListener('input', e => {
+    const k = e.target.dataset.g; if (!k) return; const g = ctx(c).st.gar; let v = e.target.value;
+    if (k === 'numero'){ v = v.replace(/\D/g,'').slice(0,16).replace(/(\d{4})(?=\d)/g,'$1 '); e.target.value = v; }
+    if (k === 'vence'){ const d = v.replace(/\D/g,'').slice(0,4); v = d.length > 2 ? d.slice(0,2)+'/'+d.slice(2) : d; e.target.value = v; }
+    g[k] = v;
+    const n = g.numero.replace(/\D/g,'');
+    el.querySelector('[data-act="preautorizar"]').disabled = !(g.titular.trim() && n.length >= 15 && /^\d{2}\/\d{2}$/.test(g.vence));
+  });
+}
+
+/* ================= Pestaña: llegadas ================= */
+function renderLlegadas(){
+  const q = estado.buscar.trim().toLowerCase();
+  const filas = RESERVAS.filter(r => !q || r.cod.toLowerCase().includes(q) || (r.tit.nombre+' '+(r.tit.apellido||'')).toLowerCase().includes(q) || (r.tit.docNum||'').toLowerCase().includes(q));
+  $('#cuenta-llegadas').textContent = RESERVAS.filter(r => !r.hecha).length;
+  $('#aviso-anteriores').textContent = `Hay ${plural(ANTERIORES_PENDIENTES,'reserva','reservas')} de días anteriores sin ingreso (posible no-show). Se gestiona desde Reservas.`;
+  $('#lista-llegadas').innerHTML = filas.map(r => {
+    const s = estado.res[r.cod]; const rooms = s ? s.rooms : r.habs.map(h=>({hab:h.n, ad:h.ad, me:h.me}));
+    const ad = rooms.reduce((x,y)=>x+y.ad,0), me = rooms.reduce((x,y)=>x+y.me,0);
+    const habTxt = rooms.map(x => `${x.hab} ${TIPOS[habDe(x.hab).t].nombre}`).join(' + ');
+    const gar = r.senia ? `<span class="chip ok">${esc(r.senia.txt)}</span>` : `<span class="chip aviso">Sin garantía · tomar al ingreso</span>`;
+    const est = r.hecha ? `<span class="chip neutro">Ingresó ${r.hecha}</span>` : `<span class="chip verde">Por llegar</span>`;
+    return `<tr data-cod="${r.cod}" class="${r.hecha ? 'hecha' : ''}${r.cod===estado.sel && !r.hecha ? ' sel' : ''}" ${r.hecha?'':'tabindex="0"'}>
+      <td class="codigo">${r.cod}</td><td>${esc((r.tit.nombre+' '+(r.tit.apellido||'')).trim())}</td><td>${habTxt}</td>
+      <td class="num">${fCorta(HOY)} → ${fCorta(dia(HOY,r.noches))} · ${plural(r.noches,'noche','noches')}</td>
+      <td>${ocup(ad,me)}</td><td>${gar}</td><td>${est}</td></tr>`;
+  }).join('') || `<tr><td colspan="7" class="ayuda">No hay llegadas que coincidan con “${esc(estado.buscar)}”.</td></tr>`;
+}
+function renderResumen(){
+  const C = ctx('res'); const r = C.r, s = C.st;
+  const ad = s.rooms.reduce((x,y)=>x+y.ad,0), me = s.rooms.reduce((x,y)=>x+y.me,0);
+  const adO = r.habs.reduce((x,y)=>x+y.ad,0), meO = r.habs.reduce((x,y)=>x+y.me,0);
+  const total = totalCtx(C);
+  const totalOrig = r.habs.reduce((x,h)=>x + precioNoche(habDe(h.n).t, h.ad, r.plan)*r.noches, 0);
+  const cambio = ad !== adO || me !== meO;
+  const ocupadas = asignadas(r.cod); const enReserva = new Set(s.rooms.map(x=>x.hab));
+  let html = `<div class="tarjeta-cab"><h2>Reserva ${r.cod}</h2><span class="ayuda">${r.origen} · creada el ${r.creada}</span></div>
+    <div class="resumen">
+      <div class="dato"><small>Entrada</small><b class="num">${fDia(HOY)}</b><span class="detalle">desde las 14:00</span></div>
+      <div class="dato"><small>Salida</small><b class="num">${fDia(dia(HOY,r.noches))}</b><span class="detalle">hasta las 10:00 · ${plural(r.noches,'noche','noches')}</span></div>
+      <div class="dato"><small>Tarifa</small><b>${PLANES[r.plan].nombre}</b><span class="detalle">${PLANES[r.plan].cond}</span></div>
+      <div class="dato"><small>Ocupación</small><b>${ocup(ad,me)}</b><span class="detalle">${cambio ? 'Reservado: '+ocup(adO,meO) : 'Menores de 0 a 12 años sin cargo'}</span></div>
+      <div class="dato"><small>Total de la estadía</small><span class="total num">${plata(total)}</span><span class="detalle">${total !== totalOrig ? (total > totalOrig ? 'Recotizado: +' : 'Recotizado: −') + plata(total-totalOrig) : 'Precio final, IVA incluido'}</span></div>
+    </div>`;
+  s.rooms.forEach((room, ri) => {
+    const h = habDe(room.hab); const t = TIPOS[h.t];
+    html += `<div class="asignada"><span class="nro">${h.n}</span>
+      <div class="info"><b>${t.nombre} · ${ocup(room.ad, room.me)}</b>${room.hab !== room.habAnt ? ` <span class="chip aviso">Cambiada (era la ${room.habAnt})</span>` : ''}<br><span class="ayuda">Piso ${h.piso} · ${h.vista} · ${t.cama} · capacidad ${h.cap} · <span class="chip ok">Libre</span></span></div>
+      <button type="button" class="btn" data-cambiar="${ri}">${room.cambiando ? 'Cerrar' : 'Cambiar habitación'}</button></div>`;
+    if (room.cambiando){
+      const ops = HABS.filter(x => x.t===h.t && !x.ocupada && !ocupadas.has(x.n) && !enReserva.has(x.n) && x.cap >= room.ad + room.me);
+      html += `<div class="cambio-hab">${ops.map(x => `<button type="button" class="op-hab" data-ri="${ri}" data-hab="${x.n}"><b>${x.n}</b><span>Piso ${x.piso} · ${x.vista}</span></button>`).join('') || '<span class="ayuda">No hay otras habitaciones libres de este tipo para esta ocupación.</span>'}</div>`;
+    }
+  });
+  html += `<span class="nota">No editable: precio congelado de la reserva. Fechas y tarifa se cambian desde Reservas. El cambio de habitación es solo a otra libre del mismo tipo, y se aplica al confirmar.</span>`;
+  $('#res-resumen').innerHTML = html;
+}
+function renderReserva(){
+  const cont = $('#res-checkin');
+  const r = RESERVAS.find(x=>x.cod===estado.sel);
+  if (!r){ cont.innerHTML = `<div class="tarjeta"><p class="ayuda" style="margin:0">Elegí una llegada de la lista para empezar el check-in.</p></div>`; actualizarBarra(); return; }
+  const s = estRes(r.cod);
+  if (s.confirmado){
+    const n = s.rooms.reduce((x,y)=>x+y.guests.length,0);
+    cont.innerHTML = `<div class="confirmado"><div class="tilde">✓</div><div style="flex:1;min-width:240px"><h2>Check-in confirmado · ${s.rooms.length > 1 ? 'Habitaciones ' + listaY(s.rooms.map(x=>x.hab)) : 'Habitación ' + s.rooms[0].hab}</h2>
+      <div>${plural(n,'huésped registrado','huéspedes registrados')} · salida ${fDia(dia(HOY,r.noches))}. Entregá las tarjetas llave.</div></div>
+      <button type="button" class="btn" id="btn-volver">Volver a las llegadas</button></div>`;
+    $('#btn-volver').onclick = () => { estado.sel = null; renderLlegadas(); renderReserva(); window.scrollTo({top:0}); };
+    actualizarBarra(); return;
+  }
+  cont.innerHTML = `
+    <div class="tarjeta" id="res-resumen"></div>
+    <div class="tarjeta">
+      <div class="tarjeta-cab"><h2>Huéspedes</h2><button type="button" class="btn" disabled title="Idea opcional para la demo">Leer DNI con lector</button></div>
+      <p class="prueba" style="margin:0 0 12px">Para probar la ficha existente: escribí <code>31784205</code> en el documento del Adulto 2 (DNI · Argentina).</p>
+      <div class="huespedes" id="res-huespedes"></div>
+      <span class="nota">Agrupados por habitación, una fila por persona según la ocupación. Se empieza por tipo, país y número: con los tres, si la ficha existe, se completa sola. Nada se guarda hasta confirmar; si se abandona el check-in, la reserva queda como estaba.</span>
+    </div>
+    <div class="tarjeta">
+      <div class="tarjeta-cab"><h2>Garantía para consumos</h2></div>
+      <div id="res-garantia"></div>
+      <span class="nota">Lugar reservado. Monto, medios y reglas los define Ricardo; mientras tanto va el componente de garantía actual, sin cambios.</span>
+    </div>`;
+  renderResumen(); renderHuespedes('res'); renderGarantia('res');
+  enlazarHuespedes('res'); enlazarGarantia('res');
+  $('#res-resumen').addEventListener('click', e => {
+    const b = e.target.closest('[data-cambiar]');
+    if (b){ const room = s.rooms[+b.dataset.cambiar]; room.cambiando = !room.cambiando; renderResumen(); return; }
+    const op = e.target.closest('.op-hab');
+    if (op){ const room = s.rooms[+op.dataset.ri]; room.hab = op.dataset.hab; room.cambiando = false; renderResumen(); renderHuespedes('res'); actualizarBarra(); }
+  });
+  actualizarBarra();
+}
+
+/* ================= Pestaña: walk-in ================= */
+function revisarCapacidadWi(){
+  const w = estado.wi; const avisos = [];
+  w.rooms.forEach((room, ri) => {
+    room.guests = armar(room.ad, room.me, null, room.guests);
+    if (room.hab && room.ad + room.me > habDe(room.hab).cap){ avisos.push(`La ${room.hab} no admite ${room.ad + room.me} personas: elegí otra para la habitación ${ri+1}.`); room.hab = null; }
+  });
+  w.aviso = avisos.join(' ');
+}
+function renderWalkin(){
+  const w = estado.wi; const cont = $('#wi-checkin');
+  if (w.confirmado){
+    const n = w.rooms.reduce((x,y)=>x+y.guests.length,0);
+    cont.innerHTML = `<div class="confirmado"><div class="tilde">✓</div><div style="flex:1;min-width:240px"><h2>Check-in confirmado · ${w.rooms.length > 1 ? 'Habitaciones ' + listaY(w.rooms.map(x=>x.hab)) : 'Habitación ' + w.rooms[0].hab}</h2>
+      <div>${plural(n,'huésped registrado','huéspedes registrados')} · salida ${fDia(dia(HOY,w.noches))}. La reserva se creó en el mismo paso.</div></div>
+      <button type="button" class="btn" id="btn-nuevo">Nuevo walk-in</button></div>`;
+    $('#btn-nuevo').onclick = () => { estado.wi = nuevoWalkin(); delete cont.dataset.armado; renderWalkin(); actualizarBarra(); };
+    return;
+  }
+  if (!cont.dataset.armado){
+    cont.dataset.armado = '1';
+    cont.innerHTML = `
+      <div class="tarjeta"><div class="tarjeta-cab"><h2>Estadía y ocupación</h2></div><div id="wi-estadia"></div>
+        <span class="nota">La ocupación va primero, por habitación. Con ella se filtran las habitaciones y se calcula el precio.</span></div>
+      <div class="tarjeta"><div class="tarjeta-cab"><h2>Habitación y tarifa</h2><span class="ayuda" id="wi-cap"></span></div><div id="wi-habs"></div>
+        <span class="nota">Una sola tarifa para toda la reserva. Solo habitaciones libres donde entra la ocupación; una habitación elegida no se ofrece para otra. Un solo precio por opción: el total con IVA incluido.</span></div>
+      <div class="tarjeta">
+        <div class="tarjeta-cab"><h2>Huéspedes</h2><button type="button" class="btn" disabled title="Idea opcional para la demo">Leer DNI con lector</button></div>
+        <p class="prueba" style="margin:0 0 12px">Para probar la ficha existente: escribí <code>27093318</code> en el documento del titular (DNI · Argentina).</p>
+        <div class="huespedes" id="wi-huespedes"></div>
+      </div>
+      <div class="tarjeta"><div class="tarjeta-cab"><h2>Garantía para consumos</h2></div><div id="wi-garantia"></div>
+        <span class="nota">Una sola garantía por reserva. Sin tarjeta previa: tarjeta o depósito en efectivo. Lo define Ricardo.</span></div>`;
+    enlazarHuespedes('wi'); enlazarGarantia('wi');
+    $('#wi-estadia').addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b || b.disabled) return; const w = estado.wi;
+      if (b.dataset.noches){ w.noches += +b.dataset.noches; }
+      else if (b.dataset.campo){ const room = w.rooms[+b.dataset.ri]; room[b.dataset.campo] += +b.dataset.d; }
+      else if (b.dataset.act === 'mas-hab'){ w.rooms.push({ad:1, me:0, hab:null, editando:false, guests:armar(1,0,null)}); }
+      else if (b.dataset.act === 'menos-hab'){ w.rooms.splice(+b.dataset.ri, 1); }
+      else return;
+      estado.accion.wi = null; revisarCapacidadWi(); renderWalkin(); actualizarBarra();
+    });
+    $('#wi-habs').addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b || b.disabled) return; const w = estado.wi;
+      if (b.dataset.plan){ w.plan = b.dataset.plan; }
+      else if (b.dataset.elegir){ const room = w.rooms[+b.dataset.ri]; room.hab = b.dataset.elegir; room.editando = false; w.aviso = ''; }
+      else if (b.dataset.cambiar){ w.rooms[+b.dataset.cambiar].editando = true; }
+      else return;
+      renderHabs(); renderHuespedes('wi'); actualizarBarra();
+    });
+    renderGarantia('wi');
+  }
+  renderEstadia(); renderHabs(); renderHuespedes('wi');
+}
+function renderEstadia(){
+  const w = estado.wi;
+  $('#wi-estadia').innerHTML = `<div class="estadia">
+    <div class="control"><small>Entrada</small><div class="fijo num">Hoy · ${fDia(HOY)}</div></div>
+    <div class="control"><small>Salida</small><div class="paso ancho"><button type="button" data-noches="-1" ${w.noches<=1?'disabled':''} aria-label="Una noche menos">−</button><output class="num">${fDia(dia(HOY,w.noches))}</output><button type="button" data-noches="1" ${w.noches>=30?'disabled':''} aria-label="Una noche más">+</button></div></div>
+    <div class="control"><small>Noches</small><div class="fijo num">${w.noches}</div></div>
+    <div class="leyenda">Menores de 0 a 12 años sin cargo</div></div>
+    <div class="ocup-filas">${w.rooms.map((room, ri) => `<div class="ocup-fila"><span class="et">Habitación ${ri+1}</span>
+      <div class="control"><small>Adultos</small><div class="paso"><button type="button" data-ri="${ri}" data-campo="ad" data-d="-1" ${room.ad<=1?'disabled':''} aria-label="Un adulto menos">−</button><output>${room.ad}</output><button type="button" data-ri="${ri}" data-campo="ad" data-d="1" ${room.ad+room.me>=5?'disabled':''} aria-label="Un adulto más">+</button></div></div>
+      <div class="control"><small>Menores</small><div class="paso"><button type="button" data-ri="${ri}" data-campo="me" data-d="-1" ${room.me<=0?'disabled':''} aria-label="Un menor menos">−</button><output>${room.me}</output><button type="button" data-ri="${ri}" data-campo="me" data-d="1" ${room.ad+room.me>=5?'disabled':''} aria-label="Un menor más">+</button></div></div>
+      ${w.rooms.length > 1 ? `<button type="button" class="btn texto" data-act="menos-hab" data-ri="${ri}">Quitar habitación</button>` : ''}</div>`).join('')}
+      <div><button type="button" class="btn" data-act="mas-hab">＋ Agregar habitación</button></div></div>
+    ${w.aviso ? `<div class="aviso-caja" style="margin-top:12px">${esc(w.aviso)}</div>` : ''}`;
+}
+function renderHabs(){
+  const w = estado.wi; const C = ctx('wi'); const ocupadas = asignadas(null);
+  $('#wi-cap').textContent = `Totales por ${plural(w.noches,'noche','noches')}, IVA incluido`;
+  let html = `<div class="plan-toggle" role="group" aria-label="Tarifa">${['BAR','NRF'].map(p => `<button type="button" class="plan-op" data-plan="${p}" aria-pressed="${w.plan===p}"><b>${PLANES[p].nombre}</b><span class="ayuda">${PLANES[p].cond}</span></button>`).join('')}</div>`;
+  w.rooms.forEach((room, ri) => {
+    const pers = room.ad + room.me;
+    html += `<div class="bloque-hab"><div class="bloque-cab"><h3>Habitación ${ri+1}</h3><span class="ayuda">${ocup(room.ad, room.me)}</span></div>`;
+    if (room.hab && !room.editando){
+      const h = habDe(room.hab);
+      html += `<div class="elegida"><b class="n">${h.n}</b><span><b>${TIPOS[h.t].nombre}</b> · Piso ${h.piso} · ${h.vista}</span><span class="esp" style="flex:1"></span><span class="total-hab num">${plata(nocheRoom(C, room)*w.noches)}</span><button type="button" class="btn" data-cambiar="${ri}">Cambiar</button></div></div>`;
+      return;
+    }
+    const tomadas = new Set(w.rooms.filter((x,k)=>k!==ri && x.hab).map(x=>x.hab));
+    const libres = HABS.filter(h => !h.ocupada && !ocupadas.has(h.n) && !tomadas.has(h.n));
+    const excl = [];
+    Object.entries(TIPOS).forEach(([k,t]) => {
+      const delTipo = libres.filter(h => h.t === k);
+      if (!delTipo.length) return;
+      const entran = delTipo.filter(h => h.cap >= pers);
+      if (!entran.length){ excl.push(`${t.nombre} (hasta ${delTipo[0].cap} personas)`); return; }
+      html += `<div class="tipo-cab" style="margin-top:6px"><b>${t.nombre}</b><span>${t.cama}</span></div><div class="habs chicas">` +
+        entran.map(h => `<div class="hab${room.hab===h.n?' sel':''}"><div class="hab-cab"><b>${h.n}</b><span>Piso ${h.piso} · ${h.vista}</span></div>
+          <div class="elegir"><span class="total-hab num">${plata(precioNoche(k, room.ad, w.plan)*w.noches)}</span><button type="button" class="btn${room.hab===h.n?' primario':''}" data-ri="${ri}" data-elegir="${h.n}">${room.hab===h.n?'Elegida':'Elegir'}</button></div></div>`).join('') + `</div>`;
+    });
+    if (excl.length) html += `<div class="excluidas">No se muestran porque no entra la ocupación: ${listaY(excl)}.</div>`;
+    html += `</div>`;
+  });
+  $('#wi-habs').innerHTML = html;
+}
+
+/* ================= Barra fija ================= */
+function faltantes(c){
+  const C = ctx(c); const out = []; if (C.st.confirmado) return out;
+  const varias = C.rooms.length > 1;
+  C.rooms.forEach((room, ri) => {
+    if (c === 'wi' && !room.hab) out.push({txt:`Falta elegir la habitación ${ri+1}`, ir:'wi-habs'});
+    room.guests.forEach((g, i) => {
+      const f = faltanDe(C, ri, i); const quien = `del ${etiqueta(room, i)}${varias ? ' (' + nombreHab(C, ri) + ')' : ''}`;
+      if (f.length) out.push({txt: f.length > 3 ? `Faltan ${f.length} datos ${quien}` : (f.length === 1 ? 'Falta ' : 'Faltan ') + listaY(f.map(k=>NOMBRE_CAMPO[k])) + ' ' + quien, ir:`${c}-${ri}-${i}-${f[0]}`});
+      const pe = problemasEdad(C, ri, i);
+      if (pe) out.push({txt:`Revisá la edad ${quien}`, ir:`${c}-${ri}-${i}-nacimiento`});
+    });
+  });
+  if (necesitaMotivo(C) && !C.st.motivo.trim()) out.push({txt:'Falta el motivo del titular distinto', ir:'res-motivo'});
+  if (!C.st.gar.hecho) out.push({txt:'Falta la garantía para consumos', ir:`${c}-garantia`});
+  return out;
+}
+function actualizarBarra(){
+  const c = estado.tab; const res = $('#b-resumen'), fal = $('#b-faltan'), btn = $('#btn-confirmar');
+  if (c === 'res' && !estado.sel){ res.innerHTML = '<span>Elegí una llegada</span>'; fal.innerHTML=''; btn.disabled = true; return; }
+  const C = ctx(c);
+  if (C.st.confirmado){ res.innerHTML = `<span><b>Check-in confirmado</b></span>`; fal.innerHTML=''; btn.disabled = true; return; }
+  const elegidas = C.rooms.filter(x=>x.hab);
+  const habTxt = !elegidas.length ? '<b>Sin habitación elegida</b>' : elegidas.length === 1 ? `<b>Hab. ${elegidas[0].hab}</b> · ${TIPOS[habDe(elegidas[0].hab).t].nombre}` : `<b>Hab. ${listaY(elegidas.map(x=>x.hab))}</b>`;
+  res.innerHTML = `<span>${habTxt}</span><span>${fCorta(HOY)} → ${fCorta(dia(HOY,C.noches))} · ${plural(C.noches,'noche','noches')}</span><span>${PLANES[C.plan].nombre}</span>${elegidas.length ? `<span class="total">${plata(totalCtx(C))}</span>` : ''}`;
+  const f = faltantes(c); const vis = estado.verTodo ? f : f.slice(0,3); const mas = f.length - vis.length;
+  fal.innerHTML = f.length ? `<span class="tit">Para confirmar falta</span><ul>${vis.map(x=>`<li><button type="button" data-ir="${x.ir}">${esc(x.txt)}</button></li>`).join('')}${mas>0?`<li><button type="button" data-mas="1">y ${mas} más</button></li>`:''}${estado.verTodo && f.length>3?`<li><button type="button" data-mas="0">ver menos</button></li>`:''}</ul>`
+                           : `<span class="listo">✓ Todo listo para confirmar</span>`;
+  btn.disabled = f.length > 0;
+}
+$('#b-faltan').addEventListener('click', e => {
+  const m = e.target.closest('[data-mas]'); if (m){ estado.verTodo = m.dataset.mas === '1'; actualizarBarra(); return; }
+  const b = e.target.closest('[data-ir]'); if (!b) return;
+  const el = document.getElementById(b.dataset.ir); if (!el) return;
+  el.scrollIntoView({block:'center'});
+  if (el.matches('input,select')) setTimeout(()=>el.focus({preventScroll:true}), 250);
+  const box = el.closest('.huesped, .tarjeta, .motivo'); if (box){ box.classList.remove('destello'); void box.offsetWidth; box.classList.add('destello'); }
+});
+$('#btn-confirmar').addEventListener('click', () => {
+  const c = estado.tab; if (faltantes(c).length) return;
+  if (c === 'res'){ const r = RESERVAS.find(x=>x.cod===estado.sel); estRes(r.cod).confirmado = true; r.hecha = '12:05'; renderLlegadas(); renderReserva(); }
+  else { estado.wi.confirmado = true; renderWalkin(); }
+  actualizarBarra(); window.scrollTo({top:0});
+});
+
+/* ================= Pestañas y arranque ================= */
+function cambiarTab(t){
+  estado.tab = t; estado.verTodo = false;
+  $('#tab-res').setAttribute('aria-selected', t==='res'); $('#tab-wi').setAttribute('aria-selected', t==='wi');
+  $('#panel-res').hidden = t !== 'res'; $('#panel-wi').hidden = t !== 'wi';
+  if (t === 'wi') renderWalkin();
+  actualizarBarra();
+}
+$('#tab-res').onclick = () => cambiarTab('res');
+$('#tab-wi').onclick = () => cambiarTab('wi');
+$('#buscar').addEventListener('input', e => { estado.buscar = e.target.value; renderLlegadas(); });
+$('#lista-llegadas').addEventListener('click', e => {
+  const tr = e.target.closest('tr[data-cod]'); if (!tr || tr.classList.contains('hecha')) return;
+  estado.sel = tr.dataset.cod; estado.accion.res = null; estado.verTodo = false; renderLlegadas(); renderReserva();
+  $('#res-checkin').scrollIntoView({block:'start'});
+});
+$('#lista-llegadas').addEventListener('keydown', e => { if (e.key === 'Enter') e.target.closest('tr[data-cod]')?.click(); });
+$('#btn-notas').onclick = () => {
+  estado.notas = !estado.notas; document.body.classList.toggle('sin-notas', !estado.notas);
+  $('#btn-notas').textContent = estado.notas ? 'Ocultar notas de diseño' : 'Mostrar notas de diseño';
+};
+$('#fecha-hoy').textContent = DIAS_L[HOY.getUTCDay()].replace(/^./, m=>m.toUpperCase()) + ' ' + fFecha(HOY) + ' · Recepción';
+renderLlegadas(); renderReserva(); cambiarTab('res');
+</script>
+
+</html>
