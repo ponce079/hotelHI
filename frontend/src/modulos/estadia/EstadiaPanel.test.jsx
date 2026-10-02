@@ -5,6 +5,9 @@ import { vi, it, expect, beforeEach } from "vitest";
 import { EstadiaPanel, PersonaFormulario, MoverHabitacion } from "./EstadiaPanel";
 import { api } from "../../lib/api";
 import { PAISES } from "../../lib/paises";
+// Formularios largos tipeados con userEvent: con la suite completa en paralelo superan a veces los
+// 5 s por defecto (en solitario tardan 1-2 s).
+vi.setConfig({ testTimeout: 15000 });
 vi.mock("../../lib/api", () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
 }));

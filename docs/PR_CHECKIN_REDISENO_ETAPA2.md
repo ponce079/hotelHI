@@ -80,7 +80,7 @@ Reemplaza el asistente de 5 pasos del walk-in y la pantalla con modal del check-
   - 6: dos habitaciones, menor a cargo de la titular de la otra habitación, verificado en la base.
   - 8: walk-in Doble + Simple, `excluir` y total igual a `/reservas/cotizar`, 201.
   - 9: precio cambiado con la pantalla abierta, panel antes/ahora y confirmación con el nuevo total.
-- **Fallo preexistente intermitente:** `EstadiaPanel.test.jsx > detecta correo repetido…` a veces vence a los 5 s bajo carga, igual que en la línea base.
+- **Fallo intermitente por tiempo:** `EstadiaPanel.test.jsx` (formularios largos con userEvent) a veces vencía a los 5 s con la suite completa en paralelo; ese archivo usa ahora 15 s de límite. En solitario cada caso tarda 1-2 s.
 
 ## Correcciones antes del merge
 
