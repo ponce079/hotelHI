@@ -767,3 +767,30 @@ it("Registrar ingreso de una persona adicional muestra la vista previa y confirm
   });
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "Persona adicional" })).not.toBeInTheDocument());
 });
+
+it("Registrar salida pide confirmación: persona adicional baja la ocupación; de la reserva original, la tarifa no cambia", async () => {
+  const reservaVigente = { ...reserva, fechaHasta: "2099-01-01" };
+  const original = adultoAlojado();
+  const extra = ocupante({ id: 46, nombre: "Lucas", apellido: "Ríos", numeroDocumento: "99627353", estado: "Alojado", fechaNacimiento: "1994-05-20", personaAdicional: true });
+  api.get.mockImplementation(async (url) => ({ data: url.endsWith("/ocupantes") ? [{ ...original, esTitular: false }, extra] : [] }));
+  api.post.mockReset();
+  api.post.mockResolvedValue({ data: { ok: true } });
+  const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={cliente}>
+      <EstadiaPanel reserva={reservaVigente} />
+    </QueryClientProvider>,
+  );
+  const salidas = await screen.findAllByRole("button", { name: "Registrar salida" });
+  await userEvent.click(salidas[0]);
+  expect(screen.getByText("La tarifa de la reserva no cambia por esta salida.")).toBeInTheDocument();
+  expect(api.post).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+  await userEvent.click(salidas[1]);
+  expect(screen.getByText(/Se anulan sus cargos «Persona adicional» de las noches que no usa y la ocupación registrada/)).toBeInTheDocument();
+  const confirmar = screen.getAllByRole("button", { name: "Registrar salida" }).at(-1);
+  await userEvent.click(confirmar);
+  await waitFor(() =>
+    expect(api.post).toHaveBeenCalledWith("/estadia/50/ocupantes/46/accion", { accion: "retirar", operador: "Operador prueba" }),
+  );
+});

@@ -6,6 +6,7 @@ import { Button } from "../../componentes/Button";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Modal } from "../../componentes/Modal";
+import { ConfirmDialog } from "../../componentes/ConfirmDialog";
 import { ConsumoModal } from "../servicios-adicionales/ConsumoModal";
 import { obtenerCuenta } from "../check-out/checkOut.api";
 import { PAISES_SELECTOR, buscarPaisOcupante } from "./ocupantesUbicacion";
@@ -152,6 +153,17 @@ function ingresoPorDefecto(reserva) {
     : desde;
 }
 const CODIGO_PERSONA_ADICIONAL = "PERSONA_ADICIONAL_REQUIERE_CONFIRMACION";
+// Qué pasa con la tarifa al registrar la salida. Antes de la salida prevista de la reserva: si la
+// persona entró como adicional, se anulan sus cargos de las noches que no usa y la ocupación
+// registrada baja en 1; si era de la reserva original, la tarifa no cambia.
+function mensajeSalida(persona, reserva) {
+  if (!persona) return "";
+  const anticipada = hoyEnHoraLocal() < String(reserva.fechaHasta ?? "").slice(0, 10);
+  if (!anticipada) return "Se registra la salida de la estadía.";
+  return persona.personaAdicional
+    ? "Se anulan sus cargos «Persona adicional» de las noches que no usa y la ocupación registrada de la habitación baja en 1."
+    : "La tarifa de la reserva no cambia por esta salida.";
+}
 // Vista previa obligatoria de la persona adicional (supera la ocupación registrada de la habitación).
 export function PersonaAdicionalPrevia({ vista, nombre, pendiente = false, onConfirmar, onCancelar }) {
   const conCargo = vista.noches.filter((n) => n.diferencia > 0);
@@ -824,6 +836,7 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
   const [anular, setAnular] = useState(null);
   const [moviendo, setMoviendo] = useState(null);
   const [adicional, setAdicional] = useState(null);
+  const [saliendo, setSaliendo] = useState(null);
   const [motivo, setMotivo] = useState("");
   const [error, setError] = useState("");
   const puedeEditar =
@@ -926,6 +939,7 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
     onSuccess: () => {
       setEditor(null);
       setAdicional(null);
+      setSaliendo(null);
       setAnular(null);
       setMotivo("");
       refrescar();
@@ -1123,11 +1137,7 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
                           </Button>
                         )}
                         {p.estado === "Alojado" && (
-                          <Button
-                            variante="secundario"
-                            disabled={mutation.isPending}
-                            onClick={() => mutation.mutate({ tipo: "retirar", data: p })}
-                          >
+                          <Button variante="secundario" disabled={mutation.isPending} onClick={() => setSaliendo(p)}>
                             Registrar salida
                           </Button>
                         )}
@@ -1306,6 +1316,16 @@ export function EstadiaPanel({ reserva, soloPersonas = false, onTitularPreparado
           />
         </Modal>
       )}
+      <ConfirmDialog
+        abierto={Boolean(saliendo)}
+        titulo={`Registrar salida de ${saliendo ? `${saliendo.nombre} ${saliendo.apellido}`.trim() : ""}`}
+        mensaje={mensajeSalida(saliendo, reserva)}
+        textoConfirmar="Registrar salida"
+        variante="ok"
+        cargando={mutation.isPending}
+        onCancelar={() => setSaliendo(null)}
+        onConfirmar={() => mutation.mutate({ tipo: "retirar", data: saliendo })}
+      />
       {anular && (
         <Modal titulo="Anular cargo" onClose={() => setAnular(null)}>
           <div className="p-5 space-y-3">
