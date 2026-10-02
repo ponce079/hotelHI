@@ -7,7 +7,7 @@ Script: `backend/scripts/seed-checkin-demo.js` (`npm run seed:checkin-demo`). De
 1. Backend apuntando a la base **local** de la presentación (`backend/.env`, `DATABASE_URL` con `localhost` o `127.0.0.1`). El script se niega a correr contra cualquier otro host (misma guardia que `db:push`).
 2. Si la base es nueva: `node backend/scripts/seed-tarifas.js` y `node backend/scripts/seed-demo-salta.js` (como siempre).
 3. `npm run seed:checkin-demo`
-4. Abrir **Check-in**. Tienen que verse cinco llegadas de hoy y el aviso "Hay 1 reserva de días anteriores sin ingreso".
+4. Abrir **Check-in**. Tienen que verse seis llegadas de hoy y el aviso "Hay 1 reserva de días anteriores sin ingreso".
 
 Se puede correr las veces que haga falta: si los casos de hoy ya están, no crea nada nuevo (no duplica habitaciones, huéspedes ni reservas). Si se corre otro día, anula los casos del día anterior que quedaron Confirmados y crea los de hoy.
 
@@ -19,9 +19,10 @@ Para dejar todo como antes: `npm run seed:checkin-demo -- --limpiar`. Anula con 
 |---|---|---|
 | a | Martín Gutiérrez — Doble, 2 adultos + 1 menor, tarifa flexible, **seña con tarjeta** (VISA ****4242) | Check-in completo, chip de seña, menor con responsable |
 | b | Sofía Ruiz Díaz — **2 habitaciones**: Doble 2 adultos + Simple 1 adulto y 1 menor, seña por transferencia | Filas por habitación, un titular por habitación, menor con responsable de la otra habitación |
-| c | Lucía Fernández — Doble, 2 adultos, **no reembolsable** | Quitar a alguien: "Tarifa no reembolsable: el precio no baja" |
+| c | Lucía Fernández — Doble, 2 adultos, **no reembolsable** | Tarifa no reembolsable en el resumen. Quitar a uno dice "No cambia el precio": la Doble ya incluye 2 adultos |
 | d | Diego Morales — Doble de capacidad 3 con **3 adultos**, tarifa flexible | Quitar un adulto: el total baja un adicional por noche |
 | e | María José Fernández Ruiz — pasaporte de Chile, **nombre completo en un solo campo** | Aviso "El nombre viene completo desde la reserva" |
+| h | Federico Álvarez — Doble de capacidad 3 con **3 adultos**, **no reembolsable** | Quitar un adulto: "Tarifa no reembolsable: el precio no baja" |
 | f | Carolina Paz — **estadía anterior cerrada** (hace 30 días) | Persona que vuelve: DNI **99784205** (Argentina). El script lo imprime al final |
 | g | Pedro Vargas — Confirmada con ingreso **ayer**, sin check-in | Aviso de posible no-show (no figura en la lista) |
 
@@ -38,7 +39,7 @@ No hay marcas visibles en pantalla. Se reconocen por dos cosas a la vez:
 
 ## Habitaciones de demo
 
-Si no alcanzan las habitaciones libres del inventario, el script crea habitaciones del piso 4 (401 a 412, sin repetir números existentes) con el equipamiento normal de su tipo. Quedan en el manifiesto y se reutilizan en las corridas siguientes; `--limpiar` no las borra.
+Si no alcanzan las habitaciones libres del inventario, el script crea habitaciones de los pisos 4 y 5 (401 a 420 y 501 a 512, sin repetir números existentes) con el equipamiento normal de su tipo. Quedan en el manifiesto y se reutilizan en las corridas siguientes; `--limpiar` no las borra.
 
 ## Caso f: estadía anterior sin tocar numeraciones
 

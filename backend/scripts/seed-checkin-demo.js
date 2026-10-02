@@ -76,7 +76,8 @@ function leerTodo() {
 }
 function leerManifiesto() {
   const m = leerTodo()[BASE] ?? {};
-  return { reservas: m.reservas ?? {}, huespedes: m.huespedes ?? [], habitaciones: m.habitaciones ?? [] };
+  // `anteriores`: reservas de demo reemplazadas por una nueva (por ejemplo, quedaron En curso).
+  return { reservas: m.reservas ?? {}, anteriores: m.anteriores ?? [], huespedes: m.huespedes ?? [], habitaciones: m.habitaciones ?? [] };
 }
 function guardarManifiesto(m) {
   const todo = leerTodo();
@@ -93,6 +94,7 @@ const TITULARES = {
   d: { nombre: "Diego Morales", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99104455", fechaNacimiento: haceAnios(39), contacto: "+54 387 555-0177" },
   e: { nombre: "María José Fernández Ruiz", tipoDocumento: "Pasaporte", paisDocumento: "CL", numeroDocumento: "99F22904", fechaNacimiento: haceAnios(51), contacto: "mjfernandez@correo.cl" },
   f: { nombre: "Carolina Paz", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99784205", fechaNacimiento: haceAnios(39), contacto: "carolina.paz@correo.com.ar" },
+  h: { nombre: "Federico Álvarez", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99460318", fechaNacimiento: haceAnios(45), contacto: "+54 381 555-0123" },
   g: { nombre: "Pedro Vargas", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99290417", fechaNacimiento: haceAnios(51), contacto: "+54 11 555-0190" },
 };
 
@@ -102,10 +104,17 @@ const CASOS = [
   { clave: "c", descripcion: "2 adultos con tarifa no reembolsable", plan: "NRF", noches: 2, habitaciones: [{ tipo: "Doble", adultos: 2, menores: 0 }] },
   { clave: "d", descripcion: "3 adultos en Doble de capacidad 3, tarifa flexible (quitar un adulto baja el precio)", plan: "BAR", noches: 2, habitaciones: [{ tipo: "Doble", adultos: 3, menores: 0, capacidadExacta: 3 }] },
   { clave: "e", descripcion: "titular con el nombre completo en un solo campo (pasaporte de Chile)", plan: "BAR", noches: 1, habitaciones: [{ tipo: "Doble", adultos: 1, menores: 0 }] },
+  // Extra para la demo: con 2 adultos (caso c) la Doble ya incluye a los dos y quitar a uno no
+  // cambia el precio con ninguna tarifa; con 3 adultos en no reembolsable se ve que el precio no baja.
+  { clave: "h", descripcion: "3 adultos con tarifa no reembolsable (quitar un adulto no baja el precio)", plan: "NRF", noches: 2, habitaciones: [{ tipo: "Doble", adultos: 3, menores: 0, capacidadExacta: 3 }] },
 ];
 
 // --------------------------------------------------------------- habitaciones
-const NUMEROS_DEMO = ["401", "402", "403", "404", "405", "406", "407", "408", "409", "410", "411", "412"];
+// Números verosímiles para el hotel (pisos 4 y 5); se saltean los que ya existen.
+const NUMEROS_DEMO = [
+  ...Array.from({ length: 20 }, (_, i) => String(401 + i)),
+  ...Array.from({ length: 12 }, (_, i) => String(501 + i)),
+];
 const EQUIPAMIENTO = {
   Doble: (capacidad) =>
     capacidad >= 3 ? "Cama Queen y cama individual, TV, wifi, frigobar y aire acondicionado" : "Cama Queen, TV, wifi, frigobar y aire acondicionado",
@@ -134,7 +143,7 @@ async function libresHoy(tipo, personas, hasta, capacidadExacta) {
 async function crearHabitacionDemo(manifiesto, tipo, capacidad) {
   const existentes = new Set((await prisma.habitacion.findMany({ select: { numero: true } })).map((h) => h.numero));
   const numero = NUMEROS_DEMO.find((n) => !existentes.has(n));
-  if (!numero) throw new Error("No quedan números libres para habitaciones de demo (401 a 412).");
+  if (!numero) throw new Error("No quedan números libres para habitaciones de demo (401 a 420 y 501 a 512).");
   const h = await prisma.habitacion.create({
     data: { numero, tipoHabitacionId: tipo.id, capacidad, piso: Number(numero[0]), equipamiento: EQUIPAMIENTO[tipo.nombre]?.(capacidad) ?? null },
   });
@@ -186,6 +195,8 @@ async function crearReservaCaso(manifiesto, caso, desde = enDias(0)) {
   }
   const titular = await prisma.huesped.findFirst({ where: { numeroDocumento: TITULARES[caso.clave].numeroDocumento }, select: { id: true } });
   if (titular && !manifiesto.huespedes.includes(titular.id)) manifiesto.huespedes.push(titular.id);
+  const previa = manifiesto.reservas[caso.clave];
+  if (previa && previa !== reserva.id && !manifiesto.anteriores.includes(previa)) manifiesto.anteriores.push(previa);
   manifiesto.reservas[caso.clave] = reserva.id;
   return reserva;
 }
@@ -261,11 +272,12 @@ async function anular(r) {
 async function limpiar() {
   const manifiesto = leerManifiesto();
   const enCurso = [];
-  for (const [caso, id] of Object.entries(manifiesto.reservas)) {
+  const ids = [...Object.entries(manifiesto.reservas), ...manifiesto.anteriores.map((id) => ["anterior", id])];
+  for (const [caso, id] of ids) {
     const r = await reservaDeDemo(id);
     if (!r) continue;
     if (r.estado === "Confirmada") await anular(r);
-    else if (r.estado === "En curso") enCurso.push(`${r.codigoConfirmacion} (caso ${caso})`);
+    else if (r.estado === "En curso") enCurso.push(`${r.codigoConfirmacion}${caso === "anterior" ? "" : ` (caso ${caso})`}`);
   }
   if (enCurso.length) console.log(`\nEstán En curso y hay que cerrarlas con check-out: ${enCurso.join(", ")}.`);
   console.log("Listo. Las habitaciones y personas de demo se conservan para la próxima corrida.");
@@ -324,6 +336,10 @@ async function sembrar() {
   }
   guardarManifiesto(manifiesto);
 
+  for (const id of manifiesto.anteriores) {
+    const r = await reservaDeDemo(id);
+    if (r?.estado === "En curso" && !enCurso.includes(r.codigoConfirmacion)) enCurso.push(r.codigoConfirmacion);
+  }
   if (enCurso.length) console.log(`\nDe corridas anteriores quedaron En curso (cerrarlas con check-out): ${enCurso.join(", ")}.`);
   console.log(`\nPersona que vuelve: DNI ${TITULARES.f.numeroDocumento} (Argentina) — ${TITULARES.f.nombre}.`);
   console.log("Cargala como acompañante en cualquier llegada de hoy para ver la ficha encontrada.");
