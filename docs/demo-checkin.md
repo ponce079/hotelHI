@@ -25,6 +25,7 @@ Para dejar todo como antes: `npm run seed:checkin-demo -- --limpiar`. Anula con 
 | h | Federico Álvarez — Doble de capacidad 3 con **3 adultos**, **no reembolsable** | Quitar un adulto: "Tarifa no reembolsable: el precio no baja" |
 | f | Carolina Paz — **estadía anterior cerrada** (hace 30 días) | Persona que vuelve: DNI **99784205** (Argentina). El script lo imprime al final |
 | g | Pedro Vargas — Confirmada con ingreso **ayer**, sin check-in | Aviso de posible no-show (no figura en la lista) |
+| i | Valeria Ríos — **en curso desde hoy**, Doble de capacidad 3 con 2 adultos, 3 noches | Detalle de la reserva → Agregar persona (un tercer adulto): vista previa del cargo por noche, Confirmar y ver los cargos «Persona adicional» en Cargos por habitación |
 
 Para el walk-in quedan al menos dos habitaciones libres Doble y dos Simple (el script lo garantiza y las lista).
 

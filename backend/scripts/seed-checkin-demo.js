@@ -95,6 +95,7 @@ const TITULARES = {
   e: { nombre: "María José Fernández Ruiz", tipoDocumento: "Pasaporte", paisDocumento: "CL", numeroDocumento: "99F22904", fechaNacimiento: haceAnios(51), contacto: "mjfernandez@correo.cl" },
   f: { nombre: "Carolina Paz", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99784205", fechaNacimiento: haceAnios(39), contacto: "carolina.paz@correo.com.ar" },
   h: { nombre: "Federico Álvarez", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99460318", fechaNacimiento: haceAnios(45), contacto: "+54 381 555-0123" },
+  i: { nombre: "Valeria Ríos", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99627351", fechaNacimiento: haceAnios(37), contacto: "valeria.rios@correo.com.ar" },
   g: { nombre: "Pedro Vargas", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99290417", fechaNacimiento: haceAnios(51), contacto: "+54 11 555-0190" },
 };
 
@@ -257,6 +258,32 @@ async function crearEstadiaAnterior(manifiesto) {
   return reserva;
 }
 
+// Caso i: check-in real de hoy (2 adultos en una Doble de capacidad 3, 3 noches), para probar
+// "Agregar persona" con la estadía en curso (persona adicional con cargo en la cuenta).
+async function crearEstadiaEnCursoHoy(manifiesto) {
+  const caso = { clave: "i", plan: "BAR", noches: 3, habitaciones: [{ tipo: "Doble", adultos: 2, menores: 0, capacidadExacta: 3 }] };
+  const reserva = await crearReservaCaso(manifiesto, caso);
+  const habitacionId = reserva.habitaciones[0].id;
+  const t = TITULARES.i;
+  const [nombre, apellido] = t.nombre.split(" ");
+  const personas = [
+    { id: 1, habitacionId, esTitular: true, nombre, apellido, tipoDocumento: t.tipoDocumento, paisDocumento: t.paisDocumento, numeroDocumento: t.numeroDocumento, fechaNacimiento: t.fechaNacimiento, nacionalidad: "AR", paisResidencia: "AR", localidad: "Salta", domicilio: "Caseros 845", telefono: "+54 387 555-0161", email: t.contacto },
+    { id: 2, habitacionId, esTitular: false, nombre: "Andrés", apellido: "Molina", tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "99627352", fechaNacimiento: haceAnios(39), nacionalidad: "AR", paisResidencia: "AR" },
+  ];
+  await checkin.confirmarCheckInConReserva({
+    reservaId: reserva.id,
+    operador: OPERADOR,
+    habitaciones: [{ habitacionIdAnterior: habitacionId, adultos: 2, menores: 0 }],
+    personas,
+    totalEsperado: reserva.totalEstimadoAlojamiento,
+    garantiaConfirmada: true,
+    medioGarantia: "Efectivo",
+  });
+  const acompanante = await prisma.huesped.findFirst({ where: { numeroDocumento: "99627352" }, select: { id: true } });
+  if (acompanante && !manifiesto.huespedes.includes(acompanante.id)) manifiesto.huespedes.push(acompanante.id);
+  return reserva;
+}
+
 // Una reserva es "de demo" solo si está en el manifiesto Y su titular tiene documento 99….
 async function reservaDeDemo(id) {
   if (!id) return null;
@@ -320,6 +347,18 @@ async function sembrar() {
     const r = await crearReservaCaso(manifiesto, caso);
     await correrFechas(r.id, -1);
     console.log(`  ✔ g) ${r.codigoConfirmacion} — confirmada con ingreso ayer, sin check-in`);
+    guardarManifiesto(manifiesto);
+  }
+
+  // i: estadía En curso desde hoy (Doble, 2 adultos, 3 noches), para sumar una persona adicional.
+  const enCursoHoy = await reservaDeDemo(manifiesto.reservas.i);
+  if (enCursoHoy?.estado === "En curso" && iso(enCursoHoy.fechaDesde) === enDias(0))
+    console.log(`  ↷ i) ${enCursoHoy.codigoConfirmacion} estadía en curso de hoy ya está`);
+  else {
+    if (enCursoHoy?.estado === "Confirmada") await anular(enCursoHoy);
+    if (enCursoHoy?.estado === "En curso") enCurso.push(enCursoHoy.codigoConfirmacion);
+    const r = await crearEstadiaEnCursoHoy(manifiesto);
+    console.log(`  ✔ i) ${r.codigoConfirmacion} — en curso desde hoy, Doble con 2 adultos y 3 noches (persona adicional)`);
     guardarManifiesto(manifiesto);
   }
 
