@@ -99,6 +99,7 @@ async function confirmarPorApi(url, reservaId) {
         numeroDocumento: documento(),
         fechaNacimiento: "2018-05-05",
         responsableId: titularHabitacion,
+        vinculoResponsable: "Padre o madre",
         ...comun,
         telefono: "",
       });

@@ -101,6 +101,7 @@ function validarLote(reserva, entradas, existentes) {
           "Marcá un solo titular por habitación o cambiá el titular desde la ficha de la estadía, con su motivo.",
         );
     }
+    s.validarVinculo(p);
     const ficha = {
       ...p,
       id: clave,
@@ -222,6 +223,8 @@ function filaDeOcupante(ficha, huespedId, responsableId, verificadoPor, ahora) {
     telefono: ficha.telefono,
     email: ficha.email,
     responsableId,
+    vinculoResponsable: ficha.vinculoResponsable ?? null,
+    autorizacionPresentada: ficha.autorizacionPresentada === true,
     fechaDesde: ficha.fechaDesde,
     fechaHasta: ficha.fechaHasta,
     verificadoPor,

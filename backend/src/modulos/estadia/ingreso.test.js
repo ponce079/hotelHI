@@ -52,7 +52,7 @@ test.each([[[]], [[adulto, { ...adulto, id: 2 }]]])("rechaza fichas faltantes o 
 });
 test("distingue adultos y menores aunque coincida el total", () => {
   expect(() =>
-    validarOcupacion(habitaciones, [{ ...adulto, fechaNacimiento: new Date("2015-01-01"), responsableId: 2 }]),
+    validarOcupacion(habitaciones, [{ ...adulto, fechaNacimiento: new Date("2015-01-01"), responsableId: 2, vinculoResponsable: "Padre o madre" }]),
   ).toThrow(/adulto/);
 });
 test("rechaza asignaciones dobles y capacidad excedida", () => {
@@ -79,5 +79,5 @@ test("ingresa y audita IDs, sin otra declaración de cantidades", async () => {
   await prepararIngreso(tx, 1, "Recepción");
   expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
   expect(tx.ocupanteReserva.update).not.toHaveBeenCalled();
-  expect(JSON.parse(tx.eventoEstadia.create.mock.calls[0][0].data.detalle)).toEqual({ ocupanteIds: [1] });
+  expect(JSON.parse(tx.eventoEstadia.create.mock.calls[0][0].data.detalle)).toEqual({ ocupanteIds: [1], menores: [] });
 });

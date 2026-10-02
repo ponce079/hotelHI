@@ -5,6 +5,7 @@ const { CAMPOS_RESIDENCIA } = require("./persona.servicio");
 const { MAYORIA_EDAD, edadEn } = require("../../lib/fechas");
 const { TIPOS_DOCUMENTO, normalizarTipoDocumento } = require("../../lib/tiposDocumento");
 const { esEmail, esTelefono } = require("../../lib/contacto");
+const { VINCULOS_RESPONSABLE, normalizarVinculo, requiereAutorizacion } = require("../../lib/vinculos");
 const personaAdicional = require("./personaAdicional");
 function identidad(p) {
   return p.numeroDocumento
@@ -96,7 +97,36 @@ function normalizarPersona(d, reserva) {
       telefono: "Ingresá un teléfono válido: números, +, espacios o guiones.",
     });
   r.responsableId = d.responsableId ? id(d.responsableId) : null;
+  // Vínculo del responsable con el menor: solo valores del catálogo (lib/vinculos.js).
+  if (d.vinculoResponsable) {
+    r.vinculoResponsable = normalizarVinculo(d.vinculoResponsable);
+    if (!r.vinculoResponsable) {
+      const mensaje = `El vínculo con el menor tiene que ser uno de: ${VINCULOS_RESPONSABLE.join(", ")}.`;
+      throw new ErrorDeNegocio(mensaje, 400, { vinculoResponsable: mensaje });
+    }
+  } else r.vinculoResponsable = null;
+  r.autorizacionPresentada = d.autorizacionPresentada === true;
   return r;
+}
+// Todo menor de 18 (MAYORIA_EDAD, también los de 13 a 17 que cuentan como adultos para la ocupación)
+// lleva el vínculo de su responsable; "Otro familiar" y "Otro adulto a cargo" exigen la autorización
+// de los padres o tutores. Un adulto no lleva vínculo.
+function validarVinculo(p) {
+  const menor = Boolean(p.fechaNacimiento && edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD);
+  if (!menor) {
+    p.vinculoResponsable = null;
+    p.autorizacionPresentada = false;
+    return;
+  }
+  if (!p.vinculoResponsable) {
+    const mensaje = "Indicá el vínculo del responsable con el menor.";
+    throw new ErrorDeNegocio(mensaje, 400, { vinculoResponsable: mensaje });
+  }
+  if (requiereAutorizacion(p.vinculoResponsable) && !p.autorizacionPresentada) {
+    const mensaje = "Pedí la autorización de los padres o tutores y marcá \"Autorización presentada\".";
+    throw new ErrorDeNegocio(mensaje, 400, { autorizacionPresentada: mensaje });
+  }
+  if (!requiereAutorizacion(p.vinculoResponsable)) p.autorizacionPresentada = false;
 }
 async function bloquear(tx, reservaId) {
   await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${reservaId} FOR UPDATE`;
@@ -262,6 +292,7 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
       const mensaje = "Elegí el adulto responsable del menor.";
       throw new ErrorDeNegocio("El menor necesita un adulto responsable.", 400, { responsableId: mensaje });
     }
+    validarVinculo(p);
     if (p.email) {
       // La reserva ya está bloqueada: dos altas simultáneas no eluden este control.
       const correos = await tx.ocupanteReserva.findMany({
@@ -480,6 +511,10 @@ function validarCompleto(p) {
     throw new ErrorDeNegocio("Completá el documento y su país emisor o justificá la excepción.");
   if (edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD && !p.responsableId)
     throw new ErrorDeNegocio("El menor necesita un adulto responsable.");
+  if (edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD && !p.vinculoResponsable)
+    throw new ErrorDeNegocio("Indicá el vínculo del responsable con el menor.");
+  if (requiereAutorizacion(p.vinculoResponsable) && !p.autorizacionPresentada)
+    throw new ErrorDeNegocio("Falta la autorización de los padres o tutores del menor.");
 }
 async function accion(reservaId, ocupanteId, data) {
   reservaId = id(reservaId);
@@ -606,6 +641,7 @@ module.exports = {
   idValido: id,
   ErrorDeNegocio,
   normalizarPersona,
+  validarVinculo,
   edad,
   validarCompleto,
   bloquear,

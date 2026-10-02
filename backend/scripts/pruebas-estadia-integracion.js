@@ -159,6 +159,7 @@ async function pruebas() {
     ficha(h1, undefined, {
       fechaNacimiento: haceAnios(11),
       responsableId: a.id,
+      vinculoResponsable: "Padre o madre",
       usarContactoResponsable: true,
     }),
   );
@@ -265,6 +266,7 @@ async function pruebas() {
     ...ficha(hw, undefined, {
       fechaNacimiento: haceAnios(11),
       responsableId: 1,
+      vinculoResponsable: "Padre o madre",
     }),
     id: 2,
   });

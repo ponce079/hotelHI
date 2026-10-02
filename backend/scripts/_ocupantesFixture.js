@@ -22,6 +22,7 @@ function personasFixture(habitaciones, huesped, fechaDesde, fechaHasta) {
         esTitular: i === 0,
         telefono: i === 0 ? "+54 387 555-0000" : null,
         responsableId: menor ? id - i : null,
+        vinculoResponsable: menor ? "Padre o madre" : null,
       };
     }),
   );

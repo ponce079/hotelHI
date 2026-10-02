@@ -9,6 +9,7 @@
 //   - EDAD_ADULTO_OCUPACION (13): solo para CONTAR adultos y menores de la habitación.
 //   - MAYORIA_EDAD (18): titular de habitación, responsable de un menor y quién necesita uno.
 const { EDAD_ADULTO_OCUPACION, MAYORIA_EDAD, edadEn } = require("../../lib/fechas");
+const { normalizarVinculo, requiereAutorizacion } = require("../../lib/vinculos");
 const { esTelefono } = require("../../lib/contacto");
 const { normalizarTipoDocumento } = require("../../lib/tiposDocumento");
 const { normalizarPais } = require("../estadia/persona.servicio");
@@ -114,6 +115,14 @@ function validarOcupacionIngreso({ habitaciones, personas, fechaIngreso, huesped
         const edadResponsable = edades.get(responsable);
         if (edadResponsable === null || edadResponsable < MAYORIA_EDAD)
           generales.push(`El responsable de ${nombreDe(p)} (${nombreDe(responsable)}) tiene que ser mayor de 18 años.`);
+        // Vínculo del responsable con el menor (catálogo) y, si es otro familiar u otro adulto,
+        // la autorización de los padres o tutores.
+        const vinculo = normalizarVinculo(p.vinculoResponsable);
+        if (!vinculo) generales.push(`Indicá el vínculo de ${nombreDe(responsable)} con ${nombreDe(p)}.`);
+        else if (requiereAutorizacion(vinculo) && p.autorizacionPresentada !== true)
+          generales.push(
+            `${nombreDe(p)} está a cargo de ${nombreDe(responsable)} (${vinculo}): pedí la autorización de los padres o tutores y marcá "Autorización presentada".`,
+          );
       }
     }
   }

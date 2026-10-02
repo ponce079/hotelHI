@@ -89,6 +89,8 @@ async function pruebas({ bar, nrf, temporada }) {
       domicilio: "Calle Falsa 123",
       telefono: "+54 387 555-1234",
       email: "",
+      // Un menor lleva el vínculo de su responsable (padre o madre, salvo que la prueba diga otro).
+      ...(extra.responsableId ? { vinculoResponsable: "Padre o madre" } : {}),
       ...extra,
     };
   }
@@ -699,7 +701,7 @@ async function pruebas({ bar, nrf, temporada }) {
     await rechaza(() => estadia.guardar(reserva.id, null, ficha(persona(4, hA.id, 36), hA.id, { responsableId: fT.id })), 400, /Solo un menor/);
     await rechaza(() => estadia.guardar(reserva.id, null, ficha(persona(5, hA.id, 10), hA.id)), 400, /adulto responsable/);
     // Supera la ocupación registrada (2 + 0): entra como persona adicional, con su vista previa.
-    const datosMenor = ficha(persona(5, hA.id, 10), hA.id, { responsableId: fT.id });
+    const datosMenor = ficha(persona(5, hA.id, 10), hA.id, { responsableId: fT.id, vinculoResponsable: "Padre o madre" });
     const vistaMenor = await estadia.guardar(reserva.id, null, datosMenor).catch((e) => e.detalle);
     const menor = await estadia.guardar(reserva.id, null, { ...datosMenor, confirmacionPersonaAdicional: vistaMenor.token });
 
@@ -1109,6 +1111,43 @@ async function pruebas({ bar, nrf, temporada }) {
     const encontradoViejo = await buscarPorDocumento({ tipo: "DNI", pais: "AR", numero: viejo.numeroDocumento });
     assert.deepEqual([encontradoViejo.nombre, encontradoViejo.apellido], ["Rosa Inés Mamaní", null], "un nombre viejo no se parte");
     ok("nombres y apellido separados: alta de mostrador, titular automático, edición de ficha sincronizada y persona que vuelve");
+  }
+
+  // ---------------------------------------------------------------- vínculo del responsable con el menor
+  {
+    const estadiaS = require("../src/modulos/estadia/estadia.servicio");
+    const h = await habitacion(doble, 3);
+    const titular = persona(1, h.id, 40, { esTitular: true });
+    // 15 años: cuenta como adulto para la ocupación pero, por ser menor de 18, lleva vínculo.
+    const { reserva, total } = await reservar([{ habitacionId: h.id, adultos: 3, menores: 0 }], { titular });
+    const menor = persona(3, h.id, 15, { responsableId: 2, vinculoResponsable: "Otro adulto a cargo", telefono: "" });
+    const cuerpo = (m) => ({
+      habitaciones: [{ habitacionIdAnterior: h.id, adultos: 3, menores: 0 }],
+      personas: [titular, persona(2, h.id, 45), m],
+      totalEsperado: total,
+    });
+    // Sin la autorización no se confirma (y no queda nada a medias).
+    await rechaza(() => confirmar(reserva, cuerpo(menor)), 400, /pedí la autorización de los padres o tutores/);
+    assert.equal((await p.reserva.findUnique({ where: { id: reserva.id } })).estado, "Confirmada");
+    // Un vínculo fuera del catálogo tampoco.
+    await rechaza(() => confirmar(reserva, cuerpo({ ...menor, vinculoResponsable: "Vecino" })), 400, /Indicá el vínculo/);
+    // Con la autorización: confirma, queda en la ficha y en el evento del check-in.
+    await confirmar(reserva, cuerpo({ ...menor, autorizacionPresentada: true }));
+    const ficha = await p.ocupanteReserva.findFirst({ where: { reservaId: reserva.id, numeroDocumento: menor.numeroDocumento } });
+    assert.deepEqual([ficha.vinculoResponsable, ficha.autorizacionPresentada], ["Otro adulto a cargo", true]);
+    const evento = await p.eventoEstadia.findFirst({ where: { reservaId: reserva.id, accion: "Check-in: ocupantes registrados" } });
+    assert.deepEqual(JSON.parse(evento.detalle).menores, [
+      { ocupanteId: ficha.id, responsableId: ficha.responsableId, vinculo: "Otro adulto a cargo", autorizacionPresentada: true },
+    ]);
+    // Guardar la ficha: mismas reglas (sin autorización 400; un adulto no lleva vínculo).
+    const datosFicha = { ...menor, habitacionId: h.id, responsableId: ficha.responsableId, operador: OPERADOR };
+    await rechaza(() => estadiaS.guardar(reserva.id, ficha.id, { ...datosFicha, autorizacionPresentada: false }), 400, /autorización/);
+    await estadiaS.guardar(reserva.id, ficha.id, { ...datosFicha, vinculoResponsable: "Tutor legal", autorizacionPresentada: true });
+    const tutor = await p.ocupanteReserva.findUnique({ where: { id: ficha.id } });
+    assert.deepEqual([tutor.vinculoResponsable, tutor.autorizacionPresentada], ["Tutor legal", false], "Tutor legal no lleva autorización");
+    const adulto = await p.ocupanteReserva.findFirst({ where: { reservaId: reserva.id, numeroDocumento: titular.numeroDocumento } });
+    assert.equal(adulto.vinculoResponsable, null);
+    ok("vínculo del responsable: obligatorio para menores de 18, autorización para otro familiar u otro adulto, guardado y en el evento del check-in");
   }
 }
 

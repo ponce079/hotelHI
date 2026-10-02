@@ -33,7 +33,7 @@ function familia() {
   return [
     persona(1, 1, 40, { esTitular: true }),
     persona(2, 1, 38),
-    persona(3, 1, 11, { responsableId: 1 }),
+    persona(3, 1, 11, { responsableId: 1, vinculoResponsable: "Padre o madre" }),
   ];
 }
 
@@ -50,7 +50,7 @@ describe("validarOcupacionIngreso", () => {
     const r = validar(personas, [{ ...DOBLE, adultos: 2, menores: 0 }]);
     expect(r.errores.porHabitacion[0].errores).toEqual([]);
     expect(r.errores.generales.join(" ")).toMatch(/Persona2 Prueba es menor de 18 años: indicá qué adulto es su responsable/);
-    const conResponsable = validar([personas[0], { ...personas[1], responsableId: 1 }], [{ ...DOBLE, adultos: 2, menores: 0 }]);
+    const conResponsable = validar([personas[0], { ...personas[1], responsableId: 1, vinculoResponsable: "Padre o madre" }], [{ ...DOBLE, adultos: 2, menores: 0 }]);
     expect(conResponsable.hayErrores).toBe(false);
   });
 
@@ -75,7 +75,7 @@ describe("validarOcupacionIngreso", () => {
     const ninguno = familia();
     ninguno[0].esTitular = false;
     expect(validar(ninguno).errores.porHabitacion[0].errores.join(" ")).toMatch(/marcá quién es el titular/);
-    const menor = [persona(1, 1, 17, { esTitular: true, responsableId: 2 }), persona(2, 1, 40)];
+    const menor = [persona(1, 1, 17, { esTitular: true, responsableId: 2, vinculoResponsable: "Padre o madre" }), persona(2, 1, 40)];
     expect(validar(menor, [{ ...DOBLE, adultos: 2, menores: 0 }]).errores.porHabitacion[0].errores.join(" ")).toMatch(
       /el titular \(Persona1 Prueba\) tiene que ser mayor de 18 años/,
     );
@@ -85,7 +85,7 @@ describe("validarOcupacionIngreso", () => {
     const sin = familia();
     delete sin[2].responsableId;
     expect(validar(sin).errores.generales.join(" ")).toMatch(/Persona\d+ Prueba es menor de 18 años: indicá qué adulto es su responsable/);
-    const conMenor = [persona(1, 1, 40, { esTitular: true }), persona(2, 1, 16, { responsableId: 1 }), persona(3, 1, 8, { responsableId: 2 })];
+    const conMenor = [persona(1, 1, 40, { esTitular: true }), persona(2, 1, 16, { responsableId: 1, vinculoResponsable: "Padre o madre" }), persona(3, 1, 8, { responsableId: 2, vinculoResponsable: "Padre o madre" })];
     expect(validar(conMenor).errores.generales.join(" ")).toMatch(/tiene que ser mayor de 18 años/);
   });
 
@@ -93,7 +93,7 @@ describe("validarOcupacionIngreso", () => {
     const personas = [
       persona(1, 1, 45, { esTitular: true }),
       persona(2, 1, 43),
-      persona(3, 2, 16, { esTitular: false, responsableId: 1 }),
+      persona(3, 2, 16, { esTitular: false, responsableId: 1, vinculoResponsable: "Padre o madre" }),
       persona(4, 2, 19, { esTitular: true, telefono: "" }),
     ];
     const r = validar(personas, [{ ...DOBLE, menores: 0 }, TWIN]);
@@ -140,5 +140,21 @@ describe("validarOcupacionIngreso", () => {
     const mensaje = resumirErrores(validar(familia().slice(0, 2)).errores);
     expect(mensaje).toMatch(/^Habitación 101: se indicaron 2 adultos y 1 menor/);
     expect(mensaje).not.toMatch(/habitacionId|esTitular|responsableId|fechaNacimiento/);
+  });
+});
+
+describe("vínculo del responsable con el menor", () => {
+  const conVinculo = (extra) => [persona(1, 1, 40, { esTitular: true }), persona(2, 1, 40), persona(3, 1, 15, { responsableId: 1, ...extra })];
+  const mensajes = (personas) => validar(personas, [{ ...DOBLE, adultos: 3, menores: 0 }]).errores.generales.join(" | ");
+  it("es obligatorio para todo menor de 18, también de 13 a 17 que cuenta como adulto", () => {
+    expect(mensajes(conVinculo({}))).toMatch(/Indicá el vínculo de .+ con .+\./);
+  });
+  it("Otro adulto a cargo sin autorización no se acepta; con autorización sí", () => {
+    expect(mensajes(conVinculo({ vinculoResponsable: "Otro adulto a cargo" }))).toMatch(/pedí la autorización de los padres o tutores/);
+    expect(mensajes(conVinculo({ vinculoResponsable: "Otro adulto a cargo", autorizacionPresentada: true }))).toBe("");
+    expect(mensajes(conVinculo({ vinculoResponsable: "Padre o madre" }))).toBe("");
+  });
+  it("un valor fuera del catálogo no se acepta", () => {
+    expect(mensajes(conVinculo({ vinculoResponsable: "Vecino" }))).toMatch(/Indicá el vínculo/);
   });
 });
