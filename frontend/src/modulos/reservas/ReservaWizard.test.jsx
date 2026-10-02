@@ -109,7 +109,11 @@ async function completarPasos1a4() {
   fireEvent.click(await screen.findByText("Best Available Rate"));
   fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
 
-  fireEvent.change(await screen.findByLabelText("Nombre y apellido *"), { target: { value: "Ana Pérez" } });
+  // Minúsculas a propósito: al salir del campo quedan con mayúscula inicial (y partículas en minúscula).
+  fireEvent.change(await screen.findByLabelText("Nombres *"), { target: { value: "ana maría" } });
+  fireEvent.blur(screen.getByLabelText("Nombres *"));
+  fireEvent.change(screen.getByLabelText("Apellido *"), { target: { value: "pérez de la vega" } });
+  fireEvent.blur(screen.getByLabelText("Apellido *"));
   fireEvent.change(screen.getByLabelText("País emisor del documento *"), { target: { value: "AR" } });
   fireEvent.change(screen.getByLabelText("Fecha de nacimiento del titular *"), { target: { value: "1990-01-01" } });
   fireEvent.change(screen.getByLabelText("Número *"), { target: { value: "30111222" } });
@@ -171,8 +175,10 @@ describe("ReservaWizard — alta asistida por mostrador (seña obligatoria, HU-8
         totalEsperado: 150000,
         origen: "RECEPCION",
         medios: [{ tipo: "Efectivo", importe: 30000, referencia: undefined }],
+        huesped: expect.objectContaining({ nombres: "Ana María", apellido: "Pérez de la Vega" }),
       })
     );
+    expect(crearReservaConSena.mock.calls[0][0].huesped).not.toHaveProperty("nombre");
     await waitFor(() => expect(onExito).toHaveBeenCalledWith(RESERVA_CREADA));
   });
 
@@ -371,7 +377,7 @@ describe("ReservaWizard — arranca con habitaciones ya elegidas (desde Disponib
     renderWizard({ origen: "WEB", valoresIniciales: { fechaDesde: "2026-10-10", fechaHasta: "2026-10-13" } });
 
     expect(screen.getByLabelText("Entrada (check-in) *")).toBeInTheDocument();
-    expect(screen.queryByLabelText("Nombre y apellido *")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Nombres *")).not.toBeInTheDocument();
   });
 });
 
@@ -387,6 +393,8 @@ describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin 
       paisDocumento: "AR",
       fechaNacimiento: "1990-01-01",
       nombre: "Ana Pérez",
+      nombres: "Ana",
+      apellido: "Pérez",
       tipoDocumento: "DNI",
       numeroDocumento: "30111222",
       contacto: "ana@mail.com",
@@ -410,7 +418,7 @@ describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin 
 
     fireEvent.click(await screen.findByText("Best Available Rate"));
     fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
-    await screen.findByLabelText("Nombre y apellido *");
+    await screen.findByLabelText("Nombres *");
 
     const guardar = screen.getByRole("button", { name: "Guardar cambios" });
     fireEvent.click(guardar);
