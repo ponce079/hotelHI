@@ -1,3 +1,5 @@
+const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
+const { Prisma } = require('@prisma/client');
 const prisma = require('../../lib/prisma');
 const { redondear } = require('../../lib/comprobantes');
 const { conTipoPlano } = require('../../lib/tipoHabitacion');
@@ -130,7 +132,7 @@ async function consolidarCargos(reservaId, cliente = prisma) {
   });
 
   const consumosDb = await cliente.consumoServicioAdicional.findMany({
-    where: { reservaId: id },
+    where: { reservaId: id, anulado: false },
     orderBy: { fechaHora: 'asc' },
   });
   const consumos = consumosDb.map((c) => ({
@@ -149,6 +151,7 @@ async function consolidarCargos(reservaId, cliente = prisma) {
   });
   const verificaciones = verificacionesDb.map((v) => ({
     id: v.id,
+    habitacionId: v.habitacionId,
     tipo: v.tipo,
     descripcion: v.descripcion,
     monto: Number(v.monto),
@@ -168,6 +171,11 @@ async function consolidarCargos(reservaId, cliente = prisma) {
   const totalAdeudado = redondear(alojamiento + serviciosAdicionales + verificacion);
   const totalPagado = redondear(Number(pagado._sum.importe || 0));
   const saldo = Math.max(0, redondear(totalAdeudado - totalPagado));
+  for (const h of habitaciones) {
+    h.adicionales = redondear(
+      consumos.filter((c) => c.habitacionId === h.habitacionId).reduce((total, c) => total + c.monto, 0)
+    );
+  }
 
   return {
     reservaId: reserva.id,
@@ -242,13 +250,22 @@ async function registrarVerificacion(reservaId, data = {}) {
         );
       }
 
+      const habitaciones = await tx.reservaHabitacion.findMany({ where: { reservaId: id } });
+      const habitacionId = data.habitacionId
+        ? idValido(data.habitacionId, 'habitacionId')
+        : habitaciones.length === 1
+          ? habitaciones[0].habitacionId
+          : null;
+      if (!habitaciones.some((h) => h.habitacionId === habitacionId)) {
+        throw new ErrorDeNegocio('Seleccioná una habitación de la reserva.');
+      }
       const cargo = await tx.cargoVerificacionCheckout.create({
-        data: { reservaId: id, tipo, descripcion: desc, monto: redondear(importe), registradoPor: quien },
+        data: { reservaId: id, habitacionId, tipo, descripcion: desc, monto: redondear(importe), registradoPor: quien },
       });
       const cuenta = await consolidarCargos(id, tx);
       return { cargo, cuenta };
     },
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 }
 
@@ -302,7 +319,11 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
       // cierre. Se re-consulta con `tx` (mismo lock de la reserva de
       // arriba) para no aceptar un registro que se está por perder por un
       // rollback concurrente.
-      const huboVerificacion = await tx.cargoVerificacionCheckout.findFirst({ where: { reservaId: id } });
+      const huboVerificacion = cuenta.habitaciones.every((h) =>
+        cuenta.verificaciones.some(
+          (v) => v.habitacionId === h.habitacionId || (!v.habitacionId && cuenta.habitaciones.length === 1)
+        )
+      );
       if (!huboVerificacion) {
         throw new ErrorDeNegocio(
           'Falta verificar la habitación antes de confirmar el check-out (HU-87): registrá lo que encontraste o marcá "Verificación sin novedades".',
@@ -321,6 +342,15 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
       } catch (err) {
         throw envolverErrorReservas(err);
       }
+      const salidaReal = new Date();
+      await tx.ocupanteReserva.updateMany({
+        where: { reservaId: id, estado: 'Alojado' },
+        data: { estado: 'Retirado', salidaReal, identidadActiva: null },
+      });
+      await tx.asignacionOcupanteHabitacion.updateMany({
+        where: { ocupante: { reservaId: id }, hasta: null },
+        data: { hasta: salidaReal },
+      });
 
       // Estado de las habitaciones al salir el huésped.
       //
@@ -342,30 +372,32 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
       //
       // Se bloquean las filas antes de leerlas para que el estado que se ve
       // sea el mismo que se va a escribir.
+      //
+      // Las escrituras se agrupan por tipo de cambio (una sentencia por cada una) para que
+      // las consultas no crezcan con la cantidad de habitaciones de la reserva.
       const habitacionIds = cuenta.habitaciones.map((h) => h.habitacionId);
-      for (const habitacionId of habitacionIds) {
-        await tx.$queryRaw`SELECT id FROM habitaciones WHERE id = ${habitacionId} FOR UPDATE`;
-      }
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM habitaciones WHERE id IN (${Prisma.join(habitacionIds)}) ORDER BY id FOR UPDATE`
+      );
       const actuales = await tx.habitacion.findMany({ where: { id: { in: habitacionIds } } });
       const actualPorId = new Map(actuales.map((h) => [h.id, h]));
 
       const habitaciones = [];
-      const notificaciones = [];
+      const datosNotificaciones = [];
+      const aLimpiar = [];
+      const reescribirEstadoAnterior = [];
       for (const h of cuenta.habitaciones) {
         const actual = actualPorId.get(h.habitacionId);
         let estadoFinal = actual.estado;
         let observacion = null;
 
         if (actual.estado === 'ocupada') {
-          await tx.habitacion.update({ where: { id: h.habitacionId }, data: { estado: ESTADO_HABITACION_POST_CHECKOUT } });
+          aLimpiar.push(h.habitacionId);
           estadoFinal = ESTADO_HABITACION_POST_CHECKOUT;
           observacion = `quedó ${ESTADO_HABITACION_POST_CHECKOUT}.`;
         } else if (actual.estado === 'mantenimiento') {
           if (!actual.estadoAnterior || actual.estadoAnterior === 'ocupada') {
-            await tx.habitacion.update({
-              where: { id: h.habitacionId },
-              data: { estadoAnterior: ESTADO_HABITACION_POST_CHECKOUT },
-            });
+            reescribirEstadoAnterior.push(h.habitacionId);
           }
           observacion = `sigue en mantenimiento (orden sin resolver). Al resolverla pasa a ${ESTADO_HABITACION_POST_CHECKOUT}.`;
         }
@@ -377,19 +409,40 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
             actual.estado === 'mantenimiento'
               ? `Check-out completado: la habitación ${h.numero} (${h.tipo}) sigue en mantenimiento por una orden sin resolver. Cuando se resuelva, pasa a ${ESTADO_HABITACION_POST_CHECKOUT}.`
               : `Check-out completado: la habitación ${h.numero} (${h.tipo}) quedó pendiente de limpieza.`;
-          notificaciones.push(
-            await tx.notificacion.create({
-              data: {
-                tipo: TIPO_NOTIFICACION_HOUSEKEEPING,
-                habitacionId: h.habitacionId,
-                reservaId: id,
-                destinatarioArea: AREA_HOUSEKEEPING,
-                canal: CANAL_INTERNO,
-                mensaje,
-              },
-            })
-          );
+          datosNotificaciones.push({
+            tipo: TIPO_NOTIFICACION_HOUSEKEEPING,
+            habitacionId: h.habitacionId,
+            reservaId: id,
+            destinatarioArea: AREA_HOUSEKEEPING,
+            canal: CANAL_INTERNO,
+            mensaje,
+          });
         }
+      }
+
+      if (aLimpiar.length > 0) {
+        await tx.habitacion.updateMany({
+          where: { id: { in: aLimpiar } },
+          data: { estado: ESTADO_HABITACION_POST_CHECKOUT },
+        });
+      }
+      if (reescribirEstadoAnterior.length > 0) {
+        await tx.habitacion.updateMany({
+          where: { id: { in: reescribirEstadoAnterior } },
+          data: { estadoAnterior: ESTADO_HABITACION_POST_CHECKOUT },
+        });
+      }
+      let notificaciones = [];
+      if (datosNotificaciones.length > 0) {
+        await tx.notificacion.createMany({ data: datosNotificaciones });
+        notificaciones = await tx.notificacion.findMany({
+          where: {
+            reservaId: id,
+            tipo: TIPO_NOTIFICACION_HOUSEKEEPING,
+            habitacionId: { in: datosNotificaciones.map((n) => n.habitacionId) },
+          },
+          orderBy: { id: 'asc' },
+        });
       }
 
       return {
@@ -401,7 +454,7 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
         notificaciones,
       };
     },
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 }
 

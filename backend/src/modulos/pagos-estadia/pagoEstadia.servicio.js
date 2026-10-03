@@ -1,3 +1,4 @@
+const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 const prisma = require('../../lib/prisma');
 const {
   MEDIOS_PAGO_ESTADIA,
@@ -171,7 +172,7 @@ async function crearPago({ reservaId, medios, concepto = CONCEPTO_PAGO_FINAL }) 
       await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${Number(reservaId)} FOR UPDATE`;
       return crearPagoEnTransaccion(tx, { reservaId, medios, concepto });
     },
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 }
 

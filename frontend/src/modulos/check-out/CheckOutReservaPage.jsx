@@ -114,8 +114,15 @@ export function CheckOutReservaPage() {
   // `verificacionCompleta` sale directo de `cuenta.verificaciones`, sin
   // estado propio.
   const mutacionSinNovedades = useMutation({
-    mutationFn: () =>
-      registrarVerificacion(reservaId, { tipo: TIPO_VERIFICACION_SIN_NOVEDADES, registradoPor: usuario }),
+    mutationFn: async () => {
+      for (const habitacion of cuentaQuery.data.habitaciones) {
+        await registrarVerificacion(reservaId, {
+          habitacionId: habitacion.habitacionId,
+          tipo: TIPO_VERIFICACION_SIN_NOVEDADES,
+          registradoPor: usuario,
+        });
+      }
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["check-out"] });
       setErrorVerificacion("");
@@ -176,7 +183,11 @@ export function CheckOutReservaPage() {
   const cerrada = cuenta.estadoReserva === ESTADO_RESERVA.CERRADA || Boolean(resultado);
   const enCurso = cuenta.estadoReserva === ESTADO_RESERVA.EN_CURSO && !resultado;
   const saldado = Math.round(cuenta.saldo * 100) === 0;
-  const verificacionCompleta = cuenta.verificaciones.length > 0;
+  const verificacionCompleta = cuenta.habitaciones.every((h) =>
+    cuenta.verificaciones.some(
+      (v) => v.habitacionId === h.habitacionId || (!v.habitacionId && cuenta.habitaciones.length === 1),
+    ),
+  );
   const consumosMinibar = cuenta.consumos.filter((c) => c.tipoServicio === "Minibar");
   const comprobanteVigente = (comprobantesQuery.data ?? []).find((c) => c.tipo === "Comprobante" && !c.anulado);
 
@@ -538,6 +549,7 @@ export function CheckOutReservaPage() {
       {modalCargo && (
         <CargoVerificacionCheckoutModal
           reservaId={reservaId}
+          habitaciones={cuenta.habitaciones}
           consumosMinibar={consumosMinibar}
           onClose={() => setModalCargo(false)}
           onExito={alRegistrarCargo}

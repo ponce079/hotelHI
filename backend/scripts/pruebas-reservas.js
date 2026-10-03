@@ -59,7 +59,14 @@ function enDias(dias) {
   return new Date(hoy.getTime() + dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-const HUESPED = { nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
+const HUESPED = {
+  paisDocumento: "AR",
+  fechaNacimiento: "1990-01-01",
+  nombre: "Ana Pérez",
+  tipoDocumento: "DNI",
+  numeroDocumento: "30111222",
+  contacto: "ana@mail.com",
+};
 
 // --------------------------------------------------------------
 // Fixture mínima de tarifas (Etapa 4A) — UNA temporada Base + UN plan BAR,
@@ -471,7 +478,7 @@ async function main() {
     await sembrarHabitacion({ numero: "101" });
     await esperaError(
       async () => servicio.crearReserva(await alta({ huesped: { ...HUESPED, tipoDocumento: "Carnet del club" } })),
-      "tipoDocumento"
+      "tipo de documento"
     );
   });
 
@@ -585,6 +592,14 @@ async function main() {
     await sembrarHabitacion({ numero: "101" });
     await sembrarHabitacion({ numero: "102" });
     const reserva = await servicio.crearReserva(await alta({ habitaciones: habs([1]) }));
+    await esperaError(() => servicio.modificarReserva(reserva.id, { habitaciones: habs([2]) }), "Hay ocupantes");
+    const estadia = require("../src/modulos/estadia/estadia.servicio");
+    const titular = (await estadia.listar(reserva.id))[0];
+    await estadia.accion(reserva.id, titular.id, {
+      accion: "cancelar",
+      operador: "Prueba",
+      motivo: "Cambio de habitacion",
+    });
     const modificada = await servicio.modificarReserva(reserva.id, { habitaciones: habs([2]) });
     assert.equal(modificada.habitaciones.length, 1);
     assert.equal(modificada.habitaciones[0].numero, "102");

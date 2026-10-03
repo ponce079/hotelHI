@@ -18,6 +18,7 @@
 //   node scripts/seed-usuarios-prueba.js
 
 require("dotenv").config();
+if (!process.env.SEED_USUARIOS_PASSWORD) throw new Error("Defini SEED_USUARIOS_PASSWORD antes de ejecutar el seed.");
 
 if (process.env.NODE_ENV === "production") {
   console.error(
@@ -34,8 +35,7 @@ const { ROLES_USUARIO, ETIQUETAS_ROL } = require("../src/modulos/usuarios/usuari
 // Contraseña de desarrollo por defecto si no viene SEED_USUARIOS_PASSWORD —
 // cumple la política de Tomás (LIMITES_USUARIO: 6 a 72 caracteres, sin
 // exigencia de mayúsculas/números/símbolos hoy) con margen de sobra.
-const CONTRASENA_POR_DEFECTO = "Prueba2026!";
-const CONTRASENA = process.env.SEED_USUARIOS_PASSWORD || CONTRASENA_POR_DEFECTO;
+const CONTRASENA = process.env.SEED_USUARIOS_PASSWORD;
 
 // DNIs de prueba, uno por rol — 7/8 dígitos (REGEX_DNI), @unique en el
 // modelo. Rango 100000001+ para que nunca choque con un DNI real cargado a

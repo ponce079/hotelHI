@@ -1,3 +1,5 @@
+import { PaisDocumentoReserva } from "../estadia/PaisDocumentoReserva";
+import { validarNacimientoTitular } from "../reservas/validarNacimientoTitular";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, BedDouble, Check, CreditCard, Search, Users } from "lucide-react";
@@ -7,7 +9,7 @@ import { Cifra } from "../../componentes/Cifra";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { Table } from "../../componentes/Table";
-import { formatearFechaSinHora, hoyEnHoraLocal } from "../../lib/fechas";
+import { formatearFechaDdMmAaaa, hoyEnHoraLocal } from "../../lib/fechas";
 import { ESTADO_HABITACION_BADGE, ESTADO_HABITACION_LABEL } from "../habitaciones/habitaciones.constantes";
 import { MEDIOS_CON_TARJETA } from "../pagos-estadia/pagoEstadia.constantes";
 import { TarjetaSimuladaPanel } from "../pagos-estadia/TarjetaSimuladaPanel";
@@ -22,6 +24,7 @@ import {
   TIPOS_DOCUMENTO,
 } from "./reservas.constantes";
 import { validarHuesped } from "./validarHuesped";
+import { formatearNombrePropio } from "../../lib/nombres";
 
 // Alta de reserva (HU-36) y edición de una existente (HU-37) en el mismo
 // wizard: los primeros pasos son idénticos, solo cambia con qué datos
@@ -43,7 +46,8 @@ const PASOS_CON_SENIA = [...PASOS_BASE, "Seña"];
 const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
 const HUESPED_VACIO = {
-  nombre: "",
+  nombres: "",
+  apellido: "",
   tipoDocumento: TIPOS_DOCUMENTO[0],
   numeroDocumento: "",
   contacto: "",
@@ -87,8 +91,8 @@ function calcularNoches(fechaDesde, fechaHasta) {
 function textoMotivoBloqueo(motivo) {
   if (!motivo) return null;
   if (motivo.tipo === "reserva") {
-    const desde = formatearFechaSinHora(motivo.fechaDesde);
-    const hasta = formatearFechaSinHora(motivo.fechaHasta);
+    const desde = formatearFechaDdMmAaaa(motivo.fechaDesde);
+    const hasta = formatearFechaDdMmAaaa(motivo.fechaHasta);
     return `Reservada — ${motivo.huespedNombre ?? "otro huésped"}, ${desde} al ${hasta} (${motivo.codigoConfirmacion})`;
   }
   return `No disponible — ${ESTADO_HABITACION_LABEL[motivo.estado]?.toLowerCase() ?? motivo.estado}`;
@@ -141,9 +145,14 @@ function estadoInicial(reserva, valoresIniciales) {
     planTarifarioId: reserva.planTarifarioId ?? "",
     planCodigo: reserva.planTarifario?.codigo ?? "",
     huesped: {
-      nombre: reserva.huesped?.nombre ?? "",
+      // Huésped viejo (solo el nombre completo): queda en Nombres y se completa el apellido a mano;
+      // no se parte automáticamente.
+      nombres: reserva.huesped?.nombres ?? reserva.huesped?.nombre ?? "",
+      apellido: reserva.huesped?.apellido ?? "",
       tipoDocumento: reserva.huesped?.tipoDocumento ?? TIPOS_DOCUMENTO[0],
       numeroDocumento: reserva.huesped?.numeroDocumento ?? "",
+      fechaNacimiento: reserva.huesped?.fechaNacimiento?.slice(0, 10) ?? "",
+      paisDocumento: reserva.huesped?.paisDocumento ?? "",
       contacto: reserva.huesped?.contacto ?? "",
       preferencias: reserva.huesped?.preferencias ?? "",
     },
@@ -173,7 +182,10 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
 
   const [form, setForm] = useState(() => estadoInicial(reserva, valoresIniciales));
   const [errorGeneral, setErrorGeneral] = useState("");
-  const [huespedTocado, setHuespedTocado] = useState({ nombre: false, numeroDocumento: false, contacto: false });
+  const [tiempoAgotado, setTiempoAgotado] = useState(false);
+  const [resultadoIncierto, setResultadoIncierto] = useState(false);
+  const [actualizandoIntento, setActualizandoIntento] = useState(false);
+  const [huespedTocado, setHuespedTocado] = useState({ nombres: false, apellido: false, numeroDocumento: false, contacto: false });
   const [intentoConfirmarHuesped, setIntentoConfirmarHuesped] = useState(false);
   const [medioSenia, setMedioSenia] = useState("");
   const [referenciaSenia, setReferenciaSenia] = useState(null);
@@ -190,6 +202,12 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   // criterio que CheckInWalkIn.jsx, para no arrancar el paso de huésped en
   // rojo apenas se muestra vacío.
   const erroresHuesped = validarHuesped(form.huesped);
+  const errorNacimiento = validarNacimientoTitular(
+    form.huesped.fechaNacimiento,
+    form.fechaDesde || new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" }),
+  );
+  if (errorNacimiento) erroresHuesped.fechaNacimiento = errorNacimiento;
+  if (!form.huesped.paisDocumento?.trim()) erroresHuesped.paisDocumento = "Selecciona el pais emisor del documento.";
   const huespedValido = Object.keys(erroresHuesped).length === 0;
   function errorHuesped(campo) {
     return huespedTocado[campo] || intentoConfirmarHuesped ? erroresHuesped[campo] : undefined;
@@ -330,9 +348,12 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
     habitaciones: form.habitaciones,
     planTarifarioId: form.planTarifarioId,
     huesped: {
-      nombre: form.huesped.nombre.trim(),
+      nombres: formatearNombrePropio(form.huesped.nombres),
+      apellido: formatearNombrePropio(form.huesped.apellido),
       tipoDocumento: form.huesped.tipoDocumento,
       numeroDocumento: form.huesped.numeroDocumento.trim(),
+      fechaNacimiento: form.huesped.fechaNacimiento,
+      paisDocumento: form.huesped.paisDocumento,
       contacto: form.huesped.contacto.trim(),
       preferencias: form.huesped.preferencias.trim() || undefined,
     },
@@ -356,6 +377,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   });
 
   const mutacion = useMutation({
+    retry: false,
     mutationFn: async () => {
       if (esEdicion) {
         return modificarReserva(reserva.id, datosComunes);
@@ -395,6 +417,16 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       onExito(guardada);
     },
     onError: (error) => {
+      if (requiereSenia && error?.response?.data?.codigo === "RESERVA_TIEMPO_AGOTADO") {
+        setTiempoAgotado(true);
+      } else if (requiereSenia && (!error?.response || error.response.status >= 500 || error.response.status === 408)) {
+        setResultadoIncierto(true);
+        setErrorGeneral(
+          "No pudimos confirmar el resultado. Revisá el listado de reservas y sus pagos " +
+            "antes de volver a cargarla, para evitar duplicados.",
+        );
+        return;
+      }
       setErrorGeneral(error?.response?.data?.error ?? "No se pudo guardar la reserva.");
       // HU-96 (regla 4) — el precio cambió entre la cotización que se
       // mostró y la que el backend volvió a calcular al confirmar (409):
@@ -406,6 +438,38 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       }
     },
   });
+
+  async function actualizarParaReintentar() {
+    setActualizandoIntento(true);
+    try {
+      const { data } = await disponibilidadQuery.refetch({ throwOnError: true });
+      const disponibles = new Set((data?.habitaciones ?? []).map((h) => h.id));
+      const siguenDisponibles = form.habitaciones.every((h) => disponibles.has(h.habitacionId));
+      if (siguenDisponibles) await cotizarQuery.refetch({ throwOnError: true });
+      setConfirmacionManualSenia(false);
+      setReferenciaSenia(null);
+      setPanelTarjetaAbierto(false);
+      setTiempoAgotado(false);
+      mutacion.reset();
+      if (!siguenDisponibles) {
+        setForm((f) => ({
+          ...f,
+          paso: 2,
+          habitaciones: f.habitaciones.filter((h) => disponibles.has(h.habitacionId)),
+          planTarifarioId: "",
+          planCodigo: "",
+        }));
+        setErrorGeneral("La disponibilidad cambió. Revisá las habitaciones antes de confirmar nuevamente.");
+      } else {
+        setForm((f) => ({ ...f, paso: 3, planTarifarioId: "", planCodigo: "" }));
+        setErrorGeneral("");
+      }
+    } catch {
+      setErrorGeneral("No se pudo actualizar la disponibilidad. Tus datos se conservan; volvé a intentar actualizar.");
+    } finally {
+      setActualizandoIntento(false);
+    }
+  }
 
   function actualizar(campo, valor) {
     setErrorGeneral("");
@@ -475,13 +539,13 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       : huespedValido && !(esEdicion && form.paso === PASO_HUESPED && previaQuery.isError);
 
   return (
-    <div className="flex flex-col gap-5 px-6 py-5">
+    <fieldset disabled={mutacion.isPending || actualizandoIntento} className="flex min-w-0 flex-col gap-5 px-6 py-5">
       <p className="-mt-1 font-mono text-[11px] text-tinta/55">
         {esEdicion
-          ? "HU 37/96 — modificar fechas, habitaciones, plan o datos del huésped"
+          ? "Modificar fechas, habitaciones, plan o datos del huésped"
           : requiereSenia
-            ? "HU 36, 39, 41, 42, 88, 95 y 96 — plan, precio del motor y seña cobrada antes de confirmar"
-            : "HU 36, 39, 41, 42, 95 y 96 — plan y precio del motor validados antes de confirmar"}
+            ? "Plan, precio del motor y seña cobrada antes de confirmar"
+            : "Plan y precio del motor validados antes de confirmar"}
       </p>
 
       <div className="flex flex-wrap items-center gap-2 rounded-[18.4px] bg-hueso px-6 py-4">
@@ -793,15 +857,45 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       {/* Paso 4 — huésped */}
       {form.paso === PASO_HUESPED && (
         <div className="flex flex-col gap-4 rounded-[18.4px] bg-white px-6 py-[22px]">
+          <p className="text-[12px] text-piedra">* obligatorio</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <Input
-              label="Nombre y apellido *"
-              value={form.huesped.nombre}
-              maxLength={LIMITES_RESERVA.nombre}
-              onChange={(e) => actualizarHuesped("nombre", e.target.value)}
-              onBlur={() => tocarHuesped("nombre")}
-              error={errorHuesped("nombre")}
-              placeholder="Ana Pérez"
+              label="Nombres *"
+              value={form.huesped.nombres}
+              maxLength={LIMITES_RESERVA.nombres}
+              onChange={(e) => actualizarHuesped("nombres", e.target.value)}
+              onBlur={() => {
+                actualizarHuesped("nombres", formatearNombrePropio(form.huesped.nombres));
+                tocarHuesped("nombres");
+              }}
+              error={errorHuesped("nombres")}
+              placeholder="Ana María"
+            />
+            <Input
+              label="Apellido *"
+              value={form.huesped.apellido}
+              maxLength={LIMITES_RESERVA.apellido}
+              onChange={(e) => actualizarHuesped("apellido", e.target.value)}
+              onBlur={() => {
+                actualizarHuesped("apellido", formatearNombrePropio(form.huesped.apellido));
+                tocarHuesped("apellido");
+              }}
+              error={errorHuesped("apellido")}
+              placeholder="Pérez"
+            />
+            <PaisDocumentoReserva
+              value={form.huesped.paisDocumento}
+              onChange={(value) => actualizarHuesped("paisDocumento", value)}
+              onBlur={() => tocarHuesped("paisDocumento")}
+              error={errorHuesped("paisDocumento")}
+            />
+            <Input
+              label="Fecha de nacimiento del titular *"
+              type="date"
+              value={form.huesped.fechaNacimiento || ""}
+              onChange={(e) => actualizarHuesped("fechaNacimiento", e.target.value)}
+              onBlur={() => tocarHuesped("fechaNacimiento")}
+              error={errorHuesped("fechaNacimiento")}
             />
             <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] gap-3">
               <Select
@@ -837,7 +931,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
             />
             {!esEdicion && (
               <Select
-                label="Enviar confirmación por"
+                label="Enviar confirmación por (opcional)"
                 value={form.canalConfirmacion}
                 onChange={(e) => actualizar("canalConfirmacion", e.target.value)}
               >
@@ -851,7 +945,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
           </div>
 
           <label className="flex flex-col gap-1.5 font-body text-sm">
-            <span className="text-[12px] text-tinta/70">Preferencias</span>
+            <span className="text-[12px] text-tinta/70">Preferencias (opcional)</span>
             <textarea
               rows={3}
               value={form.huesped.preferencias}
@@ -922,7 +1016,9 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
             <p className="mt-1 text-piedra">
               {elegidas.map((h) => `${h.info?.numero ?? h.habitacionId} (${h.info?.tipo ?? ""})`).join(", ") || "—"} · del{" "}
               {form.fechaDesde} al {form.fechaHasta} · {noches} noche{noches === 1 ? "" : "s"} ·{" "}
-              <span className="font-semibold text-tinta">{form.huesped.nombre}</span> · {planSeleccionado?.nombre ?? "—"} ·{" "}
+              <span className="font-semibold text-tinta">
+                {`${form.huesped.nombres} ${form.huesped.apellido}`.trim()}
+              </span> · {planSeleccionado?.nombre ?? "—"} ·{" "}
               <span className="font-semibold text-tinta">{FORMATO_MONEDA.format(totalEstadia)}</span>
             </p>
           </div>
@@ -994,10 +1090,34 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
         </div>
       )}
 
+      {requiereSenia && mutacion.isPending && (
+        <p role="status" className="rounded-md bg-hueso px-4 py-3 text-sm">
+          Guardando reserva y seña. El guardado tiene un límite de 1 minuto; esperá la respuesta sin recargar la página.
+        </p>
+      )}
       {errorGeneral && (
-        <p className="rounded-md border border-error bg-error-suave px-4 py-2.5 text-[12.5px] text-error-texto">
+        <p
+          role="alert"
+          className="rounded-md border border-error bg-error-suave px-4 py-2.5 text-[12.5px] text-error-texto"
+        >
           {errorGeneral}
-          {form.paso === PASOS.length && requiereSenia && " No se guardó nada: podés corregir el medio de pago y reintentar."}
+        </p>
+      )}
+      {tiempoAgotado && (
+        <div className="rounded-md border border-laton-300 bg-laton-100 p-4 text-sm">
+          <p className="mb-3">
+            El intento venció. Conservamos tus datos. Actualizá la disponibilidad, revisá el importe y confirmá
+            nuevamente: cada intento tiene hasta 1 minuto de guardado.
+          </p>
+          <Button variante="secundario" cargando={actualizandoIntento} onClick={actualizarParaReintentar}>
+            Actualizar disponibilidad para reintentar
+          </Button>
+        </div>
+      )}
+      {resultadoIncierto && !errorGeneral && (
+        <p role="alert">
+          Revisá el listado de reservas y sus pagos antes de volver a cargarla. El resultado del intento anterior es
+          incierto.
         </p>
       )}
 
@@ -1038,7 +1158,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
               variante="ok"
               icono={Check}
               cargando={mutacion.isPending}
-              disabled={!puedeConfirmarFinal}
+              disabled={!puedeConfirmarFinal || tiempoAgotado || resultadoIncierto || actualizandoIntento}
               onClick={confirmar}
             >
               {esEdicion ? "Guardar cambios" : "Confirmar reserva"}
@@ -1046,7 +1166,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
           )}
         </div>
       </div>
-    </div>
+    </fieldset>
   );
 }
 

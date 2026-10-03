@@ -299,6 +299,32 @@ async function main() {
     assert.equal(resultado.estadiaMinimaExigida, 3);
   });
 
+  await prueba("ignorarRestriccionesVenta: 1 noche en un evento con estadía mínima 3 se cotiza con el mismo precio por noche; sin la opción se sigue rechazando", async () => {
+    limpiar();
+    const { tipo } = await sembrarUniverso();
+    await sembrarModificadores();
+    const media = await temporadasServicio.crearTemporada({ nombre: "Media", nivel: "MEDIA", fechaDesde: isoDias(1), fechaHasta: isoDias(60) });
+    const evento = await temporadasServicio.crearTemporada({
+      nombre: "Milagro",
+      nivel: "EVENTO",
+      fechaDesde: isoDias(10),
+      fechaHasta: isoDias(12),
+      estadiaMinima: 3,
+    });
+    await preciosServicio.crearTarifa({ tipoHabitacionId: tipo.id, temporadaId: media.id, precioBase: 50000, adicionalAdultoExtra: 5000, vigenteDesde: isoDias(0) });
+    await preciosServicio.crearTarifa({ tipoHabitacionId: tipo.id, temporadaId: evento.id, precioBase: 90000, adicionalAdultoExtra: 10000, vigenteDesde: isoDias(0) });
+    const datos = { tipoHabitacionId: tipo.id, fechaIngreso: isoDias(11), fechaEgreso: isoDias(12), adultos: 3 };
+
+    await esperaError(() => cotizacionServicio.cotizarEstadia(datos), "estadía mínima de 3 noches");
+    const sinRestricciones = await cotizacionServicio.cotizarEstadia(datos, undefined, {}, { ignorarRestriccionesVenta: true });
+    // Referencia: la misma noche dentro de una estadía que sí cumple la mínima.
+    const completa = await cotizacionServicio.cotizarEstadia({ ...datos, fechaIngreso: isoDias(9) });
+    const plan = (r) => r.planes.find((x) => x.codigo === "BAR");
+    assert.equal(sinRestricciones.noches, 1);
+    assert.equal(plan(sinRestricciones).detalle[0].precioNoche, plan(completa).detalle.find((d) => d.fecha === isoDias(11)).precioNoche);
+    assert.equal(plan(sinRestricciones).detalle[0].precioNoche, 100000, "base del evento + un adulto adicional");
+  });
+
   seccion("Cierre a llegadas (regla 5)");
 
   await prueba("rechaza si la fecha de ingreso tiene cierre a llegadas", async () => {
@@ -319,6 +345,25 @@ async function main() {
       () => cotizacionServicio.cotizarEstadia({ tipoHabitacionId: tipo.id, fechaIngreso: isoDias(10), fechaEgreso: isoDias(12), adultos: 2 }),
       "cierre a llegadas"
     );
+  });
+
+  await prueba("ignorarRestriccionesVenta: el cierre a llegadas no impide cotizar; sin la opción se sigue rechazando", async () => {
+    limpiar();
+    const { tipo, temporadaBase } = await sembrarUniverso();
+    await sembrarModificadores();
+    const cierre = await temporadasServicio.crearTemporada({
+      nombre: "Fin de año",
+      nivel: "ALTA",
+      fechaDesde: isoDias(10),
+      fechaHasta: isoDias(15),
+      cierreLlegada: true,
+    });
+    await preciosServicio.crearTarifa({ tipoHabitacionId: tipo.id, temporadaId: temporadaBase.id, precioBase: 50000, adicionalAdultoExtra: 5000, vigenteDesde: isoDias(0) });
+    await preciosServicio.crearTarifa({ tipoHabitacionId: tipo.id, temporadaId: cierre.id, precioBase: 90000, adicionalAdultoExtra: 10000, vigenteDesde: isoDias(0) });
+    const datos = { tipoHabitacionId: tipo.id, fechaIngreso: isoDias(10), fechaEgreso: isoDias(12), adultos: 2 };
+    await esperaError(() => cotizacionServicio.cotizarEstadia(datos), "cierre a llegadas");
+    const r = await cotizacionServicio.cotizarEstadia(datos, undefined, {}, { ignorarRestriccionesVenta: true });
+    assert.deepEqual(r.planes.find((x) => x.codigo === "BAR").detalle.map((d) => d.precioNoche), [90000, 90000]);
   });
 
   await prueba("acepta una estadía que empieza antes del cierre y pasa por esa fecha", async () => {

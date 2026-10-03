@@ -1,5 +1,6 @@
 const express = require("express");
 const reservasControlador = require("./reservas.controlador");
+const { getHistorial } = require("./reservas.historial");
 // Etapa 4B (HU-97) — primer uso de este middleware fuera de /api/usuarios:
 // el ajuste manual de precio modifica importes a cobrar, así que acá SÍ se
 // exige sesión + rol gerente en el backend (no solo el gate del botón en el
@@ -23,6 +24,9 @@ router.patch("/:id", reservasControlador.patchReserva);
 router.post("/:id/cancelar", reservasControlador.postCancelar);
 router.post("/:id/ajuste-precio", requiereSesion, requiereRol("gerente"), reservasControlador.postAjustePrecio);
 router.get("/:id/penalidad", reservasControlador.getPenalidad);
+// Historial de la reserva (solo lectura): mismos roles que la lectura de estadía, porque incluye
+// quién hizo cada cambio de la ficha.
+router.get("/:id/historial", requiereSesion, requiereRol("admin", "recepcionista", "gerente"), getHistorial);
 
 // Check-in (HU-47) y check-out (HU-48 a 52) NO exponen ruta acá a
 // propósito: mueven `Reserva.estado` llamando a

@@ -1,3 +1,4 @@
+const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 // src/modulos/movimientos-stock/movimientosStock.servicio.js
 //
 // Lógica de negocio pura (HU-12: Movimiento de Entrada). No sabe nada de
@@ -122,7 +123,7 @@ async function registrarEntrada({ depositoId, tipoMovStockId, detalle, usuario, 
         },
       });
     },
-    { timeout: 30000, maxWait: 15000 }
+    OPCIONES_TRANSACCION
   );
 
   return movimientoCreado;
@@ -296,7 +297,7 @@ async function registrarTransferencia({ depositoId, depositoDestinoId, detalle, 
         },
       });
     },
-    { timeout: 30000, maxWait: 15000 }
+    OPCIONES_TRANSACCION
   );
 
   return movimientoCreado;
@@ -443,7 +444,7 @@ async function confirmarRecepcion(id, { lineas, usuario } = {}) {
         },
       });
     },
-    { timeout: 30000, maxWait: 15000 }
+    OPCIONES_TRANSACCION
   );
 
   return resultado;

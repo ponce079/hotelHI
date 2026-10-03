@@ -1,3 +1,4 @@
+const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 // Administración de Habitaciones (HU-31 a HU-35).
 // Lógica de negocio pura: no conoce HTTP y mantiene las escrituras
 // relacionadas dentro de una misma transacción de Prisma.
@@ -317,7 +318,7 @@ async function crearOrdenMantenimiento(habitacionIdEntrada, data) {
 
       return { ...orden, habitacion: { id: habitacion.id, numero: habitacion.numero, ...conTipoPlano(habitacion) } };
     },
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 }
 
@@ -360,7 +361,7 @@ async function resolverOrdenMantenimiento(ordenIdEntrada, resueltaPor) {
 
       return { ...ordenActualizada, habitacion: { id: orden.habitacion.id, numero: orden.habitacion.numero } };
     },
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 }
 

@@ -2,7 +2,7 @@ const reservasServicio = require("./reservas.servicio");
 
 function responderError(res, err, contexto, mensaje) {
   if (err instanceof reservasServicio.ErrorDeNegocio) {
-    return res.status(err.statusCode).json({ error: err.message });
+    return res.status(err.statusCode).json({ error: err.message, ...(err.codigo ? { codigo: err.codigo } : {}) });
   }
   console.error(contexto, err);
   return res.status(500).json({ error: mensaje });

@@ -79,8 +79,16 @@ function isoDeFecha(fecha) {
 // pedir UNA sola vez, para TODA la reserva, lo que es idéntico para
 // cualquier habitación (rango de fechas, modificadores, planes) o idéntico
 // por tipo (tarifas) — ver el comentario grande en cotizarReserva.
+//
+// `opciones.ignorarRestriccionesVenta` (rediseño del check-in) — omite SOLO
+// la estadía mínima y el cierre a llegadas, que son restricciones de VENTA:
+// no aplican al precio de una persona adicional en una estadía ya vendida y
+// En curso. Precio por noche, plan, temporada, adicionales, menores y
+// modificador por día de la semana se calculan igual. Sin la opción, nada
+// cambia.
 // --------------------------------------------------------------
-async function cotizarEstadia(data = {}, cliente = prisma, precargado = {}) {
+async function cotizarEstadia(data = {}, cliente = prisma, precargado = {}, opciones = {}) {
+  const ignorarRestriccionesVenta = opciones?.ignorarRestriccionesVenta === true;
   const tipoHabitacionId = enteroPositivo(data?.tipoHabitacionId, "tipoHabitacionId");
   const fechaIngreso = parsearFechaSinHora(data?.fechaIngreso, "La fecha de ingreso");
   const fechaEgreso = parsearFechaSinHora(data?.fechaEgreso, "La fecha de egreso");
@@ -135,7 +143,7 @@ async function cotizarEstadia(data = {}, cliente = prisma, precargado = {}) {
 
   // -------- Regla 4: estadía mínima --------
   const estadiaMinimaExigida = dias.reduce((max, d) => Math.max(max, d.estadiaMinima || 0), 0);
-  if (noches < estadiaMinimaExigida) {
+  if (!ignorarRestriccionesVenta && noches < estadiaMinimaExigida) {
     const queExige = dias.find((d) => (d.estadiaMinima || 0) === estadiaMinimaExigida);
     throw new ErrorDeNegocio(
       `La temporada "${queExige.nombre}" exige una estadía mínima de ${estadiaMinimaExigida} noches.`
@@ -143,7 +151,7 @@ async function cotizarEstadia(data = {}, cliente = prisma, precargado = {}) {
   }
 
   // -------- Regla 5: cierre a llegadas --------
-  if (dias[0].cierreLlegada) {
+  if (!ignorarRestriccionesVenta && dias[0].cierreLlegada) {
     throw new ErrorDeNegocio(
       `No se puede ingresar el ${isoDeFecha(fechaIngreso)}: la temporada "${dias[0].nombre}" tiene cierre a llegadas.`
     );
@@ -264,7 +272,8 @@ async function cotizarEstadia(data = {}, cliente = prisma, precargado = {}) {
 // --------------------------------------------------------------
 async function cotizarReserva(
   { fechaDesde, fechaHasta, planTarifarioId, habitaciones, canal, fechaVenta } = {},
-  cliente = prisma
+  cliente = prisma,
+  opciones = {}
 ) {
   const lista = Array.isArray(habitaciones) ? habitaciones : [];
   if (lista.length === 0) throw new ErrorDeNegocio("Hay que elegir al menos una habitación para cotizar.");
@@ -359,7 +368,8 @@ async function cotizarReserva(
         tarifaPorTemporada: tarifaPorTipoYTemporada.get(h.tipoHabitacionId) ?? new Map(),
         modificadores: modificadoresComunes,
         planesActivos: planesActivosComunes,
-      }
+      },
+      opciones
     );
     resultadosPorHabitacion.push({ ...h, resultado });
   }

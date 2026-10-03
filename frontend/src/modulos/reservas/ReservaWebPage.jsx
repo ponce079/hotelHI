@@ -5,7 +5,7 @@ import { CheckCircle2 } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { CodigoClave } from "../../componentes/CodigoClave";
-import { formatearFechaSinHora } from "../../lib/fechas";
+import { formatearFechaDdMmAaaa } from "../../lib/fechas";
 import { LayoutPublico } from "./LayoutPublico";
 import { BuscadorPorCodigo, ReservaWizard } from "./ReservaWizard";
 import { obtenerReservaPorCodigo } from "./reservas.api";
@@ -44,12 +44,12 @@ function FichaReserva({ reserva, titulo }) {
         </div>
         <div>
           <dt className="text-[11px] uppercase tracking-wide text-piedra">Entrada</dt>
-          <dd className="text-[13.5px]">{formatearFechaSinHora(reserva.fechaDesde)}</dd>
+          <dd className="text-[13.5px]">{formatearFechaDdMmAaaa(reserva.fechaDesde)}</dd>
         </div>
         <div>
           <dt className="text-[11px] uppercase tracking-wide text-piedra">Salida</dt>
           <dd className="text-[13.5px]">
-            {formatearFechaSinHora(reserva.fechaHasta)} · {reserva.noches} noche{reserva.noches === 1 ? "" : "s"}
+            {formatearFechaDdMmAaaa(reserva.fechaHasta)} · {reserva.noches} noche{reserva.noches === 1 ? "" : "s"}
           </dd>
         </div>
       </dl>

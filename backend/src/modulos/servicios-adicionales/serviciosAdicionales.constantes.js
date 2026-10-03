@@ -1,7 +1,7 @@
 // Servicios Adicionales (HU-61 a HU-64). Lista fija validada en código,
 // mismo criterio que habitaciones.constantes.js / reservas.constantes.js —
 // duplicada a mano en frontend/src/modulos/servicios-adicionales/serviciosAdicionales.constantes.js.
-const TIPOS_SERVICIO = ["Restaurante", "Spa", "Lavandería", "Minibar"];
+const TIPOS_SERVICIO = ["Restaurante", "Spa", "Lavandería", "Minibar", "Otro"];
 
 // HU-61/HU-64: solo Minibar descuenta stock real de Sprint 1. El tipo de
 // movimiento no se pide en el formulario (no tiene sentido que quien

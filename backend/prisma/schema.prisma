@@ -606,6 +606,8 @@ model Reserva {
   @@index([huespedId], map: "reservas_huespedId_fkey")
   @@index([planTarifarioId], map: "reservas_planTarifarioId_fkey")
   @@map("reservas")
+  ocupantes          OcupanteReserva[]
+  historialEstadia   EventoEstadia[]
 }
 
 model ReservaHabitacion {
@@ -628,6 +630,18 @@ model ReservaHabitacion {
 }
 
 model Huesped {
+  // Nombres y apellido por separado (desde la quinta corrección del check-in). `nombre` sigue
+  // siendo el nombre completo: "nombres apellido" cuando están los dos.
+  nombres  String?
+  apellido String?
+  paisDocumento String?
+  identidadDocumento String? @unique @db.VarChar(64)
+  ocupantes OcupanteReserva[]
+  fechaNacimiento DateTime? @db.Date
+  nacionalidad    String?
+  paisResidencia  String?
+  domicilio       String?
+  localidad       String?
   id              Int       @id @default(autoincrement())
   nombre          String
   tipoDocumento   String
@@ -670,6 +684,15 @@ model ConsumoServicioAdicional {
   @@index([habitacionId], map: "consumos_servicio_adicional_habitacionId_fkey")
   @@index([articuloId], map: "consumos_servicio_adicional_articuloId_fkey")
   @@map("consumos_servicio_adicional")
+  descripcion       String?          @db.VarChar(500)
+  precioUnitario    Decimal?         @db.Decimal(12, 2)
+  fechaServicio     DateTime?
+  incluido          Boolean          @default(false)
+  anulado           Boolean          @default(false)
+  motivoAnulacion   String?          @db.VarChar(500)
+  anuladoPor        String?
+  anuladoEn         DateTime?
+  claveOperacion    String?          @unique @db.VarChar(100)
 }
 
 model PagoEstadia {
@@ -770,6 +793,7 @@ model CargoVerificacionCheckout {
 
   @@index([reservaId], map: "cargos_verificacion_checkout_reservaId_fkey")
   @@map("cargos_verificacion_checkout")
+  habitacionId  Int?
 }
 
 // ────────────────────────────────────────────────────────────
@@ -945,6 +969,68 @@ model Usuario {
   actualizadoEn    DateTime  @updatedAt
 
   @@map("usuarios")
+}
+
+
+model OcupanteReserva {
+  huespedId Int?
+  huesped Huesped? @relation(fields:[huespedId], references:[id])
+  esTitular Boolean @default(false)
+  id                 Int                            @id @default(autoincrement())
+  reservaId          Int
+  identidadActiva    String?                        @unique @db.VarChar(64)
+  reserva            Reserva                        @relation(fields: [reservaId], references: [id])
+  nombre             String
+  apellido           String
+  tipoDocumento      String?
+  numeroDocumento    String?
+  paisDocumento      String?
+  motivoSinDocumento String?
+  fechaNacimiento    DateTime?                      @db.Date
+  telefono           String?
+  email              String?
+  responsableId      Int?
+  // Vínculo del adulto responsable con el menor (catálogo en lib/vinculos.js) y, para "Otro
+  // familiar" u "Otro adulto a cargo", la autorización de los padres o tutores.
+  vinculoResponsable     String?                  @db.VarChar(40)
+  autorizacionPresentada Boolean                  @default(false)
+  fechaDesde         DateTime                       @db.Date
+  fechaHasta         DateTime                       @db.Date
+  estado             String                         @default("Previsto")
+  verificadoPor      String?
+  verificadoEn       DateTime?
+  ingresoReal        DateTime?
+  salidaReal         DateTime?
+  asignaciones       AsignacionOcupanteHabitacion[]
+
+  @@index([reservaId])
+  @@map("ocupantes_reserva")
+}
+
+model AsignacionOcupanteHabitacion {
+  id           Int             @id @default(autoincrement())
+  ocupanteId   Int
+  ocupante     OcupanteReserva @relation(fields: [ocupanteId], references: [id])
+  habitacionId Int
+  desde        DateTime        @default(now())
+  hasta        DateTime?
+  motivo       String?
+
+  @@index([habitacionId, hasta])
+  @@map("asignaciones_ocupantes")
+}
+
+model EventoEstadia {
+  id        Int      @id @default(autoincrement())
+  reservaId Int
+  reserva   Reserva  @relation(fields: [reservaId], references: [id])
+  accion    String
+  detalle   String   @db.Text
+  operador  String
+  fecha     DateTime @default(now())
+
+  @@index([reservaId, fecha])
+  @@map("eventos_estadia")
 }
 
 // ────────────────────────────────────────────────────────────

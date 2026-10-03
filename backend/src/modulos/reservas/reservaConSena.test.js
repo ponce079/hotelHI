@@ -71,6 +71,23 @@ function expandirReserva(t, reserva, include) {
 
 function crearCliente(obtenerTablas) {
   return {
+    ocupanteReserva: {
+      create: async ({ data }) => {
+        const t = obtenerTablas();
+        const { asignaciones, ...resto } = data;
+        const fila = { id: t.ocupanteReserva.length + 1, ...resto };
+        t.ocupanteReserva.push(fila);
+        t.asignacionOcupanteHabitacion.push({ ocupanteId: fila.id, ...asignaciones.create });
+        return fila;
+      },
+    },
+    eventoEstadia: {
+      create: async ({ data }) => {
+        const t = obtenerTablas();
+        t.eventoEstadia.push(data);
+        return data;
+      },
+    },
     habitacion: {
       findMany: async ({ where }) => obtenerTablas().habitacion.filter((h) => coincide(obtenerTablas(), "habitacion", h, where)),
       findUnique: async ({ where }) => obtenerTablas().habitacion.find((h) => h.id === where.id) ?? null,
@@ -105,22 +122,16 @@ function crearCliente(obtenerTablas) {
       findMany: async () => obtenerTablas().modificadorDiaSemana,
     },
     reservaNoche: {
+      createMany: async ({ data }) => {
+        const t = obtenerTablas();
+        for (const fila of data) t.reservaNoche.push({ id: t.secuencias.reservaNoche++, ...fila });
+        return { count: data.length };
+      },
       create: async ({ data }) => {
         const t = obtenerTablas();
         const fila = { id: t.secuencias.reservaNoche++, ...data };
         t.reservaNoche.push(fila);
         return fila;
-      },
-      // Etapa 4C — crearReservaEnTransaccion pasó a usar createMany (una
-      // sola operación para todas las noches) en vez de un create por
-      // noche.
-      createMany: async ({ data }) => {
-        const t = obtenerTablas();
-        const filas = Array.isArray(data) ? data : [data];
-        for (const propios of filas) {
-          t.reservaNoche.push({ id: t.secuencias.reservaNoche++, ...propios });
-        }
-        return { count: filas.length };
       },
     },
     reservaHabitacion: {
@@ -136,7 +147,22 @@ function crearCliente(obtenerTablas) {
       },
     },
     huesped: {
+      upsert: async ({ where, create, update }) => {
+        const t = obtenerTablas();
+        let fila = t.huesped.find((h) => h.identidadDocumento === where.identidadDocumento);
+        if (fila) {
+          Object.assign(fila, update);
+          return fila;
+        }
+        fila = { id: t.secuencias.huesped++, ...create };
+        t.huesped.push(fila);
+        return fila;
+      },
       findFirst: async ({ where }) => {
+        const t = obtenerTablas();
+        return t.huesped.find((h) => coincide(t, "huesped", h, where)) ?? null;
+      },
+      findUnique: async ({ where }) => {
         const t = obtenerTablas();
         return t.huesped.find((h) => coincide(t, "huesped", h, where)) ?? null;
       },
@@ -220,6 +246,9 @@ function crearCliente(obtenerTablas) {
 
 function crearDoblePrisma() {
   let tablas = {
+    ocupanteReserva: [],
+    asignacionOcupanteHabitacion: [],
+    eventoEstadia: [],
     habitacion: [{ id: 1, numero: "101", tipoHabitacionId: 1, capacidad: 2, piso: 1, activo: true }],
     // Etapa 4A — fixture mínima de tarifas: un tipo con ocupación base 2, la
     // temporada Base, el plan BAR y una Tarifa vigente hace mucho a $50000 —
@@ -297,6 +326,9 @@ function crearDoblePrisma() {
       notificacion: t.notificacion.map((r) => ({ ...r })),
       pagoEstadia: t.pagoEstadia.map((r) => ({ ...r })),
       pagoEstadiaMedio: t.pagoEstadiaMedio.map((r) => ({ ...r })),
+      ocupanteReserva: t.ocupanteReserva.map((r) => ({ ...r })),
+      asignacionOcupanteHabitacion: t.asignacionOcupanteHabitacion.map((r) => ({ ...r })),
+      eventoEstadia: t.eventoEstadia.map((r) => ({ ...r })),
       secuencias: { ...t.secuencias },
     };
   }
@@ -356,11 +388,16 @@ function checkOutFalsoFactory() {
   };
 }
 
+// Nacimientos relativos a hoy (scripts/_fechasPrueba.js): nunca años fijos.
+const { haceAnios } = require("../../../scripts/_fechasPrueba");
+
 function huespedValido(sufijo) {
   return {
+    paisDocumento: "AR",
     nombre: "Huésped de Prueba",
     tipoDocumento: "DNI",
     numeroDocumento: `3000000${sufijo}`,
+    fechaNacimiento: haceAnios(36),
     contacto: `huesped${sufijo}@ejemplo.com`,
   };
 }
@@ -405,6 +442,9 @@ describe("crearReservaConSena (HU-88, alta + seña atómica)", () => {
     expect(t.pagoEstadia).toHaveLength(0);
     expect(t.huesped).toHaveLength(0);
     expect(t.notificacion).toHaveLength(0);
+    expect(t.ocupanteReserva).toHaveLength(0);
+    expect(t.asignacionOcupanteHabitacion).toHaveLength(0);
+    expect(t.eventoEstadia).toHaveLength(0);
   });
 
   test("si todo sale bien, Reserva y PagoEstadia quedan creados juntos y consistentes", async () => {
@@ -416,6 +456,9 @@ describe("crearReservaConSena (HU-88, alta + seña atómica)", () => {
     const t = doble.obtenerTablas();
     expect(t.reserva).toHaveLength(1);
     expect(t.reserva[0].estado).toBe("Confirmada");
+    expect(t.ocupanteReserva).toHaveLength(1);
+    expect(t.asignacionOcupanteHabitacion).toHaveLength(1);
+    expect(t.ocupanteReserva[0].reservaId).toBe(t.reserva[0].id);
     expect(t.pagoEstadia).toHaveLength(1);
     expect(t.pagoEstadia[0].reservaId).toBe(t.reserva[0].id);
     expect(t.pagoEstadia[0].concepto).toBe("Seña");
