@@ -9,7 +9,9 @@ import { MAYORIA_EDAD } from "../checkInPantalla.constantes";
 import { usePersonaQueVuelve } from "../usePersonaQueVuelve";
 import { formatearNombrePropio } from "../../../lib/nombres";
 import { VINCULOS_RESPONSABLE, requiereAutorizacion } from "../../../lib/vinculos";
+import { CONTENEDOR_FICHA, FILA_FICHA, Rotulo } from "../../../componentes/FilaFicha";
 import {
+  AVISO_NOMBRE_COMPLETO,
   avisosDeFila,
   camposObligatorios,
   edadDeFila,
@@ -38,15 +40,18 @@ function SelectorPais({ id, label, valor, onCambiar }) {
   );
 }
 
-const GRILLA_DOCUMENTO = "grid gap-x-3 gap-y-2.5 [grid-template-columns:repeat(auto-fill,minmax(150px,1fr))] 2xl:[grid-template-columns:120px_minmax(140px,1.1fr)_minmax(140px,1fr)_minmax(140px,1.2fr)_minmax(140px,1.2fr)_minmax(130px,.9fr)_minmax(140px,1fr)]";
-const GRILLA = "grid gap-x-3 gap-y-2.5 [grid-template-columns:repeat(auto-fill,minmax(160px,1fr))]";
+// Filas compartidas con la ficha de ocupante y el alta de reserva (componentes/FilaFicha.jsx).
+const { documento: FILA_DOCUMENTO, identidad: FILA_IDENTIDAD, residencia: FILA_RESIDENCIA, contacto: FILA_CONTACTO, menor: FILA_MENOR, responsable: FILA_RESPONSABLE } = FILA_FICHA;
 
 export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
   // Persona que vuelve: en filas cargadas a mano; en las precargadas, solo si se cambia el documento.
   usePersonaQueVuelve(fila, dispatch, (fila.tipo === "adulto" || fila.conDocumento) && (!fila.precargada || Boolean(fila.documentoEditado)));
   const revision = revisarFila(estado, fila, contexto);
   const { heredados } = resolverCampos(estado, fila);
-  const avisos = avisosDeFila(fila);
+  // El aviso de separar nombre y apellido va debajo de esos campos; los demás, al final de la fila.
+  const todosLosAvisos = avisosDeFila(fila);
+  const avisoNombre = todosLosAvisos.includes(AVISO_NOMBRE_COMPLETO);
+  const avisos = todosLosAvisos.filter((a) => a !== AVISO_NOMBRE_COMPLETO);
   const edad = edadDeFila(fila, contexto);
   const etiqueta = etiquetaFila(estado, fila);
   const esTitularReserva = titularDeLaReserva(estado, contexto).fila?.id === fila.id;
@@ -54,7 +59,9 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
   const cambiar = (campo) => (valor) => dispatch({ tipo: "campo", filaId: fila.id, campo, valor });
   // Asterisco en cada obligatorio, con las mismas reglas que bloquean la confirmación.
   const obligatorios = camposObligatorios(estado, fila, contexto);
-  const rotulo = (nombre, texto) => (obligatorios.has(nombre) ? `${texto} *` : texto);
+  const rotulo = (nombre, texto, { opcional = false } = {}) => (
+    <Rotulo texto={texto} obligatorio={obligatorios.has(nombre)} opcional={opcional && !obligatorios.has(nombre)} />
+  );
   // Nombre y apellido con mayúscula inicial al salir del campo (partículas en minúscula).
   const esNombre = (nombre) => nombre === "nombre" || nombre === "apellido";
   const campo = (nombre, label, extra = {}) => (
@@ -70,7 +77,7 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
   );
   const documento = (
     <>
-      <Select id={idCampo(fila.id, "tipoDocumento")} label={rotulo("tipoDocumento", "Tipo de documento")} value={fila.campos.tipoDocumento} onChange={(e) => cambiar("tipoDocumento")(e.target.value)}>
+      <Select id={idCampo(fila.id, "tipoDocumento")} label={rotulo("tipoDocumento", "Tipo")} value={fila.campos.tipoDocumento} onChange={(e) => cambiar("tipoDocumento")(e.target.value)}>
         {TIPOS_DOCUMENTO.map((t) => (
           <option key={t} value={t}>
             {t}
@@ -78,60 +85,64 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
         ))}
       </Select>
       <SelectorPais id={idCampo(fila.id, "paisDocumento")} label={rotulo("paisDocumento", "País emisor")} valor={fila.campos.paisDocumento} onCambiar={cambiar("paisDocumento")} />
-      {campo("numeroDocumento", "Número de documento")}
+      {campo("numeroDocumento", "Número")}
     </>
   );
   const herencia = textoHerencia(heredados);
   const opcionesResponsable = responsablesPosibles(estado, contexto, fila).filter((r) => r.id !== titularHabitacion?.id);
   const vinculo = fila.campos.vinculoResponsable ?? "";
-  const selectorResponsable = necesitaResponsable(fila, contexto) && (
-    <>
-      <Select
-        id={idCampo(fila.id, "responsableId")}
-        label={rotulo("responsableId", "Adulto responsable")}
-        value={fila.responsableId ?? ""}
-        onChange={(e) => dispatch({ tipo: "responsable", filaId: fila.id, responsableId: e.target.value ? Number(e.target.value) : null })}
-      >
-        <option value="">
-          Titular de la habitación{titularHabitacion && nombreDeFila(titularHabitacion) ? ` (${nombreDeFila(titularHabitacion)})` : ""}
+  const conResponsable = necesitaResponsable(fila, contexto);
+  const selectResponsable = conResponsable && (
+    <Select
+      id={idCampo(fila.id, "responsableId")}
+      label={rotulo("responsableId", "Adulto responsable")}
+      value={fila.responsableId ?? ""}
+      onChange={(e) => dispatch({ tipo: "responsable", filaId: fila.id, responsableId: e.target.value ? Number(e.target.value) : null })}
+    >
+      <option value="">
+        Titular de la habitación{titularHabitacion && nombreDeFila(titularHabitacion) ? ` (${nombreDeFila(titularHabitacion)})` : ""}
+      </option>
+      {opcionesResponsable.map((r) => (
+        <option key={r.id} value={r.id}>
+          {r.texto}
         </option>
-        {opcionesResponsable.map((r) => (
-          <option key={r.id} value={r.id}>
-            {r.texto}
-          </option>
-        ))}
-      </Select>
-      <Select
-        id={idCampo(fila.id, "vinculoResponsable")}
-        label={rotulo("vinculoResponsable", "Vínculo con el menor")}
-        value={vinculo}
-        onChange={(e) => {
-          cambiar("vinculoResponsable")(e.target.value);
-          if (!requiereAutorizacion(e.target.value)) cambiar("autorizacionPresentada")(false);
-        }}
-      >
-        <option value="">Elegí…</option>
-        {VINCULOS_RESPONSABLE.map((v) => (
-          <option key={v} value={v}>
-            {v}
-          </option>
-        ))}
-      </Select>
-      {requiereAutorizacion(vinculo) && (
-        <div className="flex flex-col gap-1.5 rounded-md bg-laton-100 px-2.5 py-2 text-[13px] text-laton-700 [grid-column:1/-1]">
-          <span>Pedí la autorización de los padres o tutores.</span>
-          <label className="flex items-center gap-2 font-semibold">
-            <input
-              id={idCampo(fila.id, "autorizacionPresentada")}
-              type="checkbox"
-              checked={Boolean(fila.campos.autorizacionPresentada)}
-              onChange={(e) => cambiar("autorizacionPresentada")(e.target.checked)}
-            />
-            {rotulo("autorizacionPresentada", "Autorización presentada")}
-          </label>
-        </div>
-      )}
-    </>
+      ))}
+    </Select>
+  );
+  const selectVinculo = conResponsable && (
+    <Select
+      id={idCampo(fila.id, "vinculoResponsable")}
+      label={rotulo("vinculoResponsable", "Vínculo")}
+      value={vinculo}
+      onChange={(e) => {
+        cambiar("vinculoResponsable")(e.target.value);
+        if (!requiereAutorizacion(e.target.value)) cambiar("autorizacionPresentada")(false);
+      }}
+    >
+      <option value="">Elegí…</option>
+      {VINCULOS_RESPONSABLE.map((v) => (
+        <option key={v} value={v}>
+          {v}
+        </option>
+      ))}
+    </Select>
+  );
+  const bloqueAutorizacion = conResponsable && requiereAutorizacion(vinculo) && (
+      <div className="mt-2.5 flex flex-col gap-1.5 rounded-md bg-laton-100 px-2.5 py-2 text-[13px] text-laton-700">
+        <span>Pedí la autorización de los padres o tutores.</span>
+        <label className="flex items-center gap-2 font-semibold">
+          <input
+            id={idCampo(fila.id, "autorizacionPresentada")}
+            type="checkbox"
+            checked={Boolean(fila.campos.autorizacionPresentada)}
+            onChange={(e) => cambiar("autorizacionPresentada")(e.target.checked)}
+          />
+          {rotulo("autorizacionPresentada", "Autorización presentada")}
+        </label>
+      </div>
+  );
+  const avisoSepararNombre = avisoNombre && (
+    <p className="mt-2 rounded-md bg-laton-100 px-2.5 py-1.5 text-[13.5px] text-laton-700">{AVISO_NOMBRE_COMPLETO}</p>
   );
 
   return (
@@ -173,40 +184,53 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
       )}
 
       {fila.tipo === "adulto" ? (
-        <>
-          <div className={GRILLA_DOCUMENTO}>
-            {documento}
-            {campo("nombre", "Nombre")}
+        <div className={CONTENEDOR_FICHA}>
+          <div className={FILA_DOCUMENTO}>{documento}</div>
+          <div className={`${FILA_IDENTIDAD} mt-2.5`}>
+            {campo("nombre", "Nombres")}
             {campo("apellido", "Apellido")}
             {campo("fechaNacimiento", "Nacimiento", { placeholder: "dd/mm/aaaa", inputMode: "numeric" })}
             <SelectorPais id={idCampo(fila.id, "nacionalidad")} label={rotulo("nacionalidad", "Nacionalidad")} valor={fila.campos.nacionalidad} onCambiar={cambiar("nacionalidad")} />
           </div>
-          {selectorResponsable && <div className={`${GRILLA} mt-2.5`}>{selectorResponsable}</div>}
+          {avisoSepararNombre}
+          {/* Adulto de 13 a 17 para la ocupación: responsable y vínculo en una fila aparte. */}
+          {conResponsable && (
+            <div className={`${FILA_RESPONSABLE} mt-2.5`}>
+              {selectResponsable}
+              {selectVinculo}
+            </div>
+          )}
+          {bloqueAutorizacion}
           {fila.esTitular && (
             <>
               <p className="mb-1.5 mt-3 text-[12px] font-semibold uppercase tracking-[0.06em] text-piedra">
                 {esTitularReserva ? "Residencia y contacto del titular de la reserva" : "Residencia del titular de la habitación"}
               </p>
-              <div className={GRILLA}>
+              <div className={FILA_RESIDENCIA}>
                 <SelectorPais id={idCampo(fila.id, "paisResidencia")} label={rotulo("paisResidencia", "País de residencia")} valor={fila.campos.paisResidencia} onCambiar={cambiar("paisResidencia")} />
                 {campo("localidad", "Localidad")}
                 {campo("domicilio", "Domicilio")}
-                {campo("telefono", esTitularReserva ? "Teléfono" : "Teléfono (opcional)", { inputMode: "tel" })}
-                {campo("email", "Correo (opcional)", { inputMode: "email" })}
+              </div>
+              <div className={`${FILA_CONTACTO} mt-2.5`}>
+                {campo("telefono", "Teléfono", { inputMode: "tel", label: rotulo("telefono", "Teléfono", { opcional: true }) })}
+                {campo("email", "Correo", { inputMode: "email", label: rotulo("email", "Correo", { opcional: true }) })}
               </div>
             </>
           )}
-        </>
+        </div>
       ) : (
-        <>
-          <div className={GRILLA}>
-            {campo("nombre", "Nombre")}
+        <div className={CONTENEDOR_FICHA}>
+          <div className={FILA_MENOR}>
+            {campo("nombre", "Nombres")}
             {campo("apellido", "Apellido")}
             {campo("fechaNacimiento", "Nacimiento", { placeholder: "dd/mm/aaaa", inputMode: "numeric" })}
-            {selectorResponsable}
+            {selectResponsable}
+            {selectVinculo}
           </div>
+          {avisoSepararNombre}
+          {bloqueAutorizacion}
           {fila.conDocumento ? (
-            <div className={`${GRILLA} mt-2.5`}>{documento}</div>
+            <div className={`${FILA_DOCUMENTO} mt-2.5`}>{documento}</div>
           ) : (
             <button
               type="button"
@@ -216,7 +240,7 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
               Agregar documento (recomendado)
             </button>
           )}
-        </>
+        </div>
       )}
 
       {!fila.esTitular && (
@@ -233,17 +257,19 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
         </div>
       )}
       {fila.masDatos && !fila.esTitular && (
-        <div className={`${GRILLA} mt-2`}>
+        <div className={`${CONTENEDOR_FICHA} mt-2`}>
+          <div className={FILA_RESPONSABLE}>
           {fila.tipo === "menor" && (
             <SelectorPais id={idCampo(fila.id, "nacionalidad")} label={rotulo("nacionalidad", "Nacionalidad")} valor={resolverCampos(estado, fila).campos.nacionalidad} onCambiar={cambiar("nacionalidad")} />
           )}
           <SelectorPais id={idCampo(fila.id, "paisResidencia")} label={rotulo("paisResidencia", "País de residencia")} valor={resolverCampos(estado, fila).campos.paisResidencia} onCambiar={cambiar("paisResidencia")} />
           {fila.tipo === "adulto" && (
             <>
-              {campo("telefono", "Teléfono (opcional)", { inputMode: "tel" })}
-              {campo("email", "Correo (opcional)", { inputMode: "email" })}
+              {campo("telefono", "Teléfono", { inputMode: "tel", label: rotulo("telefono", "Teléfono", { opcional: true }) })}
+              {campo("email", "Correo", { inputMode: "email", label: rotulo("email", "Correo", { opcional: true }) })}
             </>
           )}
+          </div>
         </div>
       )}
 

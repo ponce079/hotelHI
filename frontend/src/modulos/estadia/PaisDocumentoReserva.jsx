@@ -3,12 +3,12 @@ import { Select } from "../../componentes/Select";
 import { Input } from "../../componentes/Input";
 import { PAISES_SELECTOR, buscarPaisOcupante } from "./ocupantesUbicacion";
 
-export function PaisDocumentoReserva({ value = "", onChange, onBlur, error }) {
+export function PaisDocumentoReserva({ value = "", onChange, onBlur, error, label = "País emisor del documento *" }) {
   const [manual, setManual] = useState(Boolean(value && !buscarPaisOcupante(value)));
   return (
     <div className="space-y-2">
       <Select
-        label="País emisor del documento *"
+        label={label}
         value={manual ? "__otro__" : buscarPaisOcupante(value)?.codigo || ""}
         error={!manual ? error : undefined}
         onBlur={onBlur}

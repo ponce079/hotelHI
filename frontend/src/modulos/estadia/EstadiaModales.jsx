@@ -40,7 +40,7 @@ export function EstadiaModales({ estadia }) {
         <Modal
           titulo={editor.id ? "Editar ocupante" : "Agregar ocupante"}
           onClose={() => setEditor(null)}
-          ancho="max-w-3xl"
+          ancho="max-w-5xl"
         >
           <PersonaFormulario
             esTitular={editor.id != null && editor.id === titularExistente?.id}

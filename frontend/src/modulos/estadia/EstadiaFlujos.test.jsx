@@ -273,11 +273,11 @@ it("incorpora al titular automáticamente y permite completar los datos copiados
   await abrirMenu("Ana Pérez");
   expect(screen.getByRole("button", { name: "Marcar documento verificado" })).toBeDisabled();
   await userEvent.click(screen.getByRole("button", { name: "Completar datos" }));
-  expect(screen.getByLabelText("Nombre *")).toHaveValue("Ana Pérez");
+  expect(screen.getByLabelText("Nombres *")).toHaveValue("Ana Pérez");
   expect(screen.getByLabelText("Número de DNI")).toHaveValue("12345678");
   expect(screen.getByLabelText("Correo electrónico (opcional)")).toHaveValue("ana@example.com");
-  await userEvent.clear(screen.getByLabelText("Nombre *"));
-  await userEvent.type(screen.getByLabelText("Nombre *"), "Ana");
+  await userEvent.clear(screen.getByLabelText("Nombres *"));
+  await userEvent.type(screen.getByLabelText("Nombres *"), "Ana");
   await userEvent.type(screen.getByLabelText("Apellido *"), "Pérez");
   await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
   expect(api.put).not.toHaveBeenCalled();
@@ -304,9 +304,9 @@ it("muestra todos los campos obligatorios faltantes y permite corregirlos sin en
   await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
   expect(screen.getByText("Completá el nombre.")).toBeInTheDocument();
   expect(screen.getByText("Completá el apellido.")).toBeInTheDocument();
-  expect(screen.getByLabelText("Nombre *")).toHaveFocus();
+  expect(screen.getByLabelText("Nombres *")).toHaveFocus();
   expect(onGuardar).not.toHaveBeenCalled();
-  await userEvent.type(screen.getByLabelText("Nombre *"), "Ana");
+  await userEvent.type(screen.getByLabelText("Nombres *"), "Ana");
   await userEvent.type(screen.getByLabelText("Apellido *"), "Prueba");
   await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
   expect(onGuardar).toHaveBeenCalledTimes(1);
@@ -415,7 +415,7 @@ it("permite cargar ocupantes de distintas habitaciones y no copia al titular aut
   setup();
   await userEvent.click(screen.getByRole("button", { name: "Agregar persona" }));
   const dialog = screen.getByRole("dialog");
-  await userEvent.type(within(dialog).getByLabelText("Nombre *"), "Ana");
+  await userEvent.type(within(dialog).getByLabelText("Nombres *"), "Ana");
   await userEvent.type(within(dialog).getByLabelText("Apellido *"), "Prueba");
   await userEvent.selectOptions(within(dialog).getByLabelText("Habitación *"), "11");
   await userEvent.click(within(dialog).getByRole("button", { name: "Guardar persona" }));
@@ -596,7 +596,7 @@ it("adulto alojado: sin adulto responsable, sin justificación con documento y l
 
   // Al cambiar el nacimiento a 15 años aparece el adulto responsable, obligatorio.
   fireEvent.change(screen.getByLabelText("Nacimiento"), { target: { value: "2011-06-01" } });
-  expect(screen.getByLabelText(/Adulto responsable \*/)).toBeInTheDocument();
+  expect(screen.getByLabelText(/Adulto responsable\*/)).toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("Nacimiento"), { target: { value: "1984-10-01" } });
   expect(screen.queryByLabelText(/Adulto responsable/)).not.toBeInTheDocument();
 
@@ -612,7 +612,7 @@ it("menor alojado: adulto responsable obligatorio y la justificación guardada a
   const maria = { ...menorAlojada(), responsableId: null };
   render(<PersonaFormulario reserva={reserva} persona={maria} personas={[martin, maria]} onGuardar={onGuardar} onClose={() => {}} />);
   expect(screen.getByLabelText("Justificación sin documento")).toHaveValue("Menor sin documento presentado");
-  const responsable = screen.getByLabelText(/Adulto responsable \*/);
+  const responsable = screen.getByLabelText(/Adulto responsable\*/);
   expect(within(responsable).getAllByRole("option").map((o) => o.textContent)).toEqual(["Elegí el adulto responsable", "Martín Gutiérrez"]);
   await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
   expect(onGuardar).not.toHaveBeenCalled();
