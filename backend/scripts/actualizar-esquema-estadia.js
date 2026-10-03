@@ -1,7 +1,6 @@
 // Actualización aditiva y reejecutable. Sin --aplicar solo muestra el plan.
 const fs = require("node:fs");
 const path = require("node:path");
-const { exigirBaseLocal } = require("./_baseLocal");
 
 function operaciones(sql) {
   const sentencias = sql
@@ -76,7 +75,10 @@ async function pendientes(conn, pasos) {
 }
 
 async function main() {
-  const u = exigirBaseLocal(process.env, "la migración");
+  // Solo una base local, salvo el modo explícito de despliegue (CONFIRMAR_BASE_COMPARTIDA + teclado,
+  // ver _destinoMigracion.js y docs/despliegue-estadia.md). Sin --aplicar solo muestra el plan, pero
+  // igual pide la confirmación: conectarse a la compartida también es parte del despliegue.
+  const u = await require("./_destinoMigracion").exigirDestino(process.env, "la migración de estadía");
   const conn = await require("mariadb").createConnection({
     host: u.hostname,
     port: Number(u.port) || 3306,
