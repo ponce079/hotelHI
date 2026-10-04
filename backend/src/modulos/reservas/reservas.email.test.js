@@ -26,7 +26,7 @@ function reservaDePrueba() {
     codigoConfirmacion: "ABCD1234",
     fechaDesde: new Date("2027-01-10T00:00:00.000Z"),
     fechaHasta: new Date("2027-01-12T00:00:00.000Z"),
-    huesped: { nombre: "Huésped de Prueba", contacto: "huesped@ejemplo.com" },
+    huesped: { paisDocumento: "AR", nombre: "Huésped de Prueba", contacto: "huesped@ejemplo.com" },
     reservaHabitaciones: [{ habitacion: { numero: "204" } }],
   };
 }

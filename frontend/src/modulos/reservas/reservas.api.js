@@ -92,3 +92,10 @@ export async function obtenerPenalidadReserva(id, tipo) {
   const { data } = await api.get(`/reservas/${id}/penalidad`, { params: { tipo } });
   return data;
 }
+
+// Historial de la reserva (solo lectura): ficha, confirmaciones, pagos, consumos y ajustes de precio,
+// del más reciente al más antiguo. Cada evento: { id, fecha, tipo, titulo, detalle, operador }.
+export async function obtenerHistorialReserva(id) {
+  const { data } = await api.get(`/reservas/${id}/historial`);
+  return data;
+}

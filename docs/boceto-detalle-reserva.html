@@ -1,0 +1,483 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Boceto Detalle de Reserva</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,500;8..60,600&family=Source+Sans+3:wght@400;500;600;700&display=swap">
+<style>
+
+/* Layout: barra lateral verde fija + contenido en una columna de secciones + barra de confirmación fija abajo. Estilo del SGH actual (un solo tema, claro). */
+:root{
+  --verde-900:#163124; --verde-800:#1e4130; --verde-700:#28543f; --verde-600:#2f6a4f; --verde-100:#e3eee7; --verde-50:#f1f6f3;
+  --crema:#f5f0e6; --papel:#ffffff; --tinta:#1c2420; --tinta-2:#55615a; --tinta-3:#87918b;
+  --borde:#e6dfd1; --borde-2:#d3cab7;
+  --ok:#2b7649; --ok-bg:#e2f1e7; --aviso:#8f5d0e; --aviso-bg:#fbefd6; --nota:#fff7cf; --nota-borde:#e6cf6e;
+  --serif:'Source Serif 4', Georgia, 'Times New Roman', serif;
+  --sans:'Source Sans 3', 'Segoe UI', system-ui, sans-serif;
+  --radio:14px; --lateral:236px;
+  color-scheme: light;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{background:var(--crema);color:var(--tinta)}
+body{font-family:var(--sans);font-size:15px;line-height:1.45}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--verde-600);outline-offset:2px}
+.num{font-variant-numeric:tabular-nums}
+
+/* Estructura */
+.app{display:grid;grid-template-columns:var(--lateral) minmax(0,1fr);min-height:100vh}
+.lateral{background:var(--verde-900);color:#dfe9e3;padding:22px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:22px}
+.marca{padding:0 10px}
+.marca b{font-family:var(--serif);font-size:26px;font-weight:600;color:#fff;letter-spacing:.5px;display:block}
+.marca span{font-size:13px;color:#a9c1b4}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav a{display:flex;align-items:center;gap:10px;padding:9px 12px;border-radius:9px;color:#cfdcd5;text-decoration:none;font-size:14.5px}
+.nav a::before{content:"";width:6px;height:6px;border-radius:50%;background:#5f8a74}
+.nav a.activo{background:var(--verde-700);color:#fff;font-weight:600}
+.nav a.activo::before{background:#cfe8d8}
+.usuario{margin-top:auto;padding:12px;border-top:1px solid #2c4c3c;font-size:13px;color:#a9c1b4}
+.usuario b{color:#fff;display:block;font-weight:600}
+
+.principal{padding:26px 32px 150px;min-width:0}
+.contenido{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+.encabezado{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+h1{font-family:var(--serif);font-weight:600;font-size:32px;margin:0;line-height:1.1;text-wrap:balance}
+.sub{color:var(--tinta-2);margin-top:4px}
+.btn-notas{border:1px solid var(--nota-borde);background:var(--nota);border-radius:999px;padding:6px 14px;font-size:13px;color:#6b5810}
+
+.pestanas{display:flex;gap:6px;background:#ebe4d6;padding:5px;border-radius:12px;width:max-content;max-width:100%}
+.pestanas button{border:0;background:transparent;padding:9px 18px;border-radius:9px;font-weight:600;color:var(--tinta-2)}
+.pestanas button[aria-selected="true"]{background:var(--papel);color:var(--verde-800);box-shadow:0 1px 3px rgba(40,30,10,.12)}
+.pestanas .cuenta{display:inline-block;margin-left:6px;background:var(--verde-100);color:var(--verde-700);border-radius:999px;padding:0 8px;font-size:12.5px}
+
+.tarjeta{background:var(--papel);border:1px solid var(--borde);border-radius:var(--radio);padding:20px 22px;position:relative}
+.tarjeta-cab{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+h2{font-family:var(--serif);font-weight:600;font-size:21px;margin:0}
+h3{font-family:var(--serif);font-weight:600;font-size:17px;margin:0}
+.ayuda{color:var(--tinta-2);font-size:13.5px}
+.nota{display:block;background:var(--nota);border:1px dashed var(--nota-borde);color:#5e4e10;font-size:12.5px;border-radius:8px;padding:6px 10px;margin-top:12px}
+.nota::before{content:"Nota de diseño · ";font-weight:700}
+body.sin-notas .nota{display:none}
+
+
+/* ---- Detalle de reserva ---- */
+.principal{padding-bottom:60px}
+.miga{font-size:13.5px;color:var(--tinta-2);display:flex;gap:6px;align-items:center}
+.miga a{color:var(--verde-700);text-decoration:none;font-weight:600}
+.btn{border:1px solid var(--borde-2);background:var(--papel);border-radius:10px;padding:8px 14px;font-weight:600;white-space:nowrap}
+.btn:hover:not(:disabled){border-color:var(--verde-600)}
+.btn.primario{background:var(--verde-700);border-color:var(--verde-700);color:#fff}
+.btn.primario:hover:not(:disabled){background:var(--verde-800)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.chico{padding:5px 10px;font-size:13.5px}
+.btn.texto{border:0;background:transparent;color:var(--verde-700);padding:4px 2px;text-decoration:underline;text-underline-offset:3px}
+.chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 10px;font-size:12.5px;font-weight:600;white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok)}
+.chip.aviso{background:var(--aviso-bg);color:var(--aviso)}
+.chip.neutro{background:#efeae0;color:var(--tinta-2)}
+.chip.verde{background:var(--verde-100);color:var(--verde-700)}
+.chip.estado{font-size:13px;padding:3px 12px}
+.chip.estado::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+
+.ejemplo{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px;color:var(--tinta-2)}
+.seg{display:inline-flex;background:#ebe4d6;border-radius:10px;padding:3px;gap:2px}
+.seg button{border:0;background:transparent;border-radius:8px;padding:5px 12px;font-size:13px;font-weight:600;color:var(--tinta-2)}
+.seg button[aria-pressed="true"]{background:var(--papel);color:var(--verde-800);box-shadow:0 1px 2px rgba(40,30,10,.12)}
+
+/* Encabezado de la reserva */
+.cab-reserva{display:flex;flex-direction:column;gap:16px}
+.cab-fila{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+.titulo{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.titulo h1 span{font-family:var(--sans);font-weight:700;letter-spacing:.06em;font-size:24px;color:var(--verde-800)}
+.acciones{display:flex;gap:8px;flex-wrap:wrap;align-items:center;position:relative}
+.datos-clave{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:0;border:1px solid var(--borde);border-radius:var(--radio);background:var(--papel);overflow:hidden}
+.dk{padding:12px 16px;border-right:1px solid var(--borde);min-width:0}
+.dk:last-child{border-right:0}
+.dk small{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--tinta-3);font-weight:600;margin-bottom:2px}
+.dk b{display:block;font-weight:600;font-size:15.5px;overflow-wrap:anywhere}
+.dk span{display:block;font-size:13px;color:var(--tinta-2)}
+.linea-tiempo{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:13px;color:var(--tinta-2)}
+.lt-paso{display:inline-flex;align-items:center;gap:6px}
+.lt-paso i{width:9px;height:9px;border-radius:50%;border:2px solid var(--borde-2);display:inline-block}
+.lt-paso.hecho i{background:var(--verde-600);border-color:var(--verde-600)}
+.lt-paso.actual i{border-color:var(--verde-600);box-shadow:0 0 0 3px var(--verde-100)}
+.lt-paso.actual{color:var(--tinta);font-weight:600}
+.lt-sep{width:28px;height:1px;background:var(--borde-2)}
+
+/* Cuerpo: principal + lateral */
+.cuerpo{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:18px;align-items:start}
+.lateral-der{position:sticky;top:16px;display:flex;flex-direction:column;gap:14px}
+
+/* Huéspedes */
+.grupo{border:1px solid var(--borde);border-radius:12px}
+.grupo + .grupo{margin-top:14px}
+.grupo-cab{border-radius:12px 12px 0 0;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;background:#faf7f1;border-bottom:1px solid var(--borde)}
+.grupo-cab .nro{font-family:var(--serif);font-size:22px;font-weight:600;color:var(--verde-800)}
+.grupo-cab .esp{flex:1}
+.tabla-env{overflow:visible}
+@media (max-width:1050px){.tabla-env{overflow-x:auto}}
+td.num,th.der,td.der{white-space:nowrap}
+table{width:100%;border-collapse:collapse;font-size:14.5px}
+th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--tinta-3);font-weight:600;padding:8px 12px;border-bottom:1px solid var(--borde);white-space:nowrap}
+td{padding:11px 12px;border-bottom:1px solid var(--borde);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td .princ{font-weight:600}
+td .sec{display:block;font-size:13px;color:var(--tinta-2)}
+td.der,th.der{text-align:right}
+.grupo td:nth-child(3){white-space:nowrap}
+.menu-env{position:relative;display:inline-block}
+.btn-menu{border:1px solid var(--borde-2);background:var(--papel);border-radius:8px;width:34px;height:30px;font-size:18px;line-height:1;color:var(--tinta-2)}
+.menu{position:absolute;right:0;top:34px;z-index:20;background:var(--papel);border:1px solid var(--borde-2);border-radius:10px;box-shadow:0 10px 24px rgba(40,30,10,.14);min-width:230px;padding:6px;display:flex;flex-direction:column}
+.menu button{border:0;background:transparent;text-align:left;padding:8px 10px;border-radius:7px;font-size:14px}
+.menu button:hover{background:var(--verde-50)}
+.menu button.peligro{color:#9a3b25}
+.menu hr{border:0;border-top:1px solid var(--borde);margin:4px 0}
+
+/* Cuenta */
+.filtros{display:flex;gap:6px;flex-wrap:wrap}
+.filtro{border:1px solid var(--borde-2);background:var(--papel);border-radius:999px;padding:4px 12px;font-size:13px;font-weight:600;color:var(--tinta-2)}
+.filtro[aria-pressed="true"]{background:var(--verde-700);border-color:var(--verde-700);color:#fff}
+tr.previsto td{color:var(--tinta-3)}
+tr.anulado td{color:var(--tinta-3);text-decoration:line-through}
+tr.anulado td:last-child{text-decoration:none}
+.tot-fila td{font-weight:700;border-top:2px solid var(--borde-2)}
+
+/* Historial */
+.tl{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.tl li{display:grid;grid-template-columns:120px 18px minmax(0,1fr);gap:10px;padding:8px 0}
+.tl .cuando{font-size:13px;color:var(--tinta-2);text-align:right}
+.tl .punto{position:relative}
+.tl .punto::before{content:"";position:absolute;left:5px;top:5px;width:9px;height:9px;border-radius:50%;background:var(--verde-600)}
+.tl .punto::after{content:"";position:absolute;left:9px;top:16px;bottom:-18px;width:1px;background:var(--borde-2)}
+.tl li:last-child .punto::after{display:none}
+.tl .que b{font-weight:600}
+.tl .que span{display:block;font-size:13px;color:var(--tinta-2)}
+
+/* Lateral: resumen */
+.resumen-cuenta .fila{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:14.5px}
+.resumen-cuenta .fila span:first-child{color:var(--tinta-2)}
+.resumen-cuenta .fila.total{border-top:1px solid var(--borde);margin-top:4px;padding-top:9px;font-weight:600}
+.saldo{margin-top:10px;background:var(--verde-50);border:1px solid var(--verde-100);border-radius:12px;padding:12px 14px}
+.saldo small{display:block;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--tinta-3);font-weight:600}
+.saldo b{font-family:var(--serif);font-size:30px;font-weight:600;color:var(--verde-800)}
+.saldo.cero b{color:var(--ok)}
+.caja-gar{border:1px dashed var(--borde-2);border-radius:12px;padding:12px 14px;background:#fdfcf9}
+.caja-gar .monto{font-family:var(--serif);font-size:20px;font-weight:600}
+.lista-def{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 12px;font-size:14px;margin:0}
+.lista-def dt{color:var(--tinta-3)}
+.lista-def dd{margin:0;overflow-wrap:anywhere}
+.cambios{margin:0;padding-left:18px;font-size:13.5px;color:#5e4e10;display:flex;flex-direction:column;gap:4px}
+
+@media (max-width:1200px){ .datos-clave{grid-template-columns:repeat(3,minmax(0,1fr))} .dk:nth-child(3){border-right:0} .dk:nth-child(-n+3){border-bottom:1px solid var(--borde)} }
+@media (max-width:1050px){ .cuerpo{grid-template-columns:1fr} .lateral-der{position:static} }
+@media (max-width:900px){
+  .app{grid-template-columns:1fr}
+  .lateral{position:static;height:auto;flex-direction:row;align-items:center;flex-wrap:wrap;padding:12px 16px;gap:12px}
+  .nav{flex-direction:row;flex-wrap:wrap}
+  .nav a{padding:6px 10px;font-size:13.5px}
+  .usuario{display:none}
+  .principal{padding:18px 16px 40px}
+  .datos-clave{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .dk{border-right:0!important;border-bottom:1px solid var(--borde)}
+  .tl li{grid-template-columns:84px 18px minmax(0,1fr)}
+}
+</style>
+<div class="app">
+  <aside class="lateral">
+    <div class="marca"><b>SGH</b><span>Holiday Inn Salta</span></div>
+    <nav class="nav" aria-label="Menú principal">
+      <a href="#" onclick="return false">Inicio</a>
+      <a href="#" class="activo" onclick="return false">Reservas</a>
+      <a href="#" onclick="return false">Check-in</a>
+      <a href="#" onclick="return false">Check-out</a>
+      <a href="#" onclick="return false">Personas alojadas</a>
+      <a href="#" onclick="return false">Habitaciones</a>
+      <a href="#" onclick="return false">Servicios adicionales</a>
+      <a href="#" onclick="return false">Tarifas</a>
+      <a href="#" onclick="return false">Facturación</a>
+    </nav>
+    <div class="usuario"><b>recepcionista.prueba</b>Recepción · turno tarde</div>
+  </aside>
+
+  <main class="principal">
+    <div class="contenido">
+      <div class="cab-fila">
+        <div class="miga"><a href="#" onclick="return false">← Reservas</a><span>/</span><span id="miga-cod">F88B5ED8</span></div>
+        <div class="ejemplo">Ver ejemplo:
+          <div class="seg" role="group" aria-label="Estado de ejemplo">
+            <button type="button" data-est="confirmada" aria-pressed="false">Confirmada</button>
+            <button type="button" data-est="encurso" aria-pressed="true">En curso</button>
+            <button type="button" data-est="cerrada" aria-pressed="false">Cerrada</button>
+          </div>
+          <button class="btn-notas" id="btn-notas" type="button">Ocultar notas de diseño</button>
+        </div>
+      </div>
+
+      <section class="cab-reserva" id="cabecera"></section>
+
+      <div class="cuerpo">
+        <div class="tarjeta" style="padding-top:16px">
+          <div class="tarjeta-cab" style="margin-bottom:16px">
+            <div class="pestanas" role="tablist">
+              <button role="tab" data-tab="huespedes" aria-selected="true" type="button">Huéspedes <span class="cuenta" id="cuenta-h">3</span></button>
+              <button role="tab" data-tab="cuenta" aria-selected="false" type="button">Cuenta</button>
+              <button role="tab" data-tab="historial" aria-selected="false" type="button">Historial</button>
+            </div>
+            <div id="acciones-tab" class="acciones"></div>
+          </div>
+          <div id="panel"></div>
+        </div>
+        <aside class="lateral-der" id="lateral"></aside>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+const plata = n => (n < 0 ? '−' : '') + '$ ' + String(Math.round(Math.abs(n))).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $ = s => document.querySelector(s);
+
+const RES = {
+  cod:'F88B5ED8', canal:'Sitio web', creada:'14/09/2026 10:22',
+  reservo:{nombre:'Martín Gutiérrez', doc:'DNI 30512874', correo:'martin.gutierrez@correo.com.ar', tel:'+54 351 555-0182'},
+  entrada:'vie 02/10/2026', salida:'lun 05/10/2026', noches:3,
+  hab:{n:'404', tipo:'Doble', cap:3, piso:4},
+  plan:{nombre:'Tarifa flexible', cond:'Cancelación sin cargo hasta 48 h antes (hasta el 30/09/2026 14:00). No-show: se cobra la primera noche.'},
+  nochesPrecio:[['vie 02/10/2026',42400],['sáb 03/10/2026',42400],['dom 04/10/2026',43200]],
+  senia:25600, garantia:30000
+};
+const ALOJ = RES.nochesPrecio.reduce((s,x)=>s+x[1],0);
+const CONSUMO = 18500;
+
+let est = 'encurso', tab = 'huespedes', filtro = 'todo', menuAbierto = null, notas = true;
+
+/* ---------- datos según el estado de ejemplo ---------- */
+function huespedes(){
+  if (est === 'confirmada') return [
+    {id:1, nombre:'Martín Gutiérrez', rol:'Titular de la reserva', doc:'DNI 30512874 · Argentina', edad:'42 años', nac:'Argentina · reside en Córdoba', ingreso:'Llega 02/10', estado:['Previsto','neutro']}
+  ];
+  const sal = est === 'cerrada' ? 'Salida 05/10 09:40' : 'Sale 05/10 (prevista)';
+  const e = est === 'cerrada' ? ['Retirado','neutro'] : ['Alojado','ok'];
+  return [
+    {id:1, nombre:'Martín Gutiérrez', rol:'Titular', doc:'DNI 30512874 · Argentina', edad:'42 años', nac:'Argentina · reside en Córdoba', ingreso:'Ingreso 02/10 15:19', salida:sal, estado:e, verif:true},
+    {id:2, nombre:'Carolina Paz', rol:'Acompañante', doc:'DNI 31784205 · Argentina', edad:'39 años', nac:'Argentina · reside en Córdoba (la del titular)', ingreso:'Ingreso 02/10 15:19', salida:sal, estado:e, verif: est === 'cerrada'},
+    {id:3, nombre:'Valentina Gutiérrez', rol:'Menor', resp:'Responsable: Martín Gutiérrez · Padre o madre', doc:'DNI 52114093 · Argentina', edad:'9 años', nac:'Argentina (la del responsable)', ingreso:'Ingreso 02/10 15:19', salida:sal, estado:e, verif:true}
+  ];
+}
+function movimientos(){
+  const m = [{f:'14/09/2026', tipo:'pago', concepto:'Seña', det:'VISA ****4242 · aut. 5521', pago:RES.senia}];
+  RES.nochesPrecio.forEach(([f,p],i) => {
+    const devengada = est === 'cerrada' || (est === 'encurso' && i === 0);
+    m.push({f:f.slice(4), tipo:'aloj', concepto:`Alojamiento · noche ${i+1} de ${RES.noches}`, det:`Hab. ${RES.hab.n} ${RES.hab.tipo} · ${RES.plan.nombre} · 2 adultos y 1 menor`, cargo:p, previsto:!devengada});
+  });
+  if (est !== 'confirmada') m.push({f:'02/10/2026', tipo:'consumo', concepto:'Restaurante', det:'Cena, 2 cubiertos · cargado por restaurante.prueba 21:40', cargo:CONSUMO});
+  if (est === 'cerrada') m.push({f:'05/10/2026', orden:9, tipo:'pago', concepto:'Pago del saldo', det:'VISA ****4242 · aut. 771204 · Factura B 0001-00000123', pago:ALOJ + CONSUMO - RES.senia});
+  const clave = x => { const [d,mm,a] = x.f.split('/'); return a+mm+d+(x.orden||(x.tipo==='consumo'?5:1)); };
+  return m.sort((a,b) => clave(a) < clave(b) ? -1 : clave(a) > clave(b) ? 1 : 0);
+}
+function totales(){
+  const cons = est === 'confirmada' ? 0 : CONSUMO;
+  const pagos = RES.senia + (est === 'cerrada' ? ALOJ + cons - RES.senia : 0);
+  return {aloj:ALOJ, cons, total:ALOJ + cons, pagos, saldo:ALOJ + cons - pagos};
+}
+
+/* ---------- cabecera ---------- */
+function renderCabecera(){
+  const estados = {confirmada:['Confirmada','verde'], encurso:['En curso','ok'], cerrada:['Cerrada','neutro']};
+  const [txt, cls] = estados[est];
+  const acciones = {
+    confirmada:`<button class="btn" type="button">Modificar reserva</button><button class="btn primario" type="button">Iniciar check-in</button>`,
+    encurso:`<button class="btn" type="button">Agregar consumo</button><button class="btn primario" type="button">Hacer check-out</button>`,
+    cerrada:`<button class="btn" type="button">Ver comprobante</button>`
+  }[est];
+  const menuCab = {
+    confirmada:['Reenviar confirmación','Cambiar habitación asignada','—','Cancelar reserva (sin cargo hasta el 30/09)'],
+    encurso:['Reenviar confirmación','Ver registro de huéspedes'],
+    cerrada:['Reenviar comprobante por correo']
+  }[est];
+  const paso = (t, s, sub) => `<span class="lt-paso ${s}"><i></i>${t}${sub ? ` <span class="ayuda">${sub}</span>` : ''}</span>`;
+  const lt = [
+    paso('Confirmada', est==='confirmada'?'actual':'hecho', '14/09'),
+    '<span class="lt-sep"></span>',
+    paso('En curso', est==='encurso'?'actual':(est==='cerrada'?'hecho':''), est==='confirmada'?'llega vie 02/10':'02/10 15:19'),
+    '<span class="lt-sep"></span>',
+    paso('Cerrada', est==='cerrada'?'actual':'', est==='cerrada'?'05/10 09:40':'sale lun 05/10')
+  ].join('');
+  const nochePill = est==='encurso' ? 'noche 1 de 3' : est==='cerrada' ? 'completada' : 'sin iniciar';
+  $('#cabecera').innerHTML = `
+    <div class="cab-fila">
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <div class="titulo"><h1>Reserva <span>${RES.cod}</span></h1><span class="chip estado ${cls}">${txt}</span><span class="chip neutro">${RES.plan.nombre}</span><span class="chip neutro">${RES.canal}</span></div>
+        <div class="linea-tiempo">${lt}</div>
+      </div>
+      <div class="acciones">${acciones}
+        <div class="menu-env"><button class="btn-menu" type="button" data-menu="cab" aria-label="Más acciones">⋯</button>
+        ${menuAbierto==='cab' ? `<div class="menu">${menuCab.map(x => x==='—' ? '<hr>' : `<button type="button" class="${x.startsWith('Cancelar')?'peligro':''}">${x}</button>`).join('')}</div>` : ''}</div>
+      </div>
+    </div>
+    <div class="datos-clave">
+      <div class="dk"><small>Titular</small><b>Martín Gutiérrez</b><span>DNI 30512874</span></div>
+      <div class="dk"><small>Entrada</small><b class="num">${RES.entrada}</b><span>${est==='confirmada'?'desde las 14:00':'ingresó 15:19'}</span></div>
+      <div class="dk"><small>Salida</small><b class="num">${RES.salida}</b><span>${est==='cerrada'?'salió 09:40':'hasta las 10:00'}</span></div>
+      <div class="dk"><small>Noches</small><b>${RES.noches}</b><span>${nochePill}</span></div>
+      <div class="dk"><small>Habitación</small><b>${RES.hab.n} · ${RES.hab.tipo}</b><span>piso ${RES.hab.piso} · capacidad ${RES.hab.cap}</span></div>
+      <div class="dk"><small>Ocupación</small><b>2 adultos · 1 menor</b><span>${est==='confirmada'?'reservada':'3 huéspedes registrados'}</span></div>
+    </div>
+    <span class="nota">El encabezado reemplaza al indicador de pasos, a la tarjeta "Estadía" y a la tarjeta "Huésped": cada dato aparece una sola vez. Las acciones cambian según el estado de la reserva.</span>`;
+}
+
+/* ---------- pestañas ---------- */
+function renderHuespedes(){
+  const hs = huespedes();
+  $('#cuenta-h').textContent = est === 'confirmada' ? '1 de 3' : hs.length;
+  $('#acciones-tab').innerHTML = est === 'encurso' ? `<button class="btn chico" type="button">＋ Agregar persona</button>` : '';
+  const menuFila = h => {
+    if (est === 'cerrada') return ['Ver ficha'];
+    if (est === 'confirmada') return ['Editar ficha'];
+    const items = ['Editar ficha'];
+    if (!h.verif) items.push('Marcar documento verificado');
+    if (h.rol === 'Acompañante') items.push('Cambiar titular');
+    items.push('Mover a otra habitación', '—', 'Registrar salida');
+    return items;
+  };
+  const filas = hs.map(h => `<tr>
+      <td><span class="princ">${esc(h.nombre)}</span>${h.rol==='Titular'||h.rol==='Titular de la reserva' ? ` <span class="chip verde">${h.rol}</span>` : ''}${h.verif===false && est==='encurso' ? ' <span class="chip aviso">Por verificar</span>' : ''}<span class="sec">${esc(h.doc)} · ${h.edad}${h.rol==='Menor' ? ' (menor, sin cargo)' : ''}</span>${h.rol==='Menor' ? `<span class="sec">${esc(h.resp)}</span>` : ''}</td>
+      <td>${esc(h.nac)}</td>
+      <td>${h.ingreso}${h.salida ? `<span class="sec">${h.salida}</span>` : ''}</td>
+      <td><span class="chip ${h.estado[1]}">${h.estado[0]}</span></td>
+      <td class="der"><div class="menu-env"><button class="btn-menu" type="button" data-menu="h${h.id}" aria-label="Acciones de ${esc(h.nombre)}">⋯</button>
+        ${menuAbierto===`h${h.id}` ? `<div class="menu">${menuFila(h).map(x => x==='—' ? '<hr>' : `<button type="button">${x}</button>`).join('')}</div>` : ''}</div></td>
+    </tr>`).join('');
+  const pendientes = est === 'confirmada' ? `<tr><td colspan="5" class="ayuda">2 personas más (1 adulto y 1 menor) se registran en el check-in, con su documento.</td></tr>` : '';
+  $('#panel').innerHTML = `
+    <div class="grupo">
+      <div class="grupo-cab"><span class="nro">${RES.hab.n}</span><b>${RES.hab.tipo}</b><span class="ayuda">2 adultos · 1 menor · capacidad ${RES.hab.cap}</span><span class="esp"></span><span class="ayuda">${est==='encurso' ? 'Titular: Martín Gutiérrez' : ''}</span></div>
+      <div class="tabla-env"><table>
+        <thead><tr><th>Persona</th><th>Nacionalidad y residencia</th><th>Fechas</th><th>Estado</th><th class="der"><span class="ayuda" style="text-transform:none;letter-spacing:0">Acciones</span></th></tr></thead>
+        <tbody>${filas}${pendientes}</tbody>
+      </table></div>
+    </div>
+    <span class="nota">Una tabla por habitación (en reservas de varias habitaciones se repite el bloque). Las acciones de cada persona van en el menú ⋯ y aparecen solo cuando corresponden: "Marcar documento verificado" solo si la ficha está por verificar. Las fichas reemplazadas o anuladas no se listan: están en Historial.</span>`;
+}
+function renderCuenta(){
+  $('#acciones-tab').innerHTML = est === 'encurso' ? `<button class="btn chico" type="button">＋ Agregar consumo</button><button class="btn chico" type="button">Registrar pago</button>` : est === 'confirmada' ? `<button class="btn chico" type="button">Registrar pago</button>` : '';
+  const ms = movimientos().filter(m => filtro === 'todo' || (filtro === 'aloj' && m.tipo === 'aloj') || (filtro === 'consumo' && m.tipo === 'consumo') || (filtro === 'pago' && m.tipo === 'pago'));
+  const t = totales();
+  const f = (id, txt) => `<button type="button" class="filtro" data-filtro="${id}" aria-pressed="${filtro===id}">${txt}</button>`;
+  $('#panel').innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
+      <div class="filtros">${f('todo','Todo')}${f('aloj','Alojamiento')}${f('consumo','Consumos')}${f('pago','Pagos')}</div>
+      <span class="ayuda">Precios finales, IVA incluido</span>
+    </div>
+    <div class="tabla-env"><table>
+      <thead><tr><th>Fecha</th><th>Concepto</th><th class="der">Cargo</th><th class="der">Pago</th></tr></thead>
+      <tbody>
+        ${ms.map(m => `<tr class="${m.previsto?'previsto':''}"><td class="num" style="white-space:nowrap">${m.f}</td>
+          <td><span class="princ">${m.concepto}</span>${m.previsto ? ' <span class="chip neutro">a devengar</span>' : ''}<span class="sec">${m.det}</span></td>
+          <td class="der num">${m.cargo ? plata(m.cargo) : ''}</td><td class="der num">${m.pago ? plata(m.pago) : ''}</td></tr>`).join('') || '<tr><td colspan="4" class="ayuda">No hay movimientos de este tipo.</td></tr>'}
+        ${filtro==='todo' ? `<tr class="tot-fila"><td></td><td>Totales</td><td class="der num">${plata(t.total)}</td><td class="der num">${plata(t.pagos)}</td></tr>` : ''}
+      </tbody>
+    </table></div>
+    <span class="nota">Una sola lista por fecha reemplaza "Servicios adicionales", "Cargos por habitación" y "Habitaciones reservadas": alojamiento noche por noche (con el precio congelado), consumos, persona adicional y pagos. Las noches futuras se ven "a devengar". La garantía no está en esta lista porque no es un pago. Contenido de cobros y garantía: módulo de Ricardo.</span>`;
+}
+function renderHistorial(){
+  $('#acciones-tab').innerHTML = '';
+  const ev = [
+    ['14/09/2026 10:22','Reserva creada','Sitio web · 2 adultos y 1 menor · Hab. 404 Doble · Tarifa flexible · total $ 128.000'],
+    ['14/09/2026 10:22','Seña registrada','$ 25.600 con VISA ****4242'],
+    ['14/09/2026 10:23','Confirmación enviada por correo','a martin.gutierrez@correo.com.ar']
+  ];
+  if (est !== 'confirmada') ev.push(
+    ['02/10/2026 15:19','Check-in confirmado','por recepcionista.prueba · 3 huéspedes registrados y verificados'],
+    ['02/10/2026 15:19','Ficha reemplazada en el check-in','Martín Gutiérrez (ficha creada al reservar)'],
+    ['02/10/2026 15:20','Garantía preautorizada','$ 30.000 · VISA ••••4242 · código 482915'],
+    ['02/10/2026 21:40','Consumo cargado','Restaurante · $ 18.500 · por restaurante.prueba'],
+    ['03/10/2026 09:05','Documento modificado','Carolina Paz · número corregido · motivo: "error de tipeo" · vuelve a "por verificar"']
+  );
+  if (est === 'cerrada') ev.push(
+    ['05/10/2026 09:40','Check-out','Pago del saldo $ 120.900 · Factura B 0001-00000123 · garantía liberada'],
+    ['05/10/2026 09:40','Habitación 404 en limpieza','enviada a housekeeping']
+  );
+  $('#panel').innerHTML = `<ul class="tl">${ev.reverse().map(([c,q,d]) => `<li><span class="cuando num">${c}</span><span class="punto"></span><div class="que"><b>${q}</b><span>${esc(d)}</span></div></li>`).join('')}</ul>
+    <span class="nota">Todo lo que pasó con la reserva, del más reciente al más antiguo, con quién lo hizo: reemplaza a "Confirmaciones enviadas" y suma los cambios de titular, de documento, consumos y pagos.</span>`;
+}
+
+/* ---------- lateral ---------- */
+function renderLateral(){
+  const t = totales();
+  const gar = {
+    confirmada:`<span class="chip neutro">Se toma al ingresar</span><p class="ayuda" style="margin:8px 0 0">Preautorización de ${plata(RES.garantia)} con tarjeta, o depósito en efectivo.</p>`,
+    encurso:`<span class="monto">${plata(RES.garantia)}</span> <span class="chip ok">Preautorizada</span><p class="ayuda" style="margin:6px 0 0">VISA ••••4242 · código 482915. No se resta del saldo: se libera o se aplica en el check-out.</p>`,
+    cerrada:`<span class="chip neutro">Liberada el 05/10/2026</span><p class="ayuda" style="margin:8px 0 0">El saldo se pagó con tarjeta; la preautorización se liberó.</p>`
+  }[est];
+  $('#lateral').innerHTML = `
+    <div class="tarjeta resumen-cuenta">
+      <h3 style="margin-bottom:8px">Resumen de cuenta</h3>
+      <div class="fila"><span>Alojamiento · ${RES.noches} noches</span><span class="num">${plata(t.aloj)}</span></div>
+      <div class="fila"><span>Consumos</span><span class="num">${plata(t.cons)}</span></div>
+      <div class="fila total"><span>Total</span><span class="num">${plata(t.total)}</span></div>
+      <div class="fila"><span>Pagos</span><span class="num">${plata(-t.pagos)}</span></div>
+      <div class="saldo ${t.saldo===0?'cero':''}"><small>${t.saldo===0 ? 'Saldo' : est==='confirmada' ? 'Saldo a cobrar en la estadía' : 'Saldo a cobrar'}</small><b class="num">${t.saldo===0 ? '✓ ' + plata(0) : plata(t.saldo)}</b></div>
+      <span class="nota">Cálculo correcto: la garantía no se resta (hoy el sistema la resta y muestra $ 72.400). Lo corrige Ricardo.</span>
+    </div>
+    <div class="caja-gar"><h3 style="margin-bottom:8px">Garantía para consumos</h3>${gar}</div>
+    <div class="tarjeta">
+      <h3 style="margin-bottom:8px">Tarifa y condiciones</h3>
+      <dl class="lista-def">
+        <dt>Tarifa</dt><dd>${RES.plan.nombre} (Best Available Rate)</dd>
+        <dt>Condiciones</dt><dd>${RES.plan.cond}</dd>
+        <dt>Precio</dt><dd>Congelado al confirmar, noche por noche. IVA incluido.</dd>
+      </dl>
+    </div>
+    <div class="tarjeta">
+      <h3 style="margin-bottom:8px">Quién reservó</h3>
+      <dl class="lista-def">
+        <dt>Nombre</dt><dd>${RES.reservo.nombre}</dd>
+        <dt>Documento</dt><dd>${RES.reservo.doc}</dd>
+        <dt>Correo</dt><dd>${RES.reservo.correo}</dd>
+        <dt>Teléfono</dt><dd>${RES.reservo.tel}</dd>
+        <dt>Canal</dt><dd>${RES.canal} · ${RES.creada}</dd>
+      </dl>
+      <span class="nota">Reemplaza la tarjeta "Huésped": es quien reservó y paga, que puede no ser el titular del registro (caso de titular distinto con motivo).</span>
+    </div>
+    <div class="tarjeta nota" style="margin:0;border-radius:var(--radio)">
+      <b style="display:block;margin-bottom:6px">Qué cambia respecto de la pantalla actual</b>
+      <ul class="cambios">
+        <li>Indicador de pasos → línea de tiempo chica en el encabezado.</li>
+        <li>Tarjetas "Huésped" y "Estadía" → encabezado + "Quién reservó".</li>
+        <li>"Habitaciones reservadas" → bloque por habitación en Huéspedes y noches en Cuenta.</li>
+        <li>"Servicios adicionales" y "Cargos por habitación" → pestaña Cuenta con filtros.</li>
+        <li>"Confirmaciones enviadas" → Historial.</li>
+        <li>Saldo → lateral fijo, con la garantía aparte.</li>
+      </ul>
+    </div>`;
+}
+
+/* ---------- render y eventos ---------- */
+function render(){
+  renderCabecera();
+  document.querySelectorAll('[data-tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab));
+  ({huespedes:renderHuespedes, cuenta:renderCuenta, historial:renderHistorial})[tab]();
+  renderLateral();
+  document.querySelectorAll('[data-est]').forEach(b => b.setAttribute('aria-pressed', b.dataset.est === est));
+}
+document.addEventListener('click', e => {
+  const m = e.target.closest('[data-menu]');
+  if (m){ menuAbierto = menuAbierto === m.dataset.menu ? null : m.dataset.menu; render(); return; }
+  if (menuAbierto && !e.target.closest('.menu')){ menuAbierto = null; render(); }
+  else if (e.target.closest('.menu button')){ menuAbierto = null; render(); return; }
+  const t = e.target.closest('[data-tab]'); if (t){ tab = t.dataset.tab; render(); return; }
+  const s = e.target.closest('[data-est]'); if (s){ est = s.dataset.est; filtro = 'todo'; render(); return; }
+  const f = e.target.closest('[data-filtro]'); if (f){ filtro = f.dataset.filtro; render(); return; }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && menuAbierto){ menuAbierto = null; render(); } });
+$('#btn-notas').onclick = () => {
+  notas = !notas; document.body.classList.toggle('sin-notas', !notas);
+  $('#btn-notas').textContent = notas ? 'Ocultar notas de diseño' : 'Mostrar notas de diseño';
+};
+render();
+</script>
+
+</html>

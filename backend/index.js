@@ -58,6 +58,8 @@ app.use("/api/tipos-habitacion", require("./src/modulos/tipos-habitacion/tiposHa
 app.use("/api/tarifas", require("./src/modulos/tarifas/tarifas.routes"));
 app.use("/api/reservas", require("./src/modulos/reservas/reservas.routes"));
 app.use("/api/check-in", require("./src/modulos/check-in/checkIn.routes"));
+app.use("/api/estadia", require("./src/modulos/estadia/estadia.routes"));
+app.use("/api/huespedes", require("./src/modulos/huespedes/huespedes.routes"));
 app.use("/api/consumos-servicios", require("./src/modulos/servicios-adicionales/serviciosAdicionales.routes"));
 app.use("/api/comprobantes-estadia", require("./src/modulos/comprobantes-estadia/comprobanteEstadia.routes"));
 app.use("/api/pagos-estadia", require("./src/modulos/pagos-estadia/pagoEstadia.routes"));
@@ -87,7 +89,17 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "Ocurrió un error inesperado en el servidor." });
 });
 
-app.listen(PORT, () => {
+// Express 5 le pasa al callback el error de bind (puerto ocupado, sin permisos...). Si no se mira,
+// se imprime "Servidor corriendo" aunque no se esté escuchando y el proceso sigue vivo sin atender nada.
+app.listen(PORT, (error) => {
+  if (error) {
+    const motivo =
+      error.code === "EADDRINUSE"
+        ? "el puerto está ocupado. Cerrá la otra instancia o cambiá PORT en backend/.env."
+        : error.message;
+    console.error(`No se pudo iniciar el servidor en el puerto ${PORT}: ${motivo}`);
+    process.exit(1);
+  }
   console.log(`Servidor corriendo en http://localhost:${PORT}`);
 });
 
@@ -100,4 +112,3 @@ require("./src/lib/jobsStockMinimo").iniciarBarridoStockMinimoCentral();
 // Red de seguridad de la reposición automática de centrales — ver
 // src/lib/jobsStockMinimo.js. Se arranca después de levantar el server,
 // no antes: no tiene que bloquear ni condicionar que el servidor escuche.
-require("./src/lib/jobsStockMinimo").iniciarBarridoStockMinimoCentral();

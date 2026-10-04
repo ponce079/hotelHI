@@ -74,7 +74,36 @@ function combinarFechaConHoraArgentina(fechaSinHora, hora, minuto = 0) {
   return new Date(fechaSinHora.getTime() + (hora + 3) * 60 * 60 * 1000 + minuto * 60 * 1000);
 }
 
+// Edades. Son dos criterios distintos y no se mezclan:
+//   - EDAD_ADULTO_OCUPACION: solo para CONTAR adultos y menores de una habitación (y por lo
+//     tanto para el precio). Menores de 0 a 12 años; desde los 13 cuenta como adulto.
+//   - MAYORIA_EDAD: todo lo legal — ser titular de una habitación o de la reserva, ser
+//     responsable de un menor, que todo menor de 18 tenga un responsable y el orden de salida.
+const EDAD_ADULTO_OCUPACION = 13;
+const MAYORIA_EDAD = 18;
+
+// Años cumplidos en una fecha (las dos como fecha-sin-hora a medianoche UTC).
+function edadEn(nacimiento, fecha) {
+  const n = new Date(nacimiento);
+  const en = new Date(fecha);
+  let edad = en.getUTCFullYear() - n.getUTCFullYear();
+  if (
+    en.getUTCMonth() < n.getUTCMonth() ||
+    (en.getUTCMonth() === n.getUTCMonth() && en.getUTCDate() < n.getUTCDate())
+  )
+    edad--;
+  return edad;
+}
+
+const esMenorParaOcupacion = (nacimiento, fecha) => edadEn(nacimiento, fecha) < EDAD_ADULTO_OCUPACION;
+const esMayorDeEdad = (nacimiento, fecha) => edadEn(nacimiento, fecha) >= MAYORIA_EDAD;
+
 module.exports = {
+  EDAD_ADULTO_OCUPACION,
+  MAYORIA_EDAD,
+  edadEn,
+  esMenorParaOcupacion,
+  esMayorDeEdad,
   ZONA_ARGENTINA,
   hoyComoFechaUTC,
   parsearFechaSinHora,

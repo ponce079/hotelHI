@@ -1,3 +1,4 @@
+const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 // src/modulos/pagos/pagos.servicio.js
 //
 // Lógica de negocio pura (HU-76, HU-77: generar una orden de pago con
@@ -286,7 +287,7 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
 
       return ordenCreada;
     },
-    { timeout: 30000, maxWait: 15000 }
+    OPCIONES_TRANSACCION
   );
 }
 
@@ -340,7 +341,7 @@ async function anularOrdenPago(id, motivo, confirmarCheque) {
       data: { anulado: true, motivoAnulacion: motivo.trim() },
       include: { proveedor: true, detalle: { include: { comprobante: true } }, medios: true },
     });
-  }, { timeout: 15000, maxWait: 10000 });
+  }, OPCIONES_TRANSACCION);
 }
 
 // HU-86: seguimiento de estado de cheque. Solo se puede pasar de
@@ -422,7 +423,7 @@ async function actualizarEstadoCheque(ordenPagoId, medioId, estado, fechaCobro) 
       where: { id: ordenId },
       include: { proveedor: true, detalle: { include: { comprobante: true } }, medios: true },
     });
-  }, { timeout: 15000, maxWait: 10000 });
+  }, OPCIONES_TRANSACCION);
 }
 
 // HU-78: listado con filtros + total del período + desglose por medio.

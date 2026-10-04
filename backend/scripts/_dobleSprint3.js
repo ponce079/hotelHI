@@ -36,6 +36,7 @@ const PrismaFalso = {
   PrismaClientKnownRequestError,
   sql: (strings, ...valores) => ({ strings, valores }),
   join: (valores) => valores,
+  raw: (texto) => ({ strings: [texto], valores: [] }),
   Decimal: PrismaRealSoloParaDecimal.Decimal,
 };
 
@@ -92,6 +93,9 @@ const TABLAS = [
   "ordenMantenimiento",
   "reserva",
   "reservaHabitacion",
+  "ocupanteReserva",
+  "asignacionOcupanteHabitacion",
+  "eventoEstadia",
   "huesped",
   "notificacion",
   "consumoServicioAdicional",
@@ -152,6 +156,7 @@ const CAMPO_FECHA_POR_DEFECTO = {
 // `where: { anulado: false }` (el chequeo de "comprobante vigente", el de
 // "pagos no anulados" de consolidarCargos, etc.) no matcheaba nunca.
 const CAMPO_BOOLEANO_FALSE_POR_DEFECTO = {
+  consumoServicioAdicional: ["anulado", "incluido"],
   pagoEstadia: ["anulado"],
   comprobanteEstadia: ["anulado"],
 };
@@ -174,6 +179,9 @@ const CAMPO_BOOLEANO_TRUE_POR_DEFECTO = {
 // — sumado para HU-93: lotesActualizacion.servicio.js no setea `estado` a
 // mano al crear un lote (confía en el default "Aplicado" del schema).
 const CAMPO_STRING_POR_DEFECTO = {
+  huesped: { paisDocumento: null, identidadDocumento: null },
+  ocupanteReserva: { estado: "Previsto", verificadoEn: null },
+  asignacionOcupanteHabitacion: { hasta: null },
   loteActualizacionTarifaria: { estado: "Aplicado" },
 };
 
@@ -183,6 +191,7 @@ const CAMPO_STRING_POR_DEFECTO = {
 // objeto `{ create: [...] }` tal cual como si fuera un campo más, en vez de
 // crear las filas hijas en su propia tabla.
 const RELACIONES_ANIDADAS = {
+  ocupanteReserva: { asignaciones: { tabla: "asignacionOcupanteHabitacion", fk: "ocupanteId" } },
   reserva: { reservaHabitaciones: { tabla: "reservaHabitacion", fk: "reservaId" } },
   // pagoEstadiaServicio.crearPago: `medios: { create: [...] }`.
   pagoEstadia: { medios: { tabla: "pagoEstadiaMedio", fk: "pagoEstadiaId" } },
@@ -207,6 +216,15 @@ function crearBase() {
     return Object.entries(where).every(([campo, condicion]) => {
       if (campo === "OR") return condicion.some((sub) => coincide(tabla, registro, sub));
       if (campo === "AND") return condicion.every((sub) => coincide(tabla, registro, sub));
+      if (tabla === "ocupanteReserva" && campo === "asignaciones") {
+        return datos.asignacionOcupanteHabitacion
+          .filter((a) => a.ocupanteId === registro.id)
+          .some((a) => coincide("asignacionOcupanteHabitacion", a, condicion.some));
+      }
+      if (tabla === "asignacionOcupanteHabitacion" && campo === "ocupante") {
+        const ocupante = datos.ocupanteReserva.find((p) => p.id === registro.ocupanteId);
+        return ocupante ? coincide("ocupanteReserva", ocupante, condicion) : false;
+      }
 
       // --- Relaciones de Reservas (idénticas a pruebas-reservas.js) ---
       if (tabla === "reservaHabitacion" && campo === "reserva") {
@@ -273,6 +291,13 @@ function crearBase() {
   function expandir(tabla, registro, include = {}) {
     if (!registro) return registro;
     const salida = { ...registro };
+
+    if (tabla === "ocupanteReserva" && include.asignaciones) {
+      salida.asignaciones = datos.asignacionOcupanteHabitacion.filter((a) => a.ocupanteId === registro.id);
+    }
+    if (tabla === "ocupanteReserva" && include.huesped) {
+      salida.huesped = datos.huesped.find((h) => h.id === registro.huespedId) ?? null;
+    }
 
     if (tabla === "reserva") {
       if (include.huesped) salida.huesped = datos.huesped.find((h) => h.id === registro.huespedId) ?? null;
@@ -568,8 +593,8 @@ function crearBase() {
         for (const [clave, { tabla: tablaHija, fk }] of Object.entries(relaciones)) {
           const anidado = data[clave];
           if (anidado?.create) {
-            for (const hijo of anidado.create) {
-              datos[tablaHija].push({ id: siguienteId(tablaHija), [fk]: fila.id, ...hijo });
+            for (const hijo of Array.isArray(anidado.create) ? anidado.create : [anidado.create]) {
+              await modelo(tablaHija).create({ data: { [fk]: fila.id, ...hijo } });
             }
           }
         }
@@ -630,8 +655,8 @@ function crearBase() {
         for (const [clave, { tabla: tablaHija, fk }] of Object.entries(relaciones)) {
           const anidado = data[clave];
           if (anidado?.create) {
-            for (const hijo of anidado.create) {
-              datos[tablaHija].push({ id: siguienteId(tablaHija), [fk]: fila.id, ...hijo });
+            for (const hijo of Array.isArray(anidado.create) ? anidado.create : [anidado.create]) {
+              await modelo(tablaHija).create({ data: { [fk]: fila.id, ...hijo } });
             }
           }
         }
@@ -691,7 +716,96 @@ function crearBase() {
     contadorLlamadas[clave] = (contadorLlamadas[clave] ?? 0) + 1;
   }
 
-  const cliente = { $queryRaw: async () => [], _datos: datos, _contadorLlamadas: contadorLlamadas };
+  function contarSentencia(clave) {
+    contadorLlamadas[clave] = (contadorLlamadas[clave] ?? 0) + 1;
+  }
+
+  // Aplana un fragmento de Prisma.sql (con fragmentos y listas anidados) a su texto y a la lista
+  // de valores en el orden en que se enlazan.
+  function aplanarSql(fragmento) {
+    const valores = [];
+    let texto = "";
+    const recorrer = (parte) => {
+      if (parte && Array.isArray(parte.strings)) {
+        parte.strings.forEach((cadena, indice) => {
+          texto += cadena;
+          if (indice < parte.valores.length) recorrer(parte.valores[indice]);
+        });
+      } else if (Array.isArray(parte)) {
+        parte.forEach(recorrer);
+      } else {
+        valores.push(parte);
+        texto += "?";
+      }
+    };
+    recorrer(fragmento);
+    return { texto: texto.replace(/\s+/g, " ").trim(), valores };
+  }
+
+  // Las pocas sentencias crudas que usa el módulo de estadía. Cada una se interpreta según el
+  // orden de sus valores (ver persona.servicio.js y alojamiento.js).
+  function ejecutarSqlCrudo(fragmento) {
+    const { texto, valores } = aplanarSql(fragmento);
+    if (texto.startsWith("UPDATE ocupantes_reserva SET estado = 'Alojado'")) {
+      const [ingresoReal, ...resto] = valores;
+      const n = resto.length / 3;
+      const cambios = Array.from({ length: n }, (_, i) => ({ id: resto[2 * i], identidad: resto[2 * i + 1] }));
+      for (const { id, identidad } of cambios) {
+        const choque =
+          cliente._identidadActivaUnica &&
+          identidad &&
+          datos.ocupanteReserva.some((o) => o.identidadActiva === identidad && o.id !== id);
+        if (choque)
+          throw new PrismaClientKnownRequestError("Duplicate entry for key identidadActiva", { code: "P2010" });
+      }
+      for (const { id, identidad } of cambios) {
+        Object.assign(
+          datos.ocupanteReserva.find((o) => o.id === id),
+          {
+            estado: "Alojado",
+            ingresoReal,
+            identidadActiva: identidad,
+          },
+        );
+      }
+      return n;
+    }
+    // UPDATE <tabla> SET campo = [COALESCE(]CASE id WHEN ? THEN ? … END[, campo)], … WHERE id IN (…):
+    // actualización en lote con un valor distinto por fila (persona.servicio.js, check-in).
+    const enLote = /^UPDATE (\w+) SET (.*) WHERE id IN \(/.exec(texto);
+    const TABLA_POR_NOMBRE = { huespedes: "huesped", reservas_habitaciones: "reservaHabitacion" };
+    if (enLote && TABLA_POR_NOMBRE[enLote[1]]) {
+      const filas = datos[TABLA_POR_NOMBRE[enLote[1]]];
+      const campos = [...enLote[2].matchAll(/(\w+) = (COALESCE\()?CASE id/g)].map((m) => ({
+        campo: m[1],
+        coalesce: Boolean(m[2]),
+      }));
+      const n = valores.length / (2 * campos.length + 1);
+      campos.forEach(({ campo, coalesce }, k) => {
+        for (let i = 0; i < n; i++) {
+          const id = valores[k * 2 * n + 2 * i];
+          const valor = valores[k * 2 * n + 2 * i + 1];
+          const fila = filas.find((h) => h.id === id);
+          fila[campo] = coalesce ? (valor ?? fila[campo] ?? null) : valor;
+        }
+      });
+      return n;
+    }
+    throw new Error(`Sentencia cruda no soportada por el doble de Prisma: ${texto}`);
+  }
+
+  const cliente = {
+    $queryRaw: async () => {
+      contarSentencia("$queryRaw");
+      return [];
+    },
+    $executeRaw: async (fragmento) => {
+      contarSentencia("$executeRaw");
+      return ejecutarSqlCrudo(fragmento);
+    },
+    _datos: datos,
+    _contadorLlamadas: contadorLlamadas,
+  };
   for (const tabla of TABLAS) {
     const modeloBase = modelo(tabla);
     cliente[tabla] = Object.fromEntries(

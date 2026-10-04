@@ -20,15 +20,25 @@ const VACIO = { tipo: "", descripcion: "", monto: "" };
 // `consumosMinibar` son los consumos de Minibar que YA figuran en la cuenta:
 // se muestran arriba para que el recepcionista compare contra el minibar
 // real antes de cargar uno de más (o de menos).
-export function CargoVerificacionCheckoutModal({ reservaId, consumosMinibar = [], onClose, onExito }) {
+export function CargoVerificacionCheckoutModal({
+  reservaId,
+  habitaciones = [],
+  consumosMinibar = [],
+  onClose,
+  onExito,
+}) {
   const { usuario } = useSesion();
   const queryClient = useQueryClient();
-  const [form, setForm] = useState(VACIO);
+  const [form, setForm] = useState({
+    ...VACIO,
+    habitacionId: habitaciones.length === 1 ? String(habitaciones[0].habitacionId) : "",
+  });
   const [error, setError] = useState("");
 
   const mutacion = useMutation({
     mutationFn: () =>
       registrarVerificacion(reservaId, {
+        habitacionId: Number(form.habitacionId),
         tipo: form.tipo,
         descripcion: form.descripcion.trim(),
         monto: Number(form.monto),
@@ -44,6 +54,7 @@ export function CargoVerificacionCheckoutModal({ reservaId, consumosMinibar = []
   });
 
   function guardar() {
+    if (!form.habitacionId) return setError("Elegí la habitación que revisaste.");
     if (!form.tipo) return setError("Elegí qué encontraste en la habitación.");
     if (!form.descripcion.trim()) return setError("Describí qué encontraste: queda como respaldo del cargo.");
     if (!(Number(form.monto) > 0)) return setError("El monto del cargo tiene que ser mayor a cero.");
@@ -58,6 +69,18 @@ export function CargoVerificacionCheckoutModal({ reservaId, consumosMinibar = []
       onClose={mutacion.isPending ? () => {} : onClose}
     >
       <div className="flex flex-col gap-4 px-6 py-5">
+        <Select
+          label="Habitación *"
+          value={form.habitacionId}
+          onChange={(e) => setForm({ ...form, habitacionId: e.target.value })}
+        >
+          <option value="">Elegí una habitación</option>
+          {habitaciones.map((h) => (
+            <option key={h.habitacionId} value={h.habitacionId}>
+              {h.numero}
+            </option>
+          ))}
+        </Select>
         <div className="rounded-lg border border-borde bg-hueso px-4 py-3">
           <p className="text-[11px] uppercase tracking-wide text-piedra">Minibar ya registrado en la cuenta</p>
           {consumosMinibar.length === 0 ? (

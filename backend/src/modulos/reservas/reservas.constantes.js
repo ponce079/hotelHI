@@ -42,8 +42,9 @@ const ESTADOS_RESERVA = [
 //     huésped se fue.
 const ESTADOS_QUE_OCUPAN = [ESTADO_RESERVA.CONFIRMADA, ESTADO_RESERVA.EN_CURSO];
 
-// Tipos de documento aceptados para la ficha del huésped (HU-39).
-const TIPOS_DOCUMENTO = ["DNI", "Pasaporte", "Cédula de identidad", "Libreta cívica", "Libreta de enrolamiento"];
+// Tipos de documento aceptados para la ficha del huésped (HU-39): el catálogo único que
+// comparten huésped y ocupantes vive en lib/tiposDocumento.js.
+const { TIPOS_DOCUMENTO } = require("../../lib/tiposDocumento");
 
 // Canal de la confirmación automática (HU-41). El modelo Notificacion
 // admite además "Interno" (ver habitaciones.constantes.js), que acá se usa
@@ -63,6 +64,8 @@ const TIPO_NOTIFICACION_RESERVA = "Reserva";
 
 const LIMITES_RESERVA = {
   nombre: 120,
+  nombres: 80,
+  apellido: 80,
   numeroDocumento: 30,
   contacto: 190,
   preferencias: 2000,

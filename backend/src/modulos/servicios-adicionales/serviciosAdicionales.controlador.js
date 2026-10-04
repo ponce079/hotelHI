@@ -1,6 +1,8 @@
 const serviciosAdicionalesServicio = require("./serviciosAdicionales.servicio");
+const { responderEsperaConexion } = require("../../lib/erroresConexion");
 
 function responderError(res, err, contexto, mensaje) {
+  if (responderEsperaConexion(res, err)) return;
   if (err instanceof serviciosAdicionalesServicio.ErrorDeNegocio) {
     return res.status(err.statusCode).json({ error: err.message });
   }

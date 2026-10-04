@@ -43,18 +43,15 @@ export const ESTADO_RESERVA_COLOR = {
   [ESTADO_RESERVA.CANCELADA]: { fondo: "#f2c6b9", texto: "#8f3322", borde: "#e4a08c" },
 };
 
-export const TIPOS_DOCUMENTO = [
-  "DNI",
-  "Pasaporte",
-  "Cédula de identidad",
-  "Libreta cívica",
-  "Libreta de enrolamiento",
-];
+// Catálogo único de huésped y ocupantes (lib/tiposDocumento.js).
+export { TIPOS_DOCUMENTO } from "../../lib/tiposDocumento";
 
 export const CANALES_CONFIRMACION = ["Email"];
 
 export const LIMITES_RESERVA = {
   nombre: 120,
+  nombres: 80,
+  apellido: 80,
   numeroDocumento: 30,
   contacto: 190,
   preferencias: 2000,

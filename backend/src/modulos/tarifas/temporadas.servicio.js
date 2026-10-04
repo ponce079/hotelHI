@@ -1,3 +1,4 @@
+const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 // Temporadas (HU-90) — Etapa 2 de tarifas por temporada.
 // Lógica de negocio pura: no conoce HTTP y mantiene las escrituras
 // relacionadas dentro de una misma transacción de Prisma, mismo criterio
@@ -122,7 +123,7 @@ async function crearTemporada(data, usuario) {
         data: { nombre, nivel, fechaDesde, fechaHasta, estadiaMinima, cierreLlegada, creadoPor: usuario || null },
       });
     },
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 }
 
@@ -168,7 +169,7 @@ async function actualizarTemporada(id, data, usuario) {
         data: { nombre, fechaDesde, fechaHasta, estadiaMinima, cierreLlegada },
       });
     },
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 }
 
@@ -209,7 +210,7 @@ async function cambiarActivaTemporada(id, activa, motivoBaja, usuario) {
       });
       return tx.temporada.update({ where: { id: temporadaId }, data: { activa: true } });
     },
-    { timeout: 15000, maxWait: 10000 }
+    OPCIONES_TRANSACCION
   );
 }
 

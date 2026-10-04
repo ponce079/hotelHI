@@ -1,0 +1,827 @@
+import { render, screen, within, waitFor, fireEvent } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { vi, it, expect, beforeEach } from "vitest";
+import { PersonaFormulario } from "./PersonaFormulario";
+import { MoverHabitacion } from "./MoverHabitacion";
+import { PersonaAdicionalPrevia } from "./PersonaAdicionalPrevia";
+import { EstadiaModales } from "./EstadiaModales";
+import { useEstadia } from "./useEstadia";
+import { PestanaHuespedes } from "../reservas/detalle/PestanaHuespedes";
+import { BotonAgregarPersona } from "../reservas/detalle/BotonAgregarPersona";
+import { api } from "../../lib/api";
+import { PAISES } from "../../lib/paises";
+// Formularios largos tipeados con userEvent: con la suite completa en paralelo superan a veces los
+// 5 s por defecto (en solitario tardan 1-2 s).
+vi.setConfig({ testTimeout: 15000 });
+vi.mock("../../lib/api", () => ({
+  api: { get: vi.fn(), post: vi.fn(), put: vi.fn() },
+}));
+vi.mock("../../lib/sesion", () => ({
+  useSesion: () => ({ usuario: "Operador prueba", puede: () => true }),
+}));
+// Lo que antes era <EstadiaPanel soloPersonas>: el hook de la estadía, la pestaña Huéspedes y sus
+// ventanas, tal como las arma la pantalla de detalle de la reserva.
+function PanelEstadia({ reserva, onTitularPreparado }) {
+  const estadia = useEstadia(reserva, { onTitularPreparado });
+  return (
+    <>
+      <BotonAgregarPersona estadia={estadia} reserva={reserva} />
+      <PestanaHuespedes reserva={reserva} estadia={estadia} />
+      <EstadiaModales estadia={estadia} />
+    </>
+  );
+}
+// Las acciones de cada persona están en su menú ⋯.
+async function abrirMenu(nombre) {
+  await userEvent.click(await screen.findByRole("button", { name: `Acciones de ${nombre}` }));
+}
+async function elegirAccion(nombre, accion) {
+  await abrirMenu(nombre);
+  await userEvent.click(screen.getByRole("button", { name: accion }));
+}
+const reserva = {
+  id: 50,
+  estado: "En curso",
+  fechaDesde: "2026-09-28",
+  fechaHasta: "2026-09-30",
+  habitaciones: [
+    { id: 10, numero: "101", capacidad: 2 },
+    { id: 11, numero: "102", capacidad: 1 },
+  ],
+};
+it("cambiar residencia actualiza localidades y limpia la anterior sin modificar el país emisor", async () => {
+  const onGuardar = vi.fn();
+  render(
+    <PersonaFormulario
+      reserva={reserva}
+      persona={{ nombre: "Ana", apellido: "Prueba" }}
+      onGuardar={onGuardar}
+      onClose={() => {}}
+    />,
+  );
+  const emisor = screen.getByLabelText("País emisor");
+  const residencia = screen.getByLabelText("País de residencia");
+  const localidad = screen.getByLabelText("Localidad");
+  expect(localidad).toBeDisabled();
+  await userEvent.selectOptions(emisor, "AR");
+  expect(localidad).toBeDisabled();
+  await userEvent.selectOptions(residencia, "AR");
+  await userEvent.selectOptions(localidad, "Rosario");
+  await userEvent.selectOptions(residencia, "UY");
+  expect(localidad).toHaveValue("");
+  expect(within(localidad).queryByRole("option", { name: "Rosario" })).not.toBeInTheDocument();
+  await userEvent.selectOptions(localidad, "Montevideo");
+  expect(emisor).toHaveValue("AR");
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalledWith(
+    expect.objectContaining({
+      paisDocumento: "AR",
+      paisResidencia: "UY",
+      localidad: "Montevideo",
+    }),
+  );
+});
+it("permite otra localidad y conserva valores históricos al editar sin reescribir la identidad", async () => {
+  const onGuardar = vi.fn();
+  render(
+    <PersonaFormulario
+      reserva={reserva}
+      persona={{
+        nombre: "Ana",
+        apellido: "Prueba",
+        paisDocumento: "Argentina",
+        paisResidencia: "Argentina",
+        localidad: "Villa Allende",
+      }}
+      onGuardar={onGuardar}
+      onClose={() => {}}
+    />,
+  );
+  expect(screen.getByLabelText("País emisor")).toHaveValue("AR");
+  expect(screen.getByLabelText("Nombre de la localidad")).toHaveValue("Villa Allende");
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      paisDocumento: "Argentina",
+      paisResidencia: "Argentina",
+      localidad: "Villa Allende",
+    }),
+  );
+  await userEvent.selectOptions(screen.getByLabelText("País de residencia"), "CL");
+  expect(screen.queryByLabelText("Nombre de la localidad")).not.toBeInTheDocument();
+  await userEvent.selectOptions(screen.getByLabelText("Localidad"), "__otra__");
+  await userEvent.type(screen.getByLabelText("Nombre de la localidad"), "Puerto Varas");
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenLastCalledWith(
+    expect.objectContaining({
+      paisDocumento: "Argentina",
+      paisResidencia: "CL",
+      localidad: "Puerto Varas",
+    }),
+  );
+});
+function setup() {
+  return render(
+    <QueryClientProvider
+      client={
+        new QueryClient({
+          defaultOptions: {
+            queries: { retry: false },
+            mutations: { retry: false },
+          },
+        })
+      }
+    >
+      <PanelEstadia reserva={reserva} />
+    </QueryClientProvider>,
+  );
+}
+it.each([false, true])(
+  "reutiliza al titular persistido (verificado=%s) sin esperar otro POST para agregar un acompañante",
+  async (verificado) => {
+    const titular = {
+      id: 20,
+      nombre: "Ana",
+      apellido: "Prueba",
+      tipoDocumento: "DNI",
+      numeroDocumento: "12345678",
+      email: "ana@example.com",
+      estado: "Previsto",
+      verificadoEn: verificado ? "2026-09-28T10:00:00Z" : null,
+      fechaDesde: reserva.fechaDesde,
+      fechaHasta: reserva.fechaHasta,
+      asignaciones: [{ habitacionId: 10, hasta: null }],
+    };
+    api.get.mockResolvedValue({ data: [titular] });
+    // Si la pantalla vuelve a intentar incorporarlo, queda esperando indefinidamente.
+    api.post.mockImplementation(() => new Promise(() => {}));
+    const onTitularPreparado = vi.fn();
+    render(
+      <QueryClientProvider client={new QueryClient()}>
+        <PanelEstadia
+          reserva={{
+            ...reserva,
+            huesped: {
+              id: 9,
+              tipoDocumento: "DNI",
+              numeroDocumento: "12345678",
+            },
+          }}
+          onTitularPreparado={onTitularPreparado}
+        />
+      </QueryClientProvider>,
+    );
+    await waitFor(() => expect(screen.getByRole("button", { name: "Agregar persona" })).toBeEnabled());
+    expect(api.post).not.toHaveBeenCalled();
+    expect(onTitularPreparado).toHaveBeenCalledWith(50);
+    expect(screen.getAllByText("Ana Prueba")).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "Agregar persona" }));
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  },
+);
+it("recupera titular y ocupantes tras reinicio del backend y vuelve a habilitar Agregar persona", async () => {
+  let servidorDisponible = false;
+  const titular = {
+    id: 20,
+    nombre: "Ana",
+    apellido: "Prueba",
+    estado: "Previsto",
+    fechaDesde: reserva.fechaDesde,
+    fechaHasta: reserva.fechaHasta,
+    asignaciones: [{ habitacionId: 10, hasta: null }],
+  };
+  const corte = { response: { status: 502 }, message: "ECONNRESET" };
+  api.get.mockImplementation(async () => {
+    if (!servidorDisponible) throw corte;
+    return { data: [titular] };
+  });
+  api.post.mockImplementation(async () => {
+    if (!servidorDisponible) throw corte;
+    return { data: { ocupanteId: 20, creado: false } };
+  });
+  const onTitularPreparado = vi.fn();
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <PanelEstadia
+        reserva={{ ...reserva, huesped: { id: 9, nombre: "Ana Prueba" } }}
+        onTitularPreparado={onTitularPreparado}
+      />
+    </QueryClientProvider>,
+  );
+  expect(screen.getByRole("button", { name: "Agregar persona" })).toBeDisabled();
+  const recuperar = await screen.findByRole("button", { name: "Volver a cargar personas" }, { timeout: 7000 });
+  await waitFor(() => expect(recuperar).toBeEnabled(), { timeout: 7000 });
+  // No intentar un alta automática sin haber podido leer antes los ocupantes.
+  expect(api.post).not.toHaveBeenCalled();
+  expect(onTitularPreparado).not.toHaveBeenCalled();
+  expect(screen.queryByText(/Todavía no se registraron ocupantes/)).not.toBeInTheDocument();
+  servidorDisponible = true;
+  await userEvent.click(recuperar);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Agregar persona" })).toBeEnabled());
+  expect(screen.getAllByText("Ana Prueba")).toHaveLength(1);
+  expect(onTitularPreparado).toHaveBeenCalledWith(50);
+  expect(api.post).toHaveBeenCalledTimes(1);
+  expect(api.post.mock.calls.every(([url]) => url === "/estadia/50/titular")).toBe(true);
+  await userEvent.click(screen.getByRole("button", { name: "Agregar persona" }));
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+}, 15000);
+it("incorpora al titular automáticamente y permite completar los datos copiados sin volver a agregarlo", async () => {
+  const titular = {
+    id: 20,
+    nombre: "Ana Pérez",
+    apellido: "",
+    tipoDocumento: "DNI",
+    numeroDocumento: "12345678",
+    email: "ana@example.com",
+    estado: "Previsto",
+    fechaDesde: reserva.fechaDesde,
+    fechaHasta: reserva.fechaHasta,
+    asignaciones: [{ habitacionId: 10, hasta: null }],
+  };
+  let personas = [];
+  api.get.mockImplementation(() => Promise.resolve({ data: personas }));
+  api.post.mockImplementation(async () => {
+    personas = [titular];
+    return { data: { ocupanteId: 20, creado: true } };
+  });
+  api.put.mockResolvedValue({ data: titular });
+  const onTitularPreparado = vi.fn();
+  render(
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <PanelEstadia
+        reserva={{
+          ...reserva,
+          huesped: {
+            id: 9,
+            nombre: "Ana Pérez",
+            tipoDocumento: "DNI",
+            numeroDocumento: "12345678",
+          },
+        }}
+        onTitularPreparado={onTitularPreparado}
+      />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("Titular de la reserva")).toBeInTheDocument();
+  expect(api.post).toHaveBeenCalledTimes(1);
+  expect(api.post).toHaveBeenCalledWith("/estadia/50/titular", {
+    operador: "Operador prueba",
+  });
+  expect(onTitularPreparado).toHaveBeenCalledWith(50);
+  expect(screen.getByText(/Falta completar:/)).toBeInTheDocument();
+  await abrirMenu("Ana Pérez");
+  expect(screen.getByRole("button", { name: "Marcar documento verificado" })).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Completar datos" }));
+  expect(screen.getByLabelText("Nombres *")).toHaveValue("Ana Pérez");
+  expect(screen.getByLabelText("Número de DNI")).toHaveValue("12345678");
+  expect(screen.getByLabelText("Correo electrónico (opcional)")).toHaveValue("ana@example.com");
+  await userEvent.clear(screen.getByLabelText("Nombres *"));
+  await userEvent.type(screen.getByLabelText("Nombres *"), "Ana");
+  await userEvent.type(screen.getByLabelText("Apellido *"), "Pérez");
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(api.put).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Nacimiento"), {
+    target: { value: "1990-01-01" },
+  });
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  await waitFor(() =>
+    expect(api.put).toHaveBeenCalledWith(
+      "/estadia/50/ocupantes/20",
+      expect.objectContaining({
+        nombre: "Ana",
+        apellido: "Pérez",
+        numeroDocumento: "12345678",
+      }),
+    ),
+  );
+  expect(api.post).toHaveBeenCalledTimes(1);
+});
+it("muestra todos los campos obligatorios faltantes y permite corregirlos sin enviar antes", async () => {
+  const onGuardar = vi.fn();
+  render(<PersonaFormulario reserva={reserva} onGuardar={onGuardar} onClose={() => {}} />);
+  expect(screen.queryByText("Completá el nombre.")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(screen.getByText("Completá el nombre.")).toBeInTheDocument();
+  expect(screen.getByText("Completá el apellido.")).toBeInTheDocument();
+  expect(screen.getByLabelText("Nombres *")).toHaveFocus();
+  expect(onGuardar).not.toHaveBeenCalled();
+  await userEvent.type(screen.getByLabelText("Nombres *"), "Ana");
+  await userEvent.type(screen.getByLabelText("Apellido *"), "Prueba");
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalledTimes(1);
+  expect(screen.getByText(/Antes de verificar e ingresar/)).toBeInTheDocument();
+});
+it("detecta correo repetido antes de guardar y libera el formulario al corregirlo", async () => {
+  const onGuardar = vi.fn();
+  render(
+    <PersonaFormulario
+      reserva={reserva}
+      persona={{ nombre: "Ana", apellido: "Prueba" }}
+      personas={[{ id: 8, email: "TEST@GMAIL.COM", estado: "Previsto" }]}
+      onGuardar={onGuardar}
+      onClose={() => {}}
+    />,
+  );
+  const email = screen.getByLabelText("Correo electrónico (opcional)");
+  await userEvent.type(email, "test@gmail.com");
+  expect(screen.getByText(/Este correo ya está registrado/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).not.toHaveBeenCalled();
+  await userEvent.clear(email);
+  await userEvent.type(email, "otra@gmail.com");
+  expect(screen.queryByText(/Este correo ya está registrado/)).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalledWith(expect.objectContaining({ email: "otra@gmail.com" }));
+});
+it("editar el propio correo no se considera duplicado y los cancelados no bloquean", async () => {
+  const onGuardar = vi.fn();
+  const persona = {
+    id: 7,
+    nombre: "Ana",
+    apellido: "Prueba",
+    email: "test@gmail.com",
+  };
+  render(
+    <PersonaFormulario
+      reserva={reserva}
+      persona={persona}
+      personas={[persona, { id: 8, email: "test@gmail.com", estado: "Cancelado" }]}
+      onGuardar={onGuardar}
+      onClose={() => {}}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalled();
+});
+it("advierte capacidad antes del envío y permite corregir la habitación", async () => {
+  const onGuardar = vi.fn();
+  render(
+    <PersonaFormulario
+      reserva={reserva}
+      persona={{ nombre: "Ana", apellido: "Prueba", habitacionId: 11 }}
+      personas={[
+        {
+          id: 8,
+          habitacionId: 11,
+          fechaDesde: reserva.fechaDesde,
+          fechaHasta: reserva.fechaHasta,
+        },
+      ]}
+      onGuardar={onGuardar}
+      onClose={() => {}}
+    />,
+  );
+  expect(screen.getByText(/supera su capacidad/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).not.toHaveBeenCalled();
+  await userEvent.selectOptions(screen.getByLabelText("Habitación *"), "10");
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalled();
+});
+beforeEach(() => {
+  vi.clearAllMocks();
+  api.get.mockImplementation((url) =>
+    Promise.resolve({
+      data: url.includes("/cuenta")
+        ? {
+            habitaciones: [],
+            garantias: [],
+            totalAdeudado: 0,
+            totalPagado: 0,
+            saldo: 0,
+          }
+        : url === "/consumos-servicios"
+          ? [
+              {
+                id: 1,
+                habitacionId: 10,
+                descripcion: "Lavandería",
+                tipoServicio: "Lavandería",
+                cantidad: 2,
+                precioUnitario: 50,
+                monto: 100,
+                registradoPor: "Recepción",
+                fechaHora: new Date().toISOString(),
+              },
+            ]
+          : [],
+    }),
+  );
+  api.post.mockResolvedValue({ data: { ok: true } });
+});
+// Los cargos por habitación y su anulación ahora viven en la pestaña Cuenta: ver ReservaDetallePage.test.jsx.
+it("permite cargar ocupantes de distintas habitaciones y no copia al titular automáticamente", async () => {
+  setup();
+  await userEvent.click(screen.getByRole("button", { name: "Agregar persona" }));
+  const dialog = screen.getByRole("dialog");
+  await userEvent.type(within(dialog).getByLabelText("Nombres *"), "Ana");
+  await userEvent.type(within(dialog).getByLabelText("Apellido *"), "Prueba");
+  await userEvent.selectOptions(within(dialog).getByLabelText("Habitación *"), "11");
+  await userEvent.click(within(dialog).getByRole("button", { name: "Guardar persona" }));
+  await waitFor(() =>
+    expect(api.post).toHaveBeenCalledWith(
+      "/estadia/50/ocupantes",
+      expect.objectContaining({
+        nombre: "Ana",
+        apellido: "Prueba",
+        habitacionId: "11",
+        operador: "Operador prueba",
+      }),
+    ),
+  );
+});
+
+const CAMPOS_DE_PAIS = ["País emisor", "Nacionalidad", "País de residencia"];
+const opcionesDePais = (select) =>
+  within(select)
+    .getAllByRole("option")
+    .filter((o) => o.value && o.value !== "__otro__");
+
+function verificarCatalogoCompleto(select) {
+  const opciones = opcionesDePais(select);
+  expect(opciones).toHaveLength(PAISES.length);
+  expect(opciones.map((o) => o.value).sort()).toEqual(PAISES.map(([codigo]) => codigo).sort());
+  expect(opciones[0]).toHaveValue("AR");
+  expect(opciones[0]).toHaveTextContent("Argentina");
+  const nombres = opciones.slice(1).map((o) => o.textContent);
+  expect(nombres).toEqual([...nombres].sort((a, b) => a.localeCompare(b, "es")));
+  expect(within(select).getByRole("option", { name: "Japón" })).toHaveValue("JP");
+  expect(within(select).getByRole("option", { name: "Otro país" })).toBeInTheDocument();
+}
+
+it("la ficha de ocupante ofrece el catálogo completo de países, con Argentina primero y el resto por nombre", () => {
+  render(
+    <PersonaFormulario
+      reserva={reserva}
+      persona={{ nombre: "Ana", apellido: "Prueba" }}
+      onGuardar={() => {}}
+      onClose={() => {}}
+    />,
+  );
+  for (const etiqueta of CAMPOS_DE_PAIS) verificarCatalogoCompleto(screen.getByLabelText(etiqueta));
+});
+
+it("guarda la nacionalidad elegida y pide escribir la localidad cuando el país no tiene sugerencias", async () => {
+  const onGuardar = vi.fn();
+  render(
+    <PersonaFormulario
+      reserva={reserva}
+      persona={{ nombre: "Ana", apellido: "Prueba" }}
+      onGuardar={onGuardar}
+      onClose={() => {}}
+    />,
+  );
+  await userEvent.selectOptions(screen.getByLabelText("Nacionalidad"), "JP");
+  await userEvent.selectOptions(screen.getByLabelText("País de residencia"), "JP");
+  expect(screen.queryByLabelText("Localidad")).not.toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText("Nombre de la localidad"), "Kioto");
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalledWith(
+    expect.objectContaining({ nacionalidad: "JP", paisResidencia: "JP", localidad: "Kioto" }),
+  );
+});
+
+it("conserva una nacionalidad histórica escrita a mano que no figura en el catálogo", () => {
+  render(
+    <PersonaFormulario
+      reserva={reserva}
+      persona={{ nombre: "Ana", apellido: "Prueba", nacionalidad: "Atlántida" }}
+      onGuardar={() => {}}
+      onClose={() => {}}
+    />,
+  );
+  expect(screen.getByLabelText("Nombre del país de la nacionalidad")).toHaveValue("Atlántida");
+});
+
+// ---------------------------------------------------------------- correcciones de la etapa 2
+const ocupante = (datos) => ({
+  apellido: "",
+  tipoDocumento: "DNI",
+  paisDocumento: "AR",
+  nacionalidad: "AR",
+  paisResidencia: "AR",
+  fechaDesde: "2026-09-28",
+  fechaHasta: "2026-09-30",
+  verificadoEn: "2026-09-28T14:00:00.000Z",
+  asignaciones: [{ habitacionId: 10, hasta: null }],
+  ...datos,
+});
+
+it("las fichas canceladas no se listan ni muestran faltantes", async () => {
+  const fichas = [
+    ocupante({ id: 26, nombre: "Martín Gutiérrez", numeroDocumento: "30512874", estado: "Cancelado", esTitular: true, verificadoEn: null, asignaciones: [{ habitacionId: 10, hasta: "2026-09-28T14:03:51.000Z" }] }),
+    ocupante({ id: 38, nombre: "Martín", apellido: "Gutiérrez", numeroDocumento: "30512874", estado: "Alojado", esTitular: true, fechaNacimiento: "1984-10-01" }),
+    ocupante({ id: 40, nombre: "María", apellido: "Gutiérrez", numeroDocumento: null, tipoDocumento: null, paisDocumento: null, motivoSinDocumento: "Menor sin documento presentado", estado: "Alojado", fechaNacimiento: "2018-03-14", responsableId: 38 }),
+  ];
+  const historial = [{ id: 60, fecha: "2026-09-28T14:03:51.000Z", accion: "cancelar", operador: "recepcionista.prueba", detalle: JSON.stringify({ ocupanteId: 26, motivo: "Reemplazada en el check-in" }) }];
+  api.get.mockImplementation(async (url) => ({ data: url.endsWith("/historial") ? historial : url.endsWith("/ocupantes") ? fichas : [] }));
+  const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={cliente}>
+      <PanelEstadia reserva={reserva} />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("María Gutiérrez")).toBeInTheDocument();
+  expect(screen.getAllByText(/Martín/, { selector: "strong" })).toHaveLength(1);
+  // El menor muestra a su responsable (la ficha cancelada de Martín no se lista).
+  expect(screen.getByText("Responsable: Martín Gutiérrez")).toBeInTheDocument();
+  expect(screen.queryByText(/Cancelado/)).not.toBeInTheDocument();
+  expect(screen.queryByText(/Falta completar/)).not.toBeInTheDocument();
+  expect(screen.getByText(/Sin documento \(menor\)/)).toBeInTheDocument();
+  expect(screen.queryByText(/Documento pendiente/)).not.toBeInTheDocument();
+  // El historial con la baja y su motivo se ve en la pestaña Historial (ReservaDetallePage.test.jsx).
+});
+
+it("marcar a otra persona como titular con la estadía en curso pide el motivo y reemplaza al titular actual", async () => {
+  const onGuardar = vi.fn();
+  const titular = ocupante({ id: 38, nombre: "Martín", apellido: "Gutiérrez", numeroDocumento: "30512874", estado: "Alojado", esTitular: true, fechaNacimiento: "1984-10-01" });
+  const marta = ocupante({ id: 39, nombre: "Marta", apellido: "Conte", numeroDocumento: "40236523", estado: "Alojado", esTitular: false, fechaNacimiento: "1990-05-05", nacionalidad: "AR", paisResidencia: "AR" });
+  render(<PersonaFormulario reserva={reserva} persona={marta} personas={[titular, marta]} onGuardar={onGuardar} onClose={() => {}} />);
+  expect(screen.queryByText(/Hoy el titular de esta habitación/)).not.toBeInTheDocument();
+  await userEvent.click(screen.getByLabelText("Titular de esta habitación"));
+  expect(screen.getByText(/Hoy el titular de esta habitación es Martín Gutiérrez\. Al guardar deja de serlo/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).not.toHaveBeenCalled();
+  expect(screen.getByText("Indicá el motivo del cambio de titular.")).toBeInTheDocument();
+  await userEvent.type(screen.getByLabelText(/Motivo del cambio de titular \*/), "El titular se retira antes");
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalledWith(
+    expect.objectContaining({ esTitular: true, reemplazarTitular: true, motivoCambioTitular: "El titular se retira antes" }),
+  );
+});
+
+// ---------------------------------------------------------------- segunda corrección: editar con la estadía en curso
+const adultoAlojado = () =>
+  ocupante({
+    id: 38,
+    nombre: "Martín",
+    apellido: "Gutiérrez",
+    numeroDocumento: "30512874",
+    estado: "Alojado",
+    esTitular: true,
+    fechaNacimiento: "1984-10-01",
+    ingresoReal: "2026-09-28T17:05:00.000Z",
+  });
+const menorAlojada = () =>
+  ocupante({
+    id: 40,
+    nombre: "María",
+    apellido: "Gutiérrez",
+    numeroDocumento: null,
+    tipoDocumento: null,
+    paisDocumento: null,
+    motivoSinDocumento: "Menor sin documento presentado",
+    estado: "Alojado",
+    fechaNacimiento: "2018-03-14",
+    responsableId: 38,
+  });
+
+it("adulto alojado: sin adulto responsable, sin justificación con documento y la estadía en solo lectura", async () => {
+  const onGuardar = vi.fn();
+  const martin = adultoAlojado();
+  render(<PersonaFormulario reserva={reserva} persona={martin} personas={[martin, menorAlojada()]} onGuardar={onGuardar} onClose={() => {}} />);
+  expect(screen.queryByLabelText(/Adulto responsable/)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("Justificación sin documento")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/Ingreso previsto/)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/Salida prevista/)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/^Habitación/)).not.toBeInTheDocument();
+  expect(screen.queryByLabelText(/Motivo del cambio de habitación/)).not.toBeInTheDocument();
+  for (const bloque of ["Identidad", "Residencia y contacto", "Estadía"]) expect(screen.getByRole("group", { name: bloque })).toBeInTheDocument();
+  const estadia = within(screen.getByRole("group", { name: "Estadía" }));
+  expect(estadia.getByText("Habitación 101")).toBeInTheDocument();
+  expect(estadia.getByText(/^28\/09\/2026 \d{2}:\d{2}$/)).toBeInTheDocument();
+  expect(estadia.getByText("30/09/2026")).toBeInTheDocument();
+  expect(estadia.getByText("Titular · Responsable de: María Gutiérrez")).toBeInTheDocument();
+
+  // Al cambiar el nacimiento a 15 años aparece el adulto responsable, obligatorio.
+  fireEvent.change(screen.getByLabelText("Nacimiento"), { target: { value: "2011-06-01" } });
+  expect(screen.getByLabelText(/Adulto responsable\*/)).toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("Nacimiento"), { target: { value: "1984-10-01" } });
+  expect(screen.queryByLabelText(/Adulto responsable/)).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  const enviado = onGuardar.mock.calls[0][0];
+  expect(enviado.responsableId).toBeNull();
+  for (const campo of ["fechaDesde", "fechaHasta", "habitacionId"]) expect(enviado).not.toHaveProperty(campo);
+});
+
+it("menor alojado: adulto responsable obligatorio y la justificación guardada a la vista", async () => {
+  const onGuardar = vi.fn();
+  const martin = adultoAlojado();
+  const maria = { ...menorAlojada(), responsableId: null };
+  render(<PersonaFormulario reserva={reserva} persona={maria} personas={[martin, maria]} onGuardar={onGuardar} onClose={() => {}} />);
+  expect(screen.getByLabelText("Justificación sin documento")).toHaveValue("Menor sin documento presentado");
+  const responsable = screen.getByLabelText(/Adulto responsable\*/);
+  expect(within(responsable).getAllByRole("option").map((o) => o.textContent)).toEqual(["Elegí el adulto responsable", "Martín Gutiérrez"]);
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).not.toHaveBeenCalled();
+  expect(screen.getAllByText("Elegí el adulto responsable del menor.").length).toBeGreaterThan(0);
+  await userEvent.selectOptions(responsable, "38");
+  // El vínculo también es obligatorio; con "Otro familiar" pide la autorización.
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).not.toHaveBeenCalled();
+  await userEvent.selectOptions(screen.getByLabelText(/Vínculo con el menor \*/), "Otro familiar");
+  expect(screen.getByText("Pedí la autorización de los padres o tutores.")).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("checkbox", { name: /Autorización presentada/ }));
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalledWith(
+    expect.objectContaining({ responsableId: "38", vinculoResponsable: "Otro familiar", autorizacionPresentada: true }),
+  );
+});
+
+it("cambiar el documento de una ficha verificada pide motivo y avisa que vuelve a verificarse", async () => {
+  const onGuardar = vi.fn();
+  const martin = adultoAlojado();
+  render(<PersonaFormulario reserva={reserva} persona={martin} personas={[martin]} onGuardar={onGuardar} onClose={() => {}} />);
+  expect(screen.queryByLabelText(/Motivo del cambio de documento/)).not.toBeInTheDocument();
+  const numero = screen.getByLabelText(/Número de DNI|Número de documento/);
+  await userEvent.clear(numero);
+  await userEvent.type(numero, "30512875");
+  expect(screen.getByText(/vuelve a "Datos por verificar"/)).toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).not.toHaveBeenCalled();
+  await userEvent.type(screen.getByLabelText(/Motivo del cambio de documento \*/), "Error de tipeo");
+  await userEvent.click(screen.getByRole("button", { name: "Guardar persona" }));
+  expect(onGuardar).toHaveBeenCalledWith(expect.objectContaining({ numeroDocumento: "30512875", motivoCambioIdentidad: "Error de tipeo" }));
+});
+
+it("mover a otra habitación: solo habitaciones de la reserva, las completas no se ofrecen y el titular pide reemplazo", async () => {
+  const martin = adultoAlojado();
+  const marta = ocupante({ id: 39, nombre: "Marta", apellido: "Conte", numeroDocumento: "40236523", estado: "Alojado", fechaNacimiento: "1990-05-05" });
+  const reservaTres = { ...reserva, habitaciones: [...reserva.habitaciones, { id: 12, numero: "103", capacidad: 2 }] };
+  const enLa102 = ocupante({ id: 41, nombre: "Pablo", apellido: "Ríos", numeroDocumento: "28111222", estado: "Alojado", fechaNacimiento: "1980-01-01", asignaciones: [{ habitacionId: 11, hasta: null }] });
+  api.post.mockResolvedValue({ data: { ok: true } });
+  const onMovida = vi.fn();
+  const cliente = new QueryClient();
+  render(
+    <QueryClientProvider client={cliente}>
+      <MoverHabitacion persona={martin} reserva={reservaTres} personas={[martin, marta, enLa102]} onClose={() => {}} onMovida={onMovida} />
+    </QueryClientProvider>,
+  );
+  const destino = screen.getByLabelText(/Habitación de destino/);
+  expect(screen.getByText("El precio de la estadía no se recalcula por este cambio.")).toBeInTheDocument();
+  const opciones = within(destino).getAllByRole("option");
+  expect(opciones.map((o) => o.textContent)).toEqual(["Elegí la habitación", "Habitación 102 · 1 de 1 · completa", "Habitación 103 · 0 de 2"]);
+  expect(opciones[1]).toBeDisabled();
+  await userEvent.click(screen.getByRole("button", { name: "Mover" }));
+  expect(api.post).not.toHaveBeenCalled();
+  expect(screen.getByText("Elegí quién queda como titular de la habitación que deja.")).toBeInTheDocument();
+  await userEvent.selectOptions(destino, "12");
+  await userEvent.selectOptions(screen.getByLabelText(/Nuevo titular/), "39");
+  await userEvent.type(screen.getByLabelText(/^Motivo \*/), "Pidió cambiar");
+  await userEvent.click(screen.getByRole("button", { name: "Mover" }));
+  await waitFor(() => expect(onMovida).toHaveBeenCalled());
+  expect(api.post).toHaveBeenCalledWith("/estadia/50/ocupantes/38/mover", {
+    habitacionId: 12,
+    motivo: "Pidió cambiar",
+    nuevoTitularId: 39,
+    operador: "Operador prueba",
+  });
+});
+
+// ---------------------------------------------------------------- persona adicional con la estadía en curso
+const vistaAdulto = (noches) => ({
+  habitacionId: 10,
+  numero: "101",
+  categoria: "adulto",
+  ocupacionActual: { adultos: 2, menores: 0 },
+  ocupacionNueva: { adultos: 3, menores: 0 },
+  noches,
+  total: noches.reduce((a, n) => a + n.diferencia, 0),
+  token: "tok-1",
+});
+
+it("vista previa de la persona adicional: por noche × noches, detalle si cambian, menor y sin cargo", () => {
+  const { rerender } = render(
+    <PersonaAdicionalPrevia
+      vista={vistaAdulto([
+        { fecha: "2026-10-02", diferencia: 8800 },
+        { fecha: "2026-10-03", diferencia: 8800 },
+        { fecha: "2026-10-04", diferencia: 8800 },
+      ])}
+      nombre="Ana Pérez"
+      onConfirmar={() => {}}
+      onCancelar={() => {}}
+    />,
+  );
+  expect(screen.getByText(/\+\$ 8\.800 por noche × 3 noches =/)).toBeInTheDocument();
+  expect(screen.getByText("$ 26.400")).toBeInTheDocument();
+  expect(screen.getByText(/Se carga en la cuenta de la habitación como «Persona adicional»/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Confirmar" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "Cancelar" })).toBeInTheDocument();
+
+  rerender(
+    <PersonaAdicionalPrevia
+      vista={vistaAdulto([
+        { fecha: "2026-10-02", diferencia: 8800 },
+        { fecha: "2026-10-03", diferencia: 11000 },
+      ])}
+      onConfirmar={() => {}}
+      onCancelar={() => {}}
+    />,
+  );
+  expect(screen.getByText("$ 19.800")).toBeInTheDocument();
+  expect(screen.getByText("Noche del 02/10/2026: +$ 8.800")).toBeInTheDocument();
+  expect(screen.getByText("Noche del 03/10/2026: +$ 11.000")).toBeInTheDocument();
+
+  rerender(
+    <PersonaAdicionalPrevia vista={{ ...vistaAdulto([]), categoria: "menor" }} onConfirmar={() => {}} onCancelar={() => {}} />,
+  );
+  expect(screen.getByText("Menor sin cargo.")).toBeInTheDocument();
+
+  rerender(
+    <PersonaAdicionalPrevia
+      vista={vistaAdulto([{ fecha: "2026-10-02", diferencia: 0 }])}
+      onConfirmar={() => {}}
+      onCancelar={() => {}}
+    />,
+  );
+  expect(screen.getByText("Dentro de la ocupación base: no se genera cargo.")).toBeInTheDocument();
+});
+
+it("Registrar ingreso de una persona adicional muestra la vista previa y confirma con el token", async () => {
+  const prevista = ocupante({ id: 45, nombre: "Ana", apellido: "Pérez", numeroDocumento: "30111222", estado: "Previsto", fechaNacimiento: "1990-01-01" });
+  api.get.mockImplementation(async (url) => ({ data: url.endsWith("/ocupantes") ? [adultoAlojado(), prevista] : [] }));
+  const vista = vistaAdulto([{ fecha: "2026-09-29", diferencia: 8800 }]);
+  api.post.mockReset();
+  api.post
+    .mockRejectedValueOnce({ response: { status: 409, data: { codigo: "PERSONA_ADICIONAL_REQUIERE_CONFIRMACION", detalle: vista, error: "x" } } })
+    .mockResolvedValue({ data: { ok: true } });
+  const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={cliente}>
+      <PanelEstadia reserva={reserva} />
+    </QueryClientProvider>,
+  );
+  await elegirAccion("Ana Pérez", "Registrar ingreso");
+  const dialogo = await screen.findByRole("dialog", { name: "Persona adicional" });
+  expect(within(dialogo).getByText(/\+\$ 8\.800 por noche × 1 noche =/)).toBeInTheDocument();
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  await userEvent.click(within(dialogo).getByRole("button", { name: "Confirmar" }));
+  await waitFor(() => expect(api.post).toHaveBeenCalledTimes(2));
+  expect(api.post).toHaveBeenLastCalledWith("/estadia/50/ocupantes/45/accion", {
+    accion: "ingresar",
+    operador: "Operador prueba",
+    confirmacionPersonaAdicional: "tok-1",
+  });
+  await waitFor(() => expect(screen.queryByRole("dialog", { name: "Persona adicional" })).not.toBeInTheDocument());
+});
+
+it("Registrar salida pide confirmación: persona adicional baja la ocupación; de la reserva original, la tarifa no cambia", async () => {
+  const reservaVigente = { ...reserva, fechaHasta: "2099-01-01" };
+  const original = adultoAlojado();
+  const extra = ocupante({ id: 46, nombre: "Lucas", apellido: "Ríos", numeroDocumento: "99627353", estado: "Alojado", fechaNacimiento: "1994-05-20", personaAdicional: true });
+  api.get.mockImplementation(async (url) => ({ data: url.endsWith("/ocupantes") ? [{ ...original, esTitular: false }, extra] : [] }));
+  api.post.mockReset();
+  api.post.mockResolvedValue({ data: { ok: true } });
+  const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={cliente}>
+      <PanelEstadia reserva={reservaVigente} />
+    </QueryClientProvider>,
+  );
+  await elegirAccion("Martín Gutiérrez", "Registrar salida");
+  expect(screen.getByText("La tarifa de la reserva no cambia por esta salida.")).toBeInTheDocument();
+  expect(api.post).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole("button", { name: "Cancelar" }));
+  await elegirAccion("Lucas Ríos", "Registrar salida");
+  expect(screen.getByText(/Se anulan sus cargos «Persona adicional» de las noches que no usa y la ocupación registrada/)).toBeInTheDocument();
+  const confirmar = screen.getAllByRole("button", { name: "Registrar salida" }).at(-1);
+  await userEvent.click(confirmar);
+  await waitFor(() =>
+    expect(api.post).toHaveBeenCalledWith("/estadia/50/ocupantes/46/accion", { accion: "retirar", operador: "Operador prueba" }),
+  );
+});
+
+it("«Marcar documento verificado» solo en fichas por verificar; el menor muestra responsable y vínculo", async () => {
+  const verificado = adultoAlojado();
+  const porVerificar = ocupante({ id: 39, nombre: "Marta", apellido: "Conte", numeroDocumento: "40236523", estado: "Alojado", fechaNacimiento: "1990-05-05", verificadoEn: null });
+  const menor = { ...menorAlojada(), vinculoResponsable: "Otro familiar", autorizacionPresentada: true };
+  api.get.mockImplementation(async (url) => ({ data: url.endsWith("/ocupantes") ? [verificado, porVerificar, menor] : [] }));
+  const cliente = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  render(
+    <QueryClientProvider client={cliente}>
+      <PanelEstadia reserva={reserva} />
+    </QueryClientProvider>,
+  );
+  await screen.findByText("Marta Conte");
+  await abrirMenu("Marta Conte");
+  expect(screen.getAllByRole("button", { name: "Marcar documento verificado" })).toHaveLength(1);
+  expect(screen.queryByRole("button", { name: "Verificar datos" })).not.toBeInTheDocument();
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(document.body);
+  await abrirMenu("Martín Gutiérrez");
+  expect(screen.queryByRole("button", { name: "Marcar documento verificado" })).not.toBeInTheDocument();
+  expect(screen.getByText("Responsable: Martín Gutiérrez · Otro familiar · Autorización presentada")).toBeInTheDocument();
+});
+
+it("ficha de ocupante: nombre y apellido con mayúscula inicial al salir del campo", async () => {
+  render(<PersonaFormulario reserva={reserva} persona={{}} personas={[]} onGuardar={() => {}} onClose={() => {}} />);
+  await userEvent.type(screen.getByLabelText("Apellido *"), "de la vega");
+  fireEvent.blur(screen.getByLabelText("Apellido *"));
+  expect(screen.getByLabelText("Apellido *")).toHaveValue("De la Vega");
+  expect(screen.getAllByText("* obligatorio").length).toBeGreaterThan(0);
+});

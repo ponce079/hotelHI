@@ -45,6 +45,7 @@ export const MENU_GRUPOS = [
   {
     grupo: "Operación Hotelera",
     items: [
+      { to: "/personas-alojadas", label: "Personas alojadas", icon: Users, roles: ["admin", "recepcionista"] },
       {
         to: "/habitaciones",
         label: "Habitaciones",

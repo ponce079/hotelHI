@@ -1,5 +1,7 @@
 export function Input({ label, error, className = "", ...props }) {
-  const labelVisible = props.type === "email" && label?.startsWith("Contacto") ? "Correo electrónico *" : label;
+  // El rótulo puede ser un texto o un elemento (por ejemplo, <Rotulo> con el asterisco).
+  const labelVisible =
+    props.type === "email" && typeof label === "string" && label.startsWith("Contacto") ? "Correo electrónico *" : label;
   return (
     <label className="flex flex-col gap-1.5 font-body text-sm">
       {labelVisible && <span className="text-[12px] text-tinta/70">{labelVisible}</span>}

@@ -19,7 +19,12 @@ export function Modal({ titulo, subtitulo, extra, onClose, children, ancho = "ma
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className={`w-full ${ancho} rounded-2xl bg-white shadow-2xl`}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={titulo}
+        className={`w-full ${ancho} rounded-2xl bg-white shadow-2xl`}
+      >
         <div className="flex items-start justify-between gap-3 border-b border-borde px-6 py-5">
           <div className="min-w-0">
             <h3 className="font-heading text-[20px] font-semibold text-tinta">{titulo}</h3>
@@ -27,7 +32,12 @@ export function Modal({ titulo, subtitulo, extra, onClose, children, ancho = "ma
           </div>
           <div className="flex flex-none items-center gap-3">
             {extra}
-            <button type="button" onClick={onClose} className="cursor-pointer rounded-md p-1 text-piedra hover:text-error">
+            <button
+              type="button"
+              aria-label="Cerrar"
+              onClick={onClose}
+              className="cursor-pointer rounded-md p-1 text-piedra hover:text-error"
+            >
               <X size={18} />
             </button>
           </div>

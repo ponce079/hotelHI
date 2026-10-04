@@ -17,7 +17,9 @@ const PATRON_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function validarHuesped(huesped) {
   const errores = {};
-  if (!huesped.nombre.trim()) errores.nombre = "El nombre y apellido son obligatorios.";
+  // Nombres y apellido por separado (Huesped.nombre se arma en el backend como "nombres apellido").
+  if (!String(huesped.nombres ?? "").trim()) errores.nombres = "Los nombres son obligatorios.";
+  if (!String(huesped.apellido ?? "").trim()) errores.apellido = "El apellido es obligatorio.";
   if (!huesped.numeroDocumento.trim()) errores.numeroDocumento = "El número de documento es obligatorio.";
   if (!huesped.contacto.trim()) errores.contacto = "El correo electrónico es obligatorio.";
   else if (!PATRON_EMAIL.test(huesped.contacto.trim())) errores.contacto = "Ingresá un correo electrónico válido.";

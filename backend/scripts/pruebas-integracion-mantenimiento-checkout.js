@@ -73,8 +73,15 @@ function enDias(dias) {
   return new Date(hoy.getTime() + dias * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 }
 
-const HUESPED = { nombre: "Ana Pérez", tipoDocumento: "DNI", numeroDocumento: "30111222", contacto: "ana@mail.com" };
-const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Tarjeta de crédito" };
+const HUESPED = {
+  paisDocumento: "AR",
+  fechaNacimiento: "1990-01-01",
+  nombre: "Ana Pérez",
+  tipoDocumento: "DNI",
+  numeroDocumento: "30111222",
+  contacto: "ana@mail.com",
+};
+const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Tarjeta crédito", referenciaGarantia: "PRUEBA-LOCAL" };
 
 // Etapa 4A — crearReserva ahora pasa por el motor de cotización: hace falta
 // una temporada Base + un plan BAR + una Tarifa vigente por tipo, aunque
@@ -146,6 +153,7 @@ async function crearReservaEnCurso(numeroHabitacion) {
     totalEsperado: 0,
     huesped: { ...HUESPED },
   });
+  await require("./_ocupantesFixture").completarFixture(reserva, habitaciones);
   await checkInServicio.confirmarCheckInConReserva({
     reservaId: reserva.id,
     numeroDocumentoIngresado: HUESPED.numeroDocumento,
