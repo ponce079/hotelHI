@@ -1,6 +1,6 @@
 import { ArrowRight } from "lucide-react";
 import { Boton } from "./Boton";
-import { formatearPrecio, textoCondicionesPlan, textoNoches } from "../formato";
+import { formatearPrecio, nombreComercialPlan, textoCondicionesPlan, textoNoches } from "../formato";
 
 // Un plan de un tipo de habitación: nombre, condiciones (armadas en el
 // frontend con textoCondicionesPlan), total de la estadía y "Elegir".
@@ -8,7 +8,7 @@ export function TarjetaPlan({ plan, noches, elegido = false, onElegir, deshabili
   return (
     <div className={`ec-plan ${elegido ? "ec-plan--elegido" : ""}`.trim()}>
       <div>
-        <p className="ec-plan__nombre">{plan.nombre}</p>
+        <p className="ec-plan__nombre">{nombreComercialPlan(plan)}</p>
         <p className={`ec-plan__condiciones ${plan.reembolsable ? "" : "ec-plan__condiciones--nrf"}`.trim()}>
           {textoCondicionesPlan(plan)}
         </p>
@@ -24,7 +24,7 @@ export function TarjetaPlan({ plan, noches, elegido = false, onElegir, deshabili
           <Boton
             onClick={() => onElegir(plan)}
             disabled={deshabilitado}
-            aria-label={`Elegir ${plan.nombre} por ${formatearPrecio(plan.total)}`}
+            aria-label={`Elegir ${nombreComercialPlan(plan)} por ${formatearPrecio(plan.total)}`}
           >
             Elegir <ArrowRight size={18} strokeWidth={1.8} aria-hidden="true" />
           </Boton>

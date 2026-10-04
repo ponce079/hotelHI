@@ -1,7 +1,6 @@
-// Constantes del motor de reservas web (e-commerce, etapa 1A). Contrato de la
-// API en docs/ecommerce/CONTRATO.md — si algo de acá cambia, cambia también
-// el contrato (solo Gimena).
-import { TIPOS_DOCUMENTO } from "../reservas/reservas.constantes";
+// Constantes del motor de reservas web (e-commerce). Contrato de la API en
+// docs/ecommerce/CONTRATO.md — si algo de acá cambia, cambia también el
+// contrato (solo Gimena).
 import { MAX_NOCHES_ESTADIA } from "../tarifas/tarifas.constantes";
 
 // Versión de términos + política de cancelación + privacidad (Ley 25.326)
@@ -41,37 +40,18 @@ export const PASOS = [
   { numero: 4, clave: "confirmacion", etiqueta: "Confirmación" },
 ];
 
-// Mismos valores que la ficha de huésped del sistema (se importan, no se
-// copian, para que no se desincronicen).
-export { TIPOS_DOCUMENTO };
+// Catálogos ÚNICOS del sistema (se importan, no se copian): los mismos que
+// usa la ficha de huésped del mostrador y del check-in.
+//   - Tipo de documento: frontend/src/lib/tiposDocumento.js.
+//   - País del documento, nacionalidad y país de residencia: códigos ISO
+//     3166-1 alfa-2 de frontend/src/lib/paises.js (PAISES son pares
+//     [codigo, nombre]).
+export { TIPOS_DOCUMENTO, ETIQUETAS_NUMERO_DOCUMENTO, normalizarTipoDocumento } from "../../lib/tiposDocumento";
+export { PAISES, codigoPais, nombrePais } from "../../lib/paises";
 
-// Nacionalidad y país de residencia: ISO 3166-1 alfa-2, mismo formato que
-// PAISES_OCUPANTES de la rama feature/estadia-ocupantes (Agustín).
-// A CONFIRMAR CON AGUSTÍN: lista definitiva y si se comparte un único catálogo.
-export const PAISES = [
-  { codigo: "AR", nombre: "Argentina" },
-  { codigo: "BO", nombre: "Bolivia" },
-  { codigo: "BR", nombre: "Brasil" },
-  { codigo: "CL", nombre: "Chile" },
-  { codigo: "PY", nombre: "Paraguay" },
-  { codigo: "UY", nombre: "Uruguay" },
-  { codigo: "PE", nombre: "Perú" },
-  { codigo: "CO", nombre: "Colombia" },
-  { codigo: "EC", nombre: "Ecuador" },
-  { codigo: "VE", nombre: "Venezuela" },
-  { codigo: "MX", nombre: "México" },
-  { codigo: "US", nombre: "Estados Unidos" },
-  { codigo: "CA", nombre: "Canadá" },
-  { codigo: "ES", nombre: "España" },
-  { codigo: "IT", nombre: "Italia" },
-  { codigo: "FR", nombre: "Francia" },
-  { codigo: "DE", nombre: "Alemania" },
-  { codigo: "GB", nombre: "Reino Unido" },
-  { codigo: "IL", nombre: "Israel" },
-  { codigo: "CN", nombre: "China" },
-  { codigo: "JP", nombre: "Japón" },
-  { codigo: "AU", nombre: "Australia" },
-];
+// El titular tiene que ser mayor de edad a la fecha de ingreso (mismo
+// criterio que normalizarAltaReserva en el backend).
+export const EDAD_MINIMA_TITULAR = 18;
 
 // Códigos de error del contrato (más ERROR_RED, propio del frontend).
 export const CODIGO_ERROR = {

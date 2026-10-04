@@ -6,7 +6,7 @@ import { Insignia } from "../componentes/Insignia";
 import { MensajeError } from "../componentes/MensajeError";
 import { Tarjeta } from "../componentes/Tarjeta";
 import { consultarMiReserva } from "../ecommerce.api";
-import { formatearPrecio, formatearRangoFechas, textoCondicionesPlan } from "../formato";
+import { formatearPrecio, formatearRangoFechas, nombreComercialPlan, textoCondicionesPlan } from "../formato";
 
 // /web/mi-reserva — Responsable: Gimena. ESQUELETO: consulta con código de
 // reserva + email (sin cuentas de huésped, sin "Modificar" ni "Completar
@@ -80,7 +80,7 @@ export function MiReservaPage() {
               {reserva.habitaciones.map((h) => `Habitación ${h.tipo}`).join(" + ")} · Titular {reserva.titular}
             </p>
             <p>
-              {reserva.plan.nombre} · <span className="ec-texto-2">{textoCondicionesPlan(reserva.plan)}</span>
+              {nombreComercialPlan(reserva.plan)} · <span className="ec-texto-2">{textoCondicionesPlan(reserva.plan)}</span>
             </p>
             <p>Total {formatearPrecio(reserva.total)}</p>
           </Tarjeta>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { CircleAlert, Users } from "lucide-react";
@@ -8,7 +8,7 @@ import { Insignia } from "../componentes/Insignia";
 import { MensajeError } from "../componentes/MensajeError";
 import { Tarjeta } from "../componentes/Tarjeta";
 import { TarjetaPlan } from "../componentes/TarjetaPlan";
-import { consultarDisponibilidad } from "../ecommerce.api";
+import { consultarDisponibilidad, cotizar } from "../ecommerce.api";
 import { contenidoDeTipo } from "../ecommerce.contenido";
 import { LEYENDA_PRECIO_FINAL, busquedaComoQuery, formatearRangoFechas, textoNoches, textoOcupacion } from "../formato";
 import { useProcesoCompra } from "../ProcesoCompraContext";
@@ -43,7 +43,9 @@ export function ResultadosPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const proceso = useProcesoCompra();
-  const { definirBusqueda, elegirPlan, tipo: tipoElegido, plan: planElegido } = proceso;
+  const { definirBusqueda, elegirPlan, actualizarCotizacion, tipo: tipoElegido, plan: planElegido } = proceso;
+  const [cotizando, setCotizando] = useState(false);
+  const [errorCotizacion, setErrorCotizacion] = useState(null);
 
   const busqueda = leerBusqueda(searchParams, proceso);
   const valida = busqueda && Object.keys(validarBusqueda(busqueda)).length === 0;
@@ -71,9 +73,29 @@ export function ResultadosPage() {
     navigate(`/web/resultados?${busquedaComoQuery(valores)}`);
   }
 
-  function elegir(tipo, plan) {
-    elegirPlan(tipo, plan);
-    navigate("/web/datos");
+  // Elegir un plan lo cotiza contra /api/web/cotizar (el mismo cálculo que
+  // hará el alta): el total que se arrastra a Datos y Pago es el del
+  // servidor. Si falla (por ejemplo, alguien tomó la última habitación), el
+  // huésped se queda acá con el mensaje.
+  async function elegir(tipo, plan) {
+    if (cotizando) return;
+    setCotizando(true);
+    setErrorCotizacion(null);
+    try {
+      const cotizacion = await cotizar({
+        fechaDesde: busqueda.fechaDesde,
+        fechaHasta: busqueda.fechaHasta,
+        planTarifarioId: plan.planTarifarioId,
+        habitaciones: [{ tipoHabitacionId: tipo.tipoHabitacionId, adultos: busqueda.adultos, menores: busqueda.menores }],
+      });
+      elegirPlan(tipo, plan);
+      actualizarCotizacion(cotizacion);
+      navigate("/web/datos");
+    } catch (err) {
+      setErrorCotizacion(err);
+    } finally {
+      setCotizando(false);
+    }
   }
 
   return (
@@ -100,6 +122,7 @@ export function ResultadosPage() {
 
       {valida && disponibilidad.isPending && <p className="ec-cargando">Buscando disponibilidad…</p>}
       {disponibilidad.isError && <MensajeError error={disponibilidad.error} />}
+      {errorCotizacion && <MensajeError error={errorCotizacion} />}
 
       {disponibilidad.data && (
         <div className="ec-resultados__lista">
@@ -141,6 +164,7 @@ export function ResultadosPage() {
                           noches={disponibilidad.data.noches}
                           elegido={tipoElegido?.tipoHabitacionId === tipo.tipoHabitacionId && planElegido?.planTarifarioId === plan.planTarifarioId}
                           onElegir={() => elegir(tipo, plan)}
+                          deshabilitado={cotizando}
                         />
                       ))}
                       <p className="ec-texto-2 ec-chico">{LEYENDA_PRECIO_FINAL}</p>

@@ -1,24 +1,19 @@
 // Capa de API del e-commerce (/api/web). Contrato: docs/ecommerce/CONTRATO.md.
-// Con VITE_ECOMMERCE_MOCK=true responde ecommerce.mock.js (misma forma).
+// En desarrollo (npm run dev) y con VITE_ECOMMERCE_MOCK=true responde
+// ecommerce.mock.js (misma forma). Un build de producción nunca usa el mock.
 // Todos los errores salen normalizados a { codigo, mensaje, status, ...extra }.
 // Solo Gimena cambia este archivo.
 import { api } from "../../lib/api";
 import { CODIGO_ERROR } from "./ecommerce.constantes";
-import {
-  mockCancelarMiReserva,
-  mockConsultarDisponibilidad,
-  mockConsultarMiReserva,
-  mockCotizar,
-  mockCrearReserva,
-  mockObtenerTipos,
-} from "./ecommerce.mock";
 
 // Tope de espera para crear la reserva (incluye la pasarela). Si se corta,
 // el error es ERROR_RED y se reintenta con la MISMA clave de idempotencia.
 const TIMEOUT_RESERVA_MS = 45000;
 
-export function usarMock() {
-  return import.meta.env.VITE_ECOMMERCE_MOCK === "true";
+// `env` es parámetro solo para poder testear el caso de producción
+// (DEV en false); en la app siempre es import.meta.env.
+export function usarMock(env = import.meta.env) {
+  return env.DEV === true && env.VITE_ECOMMERCE_MOCK === "true";
 }
 
 export function normalizarError(err) {
@@ -43,9 +38,13 @@ export function normalizarError(err) {
   };
 }
 
+// `conMock` recibe el módulo del mock. Se importa en forma dinámica y detrás
+// de un `import.meta.env.DEV` literal: en el build de producción Vite lo
+// reemplaza por `false` y el mock (con sus datos de ejemplo) ni siquiera
+// entra al bundle.
 async function llamar(conMock, conApi) {
   try {
-    if (usarMock()) return await conMock();
+    if (import.meta.env.DEV && usarMock()) return await conMock(await import("./ecommerce.mock"));
     const { data } = await conApi();
     return data;
   } catch (err) {
@@ -54,13 +53,13 @@ async function llamar(conMock, conApi) {
 }
 
 export function obtenerTipos() {
-  return llamar(mockObtenerTipos, () => api.get("/web/tipos"));
+  return llamar((mock) => mock.mockObtenerTipos(), () => api.get("/web/tipos"));
 }
 
 // params: { fechaDesde, fechaHasta, adultos, menores }
 export function consultarDisponibilidad(params) {
   return llamar(
-    () => mockConsultarDisponibilidad(params),
+    (mock) => mock.mockConsultarDisponibilidad(params),
     () => api.get("/web/disponibilidad", { params })
   );
 }
@@ -68,7 +67,7 @@ export function consultarDisponibilidad(params) {
 // cuerpo: { fechaDesde, fechaHasta, planTarifarioId, habitaciones: [{ tipoHabitacionId, adultos, menores }] }
 export function cotizar(cuerpo) {
   return llamar(
-    () => mockCotizar(cuerpo),
+    (mock) => mock.mockCotizar(cuerpo),
     () => api.post("/web/cotizar", cuerpo)
   );
 }
@@ -78,21 +77,21 @@ export function cotizar(cuerpo) {
 // pasa por el contexto ni por ningún storage.
 export function crearReserva(cuerpo) {
   return llamar(
-    () => mockCrearReserva(cuerpo),
+    (mock) => mock.mockCrearReserva(cuerpo),
     () => api.post("/web/reservas", cuerpo, { timeout: TIMEOUT_RESERVA_MS })
   );
 }
 
 export function consultarMiReserva({ codigo, email }) {
   return llamar(
-    () => mockConsultarMiReserva({ codigo, email }),
+    (mock) => mock.mockConsultarMiReserva({ codigo, email }),
     () => api.post("/web/mi-reserva", { codigo, email })
   );
 }
 
 export function cancelarMiReserva({ codigo, email, montoPenalidadAceptado }) {
   return llamar(
-    () => mockCancelarMiReserva({ codigo, email, montoPenalidadAceptado }),
+    (mock) => mock.mockCancelarMiReserva({ codigo, email, montoPenalidadAceptado }),
     () => api.post("/web/mi-reserva/cancelar", { codigo, email, montoPenalidadAceptado })
   );
 }

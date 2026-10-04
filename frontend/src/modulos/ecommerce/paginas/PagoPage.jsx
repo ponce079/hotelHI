@@ -26,10 +26,12 @@ const TARJETA_VACIA = { titular: "", numero: "", vencimientoMes: "", vencimiento
 // el flujo completo mientras no exista el formulario real.
 const TARJETA_PRUEBA_MOCK = { titular: "HUESPED DE PRUEBA", numero: "4242424242424242", vencimientoMes: 12, vencimientoAnio: 2030, cvv: "123" };
 const HUESPED_PRUEBA_MOCK = {
-  nombre: "Huésped",
+  nombres: "Huésped",
   apellido: "De Prueba",
   tipoDocumento: "DNI",
+  paisDocumento: "AR",
   numeroDocumento: "30111222",
+  fechaNacimiento: "1990-05-20",
   email: "prueba@correo.com",
   telefono: "+54 9 387 555-0000",
   nacionalidad: "AR",
@@ -56,7 +58,7 @@ export function PagoPage() {
     try {
       const cuerpo = proceso.armarCuerpoReserva({ tarjeta: datosTarjeta, totalEsperado: total });
       // Esqueleto: mientras /web/datos no cargue al titular, se usan datos de prueba.
-      if (!huesped.nombre) cuerpo.huesped = { ...HUESPED_PRUEBA_MOCK };
+      if (!huesped.nombres) cuerpo.huesped = { ...HUESPED_PRUEBA_MOCK };
       cuerpo.consentimiento = { ...cuerpo.consentimiento, aceptaPoliticas: true };
       const resultado = await crearReserva(cuerpo);
       proceso.registrarResultado(resultado);

@@ -26,15 +26,24 @@ export function generarClaveIdempotencia() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
+// Titular = ficha Huesped del sistema (CONTRATO.md → Huésped). Países en
+// ISO alfa-2 (lib/paises.js), tipo de documento del catálogo único
+// (lib/tiposDocumento.js), fechaNacimiento AAAA-MM-DD. Nacionalidad y país
+// de residencia empiezan VACÍOS a propósito: son datos de la ficha de
+// registro de pasajeros y la residencia define la posible exención de IVA,
+// así que un extranjero que no los toca no puede quedar como argentino
+// residente.
 export const HUESPED_VACIO = {
-  nombre: "",
+  nombres: "",
   apellido: "",
   tipoDocumento: "DNI",
+  paisDocumento: "AR",
   numeroDocumento: "",
+  fechaNacimiento: "",
   email: "",
   telefono: "",
-  nacionalidad: "AR",
-  paisResidencia: "AR",
+  nacionalidad: "",
+  paisResidencia: "",
 };
 
 function estadoInicial() {
@@ -114,7 +123,9 @@ function leerStorage() {
     return {
       ...base,
       ...serializarParaStorage({ ...base, ...guardado }),
-      huesped: { ...HUESPED_VACIO, ...(guardado.huesped ?? {}) },
+      // Lista blanca también al leer: un huésped guardado con la forma vieja
+      // (`nombre`) o con cualquier otra clave no vuelve al estado.
+      huesped: { ...HUESPED_VACIO, ...(soloCampos(guardado.huesped, Object.keys(HUESPED_VACIO)) ?? {}) },
     };
   } catch {
     return null;

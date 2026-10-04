@@ -65,6 +65,13 @@ export function textoOcupacion({ adultos = 0, menores = 0 } = {}) {
   return `${a} · ${menores} ${menores === 1 ? "menor" : "menores"}`;
 }
 
+// Nombre del plan para el huésped (la base no cambia: BAR / NRF siguen con su
+// nombre interno, que ve el mostrador).
+export function nombreComercialPlan(plan) {
+  if (!plan) return "";
+  return plan.reembolsable ? "Tarifa flexible" : "No reembolsable";
+}
+
 // Condiciones del plan, armadas a partir de sus campos (decisión de diseño 2).
 export function textoCondicionesPlan(plan) {
   if (!plan) return "";

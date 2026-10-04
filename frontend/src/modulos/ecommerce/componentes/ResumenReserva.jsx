@@ -7,6 +7,7 @@ import {
   LEYENDA_PRECIO_FINAL,
   formatearFecha,
   formatearPrecio,
+  nombreComercialPlan,
   textoCondicionesPlan,
   textoNoches,
   textoOcupacion,
@@ -69,7 +70,7 @@ export function ResumenReserva({ tipo, fechaDesde, fechaHasta, ocupacion, plan, 
 
         {plan && (
           <div className="ec-resumen__plan">
-            <p className="ec-plan__nombre">{plan.nombre}</p>
+            <p className="ec-plan__nombre">{nombreComercialPlan(plan)}</p>
             <p className={`ec-plan__condiciones ${plan.reembolsable ? "" : "ec-plan__condiciones--nrf"}`.trim()}>
               {textoCondicionesPlan(plan)}
             </p>

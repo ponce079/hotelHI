@@ -1,6 +1,8 @@
 // Mock de /api/web — responde con la forma EXACTA de docs/ecommerce/CONTRATO.md.
-// Se activa con VITE_ECOMMERCE_MOCK=true (frontend/.env.local). Solo Gimena
-// lo cambia. Nunca muestra número de habitación, piso ni cantidad de libres.
+// Solo en desarrollo: se activa con npm run dev y VITE_ECOMMERCE_MOCK=true
+// (frontend/.env.local); un build de producción nunca lo usa (usarMock en
+// ecommerce.api.js). Solo Gimena lo cambia. Nunca muestra número de
+// habitación, piso ni cantidad de libres.
 //
 // Escenarios forzables con ?mockEscenario=... en la URL de la página:
 //   PRECIO_CAMBIADO     crearReserva → 409 con totalNuevo (+10 %), hasta que
@@ -14,13 +16,22 @@
 // Tarjetas: 4242424242424242 aprobada; terminada en 0002 → fondos
 // insuficientes; en 0069 → tarjeta vencida; sin Luhn → DATOS_INVALIDOS
 // (tarjeta.numero); vencimiento anterior a la salida → TARJETA_VENCE_ANTES.
+//
+// Mi reserva (código + email, decisión 6 de CONTRATO.md):
+//   3FA9C21B + demo@hotel.com        reserva WEB (email de DatosReservaWeb).
+//   B81D90E4 + mostrador@hotel.com   reserva del mostrador cuyo contacto es un email.
+//   7C04E5A2                         reserva del mostrador con teléfono como
+//                                    único contacto: siempre NO_ENCONTRADA.
 import {
   CLAVE_IDEMPOTENCIA_MAX,
   CLAVE_IDEMPOTENCIA_MIN,
   CODIGO_ERROR,
+  EDAD_MINIMA_TITULAR,
   MAX_HABITACIONES_WEB,
   MAX_SOLICITUDES,
   VERSION_POLITICAS,
+  codigoPais,
+  normalizarTipoDocumento,
 } from "./ecommerce.constantes";
 import { calcularNoches } from "./formato";
 
@@ -61,7 +72,7 @@ const PLANES = [
 ];
 
 const RESERVA_DEMO = {
-  codigoConfirmacion: "DEMO1234",
+  codigoConfirmacion: "3FA9C21B",
   estado: "Confirmada",
   fechaDesde: "2026-11-20",
   fechaHasta: "2026-11-23",
@@ -81,17 +92,36 @@ const RESERVA_DEMO = {
   },
 };
 
+// Reservas que encuentra Mi reserva. emailWeb = DatosReservaWeb.emailContacto
+// (reserva web); contacto = Huesped.contacto (reserva del mostrador: solo
+// sirve si es un email).
+const RESERVAS_MI_RESERVA = [
+  { codigo: "3FA9C21B", emailWeb: "demo@hotel.com", contacto: "demo@hotel.com", reserva: RESERVA_DEMO },
+  {
+    codigo: "B81D90E4",
+    emailWeb: null,
+    contacto: "mostrador@hotel.com",
+    reserva: { ...RESERVA_DEMO, codigoConfirmacion: "B81D90E4", titular: "Ana M.", documento: "****318" },
+  },
+  {
+    codigo: "7C04E5A2",
+    emailWeb: null,
+    contacto: "+54 9 387 555-0101",
+    reserva: { ...RESERVA_DEMO, codigoConfirmacion: "7C04E5A2", titular: "Luis R.", documento: "****907" },
+  },
+];
+
 // Estado en memoria (se pierde al recargar, igual que un servidor reiniciado).
 const estado = {
   reservasPorClave: new Map(), // clave → { huella, respuesta }
   claveReutilizadaDisparada: false,
-  demoCancelada: false,
+  canceladas: new Set(), // códigos cancelados desde Mi reserva
 };
 
 export function reiniciarMock() {
   estado.reservasPorClave.clear();
   estado.claveReutilizadaDisparada = false;
-  estado.demoCancelada = false;
+  estado.canceladas.clear();
 }
 
 // --- Utilidades --------------------------------------------------------------
@@ -202,11 +232,54 @@ function huella({ tarjeta: _tarjeta, claveIdempotencia: _clave, ...resto }) {
   return JSON.stringify(resto);
 }
 
+// Mismo formato que el código del sistema (generarCodigoConfirmacion en
+// reservas.servicio.js): 8 caracteres hexadecimales en mayúsculas.
 function generarCodigo() {
-  const letras = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
   let codigo = "";
-  for (let i = 0; i < 8; i++) codigo += letras[Math.floor(Math.random() * letras.length)];
+  for (let i = 0; i < 8; i++) codigo += Math.floor(Math.random() * 16).toString(16).toUpperCase();
   return codigo;
+}
+
+const esEmail = (valor) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(valor ?? "").trim());
+
+// Edad cumplida en una fecha (las dos en AAAA-MM-DD).
+function edadEn(nacimiento, fecha) {
+  const [an, mn, dn] = nacimiento.split("-").map(Number);
+  const [af, mf, df] = fecha.split("-").map(Number);
+  return af - an - (mf < mn || (mf === mn && df < dn) ? 1 : 0);
+}
+
+// Titular = ficha Huesped del sistema (CONTRATO.md → Huésped).
+function validarHuesped(huesped, fechaDesde) {
+  const invalido = (campo, mensaje) => error(400, CODIGO_ERROR.DATOS_INVALIDOS, mensaje, { campo: `huesped.${campo}` });
+  const campos = [
+    "nombres",
+    "apellido",
+    "tipoDocumento",
+    "paisDocumento",
+    "numeroDocumento",
+    "fechaNacimiento",
+    "email",
+    "telefono",
+    "nacionalidad",
+    "paisResidencia",
+  ];
+  for (const campo of campos) {
+    if (!String(huesped[campo] ?? "").trim()) throw invalido(campo, "Completá todos los datos del titular.");
+  }
+  if (!normalizarTipoDocumento(huesped.tipoDocumento)) throw invalido("tipoDocumento", "Elegí un tipo de documento de la lista.");
+  for (const campo of ["paisDocumento", "nacionalidad", "paisResidencia"]) {
+    if (codigoPais(huesped[campo]) !== String(huesped[campo]).trim().toUpperCase()) {
+      throw invalido(campo, "Elegí un país de la lista.");
+    }
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(huesped.fechaNacimiento) || huesped.fechaNacimiento > fechaDesde) {
+    throw invalido("fechaNacimiento", "La fecha de nacimiento no es válida.");
+  }
+  if (edadEn(huesped.fechaNacimiento, fechaDesde) < EDAD_MINIMA_TITULAR) {
+    throw invalido("fechaNacimiento", `El titular tiene que tener al menos ${EDAD_MINIMA_TITULAR} años en la fecha de ingreso.`);
+  }
+  if (!esEmail(huesped.email)) throw invalido("email", "Ingresá un email válido.");
 }
 
 async function conEscenarioGeneral(funcion) {
@@ -241,11 +314,13 @@ export function mockConsultarDisponibilidad({ fechaDesde, fechaHasta, adultos, m
           capacidadMaxima: tipo.capacidadMaxima,
           ultimasDisponibles: tipo.ultimasDisponibles,
         };
+        // Misma prioridad que el backend: (a) la ocupación supera la
+        // capacidad del tipo; (b) no queda ninguna habitación libre que alcance.
         let motivoNoDisponible = null;
-        if (escenario === "SIN_DISPONIBILIDAD" && tipo.nombre === "Simple") {
-          motivoNoDisponible = "Sin disponibilidad para estas fechas";
-        } else if (personas > tipo.capacidadMaxima) {
+        if (personas > tipo.capacidadMaxima) {
           motivoNoDisponible = `Admite hasta ${tipo.capacidadMaxima} personas`;
+        } else if (escenario === "SIN_DISPONIBILIDAD" && tipo.nombre === "Simple") {
+          motivoNoDisponible = "Sin disponibilidad para estas fechas";
         }
         if (motivoNoDisponible) {
           return { ...base, ultimasDisponibles: false, desdePorNoche: null, planes: [], motivoNoDisponible };
@@ -300,14 +375,7 @@ export function mockCrearReserva(cuerpo) {
     const { noches, plan, lineas, total } = cotizacionInterna(cuerpo);
     const { huesped = {}, consentimiento = {}, tarjeta = {} } = cuerpo;
 
-    for (const campo of ["nombre", "apellido", "tipoDocumento", "numeroDocumento", "email", "telefono", "nacionalidad", "paisResidencia"]) {
-      if (!String(huesped[campo] ?? "").trim()) {
-        throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, "Completá todos los datos del titular.", { campo: `huesped.${campo}` });
-      }
-    }
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(huesped.email)) {
-      throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, "Ingresá un email válido.", { campo: "huesped.email" });
-    }
+    validarHuesped(huesped, cuerpo.fechaDesde);
     if (String(cuerpo.solicitudesEspeciales ?? "").length > MAX_SOLICITUDES) {
       throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, `Las solicitudes pueden tener hasta ${MAX_SOLICITUDES} caracteres.`, {
         campo: "solicitudesEspeciales",
@@ -377,33 +445,40 @@ export function mockCrearReserva(cuerpo) {
   });
 }
 
-function buscarDemo({ codigo, email }) {
-  const coincide =
-    String(codigo ?? "").trim().toUpperCase() === RESERVA_DEMO.codigoConfirmacion &&
-    String(email ?? "").trim().toLowerCase() === "demo@hotel.com";
-  // Mismo mensaje siempre: no se revela si el código existe.
-  if (!coincide) throw error(404, CODIGO_ERROR.NO_ENCONTRADA, "No encontramos una reserva con esos datos.");
+// Decisión 6: el email se compara con DatosReservaWeb.emailContacto (reserva
+// web) o, en una reserva del mostrador, con Huesped.contacto solo si es un
+// email. Sin email con qué comparar → NO_ENCONTRADA. Mismo mensaje siempre:
+// no se revela si el código existe.
+function buscarReserva({ codigo, email }) {
+  const buscado = String(codigo ?? "").trim().toUpperCase();
+  const emailBuscado = String(email ?? "").trim().toLowerCase();
+  const registro = RESERVAS_MI_RESERVA.find((r) => r.codigo === buscado);
+  const emailReserva = registro ? (registro.emailWeb ?? (esEmail(registro.contacto) ? registro.contacto : null)) : null;
+  if (!emailReserva || !emailBuscado || emailReserva.toLowerCase() !== emailBuscado) {
+    throw error(404, CODIGO_ERROR.NO_ENCONTRADA, "No encontramos una reserva con esos datos.");
+  }
+  return registro;
 }
 
 export function mockConsultarMiReserva(cuerpo) {
   return conEscenarioGeneral(() => {
-    buscarDemo(cuerpo);
-    if (estado.demoCancelada) {
-      return { ...RESERVA_DEMO, estado: "Cancelada", puedeCancelar: false, penalidadCancelacion: null, cobrado: 25000 };
+    const { codigo, reserva } = buscarReserva(cuerpo);
+    if (estado.canceladas.has(codigo)) {
+      return { ...reserva, estado: "Cancelada", puedeCancelar: false, penalidadCancelacion: null, cobrado: 25000 };
     }
-    return structuredClone(RESERVA_DEMO);
+    return structuredClone(reserva);
   });
 }
 
 export function mockCancelarMiReserva(cuerpo) {
   return conEscenarioGeneral(() => {
-    buscarDemo(cuerpo);
-    if (estado.demoCancelada) throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, "La reserva ya está cancelada.", { campo: "codigo" });
-    const monto = RESERVA_DEMO.penalidadCancelacion.monto;
+    const { codigo, reserva } = buscarReserva(cuerpo);
+    if (estado.canceladas.has(codigo)) throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, "La reserva ya está cancelada.", { campo: "codigo" });
+    const monto = reserva.penalidadCancelacion.monto;
     if (Number(cuerpo.montoPenalidadAceptado) !== monto) {
       throw error(409, CODIGO_ERROR.PENALIDAD_CAMBIO, "El cargo por cancelar cambió.", { montoNuevo: monto });
     }
-    estado.demoCancelada = true;
+    estado.canceladas.add(codigo);
     return { estado: "Cancelada", penalidadCobrada: monto };
   });
 }
