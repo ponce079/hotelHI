@@ -125,14 +125,14 @@ describe("persistencia y datos de tarjeta", () => {
     const primero = montar();
     busqueda(primero.result);
     act(() => primero.result.current.elegirPlan(DOBLE, NRF));
-    act(() => primero.result.current.actualizarHuesped({ nombre: "María", email: "maria@correo.com" }));
+    act(() => primero.result.current.actualizarHuesped({ nombres: "María", email: "maria@correo.com" }));
     const clave = primero.result.current.claveIdempotencia;
     primero.unmount();
 
     const { result } = montar();
     expect(result.current.tipo).toEqual(DOBLE);
     expect(result.current.plan).toEqual(NRF);
-    expect(result.current.huesped).toMatchObject({ nombre: "María", email: "maria@correo.com" });
+    expect(result.current.huesped).toMatchObject({ nombres: "María", email: "maria@correo.com" });
     expect(result.current.claveIdempotencia).toBe(clave);
   });
 
@@ -141,7 +141,7 @@ describe("persistencia y datos de tarjeta", () => {
     busqueda(result);
     act(() => result.current.elegirPlan(DOBLE, BAR));
     // Aunque alguien intentara colar la tarjeta en el huésped, la lista blanca la descarta.
-    act(() => result.current.actualizarHuesped({ nombre: "María", tarjeta: TARJETA, numero: TARJETA.numero, cvv: "123" }));
+    act(() => result.current.actualizarHuesped({ nombres: "María", tarjeta: TARJETA, numero: TARJETA.numero, cvv: "123" }));
 
     const cuerpo = result.current.armarCuerpoReserva({ tarjeta: TARJETA });
     expect(cuerpo.tarjeta).toEqual(TARJETA);
@@ -165,7 +165,7 @@ describe("persistencia y datos de tarjeta", () => {
       tipo: DOBLE,
       plan: { ...BAR, numero: "x" },
       cotizacion: null,
-      huesped: { nombre: "A", cvv: "123" },
+      huesped: { nombres: "A", cvv: "123" },
       llegada: { horaEstimada: "NO_SABE" },
       solicitudesEspeciales: "",
       consentimiento: { aceptaPoliticas: true, aceptaComunicaciones: false },
@@ -180,5 +180,21 @@ describe("persistencia y datos de tarjeta", () => {
     const { result } = montar();
     busqueda(result, { ocupacion: Array(5).fill({ adultos: 1, menores: 0 }) });
     expect(result.current.ocupacion).toHaveLength(MAX_HABITACIONES_WEB);
+  });
+});
+
+describe("huésped = ficha Huesped del sistema", () => {
+  it("arranca con el país del documento en AR, y nacionalidad y residencia vacías", () => {
+    const { result } = montar();
+    expect(result.current.huesped).toMatchObject({ paisDocumento: "AR", nacionalidad: "", paisResidencia: "", nombres: "", fechaNacimiento: "" });
+    expect(result.current.huesped).not.toHaveProperty("nombre");
+  });
+
+  it("un huésped guardado con la forma vieja o con claves de más no vuelve al estado", () => {
+    sessionStorage.setItem(CLAVE_STORAGE, JSON.stringify({ huesped: { nombre: "Viejo", nombres: "Ana", cvv: "123" } }));
+    const { result } = montar();
+    expect(result.current.huesped.nombres).toBe("Ana");
+    expect(result.current.huesped).not.toHaveProperty("nombre");
+    expect(result.current.huesped).not.toHaveProperty("cvv");
   });
 });

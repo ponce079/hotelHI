@@ -65,7 +65,7 @@ describe("las siete rutas /web renderizan", () => {
     expect(screen.getByRole("heading", { name: "Doble" })).toBeInTheDocument();
     expect(screen.getAllByText("Tarifa flexible · Cancelación sin cargo hasta 48 h antes de la llegada")).toHaveLength(2);
     expect(screen.getAllByText("No reembolsable · Se cobra el total al reservar · Sin devolución")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Elegir No Reembolsable por $ 42.500" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Elegir No reembolsable por $ 42.500" })).toBeInTheDocument();
     expect(screen.getByText("Últimas disponibles")).toBeInTheDocument();
     // Nunca número de habitación, piso ni cantidad de libres.
     expect(screen.queryByText(/habitación \d|piso|libres/i)).not.toBeInTheDocument();
@@ -114,7 +114,7 @@ describe("las siete rutas /web renderizan", () => {
       plan: BAR,
       claveIdempotencia: null,
       resultado: {
-        codigoConfirmacion: "HI7K2Q9M",
+        codigoConfirmacion: "3FA9C21B",
         estado: "Confirmada",
         fechaDesde: "2026-10-16",
         fechaHasta: "2026-10-18",
@@ -129,7 +129,7 @@ describe("las siete rutas /web renderizan", () => {
     });
     renderRuta("/web/confirmacion");
     expect(screen.getByRole("heading", { level: 1, name: /listo, te esperamos/i })).toBeInTheDocument();
-    expect(screen.getByText("HI7K2Q9M")).toBeInTheDocument();
+    expect(screen.getByText("3FA9C21B")).toBeInTheDocument();
     expect(screen.getByText("Confirmada · garantizada con tarjeta")).toBeInTheDocument();
     expect(screen.queryByText(/descargar comprobante|agregar al calendario|check-in online/i)).not.toBeInTheDocument();
   });
@@ -137,10 +137,10 @@ describe("las siete rutas /web renderizan", () => {
   it("/web/mi-reserva: consulta con código + email", async () => {
     renderRuta("/web/mi-reserva");
     expect(screen.getByRole("heading", { level: 1, name: /consultá tu reserva/i })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText(/código de reserva/i), { target: { value: "demo1234" } });
+    fireEvent.change(screen.getByLabelText(/código de reserva/i), { target: { value: "3fa9c21b" } });
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "demo@hotel.com" } });
     fireEvent.click(screen.getByRole("button", { name: /consultar/i }));
-    expect(await screen.findByRole("heading", { name: "Reserva DEMO1234" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Reserva 3FA9C21B" })).toBeInTheDocument();
   });
 });
 

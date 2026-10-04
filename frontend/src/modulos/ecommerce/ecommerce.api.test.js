@@ -26,10 +26,12 @@ function cuerpoReserva(cambios = {}) {
     totalEsperado: 50000,
     habitaciones: [{ tipoHabitacionId: 2, adultos: 2, menores: 0 }],
     huesped: {
-      nombre: "María",
+      nombres: "María",
       apellido: "González",
       tipoDocumento: "DNI",
+      paisDocumento: "AR",
       numeroDocumento: "30111222",
+      fechaNacimiento: "1990-05-20",
       email: "maria@correo.com",
       telefono: "+54 9 387 555-1234",
       nacionalidad: "AR",
@@ -244,24 +246,24 @@ describe("ecommerce.api con VITE_ECOMMERCE_MOCK=true", () => {
   });
 
   describe("mi reserva", () => {
-    it("DEMO1234 + demo@hotel.com devuelve la reserva de ejemplo cancelable con penalidad", async () => {
-      const r = await consultarMiReserva({ codigo: "demo1234", email: "Demo@Hotel.com" });
-      expect(r).toMatchObject({ codigoConfirmacion: "DEMO1234", puedeCancelar: true, titular: "Juan P.", documento: "****222" });
+    it("3FA9C21B + demo@hotel.com devuelve la reserva web de ejemplo cancelable con penalidad", async () => {
+      const r = await consultarMiReserva({ codigo: "3fa9c21b", email: "Demo@Hotel.com" });
+      expect(r).toMatchObject({ codigoConfirmacion: "3FA9C21B", puedeCancelar: true, titular: "Juan P.", documento: "****222" });
       expect(r.penalidadCancelacion).toMatchObject({ aplica: true, monto: 25000 });
       sinDatosDeHabitacion(r);
     });
 
     it("cualquier otra combinación → NO_ENCONTRADA con el mismo mensaje", async () => {
-      const a = await fallo(consultarMiReserva({ codigo: "DEMO1234", email: "otro@hotel.com" }));
+      const a = await fallo(consultarMiReserva({ codigo: "3FA9C21B", email: "otro@hotel.com" }));
       const b = await fallo(consultarMiReserva({ codigo: "NOEXISTE", email: "demo@hotel.com" }));
       expect(a).toMatchObject({ codigo: "NO_ENCONTRADA", status: 404 });
       expect(b.mensaje).toBe(a.mensaje);
     });
 
     it("cancelar con un monto distinto → PENALIDAD_CAMBIO; con el monto correcto → Cancelada", async () => {
-      const err = await fallo(cancelarMiReserva({ codigo: "DEMO1234", email: "demo@hotel.com", montoPenalidadAceptado: 0 }));
+      const err = await fallo(cancelarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com", montoPenalidadAceptado: 0 }));
       expect(err).toMatchObject({ codigo: "PENALIDAD_CAMBIO", status: 409, montoNuevo: 25000 });
-      await expect(cancelarMiReserva({ codigo: "DEMO1234", email: "demo@hotel.com", montoPenalidadAceptado: 25000 })).resolves.toEqual({
+      await expect(cancelarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com", montoPenalidadAceptado: 25000 })).resolves.toEqual({
         estado: "Cancelada",
         penalidadCobrada: 25000,
       });

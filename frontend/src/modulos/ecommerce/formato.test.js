@@ -5,6 +5,7 @@ import {
   formatearFecha,
   formatearPrecio,
   formatearRangoFechas,
+  nombreComercialPlan,
   textoCondicionesPlan,
   textoEstadoReserva,
   textoOcupacion,
@@ -97,5 +98,13 @@ describe("otros textos", () => {
     expect(busquedaComoQuery({ fechaDesde: "2026-10-16", fechaHasta: "2026-10-18", adultos: 2, menores: 0 })).toBe(
       "desde=2026-10-16&hasta=2026-10-18&adultos=2&menores=0"
     );
+  });
+});
+
+describe("nombreComercialPlan", () => {
+  it("Tarifa flexible si es reembolsable, No reembolsable si no (el nombre de la base no cambia)", () => {
+    expect(nombreComercialPlan({ codigo: "BAR", nombre: "Best Available Rate", reembolsable: true })).toBe("Tarifa flexible");
+    expect(nombreComercialPlan({ codigo: "NRF", nombre: "No Reembolsable", reembolsable: false })).toBe("No reembolsable");
+    expect(nombreComercialPlan(null)).toBe("");
   });
 });
