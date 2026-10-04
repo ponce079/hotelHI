@@ -1,11 +1,25 @@
 # Contrato de la API del e-commerce (`/api/web`)
 
-> **Contrato v1 — la implementación real llega en la etapa 1B. Cambios al contrato: solo Gimena.**
+> **Contrato v2 (etapa 1B-1, alineado con la ficha Huesped de master). Cambios al contrato: solo Gimena.**
+
+### Estado de cada endpoint
+
+| Endpoint | Estado |
+|---|---|
+| `GET /api/web/tipos` | **Real** (etapa 1B-1) |
+| `GET /api/web/disponibilidad` | **Real** (etapa 1B-1) |
+| `POST /api/web/cotizar` | **Real** (etapa 1B-1) |
+| `POST /api/web/reservas` | Mock — el alta real llega en la etapa 1B-2 |
+| `POST /api/web/mi-reserva` y `/mi-reserva/cancelar` | Mock — etapa 4 |
+
+El mock (`ecommerce.mock.js`) **solo funciona en desarrollo** (`npm run dev`
+con `VITE_ECOMMERCE_MOCK=true`). Un build de producción nunca lo usa: ni
+siquiera entra al bundle.
 
 Este documento es la fuente de verdad entre el frontend del motor de reservas
 web (`frontend/src/modulos/ecommerce/`) y el backend que se construye en la
-etapa 1B. Mientras la 1B no exista, el frontend trabaja contra un mock
-(`ecommerce.mock.js`) que responde con **exactamente** estas formas.
+etapa 1B. Los endpoints que todavía no son reales los responde un mock
+(`ecommerce.mock.js`) con **exactamente** estas formas.
 
 Historias: HU-99, HU-100, HU-101, HU-102, HU-103, HU-104 y HU-106 (HU-105,
 modificación web, está postergada).
@@ -30,7 +44,17 @@ incluido, solo tarjeta de crédito, sin cuentas de huésped.
   (`MAX_HABITACIONES_WEB = 3`). La UI de esta entrega maneja una sola
   habitación; el contrato ya acepta hasta 3 para ampliarlo sin romper nada.
 - Ninguna respuesta incluye número, piso ni id de habitación, ni la cantidad
-  de habitaciones libres.
+  de habitaciones libres, ni datos de otros huéspedes, ni códigos de otras
+  reservas (las claves `habitacionId`, `numero`, `huesped`, `detalle` y
+  `codigoConfirmacion` no aparecen en tipos, disponibilidad ni cotización;
+  hay un test recursivo que lo verifica).
+- Canal `WEB` en todo `/api/web`: solo planes con `visibleWeb`, precio
+  final con IVA incluido.
+- Parámetros inválidos → `400 DATOS_INVALIDOS` con `campo`: fechas
+  `AAAA-MM-DD` válidas; la entrada no puede ser anterior a **hoy en hora
+  argentina** (entrar hoy está permitido); la salida tiene que ser posterior a
+  la entrada; como máximo 30 noches; `adultos` entero >= 1; `menores` entero
+  >= 0.
 
 ### Plan (forma común)
 
@@ -52,6 +76,10 @@ Cada vez que aparece un plan, tiene estos campos:
 - `horasCancelacionSinCargo` es `null` cuando `reembolsable` es `false`.
 - `penalidadNoShow`: `PRIMERA_NOCHE` | `TOTAL_ESTADIA` (mismos valores que
   `PlanTarifario.penalidadNoShow`).
+- `nombre` es el nombre interno del plan en la base (lo ve el mostrador). Al
+  huésped se le muestra el **nombre comercial** que arma el frontend
+  (`formato.js → nombreComercialPlan`): **"Tarifa flexible"** si
+  `reembolsable`, **"No reembolsable"** si no. La base no cambia.
 - El texto de condiciones **lo arma el frontend** (`formato.js →
   textoCondicionesPlan`), no viene del backend:
   - reembolsable: "Tarifa flexible · Cancelación sin cargo hasta X h antes de la llegada";
@@ -66,17 +94,21 @@ No trae precios: el precio aparece recién después de buscar fechas.
 
 **Response 200**
 
+Respuesta real de la base local (4 de octubre de 2026):
+
 ```json
 {
   "tipos": [
-    { "tipoHabitacionId": 1, "nombre": "Simple", "capacidadMaxima": 2 },
-    { "tipoHabitacionId": 2, "nombre": "Doble", "capacidadMaxima": 4 }
+    { "tipoHabitacionId": 1, "nombre": "Doble", "capacidadMaxima": 4 },
+    { "tipoHabitacionId": 2, "nombre": "Simple", "capacidadMaxima": 2 }
   ]
 }
 ```
 
-- `capacidadMaxima`: `TipoHabitacion` no tiene ese campo; la 1B lo calcula
-  como el máximo de `Habitacion.capacidad` entre las habitaciones activas del tipo.
+- Tipos **activos** con al menos una habitación **activa**, ordenados por nombre.
+- `capacidadMaxima`: `TipoHabitacion` no tiene ese campo; se calcula como el
+  máximo de `Habitacion.capacidad` entre las habitaciones activas del tipo.
+- Los ids son los de la base: el frontend nunca los asume fijos.
 
 ---
 
@@ -88,63 +120,87 @@ Ejemplo: `GET /api/web/disponibilidad?fechaDesde=2026-10-16&fechaHasta=2026-10-1
 maneje varias habitaciones —etapa 2— se consulta una vez por línea o se
 extiende este endpoint; el cambio lo define Gimena.)
 
-**Response 200**
+**Response 200** — respuesta real de la base local,
+`?fechaDesde=2026-10-12&fechaHasta=2026-10-14&adultos=2&menores=0`:
 
 ```json
 {
-  "fechaDesde": "2026-10-16",
-  "fechaHasta": "2026-10-18",
+  "fechaDesde": "2026-10-12",
+  "fechaHasta": "2026-10-14",
   "noches": 2,
   "tipos": [
     {
       "tipoHabitacionId": 1,
-      "nombre": "Simple",
-      "capacidadMaxima": 2,
+      "nombre": "Doble",
+      "capacidadMaxima": 4,
       "ultimasDisponibles": false,
-      "desdePorNoche": 17000,
+      "desdePorNoche": 37400,
       "planes": [
         {
           "planTarifarioId": 1, "codigo": "BAR", "nombre": "Best Available Rate",
           "reembolsable": true, "horasCancelacionSinCargo": 48,
-          "penalidadNoShow": "PRIMERA_NOCHE", "total": 40000, "promedioPorNoche": 20000
+          "penalidadNoShow": "PRIMERA_NOCHE", "total": 88000, "promedioPorNoche": 44000
         },
         {
           "planTarifarioId": 2, "codigo": "NRF", "nombre": "No Reembolsable",
           "reembolsable": false, "horasCancelacionSinCargo": null,
-          "penalidadNoShow": "TOTAL_ESTADIA", "total": 34000, "promedioPorNoche": 17000
+          "penalidadNoShow": "TOTAL_ESTADIA", "total": 74800, "promedioPorNoche": 37400
         }
       ],
       "motivoNoDisponible": null
     },
     {
       "tipoHabitacionId": 2,
-      "nombre": "Doble",
-      "capacidadMaxima": 4,
-      "ultimasDisponibles": true,
-      "desdePorNoche": null,
-      "planes": [],
-      "motivoNoDisponible": "Sin disponibilidad para estas fechas"
+      "nombre": "Simple",
+      "capacidadMaxima": 2,
+      "ultimasDisponibles": false,
+      "desdePorNoche": 28050,
+      "planes": [
+        { "planTarifarioId": 1, "codigo": "BAR", "nombre": "Best Available Rate", "reembolsable": true, "horasCancelacionSinCargo": 48, "penalidadNoShow": "PRIMERA_NOCHE", "total": 66000, "promedioPorNoche": 33000 },
+        { "planTarifarioId": 2, "codigo": "NRF", "nombre": "No Reembolsable", "reembolsable": false, "horasCancelacionSinCargo": null, "penalidadNoShow": "TOTAL_ESTADIA", "total": 56100, "promedioPorNoche": 28050 }
+      ],
+      "motivoNoDisponible": null
     }
+  ]
+}
+```
+
+Mismas fechas con `adultos=4` (respuesta real, recortada): la única Doble de
+capacidad 4 está ocupada en esas fechas y la Simple admite 2.
+
+```json
+{
+  "tipos": [
+    { "tipoHabitacionId": 1, "nombre": "Doble", "capacidadMaxima": 4, "ultimasDisponibles": false,
+      "desdePorNoche": null, "planes": [], "motivoNoDisponible": "Sin disponibilidad para estas fechas" },
+    { "tipoHabitacionId": 2, "nombre": "Simple", "capacidadMaxima": 2, "ultimasDisponibles": false,
+      "desdePorNoche": null, "planes": [], "motivoNoDisponible": "Admite hasta 2 personas" }
   ]
 }
 ```
 
 Reglas:
 
-- **Todos los tipos vendibles aparecen siempre.** Un tipo que no se puede
-  reservar aparece con `planes: []`, `desdePorNoche: null` y un
+- **Todos los tipos vendibles aparecen siempre** (los mismos de `GET /tipos`).
+  Un tipo que no se puede reservar aparece con `planes: []`,
+  `desdePorNoche: null`, `ultimasDisponibles: false` y un
   `motivoNoDisponible` para el huésped. La tarjeta del tipo se muestra
-  deshabilitada con ese texto. Motivos:
-  - sin habitaciones libres: `"Sin disponibilidad para estas fechas"`;
-  - la ocupación supera la capacidad: `"Admite hasta N personas"` (N = `capacidadMaxima`);
-  - restricciones tarifarias (estadía mínima, cierre a llegadas): texto
-    descriptivo, por ejemplo `"Estadía mínima de 3 noches"` o
-    `"No se aceptan llegadas en esta fecha"`.
-- `ultimasDisponibles` es **booleano**: `true` si quedan 2 o menos
-  habitaciones libres del tipo. Nunca se informa la cantidad.
-- `desdePorNoche`: el menor `promedioPorNoche` entre los planes del tipo
-  (`null` si `planes` está vacío).
-- Sin números ni ids de habitación.
+  deshabilitada con ese texto.
+- `motivoNoDisponible`, **en este orden** (personas = adultos + menores):
+  1. personas > `capacidadMaxima` → `"Admite hasta N personas"`;
+  2. ninguna habitación libre del tipo con capacidad >= personas →
+     `"Sin disponibilidad para estas fechas"`;
+  3. sin planes vendibles para esas fechas → el motivo del motor de tarifas
+     (estadía mínima, cierre a llegadas) si es un **mensaje seguro** (ver
+     "Mensajes del motor" en Errores); si no, `"Sin tarifas disponibles para
+     estas fechas"`;
+  4. `null` si se puede reservar.
+- `ultimasDisponibles` es **booleano**: `true` si quedan 1 o 2 habitaciones
+  libres del tipo **con capacidad suficiente** para la ocupación buscada.
+  Nunca se informa la cantidad.
+- `desdePorNoche`: el menor `promedioPorNoche` entre los planes del tipo.
+- Los totales son los del sistema: iguales a `POST /api/reservas/cotizar` con
+  canal `WEB` para el mismo tipo y ocupación.
 
 ---
 
@@ -156,28 +212,46 @@ Recotiza una selección concreta (por ejemplo, antes de pagar).
 
 ```json
 {
-  "fechaDesde": "2026-10-16",
-  "fechaHasta": "2026-10-18",
+  "fechaDesde": "2026-10-12",
+  "fechaHasta": "2026-10-14",
   "planTarifarioId": 2,
-  "habitaciones": [{ "tipoHabitacionId": 2, "adultos": 2, "menores": 0 }]
+  "habitaciones": [
+    { "tipoHabitacionId": 1, "adultos": 2, "menores": 0 },
+    { "tipoHabitacionId": 1, "adultos": 3, "menores": 0 }
+  ]
 }
 ```
 
-**Response 200**
+**Response 200** — respuesta real de la base local:
 
 ```json
 {
-  "total": 42500,
-  "promedioPorNoche": 21250,
+  "total": 157100,
+  "promedioPorNoche": 78550,
   "noches": 2,
   "plan": {
     "planTarifarioId": 2, "codigo": "NRF", "nombre": "No Reembolsable",
     "reembolsable": false, "horasCancelacionSinCargo": null,
-    "penalidadNoShow": "TOTAL_ESTADIA", "total": 42500, "promedioPorNoche": 21250
+    "penalidadNoShow": "TOTAL_ESTADIA", "total": 157100, "promedioPorNoche": 78550
   },
-  "habitaciones": [{ "tipo": "Doble", "adultos": 2, "menores": 0, "subtotal": 42500 }]
+  "habitaciones": [
+    { "tipo": "Doble", "adultos": 2, "menores": 0, "subtotal": 74800 },
+    { "tipo": "Doble", "adultos": 3, "menores": 0, "subtotal": 82300 }
+  ]
 }
 ```
+
+- 1 a 3 líneas. `planTarifarioId` tiene que ser un plan activo y visible en la
+  web (si no → `400 DATOS_INVALIDOS`, `campo: "planTarifarioId"`); cada
+  `tipoHabitacionId`, un tipo vendible (`campo: "habitaciones[i].tipoHabitacionId"`).
+- Por cada línea se elige una **habitación representante** libre (ver "Cómo
+  funciona por dentro → Habitación representante") y se cotiza con el mismo
+  cálculo que hará el alta (`cotizarParaReserva`, canal `WEB`): el `total`
+  es el `totalEsperado` que después manda `POST /reservas`.
+- Si alguna línea no tiene habitación libre que alcance (por ejemplo, dos
+  líneas del mismo tipo y queda una sola) → `409 SIN_DISPONIBILIDAD`.
+- La pantalla de resultados llama a este endpoint al tocar **Elegir**; el
+  total que se ve en Datos y Pago es el de esta respuesta.
 
 ---
 
@@ -196,10 +270,12 @@ Crea la reserva (y garantiza o cobra con la tarjeta, según el plan).
   "totalEsperado": 50000,
   "habitaciones": [{ "tipoHabitacionId": 2, "adultos": 2, "menores": 0 }],
   "huesped": {
-    "nombre": "María",
+    "nombres": "María José",
     "apellido": "González",
     "tipoDocumento": "DNI",
+    "paisDocumento": "AR",
     "numeroDocumento": "30111222",
+    "fechaNacimiento": "1990-05-20",
     "email": "maria@correo.com",
     "telefono": "+54 9 387 555-1234",
     "nacionalidad": "AR",
@@ -227,7 +303,8 @@ Validaciones (la 1B las repite todas; el frontend las anticipa):
 - `claveIdempotencia`: string de 8 a 64 caracteres (el frontend usa un UUID).
 - `habitaciones`: 1 a 3 líneas; cada una dentro de la capacidad de su tipo.
 - `totalEsperado`: el total que el huésped vio. Si el precio real difiere → `PRECIO_CAMBIADO`.
-- `huesped`: todos obligatorios. `email` con formato válido. `telefono` obligatorio.
+- `huesped`: el titular, con los campos de la ficha `Huesped` del sistema;
+  todos obligatorios. Ver la sección **Huésped (titular)**.
 - `llegada.horaEstimada`: `NO_SABE` | `14-16` | `16-18` | `18-20` | `20-22` | `DESPUES_22`.
 - `solicitudesEspeciales`: opcional, máx. 500 caracteres (`""` o `null` si no hay).
 - `consentimiento.aceptaPoliticas` tiene que ser `true`, y `versionPoliticas`
@@ -238,7 +315,7 @@ Validaciones (la 1B las repite todas; el frontend las anticipa):
 
 ```json
 {
-  "codigoConfirmacion": "HI7K2Q9M",
+  "codigoConfirmacion": "3FA9C21B",
   "estado": "Confirmada",
   "fechaDesde": "2026-10-16",
   "fechaHasta": "2026-10-18",
@@ -257,7 +334,9 @@ Validaciones (la 1B las repite todas; el frontend las anticipa):
 - Plan no reembolsable: `cobradoAhora = total`, `garantia.tipo = "PREPAGO"`. La
   pantalla muestra "Pagada".
 - En la respuesta repetida por idempotencia (200), `garantia` puede ser `null`.
-- Sin número de habitación. El código es el que devuelve la API.
+- Sin número de habitación. El código es el **código de confirmación del
+  sistema** (el mismo que ve el mostrador): 8 caracteres hexadecimales en
+  mayúsculas, por ejemplo `3FA9C21B`.
 
 ### Idempotencia
 
@@ -294,14 +373,14 @@ Consulta de una reserva con código + email. No hay cuentas de huésped.
 **Request**
 
 ```json
-{ "codigo": "DEMO1234", "email": "demo@hotel.com" }
+{ "codigo": "3FA9C21B", "email": "demo@hotel.com" }
 ```
 
 **Response 200**
 
 ```json
 {
-  "codigoConfirmacion": "DEMO1234",
+  "codigoConfirmacion": "3FA9C21B",
   "estado": "Confirmada",
   "fechaDesde": "2026-11-20",
   "fechaHasta": "2026-11-23",
@@ -324,15 +403,21 @@ Consulta de una reserva con código + email. No hay cuentas de huésped.
 
 - `titular` y `documento` vienen enmascarados.
 - `penalidadCancelacion` es `null` si `puedeCancelar` es `false`.
-- Código o email incorrectos → `404 NO_ENCONTRADA`, **siempre con el mismo
-  mensaje**: no se revela si el código existe.
+- El código no distingue mayúsculas. El email se compara (sin distinguir
+  mayúsculas) con:
+  - en una reserva **web**: `DatosReservaWeb.emailContacto`;
+  - en una reserva **del mostrador**: `Huesped.contacto`, **solo si es un
+    email**.
+- Código o email incorrectos, o una reserva del mostrador cuyo contacto es un
+  teléfono (no hay email con qué comparar) → `404 NO_ENCONTRADA`, **siempre
+  con el mismo mensaje**: no se revela si el código existe.
 
 ## POST `/api/web/mi-reserva/cancelar`
 
 **Request**
 
 ```json
-{ "codigo": "DEMO1234", "email": "demo@hotel.com", "montoPenalidadAceptado": 25000 }
+{ "codigo": "3FA9C21B", "email": "demo@hotel.com", "montoPenalidadAceptado": 25000 }
 ```
 
 **Response 200**
@@ -363,36 +448,63 @@ El frontend los normaliza a `{ codigo, mensaje, status, ...extra }`
 | `DATOS_INVALIDOS` | 400 | `campo` (ej. `"huesped.email"`, `"tarjeta.numero"`) | Marca el campo con el error. |
 | `NO_ENCONTRADA` | 404 | — | Mensaje genérico, sin revelar si el código existe. |
 | `PRECIO_CAMBIADO` | 409 | `totalNuevo` | Muestra el total nuevo y pide confirmar de nuevo. |
-| `SIN_DISPONIBILIDAD` | 409 | — | Vuelve a resultados. |
+| `SIN_DISPONIBILIDAD` | 409 | — | Solo cuando **no hay habitación libre** para la selección. Vuelve a resultados. |
 | `CLAVE_REUTILIZADA` | 409 | — | Genera una clave nueva y reintenta. |
 | `PENALIDAD_CAMBIO` | 409 | `montoNuevo` | Muestra el monto nuevo y pide aceptar de nuevo. |
 | `PAGO_RECHAZADO` | 402 | `motivo` | Pide otra tarjeta. |
 | `TARJETA_VENCE_ANTES` | 422 | — | Pide otra tarjeta. |
 | `DEMASIADOS_INTENTOS` | 429 | — | Pide que espere unos minutos. |
-| `ERROR_INTERNO` | 500 | — | Mensaje genérico. |
+| `ERROR_INTERNO` | 500 (503 con `reintentarEn` si la base está ocupada) | — | Mensaje genérico. |
 | `ERROR_RED` | — | — | **Solo del frontend**: no hubo respuesta (sin conexión o timeout). Mensaje genérico; se reintenta con la misma clave. |
 
+### Mensajes del motor
+
+Los errores de negocio del sistema (`ErrorDeNegocio` de reservas y del motor
+de tarifas) se traducen en `backend/src/modulos/ecommerce/ecommerce.errores.js`:
+
+- Un error de negocio 4xx (incluido un 409 del motor por estadía mínima o
+  cierre a llegadas) → `400 DATOS_INVALIDOS` **con su mensaje**, si es seguro.
+  `SIN_DISPONIBILIDAD` queda solo para "no hay habitación libre".
+- **Mensaje seguro**: no contiene un dato concreto de otra persona. Se
+  reemplaza por el genérico del código si contiene un **número de
+  habitación** ("habitación 204", "hab. 050": 2 a 4 dígitos junto a
+  "habitación" o "hab.") o un **código de reserva** (8 hexadecimales). Las
+  palabras "habitación" o "reserva" solas no se filtran: "La estadía mínima
+  para esta reserva es de 3 noches" pasa tal cual.
+- `traducirError(err, { origen })` ya recibe el contexto: en la 1B-2, el 409 de
+  `crearReservaEnTransaccion` (el precio cambió) va a ser `PRECIO_CAMBIADO`.
+- Un error inesperado se loguea en el servidor (mensaje y stack, nunca el body)
+  y responde `ERROR_INTERNO`.
+
 ---
 
-## Valores de documento, nacionalidad y país
+## Huésped (titular)
 
-- **Tipo de documento**: los mismos valores que la ficha de huésped del
-  sistema, `TIPOS_DOCUMENTO` en
-  `frontend/src/modulos/reservas/reservas.constantes.js` (DNI, Pasaporte,
-  Cédula de identidad, Libreta cívica, Libreta de enrolamiento). El
-  e-commerce los importa de ahí, no los copia.
-- **Nacionalidad y país de residencia**: códigos **ISO 3166-1 alfa-2**
-  (`"AR"`, `"BR"`, `"CL"`…), lista `PAISES` en
-  `frontend/src/modulos/ecommerce/ecommerce.constantes.js` — **a confirmar
-  con Agustín**. Es el mismo formato que usa su rama
-  `feature/estadia-ocupantes` (`PAISES_OCUPANTES` en
-  `frontend/src/modulos/estadia/ocupantesUbicacion.js`).
-- Son datos de la persona. Propuesta: columnas en `Huesped`, coordinado con
-  Agustín (su rama los tiene en `OcupanteReserva`). Hasta que estén en
-  master, la 1B guarda lo declarado en `DatosReservaWeb`. La web no pisa una
-  ficha existente.
+El titular de una reserva web **es la ficha `Huesped` del sistema** (la misma
+que usan el mostrador y el check-in). Campos de `huesped` en
+`POST /api/web/reservas`, **todos obligatorios**:
 
----
+| Campo | Formato | Validación |
+|---|---|---|
+| `nombres` | texto | no vacío |
+| `apellido` | texto | no vacío |
+| `tipoDocumento` | texto | del catálogo único `TIPOS_DOCUMENTO` (`frontend/src/lib/tiposDocumento.js` = `backend/src/lib/tiposDocumento.js`): `DNI`, `Pasaporte`, `Cédula de identidad`, `Libreta de Enrolamiento`, `Libreta Cívica` |
+| `paisDocumento` | ISO 3166-1 alfa-2 | país emisor del documento; código de `PAISES` (`frontend/src/lib/paises.js` = `backend/src/lib/paises.js`) |
+| `numeroDocumento` | texto | no vacío |
+| `fechaNacimiento` | `AAAA-MM-DD` | el titular tiene que tener **al menos 18 años a la fecha de ingreso** (`fechaDesde`), igual que `normalizarAltaReserva` |
+| `email` | email | formato válido; es el email de contacto de la reserva |
+| `telefono` | texto | no vacío |
+| `nacionalidad` | ISO 3166-1 alfa-2 | código de `PAISES` |
+| `paisResidencia` | ISO 3166-1 alfa-2 | código de `PAISES` |
+
+- El frontend importa los catálogos de `frontend/src/lib/` (vía
+  `ecommerce.constantes.js`); no hay listas propias del e-commerce.
+- **Nacionalidad y país de residencia empiezan vacíos** en el formulario. Son
+  datos de la ficha de registro de pasajeros y la residencia define la posible
+  exención de IVA: un extranjero que no los toca no puede quedar como
+  argentino residente. `paisDocumento` sí empieza en `AR`.
+- La identidad de la persona es **tipo + país + número** del documento, con la
+  misma normalización que el sistema (`persona.servicio.js → claveDocumento`).
 
 ## Cómo se procesa el pago (lo implementa la etapa 1B)
 
@@ -405,6 +517,9 @@ El frontend los normaliza a `{ codigo, mensaje, status, ...extra }`
   - Si la captura falla después de crear la reserva: se cancela la reserva con
     motivo "Pago no capturado" y se libera.
 - La llamada a la pasarela va **fuera de la transacción de la base**.
+- La **garantía** de un plan reembolsable **no es un pago**: no se registra en
+  `PagoEstadia` (`consolidarCargos` la restaría del saldo en el check-out).
+  Sus datos van en `DatosReservaWeb` (ver "Cómo funciona por dentro").
 - Pasarela simulada con la firma de `procesarTarjeta` de la guía de Ricardo;
   cuando él la termine, se reemplaza.
 
@@ -448,22 +563,102 @@ token. Acá pasan por el backend porque la pasarela es simulada. Aun así:
 
 ---
 
-## Reservas web = reservas normales
+## Cómo funciona por dentro
 
-Se crean como `Reserva` con origen WEB y sus `ReservaNoche` (las ven el
-mostrador, el check-in y el check-out). Los datos propios de la web (email,
-teléfono, llegada estimada, solicitudes, consentimiento, nacionalidad y país
-declarados) van en una tabla complementaria 1 a 1 (`DatosReservaWeb`), que se
-crea en la 1B.
+### Reservas web = reservas normales
 
-**Canal de la reserva**: lo decide la 1B: columna explícita en `Reserva`
-(`RECEPCION` | `WEB` | `WALK_IN`, aditiva, con default `RECEPCION`) para
-reportes, o deducirlo de `DatosReservaWeb`. En esta etapa no se toca el backend.
+Se crean como `Reserva` con sus `ReservaNoche` (las ven el mostrador, el
+check-in y el check-out), con el mismo alta del sistema
+(`crearReservaEnTransaccion`). Lo propio de la web va en la tabla
+complementaria 1 a 1 **`DatosReservaWeb`** (`datos_reserva_web`, creada en la
+etapa 1B-1 con `backend/prisma/agregar-datos-reserva-web.sql`):
 
-La habitación concreta se asigna automáticamente dentro de la misma
-transacción que crea la reserva (HU-100); el huésped nunca la ve.
+| Columna | Qué guarda |
+|---|---|
+| `reservaId` (único) | la reserva |
+| `claveIdempotencia` (única) | la clave del alta |
+| `emailContacto`, `telefonoContacto` | el contacto declarado en la web |
+| `horaEstimadaLlegada`, `solicitudesEspeciales` | llegada y pedidos |
+| `aceptaPoliticasEn`, `versionPoliticas`, `aceptaComunicaciones` | consentimiento |
+| `tarjetaTitular`, `tarjetaMarca`, `tarjetaUltimos4`, `tarjetaVencimiento` | la tarjeta de la garantía, **sin número completo ni CVV** |
+| `garantiaToken`, `pasarelaReferencia` | lo que devuelve la pasarela |
+| `creadoEn` | alta |
+
+### Canal de la reserva
+
+Se **deduce** de la existencia de `DatosReservaWeb`: si la reserva tiene esa
+fila, es web. No se agrega una columna a `Reserva`.
+
+### Email y teléfono
+
+`Huesped` tiene un solo campo `contacto`. El email y el teléfono que declara
+la web se guardan en `DatosReservaWeb` (`emailContacto`,
+`telefonoContacto`). Si la persona es **nueva**, su `Huesped.contacto` queda
+con el email. (Se implementa en la 1B-2.)
+
+### Ficha existente: la web no la pisa
+
+En la 1B-2, el alta web busca la ficha por identidad (tipo + país + número,
+misma normalización que el sistema). Si **existe**, la reserva usa esa ficha y
+la web solo **completa los campos vacíos**: nunca reemplaza un dato que ya
+cargó el mostrador o el check-in. No se modifica `resolverHuesped`.
+
+### Garantía con tarjeta
+
+En un plan reembolsable la tarjeta **garantiza** la reserva: no se cobra y no
+es un pago, así que **no** va a `PagoEstadia` (`consolidarCargos` la restaría
+del saldo). Sus datos, sin número ni CVV, van en `DatosReservaWeb`.
+
+### Habitación representante
+
+La web vende por tipo; el sistema reserva habitaciones concretas. Para cotizar
+(`POST /cotizar`) y para la **asignación real del alta en la 1B-2** (HU-100)
+se usa **la misma función**, `elegirRepresentantes`
+(`backend/src/modulos/ecommerce/ecommerce.transformacion.js`):
+
+1. las líneas se atienden de **mayor a menor cantidad de personas** (así una
+   línea chica no se queda con la única habitación grande);
+2. a cada una, la habitación **libre** de su tipo, todavía no usada, con la
+   **menor capacidad que alcance**;
+3. desempate por id; dos líneas del mismo tipo nunca comparten habitación.
+
+"Libre" es el mismo criterio del sistema (`consultarDisponibilidad`,
+incluida la regla de entrada hoy). La habitación concreta nunca se muestra al
+huésped.
+
+### Mi reserva
+
+El email se compara con `DatosReservaWeb.emailContacto` en las reservas web y
+con `Huesped.contacto` (solo si es un email) en las del mostrador. Sin email
+con qué comparar → `NO_ENCONTRADA` con el mensaje genérico. (Real en la
+etapa 4; hoy, en el mock.)
 
 ---
+
+## Para Tomás: qué cambió en Datos
+
+El formulario de `/web/datos` (`DatosHuespedPage.jsx`) tiene que cargar el
+titular con la forma nueva (sección **Huésped (titular)**). Respecto de la 1A:
+
+- **Nombres y apellido separados**: el campo `nombre` ahora es `nombres`
+  (más `apellido`, como antes).
+- **País del documento** (`paisDocumento`, nuevo): selector con `PAISES` de
+  `frontend/src/lib/paises.js` (pares `[codigo, nombre]`); empieza en `AR`.
+- **Fecha de nacimiento** (`fechaNacimiento`, nueva): `AAAA-MM-DD`; el titular
+  tiene que tener 18 años o más a la fecha de ingreso
+  (`EDAD_MINIMA_TITULAR`).
+- **Tipo de documento**: `TIPOS_DOCUMENTO` (y `ETIQUETAS_NUMERO_DOCUMENTO`
+  para la etiqueta del número) de `frontend/src/lib/tiposDocumento.js`.
+- **Nacionalidad y país de residencia**: también `PAISES` de
+  `frontend/src/lib/paises.js`; ya **no** existe el `PAISES` propio de
+  `ecommerce.constantes.js` (de 22 países). Empiezan **vacíos**: el
+  formulario puede ofrecer "igual que el país del documento", pero **sin
+  precargarlo**.
+- Todo se importa desde `ecommerce.constantes.js`, que reexporta los
+  catálogos únicos.
+- `ConfirmacionPage.jsx` todavía muestra `plan.nombre`; tiene que mostrar
+  `nombreComercialPlan(plan)` de `formato.js` ("Tarifa flexible" / "No
+  reembolsable"), como resultados, el resumen y Mi reserva.
 
 ## Cómo trabajar sobre esta base
 
@@ -492,20 +687,27 @@ transacción que crea la reserva (HU-100); el huésped nunca la ve.
    VITE_ECOMMERCE_MOCK=true
    ```
 
-   y reiniciá `npm run dev`. Para forzar errores, agregá a la URL de la página
+   y reiniciá `npm run dev` (el mock funciona **solo** en desarrollo; con
+   `npm run build` nunca se usa). Para forzar errores, agregá a la URL de la página
    `?mockEscenario=...` y recargá (el proceso de compra sobrevive al F5):
 
    | Escenario | Efecto en el mock |
    |---|---|
    | `PRECIO_CAMBIADO` | `crearReserva` → 409 con `totalNuevo` (+10 %), hasta que se reintenta con `totalEsperado = totalNuevo` |
-   | `SIN_DISPONIBILIDAD` | En resultados, Simple aparece "Sin disponibilidad para estas fechas"; `crearReserva` → 409 |
+   | `SIN_DISPONIBILIDAD` | En resultados, Simple aparece "Sin disponibilidad para estas fechas" (salvo que la ocupación supere su capacidad: ahí manda "Admite hasta 2 personas"); `crearReserva` → 409 |
    | `CLAVE_REUTILIZADA` | `crearReserva` → 409 con la primera clave; con una clave nueva funciona |
    | `ERROR_INTERNO` | Todas las llamadas de esa página → 500 |
    | `DEMASIADOS_INTENTOS` | Todas las llamadas de esa página → 429 |
 
-   Mi reserva en el mock: código `DEMO1234` + email `demo@hotel.com` →
-   reserva de ejemplo cancelable con penalidad; cualquier otra combinación →
-   `NO_ENCONTRADA`.
+   Mi reserva en el mock:
+
+   | Código | Email | Resultado |
+   |---|---|---|
+   | `3FA9C21B` | `demo@hotel.com` | reserva **web** de ejemplo, cancelable con penalidad |
+   | `B81D90E4` | `mostrador@hotel.com` | reserva **del mostrador** cuyo contacto es un email |
+   | `7C04E5A2` | cualquiera | reserva del mostrador con **teléfono** como único contacto → siempre `NO_ENCONTRADA` |
+
+   Cualquier otra combinación → `NO_ENCONTRADA` con el mismo mensaje.
 
 5. **Tarjetas de prueba**: `4242424242424242` aprobada; terminadas en `0002`
    (`4000000000000002`) y `0069` (`4000000000000069`) rechazadas; un número que
