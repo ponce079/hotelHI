@@ -1412,3 +1412,84 @@
     padding-top: 48px;
   }
 }
+
+/* ==========================================================================
+   Etapa 2 — clases nuevas (ver CONTRATO.md → "Cambios de la etapa 2").
+   Solo agregados: nada de lo de arriba cambia.
+   ========================================================================== */
+
+/* --- Campo de fecha legible (componentes/CampoFecha.jsx) ------------------ */
+.ec-campo-fecha__control {
+  position: relative;
+}
+/* Con valor, el texto nativo (dd/mm/aaaa) se oculta y se ve el legible
+   superpuesto; el ícono del selector del sistema sigue visible y usable. */
+.ec-campo-fecha--con-valor .ec-campo-fecha__control:not(:focus) {
+  color: transparent;
+}
+.ec-campo-fecha--con-valor .ec-campo-fecha__control:not(:focus)::-webkit-datetime-edit {
+  color: transparent;
+}
+.ec-campo-fecha__control::-webkit-calendar-picker-indicator {
+  position: relative;
+  z-index: 1;
+  cursor: pointer;
+}
+.ec-campo-fecha__legible {
+  position: absolute;
+  top: 50%;
+  left: 44px;
+  right: 40px;
+  transform: translateY(-50%);
+  overflow: hidden;
+  font-size: 16px;
+  color: var(--ec-tinta);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+/* Mientras se edita con el teclado se ve el valor nativo. */
+.ec-campo-fecha__control:focus + .ec-campo-fecha__legible {
+  display: none;
+}
+
+/* --- Buscador web y compacto ---------------------------------------------- */
+.ec-buscador--web {
+  grid-template-columns: 1.3fr 1.3fr 0.8fr 1fr auto;
+}
+.ec-buscador--compacto {
+  grid-template-columns: 1fr 1fr;
+  padding: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.ec-buscador--compacto .ec-buscador__accion {
+  grid-column: 1 / -1;
+  padding-top: 0;
+}
+.ec-buscador--compacto .ec-buscador__accion .ec-boton {
+  width: 100%;
+}
+.ec-buscador--compacto .ec-campo-fecha {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1100px) {
+  .ec-buscador--web {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  /* En 375 px cada fecha va a todo el ancho: "Vie 16 oct 2026" entra sin
+     cortarse ni tapar el ícono del selector. */
+  .ec-buscador--web .ec-campo-fecha {
+    grid-column: 1 / -1;
+  }
+  .ec-buscador .ec-campo-fecha .ec-campo__icono {
+    display: block;
+  }
+  .ec-buscador .ec-campo-fecha .ec-campo__control {
+    padding-left: 44px;
+  }
+}
