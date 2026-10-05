@@ -3,15 +3,10 @@ import { HORAS_LLEGADA } from "../../ecommerce/ecommerce.constantes";
 
 // Bloque "Reserva web" del detalle de reserva (etapa 2 del e-commerce):
 // GET /api/reservas-web/:reservaId, endpoint interno con sesión. Una reserva
-// del mostrador (sin datos web) responde 404 → null.
+// del mostrador (sin datos web) responde 200 con null.
 export async function obtenerDatosReservaWeb(reservaId) {
-  try {
-    const { data } = await api.get(`/reservas-web/${reservaId}`);
-    return data;
-  } catch (err) {
-    if (err?.response?.status === 404) return null;
-    throw err;
-  }
+  const { data } = await api.get(`/reservas-web/${reservaId}`);
+  return data ?? null;
 }
 
 // Solo es un bloque válido si vino un objeto con los datos de contacto.

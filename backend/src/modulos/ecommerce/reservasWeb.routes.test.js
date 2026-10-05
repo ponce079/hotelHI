@@ -93,9 +93,11 @@ test("gerente también la ve; no reembolsable → PREPAGO", async () => {
   expect(body.tipoGarantia).toBe("PREPAGO");
 });
 
-test("reserva del mostrador (sin datos web) → 404", async () => {
+test("reserva del mostrador (sin datos web) → 200 con null", async () => {
   prisma.datosReservaWeb.findUnique.mockResolvedValue(null);
-  expect((await pedir("/150", 1)).status).toBe(404);
+  const res = await pedir("/150", 1);
+  expect(res.status).toBe(200);
+  expect(res.body).toBeNull();
 });
 
 test("id inválido → 400", async () => {

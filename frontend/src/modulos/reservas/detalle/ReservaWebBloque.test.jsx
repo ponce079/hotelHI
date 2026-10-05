@@ -66,7 +66,7 @@ describe("tarjeta 'Reserva web'", () => {
     expect(tarjeta.getByText("no")).toBeInTheDocument();
   });
 
-  it("reserva del mostrador (404 → null): no aparece y el resto se ve igual", async () => {
+  it("reserva del mostrador (200 con null): no aparece y el resto se ve igual", async () => {
     obtenerDatosReservaWeb.mockResolvedValue(null);
     renderColumna();
     await waitFor(() => expect(obtenerDatosReservaWeb).toHaveBeenCalled());
