@@ -52,6 +52,7 @@ import { ComprobanteEstadiaDetallePage } from "./modulos/comprobantes-estadia/Co
 import { ReporteCajaDiariaPage } from "./modulos/comprobantes-estadia/ReporteCajaDiariaPage";
 import { MovimientosPagoPage } from "./modulos/pagos-estadia/MovimientosPagoPage";
 import { UsuariosPage } from "./modulos/usuarios/UsuariosPage";
+import { MiPerfilPage } from "./modulos/usuarios/MiPerfilPage";
 // Gatekeeper de rutas: sin sesion iniciada (login real con usuario y
 // contraseña, ver lib/sesion.jsx), redirige a /login.
 function RequireSesion() {
@@ -137,6 +138,8 @@ export default function App() {
           <Route path="/reporte-caja-diaria" element={<ReporteCajaDiariaPage />} />
           {/* Usuarios y Seguridad — gestión de usuarios (solo admin). */}
           <Route path="/usuarios" element={<UsuariosPage />} />
+          {/* Usuarios y Seguridad — "Mi perfil" de quien está logueado (cualquier rol). */}
+          <Route path="/mi-perfil" element={<MiPerfilPage />} />
         </Route>
       </Route>
     </Routes>
