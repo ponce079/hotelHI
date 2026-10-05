@@ -88,6 +88,29 @@ describe("mock alineado con la ficha Huesped", () => {
     expect(err).toMatchObject({ codigo: "DATOS_INVALIDOS", campo: `huesped.${campo}` });
   });
 
+  it("nacionalidad y país de residencia son opcionales (si vienen, ISO-2 válidos)", async () => {
+    await expect(crearReserva(cuerpoReserva({ huesped: { nacionalidad: "", paisResidencia: "" } }))).resolves.toHaveProperty("codigoConfirmacion");
+  });
+
+  it("teléfono con formato (dígitos, espacios, +, - y paréntesis; 7 a 40)", async () => {
+    for (const telefono of ["abc12345", "12345"]) {
+      const err = await fallo(crearReserva(cuerpoReserva({ huesped: { telefono } })));
+      expect(err).toMatchObject({ codigo: "DATOS_INVALIDOS", campo: "huesped.telefono" });
+    }
+  });
+
+  it("clave de idempotencia con caracteres inválidos → DATOS_INVALIDOS", async () => {
+    const err = await fallo(crearReserva(cuerpoReserva({ claveIdempotencia: "clave con espacios" })));
+    expect(err).toMatchObject({ codigo: "DATOS_INVALIDOS", campo: "claveIdempotencia" });
+  });
+
+  it("repetición idempotente: misma reserva con la garantía guardada y email.enviado = null", async () => {
+    const cuerpo = cuerpoReserva();
+    const primera = await crearReserva(cuerpo);
+    const repetida = await crearReserva({ ...cuerpo, tarjeta: { ...cuerpo.tarjeta, numero: "5555555555554444" } });
+    expect(repetida).toMatchObject({ codigoConfirmacion: primera.codigoConfirmacion, garantia: primera.garantia, email: { enviado: null } });
+  });
+
   it("el titular tiene que ser mayor de edad a la fecha de ingreso", async () => {
     // Cumple 18 el 17 de octubre: el 16 (ingreso) todavía tiene 17.
     const menor = await fallo(crearReserva(cuerpoReserva({ huesped: { fechaNacimiento: "2008-10-17" } })));

@@ -175,14 +175,20 @@ describe("ecommerce.api con VITE_ECOMMERCE_MOCK=true", () => {
     const primera = await crearReserva(cuerpoReserva());
     const repetida = await crearReserva(cuerpoReserva({ tarjeta: { ...cuerpoReserva().tarjeta, numero: "5555555555554444" } }));
     expect(repetida.codigoConfirmacion).toBe(primera.codigoConfirmacion);
-    expect(repetida.garantia).toBeNull();
+    // La garantía sale de lo guardado (la de la primera tarjeta); el email, "desconocido".
+    expect(repetida.garantia).toEqual(primera.garantia);
+    expect(repetida.email).toEqual({ enviado: null });
 
-    const otra = await fallo(crearReserva(cuerpoReserva({ solicitudesEspeciales: "Cuna" })));
+    // "Mismos datos" = fechas, plan, líneas y documento del titular: otras solicitudes no cuentan.
+    await expect(crearReserva(cuerpoReserva({ solicitudesEspeciales: "Cuna" }))).resolves.toMatchObject({
+      codigoConfirmacion: primera.codigoConfirmacion,
+    });
+    const otra = await fallo(crearReserva(cuerpoReserva({ fechaHasta: "2026-10-19" })));
     expect(otra).toMatchObject({ codigo: "CLAVE_REUTILIZADA", status: 409 });
   });
 
   it("la clave se consume solo cuando la reserva se crea: después de un rechazo, la misma clave sirve", async () => {
-    const rechazo = await fallo(crearReserva(cuerpoReserva({ tarjeta: { ...cuerpoReserva().tarjeta, numero: "4000000000000002" } })));
+    const rechazo = await fallo(crearReserva(cuerpoReserva({ tarjeta: { ...cuerpoReserva().tarjeta, numero: "4000000000000069" } })));
     expect(rechazo.codigo).toBe("PAGO_RECHAZADO");
     await expect(crearReserva(cuerpoReserva())).resolves.toMatchObject({ estado: "Confirmada" });
   });
@@ -195,9 +201,13 @@ describe("ecommerce.api con VITE_ECOMMERCE_MOCK=true", () => {
       expect(pasaLuhn("4242424242424241")).toBe(false);
     });
 
-    it("terminada en 0002 → PAGO_RECHAZADO (fondos insuficientes)", async () => {
-      const err = await fallo(crearReserva(cuerpoReserva({ tarjeta: { ...cuerpoReserva().tarjeta, numero: "4000000000000002" } })));
+    it("terminada en 0002 → rechazada en no reembolsable (fondos insuficientes), aceptada en tarifa flexible", async () => {
+      const tarjeta = { ...cuerpoReserva().tarjeta, numero: "4000000000000002" };
+      const err = await fallo(crearReserva(cuerpoReserva({ planTarifarioId: 2, totalEsperado: 42500, tarjeta })));
       expect(err).toMatchObject({ codigo: "PAGO_RECHAZADO", status: 402, motivo: "Fondos insuficientes" });
+      await expect(crearReserva(cuerpoReserva({ claveIdempotencia: "clave-de-prueba-0002", tarjeta }))).resolves.toMatchObject({
+        garantia: { tipo: "GARANTIA", ultimos4: "0002" },
+      });
     });
 
     it("terminada en 0069 → PAGO_RECHAZADO (tarjeta vencida)", async () => {
@@ -210,9 +220,24 @@ describe("ecommerce.api con VITE_ECOMMERCE_MOCK=true", () => {
       expect(err).toMatchObject({ codigo: "DATOS_INVALIDOS", status: 400, campo: "tarjeta.numero" });
     });
 
-    it("vencimiento anterior a la salida → TARJETA_VENCE_ANTES", async () => {
-      const err = await fallo(crearReserva(cuerpoReserva({ tarjeta: { ...cuerpoReserva().tarjeta, vencimientoMes: 9, vencimientoAnio: 2026 } })));
+    it("vence antes de la salida → TARJETA_VENCE_ANTES; vence el mismo mes de la salida → aceptada", async () => {
+      const fechas = { fechaDesde: "2099-11-02", fechaHasta: "2099-11-04" };
+      const err = await fallo(crearReserva(cuerpoReserva({ ...fechas, tarjeta: { ...cuerpoReserva().tarjeta, vencimientoMes: 10, vencimientoAnio: 2099 } })));
       expect(err).toMatchObject({ codigo: "TARJETA_VENCE_ANTES", status: 422 });
+      await expect(
+        crearReserva(cuerpoReserva({ ...fechas, claveIdempotencia: "clave-de-prueba-0003", tarjeta: { ...cuerpoReserva().tarjeta, vencimientoMes: 11, vencimientoAnio: 2099 } }))
+      ).resolves.toMatchObject({ estado: "Confirmada" });
+    });
+
+    it("ya vencida hoy → PAGO_RECHAZADO (tarjeta vencida), antes que el 422", async () => {
+      const err = await fallo(crearReserva(cuerpoReserva({ tarjeta: { ...cuerpoReserva().tarjeta, vencimientoMes: 1, vencimientoAnio: 2020 } })));
+      expect(err).toMatchObject({ codigo: "PAGO_RECHAZADO", status: 402, motivo: "Tarjeta vencida" });
+    });
+
+    it("0069 → rechazada también en no reembolsable", async () => {
+      const tarjeta = { ...cuerpoReserva().tarjeta, numero: "4000000000000069" };
+      const err = await fallo(crearReserva(cuerpoReserva({ planTarifarioId: 2, totalEsperado: 42500, tarjeta })));
+      expect(err).toMatchObject({ codigo: "PAGO_RECHAZADO", motivo: "Tarjeta vencida" });
     });
   });
 
