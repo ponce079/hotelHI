@@ -8,6 +8,15 @@ import App from "../../../App";
 import { CLAVE_STORAGE } from "../ProcesoCompraContext";
 import { cotizar } from "../ecommerce.api";
 import { reiniciarMock } from "../ecommerce.mock";
+import { hoyEnHoraLocal } from "../../../lib/fechas";
+
+// Fechas relativas a hoy (hora argentina), como el resto de los tests.
+function dia(desplazamiento) {
+  const [a, m, d] = hoyEnHoraLocal().split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, d + desplazamiento)).toISOString().slice(0, 10);
+}
+const ENTRADA = dia(12);
+const SALIDA = dia(14);
 
 vi.mock("../../../lib/sesion", () => ({ useSesion: () => ({ rol: null }) }));
 vi.mock("../ecommerce.api", async (importOriginal) => {
@@ -24,7 +33,7 @@ function renderResultados() {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={queryClient}>
-      <MemoryRouter initialEntries={["/web/resultados?desde=2099-10-16&hasta=2099-10-18&adultos=2&menores=1"]}>
+      <MemoryRouter initialEntries={[`/web/resultados?entrada=${ENTRADA}&salida=${SALIDA}&adultos=2&menores=1`]}>
         <App />
         <Ubicacion />
       </MemoryRouter>
@@ -49,8 +58,8 @@ describe("/web/resultados → Elegir", () => {
 
     await waitFor(() => expect(screen.getByTestId("ruta")).toHaveTextContent("/web/datos"));
     expect(cotizar).toHaveBeenCalledWith({
-      fechaDesde: "2099-10-16",
-      fechaHasta: "2099-10-18",
+      fechaDesde: ENTRADA,
+      fechaHasta: SALIDA,
       planTarifarioId: 2,
       habitaciones: [{ tipoHabitacionId: 2, adultos: 2, menores: 1 }],
     });

@@ -1,183 +1,180 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { CircleAlert, Users } from "lucide-react";
-import { BuscadorEstadia, validarBusqueda } from "../componentes/BuscadorEstadia";
-import { FotoEjemplo } from "../componentes/FotoEjemplo";
-import { Insignia } from "../componentes/Insignia";
-import { MensajeError } from "../componentes/MensajeError";
-import { Tarjeta } from "../componentes/Tarjeta";
-import { TarjetaPlan } from "../componentes/TarjetaPlan";
-import { consultarDisponibilidad, cotizar } from "../ecommerce.api";
-import { contenidoDeTipo } from "../ecommerce.contenido";
-import { LEYENDA_PRECIO_FINAL, busquedaComoQuery, formatearRangoFechas, textoNoches, textoOcupacion } from "../formato";
+import { CircleAlert, Phone } from "lucide-react";
+import { BuscadorEstadia } from "../componentes/BuscadorEstadia";
+import { CargandoTarjetas } from "../componentes/Esqueleto";
+import { ErrorConReintento } from "../componentes/ErrorConReintento";
+import { TarjetaTipoResultado } from "../componentes/TarjetaTipoResultado";
+import {
+  VENTANA_VENTA_DIAS,
+  busquedaComoQueryWeb,
+  capacidadMaximaDeTipos,
+  hayDisponibles,
+  leerBusquedaDeUrl,
+  motivoMasRelevante,
+  ordenarTipos,
+  textoResumenBusqueda,
+} from "../busquedaWeb";
+import { consultarDisponibilidad, obtenerTipos } from "../ecommerce.api";
+import { HOTEL } from "../ecommerce.config";
+import { CODIGO_ERROR } from "../ecommerce.constantes";
+import { formatearRangoFechas } from "../formato";
 import { useProcesoCompra } from "../ProcesoCompraContext";
+import { useElegirPlan } from "../useElegirPlan";
+import { useTituloPagina } from "../useTituloPagina";
 
-// /web/resultados — Responsable: Gimena. Mockup pág. 2, con las decisiones
-// de diseño: una tarjeta por TIPO con sus planes (sin números de
-// habitación, piso, filtros ni "N libres"); los tipos no disponibles se
-// muestran deshabilitados con su motivo.
-function leerBusqueda(searchParams, contexto) {
-  const desde = searchParams.get("desde");
-  const hasta = searchParams.get("hasta");
-  if (desde && hasta) {
-    return {
-      fechaDesde: desde,
-      fechaHasta: hasta,
-      adultos: Number(searchParams.get("adultos") ?? 2),
-      menores: Number(searchParams.get("menores") ?? 0),
-    };
-  }
-  if (contexto.fechaDesde && contexto.fechaHasta) {
-    return {
-      fechaDesde: contexto.fechaDesde,
-      fechaHasta: contexto.fechaHasta,
-      adultos: contexto.ocupacion[0]?.adultos ?? 2,
-      menores: contexto.ocupacion[0]?.menores ?? 0,
-    };
-  }
-  return null;
-}
-
+// /web/resultados — Responsable: Gimena. Mockup pág. 2 (escritorio) y 8
+// (móvil), vendiendo por TIPO (decisión del contrato: sin números de
+// habitación, sin filtros por habitación).
+//
+// La búsqueda vive en la URL (?entrada&salida&adultos&menores): un F5 o un
+// link compartido la repiten. Si la URL no trae búsqueda pero el contexto sí,
+// se completa la URL con la del contexto. Parámetros inválidos → aviso y
+// buscador, sin consultar la API.
 export function ResultadosPage() {
+  useTituloPagina("Habitaciones disponibles");
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const proceso = useProcesoCompra();
-  const { definirBusqueda, elegirPlan, actualizarCotizacion, tipo: tipoElegido, plan: planElegido } = proceso;
-  const [cotizando, setCotizando] = useState(false);
-  const [errorCotizacion, setErrorCotizacion] = useState(null);
+  const { definirBusqueda } = proceso;
 
-  const busqueda = leerBusqueda(searchParams, proceso);
-  const valida = busqueda && Object.keys(validarBusqueda(busqueda)).length === 0;
-  const claveBusqueda = busqueda ? busquedaComoQuery(busqueda) : "";
-  const parametros = useMemo(() => (busqueda ? { ...busqueda } : null), [claveBusqueda]); // eslint-disable-line react-hooks/exhaustive-deps
+  const tipos = useQuery({ queryKey: ["ecommerce", "tipos"], queryFn: obtenerTipos, retry: false });
+  const capacidadMaxima = capacidadMaximaDeTipos(tipos.data?.tipos);
+
+  const deUrl = leerBusquedaDeUrl(searchParams, { capacidadMaxima });
+  const desdeContexto =
+    !deUrl.busqueda && proceso.fechaDesde && proceso.fechaHasta
+      ? {
+          fechaDesde: proceso.fechaDesde,
+          fechaHasta: proceso.fechaHasta,
+          adultos: proceso.ocupacion[0]?.adultos ?? 2,
+          menores: proceso.ocupacion[0]?.menores ?? 0,
+        }
+      : null;
+  const busqueda = deUrl.busqueda;
+  const valida = Boolean(busqueda) && deUrl.valida;
+  const claveBusqueda = valida ? busquedaComoQueryWeb(busqueda) : "";
+  const parametros = useMemo(() => (valida ? { ...busqueda } : null), [claveBusqueda]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sin búsqueda en la URL: se completa con la del contexto (reemplazando la entrada del historial).
+  useEffect(() => {
+    if (desdeContexto) navigate(`/web/resultados?${busquedaComoQueryWeb(desdeContexto)}`, { replace: true });
+  }, [desdeContexto?.fechaDesde, desdeContexto?.fechaHasta, desdeContexto?.adultos, desdeContexto?.menores]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // La URL manda: si llegaron con un link, el contexto se alinea con ella.
   useEffect(() => {
-    if (!parametros || !valida) return;
+    if (!parametros) return;
     definirBusqueda({
       fechaDesde: parametros.fechaDesde,
       fechaHasta: parametros.fechaHasta,
       ocupacion: [{ adultos: parametros.adultos, menores: parametros.menores }],
     });
-  }, [parametros, valida, definirBusqueda]);
+  }, [parametros, definirBusqueda]);
 
   const disponibilidad = useQuery({
     queryKey: ["ecommerce", "disponibilidad", claveBusqueda],
     queryFn: () => consultarDisponibilidad(parametros),
-    enabled: Boolean(valida),
+    enabled: valida,
     retry: false,
   });
 
+  const { elegir, cotizando, errorPorTipo, errorGeneral, agotado } = useElegirPlan(parametros);
+
   function buscar(valores) {
-    navigate(`/web/resultados?${busquedaComoQuery(valores)}`);
+    navigate(`/web/resultados?${busquedaComoQueryWeb(valores)}`);
   }
 
-  // Elegir un plan lo cotiza contra /api/web/cotizar (el mismo cálculo que
-  // hará el alta): el total que se arrastra a Datos y Pago es el del
-  // servidor. Si falla (por ejemplo, alguien tomó la última habitación), el
-  // huésped se queda acá con el mensaje.
-  async function elegir(tipo, plan) {
-    if (cotizando) return;
-    setCotizando(true);
-    setErrorCotizacion(null);
-    try {
-      const cotizacion = await cotizar({
-        fechaDesde: busqueda.fechaDesde,
-        fechaHasta: busqueda.fechaHasta,
-        planTarifarioId: plan.planTarifarioId,
-        habitaciones: [{ tipoHabitacionId: tipo.tipoHabitacionId, adultos: busqueda.adultos, menores: busqueda.menores }],
-      });
-      elegirPlan(tipo, plan);
-      actualizarCotizacion(cotizacion);
-      navigate("/web/datos");
-    } catch (err) {
-      setErrorCotizacion(err);
-    } finally {
-      setCotizando(false);
-    }
-  }
+  // Un DATOS_INVALIDOS de la API marca el campo del buscador.
+  const errorApi = disponibilidad.error;
+  const erroresExternos =
+    errorApi?.codigo === CODIGO_ERROR.DATOS_INVALIDOS && errorApi.campo ? { [errorApi.campo]: errorApi.mensaje } : undefined;
+  const avisoUrl = Boolean(busqueda) && !deUrl.valida && Object.keys(deUrl.errores).length > 0;
+
+  const tiposOrdenados = disponibilidad.data ? ordenarTipos(disponibilidad.data.tipos) : [];
+  const ningunoDisponible = Boolean(disponibilidad.data) && !hayDisponibles(disponibilidad.data.tipos);
 
   return (
     <div className="ec-contenedor">
       <section className="ec-banda" aria-labelledby="ec-titulo-resultados">
         <h1 id="ec-titulo-resultados">Habitaciones disponibles</h1>
         <p className="ec-banda__bajada">Elegí la que mejor se adapte a tu viaje. Los precios son el total de tu estadía, IVA incluido.</p>
-        <BuscadorEstadia key={claveBusqueda} valoresIniciales={busqueda ?? undefined} onBuscar={buscar} etiquetaBoton="Actualizar" />
+        <BuscadorEstadia
+          key={`${claveBusqueda}|${capacidadMaxima ?? ""}|${avisoUrl ? "aviso" : ""}`}
+          valoresIniciales={busqueda ?? desdeContexto ?? undefined}
+          onBuscar={buscar}
+          etiquetaBoton="Actualizar"
+          capacidadMaxima={capacidadMaxima}
+          ventanaVentaDias={VENTANA_VENTA_DIAS}
+          menoresConEdad
+          fechasLegibles
+          erroresExternos={avisoUrl ? deUrl.errores : erroresExternos}
+        />
       </section>
 
-      {!valida && (
+      {avisoUrl && (
+        <p className="ec-alerta ec-alerta--aviso ec-resultados__aviso" role="alert">
+          <CircleAlert size={20} strokeWidth={1.7} aria-hidden="true" />
+          La búsqueda del link no es válida. Revisá las fechas y los huéspedes marcados y buscá de nuevo.
+        </p>
+      )}
+
+      {!busqueda && !desdeContexto && (
         <p className="ec-resultados__resumen ec-texto-2">Elegí tus fechas y la cantidad de huéspedes para ver las habitaciones y sus precios.</p>
       )}
 
       {valida && (
         <p className="ec-resultados__resumen">
           <strong>{formatearRangoFechas(busqueda.fechaDesde, busqueda.fechaHasta)}</strong>
-          <span className="ec-texto-2">
-            {" "}
-            · {disponibilidad.data ? textoNoches(disponibilidad.data.noches) : ""} · {textoOcupacion(busqueda)}
-          </span>
+          <span className="ec-texto-2"> · {textoResumenBusqueda(busqueda)}</span>
         </p>
       )}
 
-      {valida && disponibilidad.isPending && <p className="ec-cargando">Buscando disponibilidad…</p>}
-      {disponibilidad.isError && <MensajeError error={disponibilidad.error} />}
-      {errorCotizacion && <MensajeError error={errorCotizacion} />}
+      {agotado && (
+        <p className="ec-alerta ec-alerta--aviso ec-resultados__aviso" role="alert">
+          <CircleAlert size={20} strokeWidth={1.7} aria-hidden="true" />
+          Ese tipo se agotó para tus fechas. Actualizamos los resultados.
+        </p>
+      )}
+      <ErrorConReintento error={errorGeneral} />
+
+      {valida && disponibilidad.isPending && <CargandoTarjetas conPlanes texto="Buscando disponibilidad…" className="ec-resultados__lista" />}
+      {disponibilidad.isError && !erroresExternos && (
+        <ErrorConReintento
+          error={disponibilidad.error}
+          onReintentar={() => disponibilidad.refetch()}
+          reintentando={disponibilidad.isFetching}
+        />
+      )}
+      {disponibilidad.isError && erroresExternos && (
+        <p className="ec-alerta ec-alerta--error" role="alert">
+          <CircleAlert size={20} strokeWidth={1.7} aria-hidden="true" /> {errorApi.mensaje}
+        </p>
+      )}
+
+      {ningunoDisponible && (
+        <div className="ec-vacio" role="status">
+          <h2 className="ec-titulo-seccion">{motivoMasRelevante(disponibilidad.data.tipos) ?? "Sin disponibilidad para estas fechas"}</h2>
+          <p className="ec-texto-2">Probá con otras fechas o con menos huéspedes.</p>
+          <p className="ec-fila ec-texto-2">
+            <Phone size={18} strokeWidth={1.7} aria-hidden="true" /> ¿Necesitás ayuda? Recepción: {HOTEL.telefono}
+          </p>
+        </div>
+      )}
 
       {disponibilidad.data && (
         <div className="ec-resultados__lista">
-          {disponibilidad.data.tipos.map((tipo) => {
-            const contenido = contenidoDeTipo(tipo.nombre);
-            const disponible = tipo.planes.length > 0;
-            return (
-              <Tarjeta
-                como="article"
-                key={tipo.tipoHabitacionId}
-                className="ec-resultado"
-                deshabilitada={!disponible}
-                aria-disabled={!disponible || undefined}
-                aria-labelledby={`ec-tipo-${tipo.tipoHabitacionId}`}
-              >
-                <FotoEjemplo texto={contenido.fotos[0]} />
-                <div className="ec-resultado__cuerpo">
-                  <div className="ec-resultado__titulo">
-                    <h2 id={`ec-tipo-${tipo.tipoHabitacionId}`}>{tipo.nombre}</h2>
-                    {disponible && tipo.ultimasDisponibles && <Insignia color="dorado">Últimas disponibles</Insignia>}
-                  </div>
-                  <p className="ec-fila ec-texto-2">
-                    <Users size={18} strokeWidth={1.7} aria-hidden="true" /> Hasta {tipo.capacidadMaxima} personas
-                  </p>
-                  <p className="ec-texto-2">{contenido.descripcion}</p>
-                  <ul className="ec-chips" aria-label="Comodidades">
-                    {contenido.comodidades.map(({ nombre, Icono }) => (
-                      <li key={nombre} className="ec-chip">
-                        <Icono size={18} strokeWidth={1.6} aria-hidden="true" /> {nombre}
-                      </li>
-                    ))}
-                  </ul>
-                  {disponible ? (
-                    <div className="ec-resultado__planes">
-                      {tipo.planes.map((plan) => (
-                        <TarjetaPlan
-                          key={plan.planTarifarioId}
-                          plan={plan}
-                          noches={disponibilidad.data.noches}
-                          elegido={tipoElegido?.tipoHabitacionId === tipo.tipoHabitacionId && planElegido?.planTarifarioId === plan.planTarifarioId}
-                          onElegir={() => elegir(tipo, plan)}
-                          deshabilitado={cotizando}
-                        />
-                      ))}
-                      <p className="ec-texto-2 ec-chico">{LEYENDA_PRECIO_FINAL}</p>
-                    </div>
-                  ) : (
-                    <p className="ec-resultado__no-disponible">
-                      <CircleAlert size={20} strokeWidth={1.7} aria-hidden="true" /> {tipo.motivoNoDisponible}
-                    </p>
-                  )}
-                </div>
-              </Tarjeta>
-            );
-          })}
+          {tiposOrdenados.map((tipo) => (
+            <TarjetaTipoResultado
+              key={tipo.tipoHabitacionId}
+              tipo={tipo}
+              noches={disponibilidad.data.noches}
+              onElegir={elegir}
+              cotizando={cotizando}
+              bloqueado={Boolean(cotizando)}
+              error={errorPorTipo[tipo.tipoHabitacionId] ?? null}
+            />
+          ))}
         </div>
       )}
     </div>

@@ -5,6 +5,15 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import App from "../../App";
 import { CLAVE_STORAGE } from "./ProcesoCompraContext";
 import { reiniciarMock } from "./ecommerce.mock";
+import { hoyEnHoraLocal } from "../../lib/fechas";
+
+// Fechas relativas a hoy (hora argentina), como el resto de los tests.
+function dia(desplazamiento) {
+  const [a, m, d] = hoyEnHoraLocal().split("-").map(Number);
+  return new Date(Date.UTC(a, m - 1, d + desplazamiento)).toISOString().slice(0, 10);
+}
+const ENTRADA = dia(12);
+const SALIDA = dia(14);
 
 // Las rutas /web viven fuera de RequireSesion: no hace falta sesión de staff.
 vi.mock("../../lib/sesion", () => ({ useSesion: () => ({ rol: null }) }));
@@ -59,7 +68,7 @@ describe("las siete rutas /web renderizan", () => {
   });
 
   it("/web/resultados: un tipo por tarjeta con sus planes BAR y NRF y sus condiciones", async () => {
-    renderRuta("/web/resultados?desde=2099-10-16&hasta=2099-10-18&adultos=2&menores=0");
+    renderRuta(`/web/resultados?entrada=${ENTRADA}&salida=${SALIDA}&adultos=2&menores=0`);
     expect(screen.getByRole("heading", { level: 1, name: /habitaciones disponibles/i })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Simple" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Doble" })).toBeInTheDocument();
@@ -72,7 +81,7 @@ describe("las siete rutas /web renderizan", () => {
   });
 
   it("/web/resultados: un tipo no disponible se muestra deshabilitado con su motivo", async () => {
-    renderRuta("/web/resultados?desde=2099-10-16&hasta=2099-10-18&adultos=3&menores=0");
+    renderRuta(`/web/resultados?entrada=${ENTRADA}&salida=${SALIDA}&adultos=3&menores=0`);
     expect(await screen.findByText("Admite hasta 2 personas")).toBeInTheDocument();
     expect(screen.getByRole("article", { name: "Simple" })).toHaveAttribute("aria-disabled", "true");
   });
