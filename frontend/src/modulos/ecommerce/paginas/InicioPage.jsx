@@ -3,33 +3,37 @@ import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, CalendarDays, Check, Clock, MapPin, ShieldCheck, User } from "lucide-react";
 import { BuscadorEstadia } from "../componentes/BuscadorEstadia";
 import { Boton } from "../componentes/Boton";
+import { CargandoTarjetas } from "../componentes/Esqueleto";
+import { ErrorConReintento } from "../componentes/ErrorConReintento";
 import { FotoEjemplo } from "../componentes/FotoEjemplo";
 import { Insignia } from "../componentes/Insignia";
-import { MensajeError } from "../componentes/MensajeError";
 import { Tarjeta } from "../componentes/Tarjeta";
+import { VENTANA_VENTA_DIAS, busquedaComoQueryWeb, capacidadMaximaDeTipos } from "../busquedaWeb";
 import { obtenerTipos } from "../ecommerce.api";
 import { HOTEL } from "../ecommerce.config";
 import { contenidoDeTipo } from "../ecommerce.contenido";
-import { busquedaComoQuery } from "../formato";
 import { useProcesoCompra } from "../ProcesoCompraContext";
+import { useTituloPagina } from "../useTituloPagina";
 
 // /web — Responsable: Gimena. Mockup págs. 1 (escritorio) y 8 (móvil), con
 // las decisiones de diseño: sin precios hasta buscar, sin servicios
 // adicionales, sin cuentas, solo tarjeta de crédito.
 const VENTAJAS = [
   { Icono: Check, titulo: "Confirmación inmediata", texto: "Tu reserva queda registrada al instante y recibís la confirmación por email." },
-  { Icono: ShieldCheck, titulo: "Pago seguro", texto: "Con tarjeta de crédito. Tus datos viajan cifrados." },
+  { Icono: ShieldCheck, titulo: "Pago seguro con tarjeta de crédito", texto: "Tus datos viajan cifrados y la tarjeta no se guarda." },
   {
     Icono: CalendarDays,
-    titulo: "Consultá tu reserva",
-    texto: "Con tu código y tu email, desde Mi reserva, podés verla o cancelarla según la política de tu tarifa.",
+    titulo: "Consultá o cancelá con tu código y email",
+    texto: "Desde Mi reserva, según la política de la tarifa que elijas.",
   },
 ];
 
 export function InicioPage() {
+  useTituloPagina("Reservá directo");
   const navigate = useNavigate();
   const { fechaDesde, fechaHasta, ocupacion, definirBusqueda } = useProcesoCompra();
   const tipos = useQuery({ queryKey: ["ecommerce", "tipos"], queryFn: obtenerTipos, retry: false });
+  const capacidadMaxima = capacidadMaximaDeTipos(tipos.data?.tipos);
 
   function buscar(valores) {
     definirBusqueda({
@@ -37,7 +41,7 @@ export function InicioPage() {
       fechaHasta: valores.fechaHasta,
       ocupacion: [{ adultos: valores.adultos, menores: valores.menores }],
     });
-    navigate(`/web/resultados?${busquedaComoQuery(valores)}`);
+    navigate(`/web/resultados?${busquedaComoQueryWeb(valores)}`);
   }
 
   return (
@@ -67,8 +71,14 @@ export function InicioPage() {
 
       <div className="ec-contenedor ec-hero__buscador">
         <BuscadorEstadia
+          // key: el buscador se arma de nuevo cuando llega la capacidad real de /api/web/tipos.
+          key={capacidadMaxima ?? "sin-tipos"}
           valoresIniciales={{ fechaDesde, fechaHasta, adultos: ocupacion[0]?.adultos, menores: ocupacion[0]?.menores }}
           onBuscar={buscar}
+          capacidadMaxima={capacidadMaxima}
+          ventanaVentaDias={VENTANA_VENTA_DIAS}
+          menoresConEdad
+          fechasLegibles
         />
       </div>
 
@@ -79,8 +89,16 @@ export function InicioPage() {
             <h2 id="ec-titulo-habitaciones">Dos categorías, un mismo estándar.</h2>
           </div>
         </div>
-        {tipos.isPending && <p className="ec-cargando">Cargando habitaciones…</p>}
-        {tipos.isError && <MensajeError error={tipos.error} />}
+        {tipos.isPending && <CargandoTarjetas className="ec-grilla-tipos" texto="Cargando habitaciones…" />}
+        {tipos.isError && (
+          <ErrorConReintento
+            error={tipos.error}
+            titulo="No pudimos cargar las habitaciones."
+            onReintentar={() => tipos.refetch()}
+            reintentando={tipos.isFetching}
+            siempreReintentar
+          />
+        )}
         {tipos.data && (
           <div className="ec-grilla-tipos">
             {tipos.data.tipos.map((tipo) => {
@@ -102,8 +120,13 @@ export function InicioPage() {
                       ))}
                     </ul>
                     <div className="ec-tipo-card__pie">
-                      <Boton variante="secundario" to={`/web/habitacion/${tipo.tipoHabitacionId}`}>
-                        Ver habitación <ArrowRight size={18} strokeWidth={1.8} aria-hidden="true" />
+                      <Boton
+                        variante="secundario"
+                        to={`/web/habitacion/${tipo.tipoHabitacionId}`}
+                        aria-label={`Ver habitación ${tipo.nombre}`}
+                      >
+                        Ver<span className="ec-solo-escritorio"> habitación</span>{" "}
+                        <ArrowRight size={18} strokeWidth={1.8} aria-hidden="true" />
                       </Boton>
                     </div>
                   </div>

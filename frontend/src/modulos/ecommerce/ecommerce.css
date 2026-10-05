@@ -1493,3 +1493,89 @@
     padding-left: 44px;
   }
 }
+
+/* --- Utilidades de accesibilidad y de vista ------------------------------- */
+.ec-solo-lector {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Error con "Reintentar" ----------------------------------------------- */
+.ec-error-reintento {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* --- Esqueletos de carga -------------------------------------------------- */
+.ec-esqueletos {
+  display: grid;
+  gap: 24px;
+}
+.ec-esqueleto-tarjeta {
+  overflow: hidden;
+  border: 1px solid var(--ec-linea);
+  border-radius: var(--ec-radio-tarjeta);
+  background: var(--ec-papel);
+}
+.ec-esqueleto-tarjeta__cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+}
+.ec-esqueleto {
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--ec-neutro-claro) 0%, var(--ec-crema) 50%, var(--ec-neutro-claro) 100%);
+  background-size: 200% 100%;
+  animation: ec-brillo 1.4s ease-in-out infinite;
+}
+.ec-esqueleto--foto {
+  height: 200px;
+  border-radius: 0;
+}
+.ec-esqueleto--titulo {
+  width: 40%;
+  height: 28px;
+}
+.ec-esqueleto--linea {
+  width: 90%;
+  height: 14px;
+}
+.ec-esqueleto--corta {
+  width: 60%;
+}
+.ec-esqueleto--plan {
+  height: 72px;
+}
+@keyframes ec-brillo {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ec-esqueleto {
+    animation: none;
+  }
+}
+
+@media (max-width: 767px) {
+  /* "Ver habitación" → "Ver" en las tarjetas de tipo (el nombre accesible no cambia). */
+  .ec-solo-escritorio {
+    display: none;
+  }
+  .ec-esqueletos {
+    grid-template-columns: 1fr;
+  }
+}

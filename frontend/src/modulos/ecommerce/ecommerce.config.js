@@ -9,6 +9,6 @@ export const HOTEL = {
   email: "[COMPLETAR] Email de reservas",
   // HORA_CHECKIN del backend (backend/src/modulos/tarifas/tarifas.constantes.js).
   checkIn: "14 h",
-  // No hay hora de check-out definida en el sistema todavía.
-  checkOut: "[COMPLETAR]",
+  // Hora de salida del hotel (definida por Gimena, etapa 2).
+  checkOut: "10 h",
 };
