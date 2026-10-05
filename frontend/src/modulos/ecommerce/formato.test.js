@@ -3,6 +3,7 @@ import {
   busquedaComoQuery,
   calcularNoches,
   formatearFecha,
+  formatearInstanteHotel,
   formatearPrecio,
   formatearRangoFechas,
   nombreComercialPlan,
@@ -44,6 +45,17 @@ describe("formatearFecha", () => {
   it("devuelve vacío para un valor inválido", () => {
     expect(formatearFecha("")).toBe("");
     expect(formatearFecha(null)).toBe("");
+  });
+});
+
+describe("formatearInstanteHotel", () => {
+  it("muestra el instante en hora de Salta (UTC-3), sin importar el huso del navegador", () => {
+    expect(formatearInstanteHotel("2026-10-14T17:00:00.000Z")).toBe("Mié 14 oct 2026 a las 14:00");
+    expect(formatearInstanteHotel("2027-01-01T02:30:00.000Z")).toBe("Jue 31 dic 2026 a las 23:30");
+  });
+  it("vacío o inválido → texto vacío", () => {
+    expect(formatearInstanteHotel(null)).toBe("");
+    expect(formatearInstanteHotel("no")).toBe("");
   });
 });
 

@@ -20,11 +20,16 @@
 // saldo); sin Luhn → DATOS_INVALIDOS (tarjeta.numero); ya vencida hoy → 402
 // "Tarjeta vencida"; vence antes de la salida → 422 TARJETA_VENCE_ANTES.
 //
-// Mi reserva (código + email, decisión 6 de CONTRATO.md):
-//   3FA9C21B + demo@hotel.com        reserva WEB (email de DatosReservaWeb).
-//   B81D90E4 + mostrador@hotel.com   reserva del mostrador cuyo contacto es un email.
+// Mi reserva (código + email, decisión 6 de CONTRATO.md). Online solo se
+// cancela sin cargo; en los demás casos la respuesta trae el motivo:
+//   3FA9C21B + demo@hotel.com        reserva WEB flexible, en plazo: se cancela.
+//   B81D90E4 + mostrador@hotel.com   reserva del mostrador cuyo contacto es un
+//                                    email, flexible y en plazo: se cancela.
 //   7C04E5A2                         reserva del mostrador con teléfono como
 //                                    único contacto: siempre NO_ENCONTRADA.
+//   5D21A7F0 + nrf@hotel.com         reserva WEB no reembolsable (prepagada).
+//   9E4B0C37 + plazo@hotel.com       reserva WEB flexible fuera de plazo (con cargo).
+//   A6E3F218 + sena@hotel.com        reserva del mostrador con una seña registrada.
 import {
   CLAVE_IDEMPOTENCIA_MAX,
   CLAVE_IDEMPOTENCIA_MIN,
@@ -75,25 +80,42 @@ const PLANES = [
   },
 ];
 
+const PLAN_BAR = {
+  codigo: "BAR",
+  nombre: "Best Available Rate",
+  reembolsable: true,
+  horasCancelacionSinCargo: 48,
+  penalidadNoShow: "PRIMERA_NOCHE",
+};
+const PLAN_NRF = {
+  codigo: "NRF",
+  nombre: "Non Refundable Rate",
+  reembolsable: false,
+  horasCancelacionSinCargo: null,
+  penalidadNoShow: "TOTAL",
+};
+const SIN_CARGO = {
+  puedeCancelarOnline: true,
+  motivo: null,
+  penalidad: { aplica: false, monto: 0, limiteSinCargo: "2026-11-18T17:00:00.000Z", mensaje: "Cancelación sin cargo." },
+};
+const MOTIVO_CANCELADA = "Esta reserva ya fue cancelada.";
+
+// Misma forma que POST /api/web/mi-reserva (CONTRATO.md → "Mi reserva").
 const RESERVA_DEMO = {
   codigoConfirmacion: "3FA9C21B",
   estado: "Confirmada",
   fechaDesde: "2026-11-20",
   fechaHasta: "2026-11-23",
   noches: 3,
-  plan: { codigo: "BAR", nombre: "Best Available Rate", reembolsable: true, horasCancelacionSinCargo: 48 },
+  plan: PLAN_BAR,
+  habitaciones: [{ tipo: "Doble", adultos: 2, menores: 1 }],
   total: 75000,
   cobrado: 0,
-  habitaciones: [{ tipo: "Doble", adultos: 2, menores: 1 }],
+  garantia: { tipo: "GARANTIA", marca: "VISA", ultimos4: "4242" },
   titular: "Juan P.",
   documento: "****222",
-  puedeCancelar: true,
-  penalidadCancelacion: {
-    aplica: true,
-    monto: 25000,
-    mensaje: "Ya pasó el plazo de cancelación sin cargo: se cobra la primera noche.",
-    limiteSinCargo: "2026-11-18T17:00:00.000Z",
-  },
+  cancelacion: SIN_CARGO,
 };
 
 // Reservas que encuentra Mi reserva. emailWeb = DatosReservaWeb.emailContacto
@@ -105,13 +127,81 @@ const RESERVAS_MI_RESERVA = [
     codigo: "B81D90E4",
     emailWeb: null,
     contacto: "mostrador@hotel.com",
-    reserva: { ...RESERVA_DEMO, codigoConfirmacion: "B81D90E4", titular: "Ana M.", documento: "****318" },
+    reserva: { ...RESERVA_DEMO, codigoConfirmacion: "B81D90E4", garantia: null, titular: "Ana M.", documento: "****318" },
   },
   {
     codigo: "7C04E5A2",
     emailWeb: null,
     contacto: "+54 9 387 555-0101",
-    reserva: { ...RESERVA_DEMO, codigoConfirmacion: "7C04E5A2", titular: "Luis R.", documento: "****907" },
+    reserva: { ...RESERVA_DEMO, codigoConfirmacion: "7C04E5A2", garantia: null, titular: "Luis R.", documento: "****907" },
+  },
+  {
+    codigo: "5D21A7F0",
+    emailWeb: "nrf@hotel.com",
+    contacto: "nrf@hotel.com",
+    reserva: {
+      ...RESERVA_DEMO,
+      codigoConfirmacion: "5D21A7F0",
+      fechaDesde: "2026-12-04",
+      fechaHasta: "2026-12-06",
+      noches: 2,
+      plan: PLAN_NRF,
+      habitaciones: [{ tipo: "Simple", adultos: 1, menores: 0 }],
+      total: 42500,
+      cobrado: 42500,
+      garantia: { tipo: "PREPAGO", marca: "MASTERCARD", ultimos4: "4444" },
+      titular: "Carla G.",
+      documento: "****561",
+      cancelacion: {
+        puedeCancelarOnline: false,
+        motivo: "Esta tarifa no admite reintegro. Si necesitás cancelar, contactá a recepción.",
+        penalidad: { aplica: true, monto: 42500, limiteSinCargo: null, mensaje: "Tarifa no reembolsable: se cobra el total." },
+      },
+    },
+  },
+  {
+    codigo: "9E4B0C37",
+    emailWeb: "plazo@hotel.com",
+    contacto: "plazo@hotel.com",
+    reserva: {
+      ...RESERVA_DEMO,
+      codigoConfirmacion: "9E4B0C37",
+      fechaDesde: "2026-10-06",
+      fechaHasta: "2026-10-08",
+      noches: 2,
+      total: 50000,
+      titular: "Pedro S.",
+      documento: "****730",
+      cancelacion: {
+        puedeCancelarOnline: false,
+        motivo:
+          "Cancelar ahora tiene un cargo de $ 25.000 (ya pasó el plazo de cancelación sin cargo: se cobra la primera noche). Para cancelar, contactá a recepción.",
+        penalidad: {
+          aplica: true,
+          monto: 25000,
+          limiteSinCargo: "2026-10-04T17:00:00.000Z",
+          mensaje: "Ya pasó el plazo de cancelación sin cargo: se cobra la primera noche.",
+        },
+      },
+    },
+  },
+  {
+    codigo: "A6E3F218",
+    emailWeb: null,
+    contacto: "sena@hotel.com",
+    reserva: {
+      ...RESERVA_DEMO,
+      codigoConfirmacion: "A6E3F218",
+      cobrado: 30000,
+      garantia: null,
+      titular: "Marta L.",
+      documento: "****114",
+      cancelacion: {
+        ...SIN_CARGO,
+        puedeCancelarOnline: false,
+        motivo: "Tu reserva tiene un pago registrado. Para cancelarla, contactá a recepción.",
+      },
+    },
   },
 ];
 
@@ -491,13 +581,18 @@ export function mockCrearReserva(cuerpo) {
 // web) o, en una reserva del mostrador, con Huesped.contacto solo si es un
 // email. Sin email con qué comparar → NO_ENCONTRADA. Mismo mensaje siempre:
 // no se revela si el código existe.
+const MENSAJE_NO_ENCONTRADA =
+  "No encontramos una reserva con esos datos. Revisá el código y el email, o contactá a recepción.";
+
 function buscarReserva({ codigo, email }) {
-  const buscado = String(codigo ?? "").trim().toUpperCase();
-  const emailBuscado = String(email ?? "").trim().toLowerCase();
+  // Misma normalización que el backend: código sin espacios ni guiones, en
+  // mayúsculas; email sin espacios, en minúsculas.
+  const buscado = String(codigo ?? "").replace(/[\s-]/g, "").toUpperCase();
+  const emailBuscado = String(email ?? "").replace(/\s/g, "").toLowerCase();
   const registro = RESERVAS_MI_RESERVA.find((r) => r.codigo === buscado);
   const emailReserva = registro ? (registro.emailWeb ?? (esEmail(registro.contacto) ? registro.contacto : null)) : null;
   if (!emailReserva || !emailBuscado || emailReserva.toLowerCase() !== emailBuscado) {
-    throw error(404, CODIGO_ERROR.NO_ENCONTRADA, "No encontramos una reserva con esos datos.");
+    throw error(404, CODIGO_ERROR.NO_ENCONTRADA, MENSAJE_NO_ENCONTRADA);
   }
   return registro;
 }
@@ -506,7 +601,11 @@ export function mockConsultarMiReserva(cuerpo) {
   return conEscenarioGeneral(() => {
     const { codigo, reserva } = buscarReserva(cuerpo);
     if (estado.canceladas.has(codigo)) {
-      return { ...reserva, estado: "Cancelada", puedeCancelar: false, penalidadCancelacion: null, cobrado: 25000 };
+      return {
+        ...structuredClone(reserva),
+        estado: "Cancelada",
+        cancelacion: { puedeCancelarOnline: false, motivo: MOTIVO_CANCELADA, penalidad: null },
+      };
     }
     return structuredClone(reserva);
   });
@@ -515,12 +614,18 @@ export function mockConsultarMiReserva(cuerpo) {
 export function mockCancelarMiReserva(cuerpo) {
   return conEscenarioGeneral(() => {
     const { codigo, reserva } = buscarReserva(cuerpo);
-    if (estado.canceladas.has(codigo)) throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, "La reserva ya está cancelada.", { campo: "codigo" });
-    const monto = reserva.penalidadCancelacion.monto;
-    if (Number(cuerpo.montoPenalidadAceptado) !== monto) {
-      throw error(409, CODIGO_ERROR.PENALIDAD_CAMBIO, "El cargo por cancelar cambió.", { montoNuevo: monto });
+    // Idempotente: ya cancelada → misma respuesta, sin otro email.
+    if (estado.canceladas.has(codigo)) return { estado: "Cancelada", penalidadCobrada: 0 };
+    const { puedeCancelarOnline, motivo, penalidad } = reserva.cancelacion;
+    if (!puedeCancelarOnline) {
+      throw error(409, CODIGO_ERROR.PENALIDAD_CAMBIO, motivo, { montoNuevo: penalidad?.monto ?? 0, motivo });
+    }
+    // Online solo se cancela sin cargo: el monto aceptado tiene que ser 0.
+    const aceptado = cuerpo?.montoPenalidadAceptado;
+    if (aceptado === null || aceptado === "" || Number(aceptado) !== 0) {
+      throw error(409, CODIGO_ERROR.PENALIDAD_CAMBIO, "El cargo por cancelar cambió.", { montoNuevo: 0, motivo: null });
     }
     estado.canceladas.add(codigo);
-    return { estado: "Cancelada", penalidadCobrada: monto };
+    return { estado: "Cancelada", penalidadCobrada: 0, email: { enviado: true } };
   });
 }

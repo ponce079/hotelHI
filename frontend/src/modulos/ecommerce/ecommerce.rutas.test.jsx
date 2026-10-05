@@ -148,7 +148,7 @@ describe("las siete rutas /web renderizan", () => {
     expect(screen.getByRole("heading", { level: 1, name: /consultá tu reserva/i })).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/código de reserva/i), { target: { value: "3fa9c21b" } });
     fireEvent.change(screen.getByLabelText(/email/i), { target: { value: "demo@hotel.com" } });
-    fireEvent.click(screen.getByRole("button", { name: /consultar/i }));
+    fireEvent.click(screen.getByRole("button", { name: /buscar/i }));
     expect(await screen.findByRole("heading", { name: "Reserva 3FA9C21B" })).toBeInTheDocument();
   });
 });

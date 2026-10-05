@@ -11,7 +11,7 @@ export function textoDeError(error) {
     case CODIGO_ERROR.DATOS_INVALIDOS:
       return error.mensaje || "Revisá los datos marcados.";
     case CODIGO_ERROR.NO_ENCONTRADA:
-      return "No encontramos una reserva con ese código y ese email. Revisá los datos e intentá de nuevo.";
+      return "No encontramos una reserva con esos datos. Revisá el código y el email, o contactá a recepción.";
     case CODIGO_ERROR.PRECIO_CAMBIADO:
       return error.totalNuevo != null
         ? `El precio de tu estadía cambió: el total nuevo es ${formatearPrecio(error.totalNuevo)}. Revisalo y confirmá de nuevo.`
@@ -21,6 +21,7 @@ export function textoDeError(error) {
     case CODIGO_ERROR.CLAVE_REUTILIZADA:
       return "Detectamos un envío repetido con datos distintos. Volvé a confirmar.";
     case CODIGO_ERROR.PENALIDAD_CAMBIO:
+      if (error.motivo) return error.motivo;
       return error.montoNuevo != null
         ? `El cargo por cancelar cambió: ahora es ${formatearPrecio(error.montoNuevo)}. Revisalo antes de confirmar.`
         : "El cargo por cancelar cambió. Revisalo antes de confirmar.";

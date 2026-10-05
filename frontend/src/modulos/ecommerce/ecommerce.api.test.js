@@ -271,10 +271,10 @@ describe("ecommerce.api con VITE_ECOMMERCE_MOCK=true", () => {
   });
 
   describe("mi reserva", () => {
-    it("3FA9C21B + demo@hotel.com devuelve la reserva web de ejemplo cancelable con penalidad", async () => {
-      const r = await consultarMiReserva({ codigo: "3fa9c21b", email: "Demo@Hotel.com" });
-      expect(r).toMatchObject({ codigoConfirmacion: "3FA9C21B", puedeCancelar: true, titular: "Juan P.", documento: "****222" });
-      expect(r.penalidadCancelacion).toMatchObject({ aplica: true, monto: 25000 });
+    it("3FA9C21B + demo@hotel.com devuelve la reserva web de ejemplo, cancelable sin cargo", async () => {
+      const r = await consultarMiReserva({ codigo: "3fa9-c21b", email: " Demo@Hotel.com " });
+      expect(r).toMatchObject({ codigoConfirmacion: "3FA9C21B", titular: "Juan P.", documento: "****222" });
+      expect(r.cancelacion).toMatchObject({ puedeCancelarOnline: true, motivo: null, penalidad: { aplica: false, monto: 0 } });
       sinDatosDeHabitacion(r);
     });
 
@@ -285,13 +285,33 @@ describe("ecommerce.api con VITE_ECOMMERCE_MOCK=true", () => {
       expect(b.mensaje).toBe(a.mensaje);
     });
 
-    it("cancelar con un monto distinto → PENALIDAD_CAMBIO; con el monto correcto → Cancelada", async () => {
-      const err = await fallo(cancelarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com", montoPenalidadAceptado: 0 }));
-      expect(err).toMatchObject({ codigo: "PENALIDAD_CAMBIO", status: 409, montoNuevo: 25000 });
-      await expect(cancelarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com", montoPenalidadAceptado: 25000 })).resolves.toEqual({
+    it("cancelar: solo sin cargo (monto 0); repetir responde lo mismo sin email", async () => {
+      const err = await fallo(cancelarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com", montoPenalidadAceptado: 25000 }));
+      expect(err).toMatchObject({ codigo: "PENALIDAD_CAMBIO", status: 409, montoNuevo: 0 });
+      await expect(cancelarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com", montoPenalidadAceptado: 0 })).resolves.toEqual({
         estado: "Cancelada",
-        penalidadCobrada: 25000,
+        penalidadCobrada: 0,
+        email: { enviado: true },
       });
+      await expect(cancelarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com", montoPenalidadAceptado: 0 })).resolves.toEqual({
+        estado: "Cancelada",
+        penalidadCobrada: 0,
+      });
+      const r = await consultarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com" });
+      expect(r.estado).toBe("Cancelada");
+      expect(r.cancelacion).toEqual({ puedeCancelarOnline: false, motivo: "Esta reserva ya fue cancelada.", penalidad: null });
+    });
+
+    it.each([
+      ["5D21A7F0", "nrf@hotel.com", /no admite reintegro/],
+      ["9E4B0C37", "plazo@hotel.com", /tiene un cargo de \$ 25\.000/],
+      ["A6E3F218", "sena@hotel.com", /tiene un pago registrado/],
+    ])("%s no se cancela online: motivo en la consulta y 409 al intentarlo", async (codigo, email, motivo) => {
+      const r = await consultarMiReserva({ codigo, email });
+      expect(r.cancelacion.puedeCancelarOnline).toBe(false);
+      expect(r.cancelacion.motivo).toMatch(motivo);
+      const err = await fallo(cancelarMiReserva({ codigo, email, montoPenalidadAceptado: 0 }));
+      expect(err).toMatchObject({ codigo: "PENALIDAD_CAMBIO", status: 409, motivo: r.cancelacion.motivo });
     });
   });
 });

@@ -46,6 +46,27 @@ export function formatearRangoFechas(desdeISO, hastaISO) {
   return `${formatearFecha(desdeISO)} → ${formatearFecha(hastaISO)}`;
 }
 
+// Instante ISO (ej. limiteSinCargo de Mi reserva) en hora de Salta:
+// "Mié 18 nov 2026 a las 14:00". El navegador puede estar en otro huso.
+export function formatearInstanteHotel(instanteISO) {
+  const fecha = new Date(instanteISO ?? "");
+  if (!instanteISO || Number.isNaN(fecha.getTime())) return "";
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/Argentina/Salta",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(fecha)
+      .map(({ type, value }) => [type, value])
+  );
+  return `${formatearFecha(`${p.year}-${p.month}-${p.day}`)} a las ${p.hour}:${p.minute}`;
+}
+
 export function calcularNoches(desdeISO, hastaISO) {
   const d = partes(desdeISO);
   const h = partes(hastaISO);
