@@ -4,7 +4,7 @@
 // Sin base, sin Express. Testeadas en miReserva.test.js.
 const crypto = require("node:crypto");
 const { Prisma } = require("@prisma/client");
-const { combinarFechaConHoraArgentina, hoyComoFechaUTC } = require("../../lib/fechas");
+const { combinarFechaConHoraArgentina, ZONA_ARGENTINA } = require("../../lib/fechas");
 const { esEmail } = require("../../lib/contacto");
 const { HORA_CHECKIN } = require("../tarifas/tarifas.constantes");
 
@@ -90,7 +90,7 @@ function evaluarCancelacion({ estado, fechaDesde, reembolsable, tienePagosActivo
       }
     : null;
   if (new Date(ahora).getTime() >= limiteLlegada.getTime()) {
-    const esHoy = isoDeFecha(desde) === isoDeFecha(hoyComoFechaUTC());
+    const esHoy = isoDeFecha(desde) === new Date(ahora).toLocaleDateString("en-CA", { timeZone: ZONA_ARGENTINA });
     return sinCancelar(esHoy ? MOTIVO.LLEGADA_HOY : MOTIVO.LLEGADA_PASADA, penalidadPublica);
   }
   if (tienePagosActivos) return sinCancelar(MOTIVO.CON_PAGO, penalidadPublica);
