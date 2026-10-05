@@ -299,7 +299,12 @@ async function crearReservaWeb(cuerpo, tarjeta) {
   // 7. Relectura, email y respuesta.
   const reserva = await prisma.reserva.findUnique({ where: { id: reservaId }, include: { ...INCLUDE_RESPUESTA, datosWeb: true } });
   const respuesta = armarRespuestaAlta(reserva, reserva.datosWeb, { enviado: false });
-  respuesta.email = await emailWeb.enviarConfirmacion(respuesta, reserva.datosWeb.emailContacto);
+  respuesta.email = await emailWeb.enviarConfirmacion(respuesta, reserva.datosWeb.emailContacto, {
+    nombre: datos.huesped.nombres,
+    horaEstimadaLlegada: reserva.datosWeb.horaEstimadaLlegada,
+    solicitudesEspeciales: reserva.datosWeb.solicitudesEspeciales,
+    penalidadNoShow: reserva.planTarifario?.penalidadNoShow,
+  });
   return { status: 201, cuerpo: respuesta };
 }
 
