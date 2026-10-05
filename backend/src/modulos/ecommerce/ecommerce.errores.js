@@ -7,12 +7,20 @@ const { esEsperaConexion } = require("../../lib/erroresConexion");
 const CODIGO = {
   DATOS_INVALIDOS: "DATOS_INVALIDOS",
   SIN_DISPONIBILIDAD: "SIN_DISPONIBILIDAD",
+  PRECIO_CAMBIADO: "PRECIO_CAMBIADO",
+  CLAVE_REUTILIZADA: "CLAVE_REUTILIZADA",
+  PAGO_RECHAZADO: "PAGO_RECHAZADO",
+  TARJETA_VENCE_ANTES: "TARJETA_VENCE_ANTES",
   ERROR_INTERNO: "ERROR_INTERNO",
 };
 
 const MENSAJE_GENERICO = {
-  [CODIGO.DATOS_INVALIDOS]: "Revisá los datos de la búsqueda.",
+  [CODIGO.DATOS_INVALIDOS]: "Revisá los datos ingresados.",
   [CODIGO.SIN_DISPONIBILIDAD]: "Sin disponibilidad para estas fechas.",
+  [CODIGO.PRECIO_CAMBIADO]: "El precio de tu selección cambió. Revisá el total nuevo antes de confirmar.",
+  [CODIGO.CLAVE_REUTILIZADA]: "Este pedido ya se usó con otros datos. Volvé a intentarlo.",
+  [CODIGO.PAGO_RECHAZADO]: "La tarjeta fue rechazada. Probá con otra tarjeta.",
+  [CODIGO.TARJETA_VENCE_ANTES]: "La tarjeta vence antes de la fecha de salida. Usá otra tarjeta.",
   [CODIGO.ERROR_INTERNO]: "No pudimos completar la operación. Intentá de nuevo en unos minutos.",
 };
 
@@ -64,10 +72,16 @@ function traducirError(err, contexto = {}) {
     });
   }
   if (esErrorDeNegocio(err)) {
-    // 1B-2: if (contexto.origen === "alta" && err.statusCode === 409) → PRECIO_CAMBIADO.
-    // Hasta entonces, todo error de negocio 4xx (incluido un 409 del motor
-    // por estadía mínima o cierre a llegadas) es DATOS_INVALIDOS con su
-    // mensaje, si es seguro.
+    // En el alta, un 409 de crearReservaEnTransaccion es un cambio de precio:
+    // nunca se reenvía su mensaje (puede nombrar reservas ajenas). El
+    // servicio del alta lo recotiza afuera para sumar totalNuevo; esto es la
+    // red por si llega sin recotizar.
+    if (contexto.origen === "alta" && err.statusCode === 409) {
+      return new ErrorWeb(409, CODIGO.PRECIO_CAMBIADO);
+    }
+    // El resto de los errores de negocio 4xx (incluido un 409 del motor por
+    // estadía mínima o cierre a llegadas) es DATOS_INVALIDOS con su mensaje,
+    // si es seguro.
     if (err.statusCode >= 400 && err.statusCode < 500) {
       return new ErrorWeb(
         400,

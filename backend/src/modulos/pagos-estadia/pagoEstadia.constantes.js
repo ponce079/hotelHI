@@ -16,7 +16,8 @@ const MEDIOS_CON_TARJETA = ['Tarjeta crédito', 'Tarjeta débito'];
 const CONCEPTO_SENIA = 'Seña';
 const CONCEPTO_GARANTIA = 'Garantía';
 const CONCEPTO_PAGO_FINAL = 'Pago final';
-const CONCEPTOS_PAGO_ESTADIA = [CONCEPTO_SENIA, CONCEPTO_GARANTIA, CONCEPTO_PAGO_FINAL];
+const CONCEPTO_PREPAGO = 'Prepago'; // E-commerce (HU-102): tarifa no reembolsable pagada al reservar
+const CONCEPTOS_PAGO_ESTADIA = [CONCEPTO_SENIA, CONCEPTO_GARANTIA, CONCEPTO_PAGO_FINAL, CONCEPTO_PREPAGO];
 
 module.exports = {
   MEDIOS_PAGO_ESTADIA,
@@ -24,5 +25,6 @@ module.exports = {
   CONCEPTO_SENIA,
   CONCEPTO_GARANTIA,
   CONCEPTO_PAGO_FINAL,
+  CONCEPTO_PREPAGO,
   CONCEPTOS_PAGO_ESTADIA,
 };

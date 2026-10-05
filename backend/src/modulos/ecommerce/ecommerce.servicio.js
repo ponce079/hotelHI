@@ -29,6 +29,34 @@ async function tiposVendibles() {
   return armarTiposWeb(habitaciones);
 }
 
+// Plan vendible en la web: activo y visibleWeb. null si no.
+function planWeb(planTarifarioId) {
+  return prisma.planTarifario.findFirst({
+    where: { id: planTarifarioId, activo: true, visibleWeb: true },
+    select: { id: true, reembolsable: true },
+  });
+}
+
+// Habitaciones libres que pueden atender las líneas (cotizar y alta), con el
+// mismo criterio de "libre" del sistema (consultarDisponibilidad, incluida la
+// regla de entrada hoy). Pide solo lo necesario: con un único tipo filtra por
+// tipoHabitacionId (cotiza un solo tipo en vez de todos) y, siempre, por la
+// capacidad mínima que alguna línea necesita. Sus precios no se usan.
+async function habitacionesLibres({ fechaDesde, fechaHasta, lineas }) {
+  const tipos = [...new Set(lineas.map((l) => l.tipoHabitacionId))];
+  const capacidadMinima = Math.min(...lineas.map((l) => l.adultos + l.menores));
+  const disponibilidad = await reservasServicio.consultarDisponibilidad({
+    fechaDesde,
+    fechaHasta,
+    adultos: 1,
+    menores: 0,
+    capacidadMinima,
+    ...(tipos.length === 1 ? { tipoHabitacionId: tipos[0] } : {}),
+    canal: CANAL_WEB,
+  });
+  return disponibilidad.habitaciones.map((h) => ({ id: h.id, capacidad: h.capacidad, tipoHabitacionId: h.tipoHabitacionId }));
+}
+
 // GET /api/web/tipos
 async function obtenerTipos() {
   return { tipos: await tiposVendibles() };
@@ -116,4 +144,4 @@ async function cotizar(cuerpo) {
   return armarCotizacionWeb({ cotizacion, lineas: datos.habitaciones, representantes, nombrePorTipo });
 }
 
-module.exports = { obtenerTipos, consultarDisponibilidad, cotizar };
+module.exports = { obtenerTipos, consultarDisponibilidad, cotizar, tiposVendibles, planWeb, habitacionesLibres, CANAL_WEB };

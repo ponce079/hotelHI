@@ -2,6 +2,7 @@
 // loguea el request ni el body: un error inesperado se registra solo con su
 // mensaje y stack (ecommerce.errores.js → responderError).
 const ecommerceServicio = require("./ecommerce.servicio");
+const reservaWebServicio = require("./reservaWeb.servicio");
 const { responderError } = require("./ecommerce.errores");
 
 async function getTipos(req, res) {
@@ -28,4 +29,17 @@ async function postCotizar(req, res) {
   }
 }
 
-module.exports = { getTipos, getDisponibilidad, postCotizar };
+// POST /api/web/reservas. La tarjeta se separa del body apenas llega y solo
+// viaja al servicio: el resto del cuerpo nunca la lleva, y nada de este
+// controlador la loguea ni la devuelve.
+async function postReserva(req, res) {
+  const { tarjeta, ...cuerpo } = req.body && typeof req.body === "object" ? req.body : {};
+  try {
+    const { status, cuerpo: respuesta } = await reservaWebServicio.crearReservaWeb(cuerpo, tarjeta);
+    return res.status(status).json(respuesta);
+  } catch (err) {
+    return responderError(res, err, { origen: "alta" });
+  }
+}
+
+module.exports = { getTipos, getDisponibilidad, postCotizar, postReserva };
