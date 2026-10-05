@@ -1,6 +1,5 @@
 // E-commerce — API pública del motor de reservas web (/api/web), sin
 // sesión de staff. Contrato: docs/ecommerce/CONTRATO.md.
-// POST /mi-reserva llega en la etapa 4.
 const express = require("express");
 const ecommerceControlador = require("./ecommerce.controlador");
 
@@ -11,5 +10,6 @@ router.get("/planes", ecommerceControlador.getPlanes);
 router.get("/disponibilidad", ecommerceControlador.getDisponibilidad);
 router.post("/cotizar", ecommerceControlador.postCotizar);
 router.post("/reservas", ecommerceControlador.postReserva);
+router.post("/mi-reserva", ecommerceControlador.postMiReserva);
 
 module.exports = router;

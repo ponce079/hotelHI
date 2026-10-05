@@ -11,6 +11,8 @@ const CODIGO = {
   CLAVE_REUTILIZADA: "CLAVE_REUTILIZADA",
   PAGO_RECHAZADO: "PAGO_RECHAZADO",
   TARJETA_VENCE_ANTES: "TARJETA_VENCE_ANTES",
+  NO_ENCONTRADA: "NO_ENCONTRADA",
+  PENALIDAD_CAMBIO: "PENALIDAD_CAMBIO",
   ERROR_INTERNO: "ERROR_INTERNO",
 };
 
@@ -21,6 +23,8 @@ const MENSAJE_GENERICO = {
   [CODIGO.CLAVE_REUTILIZADA]: "Este pedido ya se usó con otros datos. Volvé a intentarlo.",
   [CODIGO.PAGO_RECHAZADO]: "La tarjeta fue rechazada. Probá con otra tarjeta.",
   [CODIGO.TARJETA_VENCE_ANTES]: "La tarjeta vence antes de la fecha de salida. Usá otra tarjeta.",
+  [CODIGO.NO_ENCONTRADA]: "No encontramos una reserva con esos datos. Revisá el código y el email, o contactá a recepción.",
+  [CODIGO.PENALIDAD_CAMBIO]: "Las condiciones de cancelación de tu reserva cambiaron. Revisalas antes de continuar.",
   [CODIGO.ERROR_INTERNO]: "No pudimos completar la operación. Intentá de nuevo en unos minutos.",
 };
 

@@ -3,6 +3,7 @@
 // mensaje y stack (ecommerce.errores.js → responderError).
 const ecommerceServicio = require("./ecommerce.servicio");
 const reservaWebServicio = require("./reservaWeb.servicio");
+const miReservaServicio = require("./miReserva.servicio");
 const { responderError } = require("./ecommerce.errores");
 
 async function getTipos(req, res) {
@@ -50,4 +51,13 @@ async function postReserva(req, res) {
   }
 }
 
-module.exports = { getTipos, getPlanes, getDisponibilidad, postCotizar, postReserva };
+// POST /api/web/mi-reserva — consulta con código + email (HU-104).
+async function postMiReserva(req, res) {
+  try {
+    return res.json(await miReservaServicio.consultarMiReserva(req.body));
+  } catch (err) {
+    return responderError(res, err);
+  }
+}
+
+module.exports = { getTipos, getPlanes, getDisponibilidad, postCotizar, postReserva, postMiReserva };
