@@ -7,6 +7,7 @@ const ecommerceControlador = require("./ecommerce.controlador");
 const router = express.Router();
 
 router.get("/tipos", ecommerceControlador.getTipos);
+router.get("/planes", ecommerceControlador.getPlanes);
 router.get("/disponibilidad", ecommerceControlador.getDisponibilidad);
 router.post("/cotizar", ecommerceControlador.postCotizar);
 router.post("/reservas", ecommerceControlador.postReserva);

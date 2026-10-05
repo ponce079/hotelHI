@@ -337,6 +337,20 @@ export function mockObtenerTipos() {
   }));
 }
 
+// Etapa 2: misma forma que GET /api/web/planes.
+export function mockObtenerPlanes() {
+  return conEscenarioGeneral(() => ({
+    planes: PLANES.map(({ planTarifarioId, codigo, nombre, reembolsable, horasCancelacionSinCargo, penalidadNoShow }) => ({
+      planTarifarioId,
+      codigo,
+      nombre,
+      reembolsable,
+      horasCancelacionSinCargo,
+      penalidadNoShow,
+    })),
+  }));
+}
+
 export function mockConsultarDisponibilidad({ fechaDesde, fechaHasta, adultos, menores = 0 }) {
   return conEscenarioGeneral((escenario) => {
     const noches = validarFechas(fechaDesde, fechaHasta);

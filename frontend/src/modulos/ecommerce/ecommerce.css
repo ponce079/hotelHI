@@ -1419,9 +1419,6 @@
    ========================================================================== */
 
 /* --- Campo de fecha legible (componentes/CampoFecha.jsx) ------------------ */
-.ec-campo-fecha__control {
-  position: relative;
-}
 /* Con valor, el texto nativo (dd/mm/aaaa) se oculta y se ve el legible
    superpuesto; el ícono del selector del sistema sigue visible y usable. */
 .ec-campo-fecha--con-valor .ec-campo-fecha__control:not(:focus) {
@@ -1431,8 +1428,6 @@
   color: transparent;
 }
 .ec-campo-fecha__control::-webkit-calendar-picker-indicator {
-  position: relative;
-  z-index: 1;
   cursor: pointer;
 }
 .ec-campo-fecha__legible {
@@ -1611,5 +1606,192 @@
 @media (max-width: 767px) {
   .ec-vacio {
     padding: 20px;
+  }
+}
+
+/* --- Detalle del tipo (paginas/DetalleTipoPage.jsx) ----------------------- */
+.ec-pila--chica {
+  gap: 8px;
+}
+.ec-detalle-tipo {
+  padding-bottom: 24px;
+}
+.ec-detalle-tipo__encabezado {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.ec-detalle-tipo__titulo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ec-detalle-tipo__lateral {
+  position: sticky;
+  top: 24px;
+}
+.ec-detalle-tipo__panel:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--ec-halo);
+}
+.ec-detalle-tipo__estadia {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.ec-detalle-tipo__planes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* En el panel lateral la fila del plan va apilada (el panel es angosto). */
+.ec-detalle-tipo__planes .ec-plan {
+  grid-template-columns: 1fr;
+  gap: 12px;
+  padding: 16px;
+}
+.ec-detalle-tipo__planes .ec-plan__precio {
+  text-align: left;
+}
+.ec-detalle-tipo__planes .ec-plan__accion .ec-boton {
+  width: 100%;
+}
+.ec-detalle-tipo__lista {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ec-texto-2);
+}
+.ec-detalle-tipo__comodidades {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.ec-detalle-tipo__barra {
+  display: none;
+}
+.ec-detalle-tipo__contenido {
+  gap: 40px;
+}
+.ec-detalle-tipo__contenido > section > .ec-titulo-seccion {
+  margin-bottom: 12px;
+}
+
+/* --- Galería con visor (componentes/GaleriaTipo.jsx) ---------------------- */
+.ec-galeria-tipo {
+  position: relative;
+}
+.ec-galeria-tipo__contador {
+  display: none;
+}
+.ec-galeria-tipo__ver {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--ec-linea);
+  border-radius: 999px;
+  background: var(--ec-papel);
+  color: var(--ec-tinta);
+  font-weight: 600;
+  cursor: pointer;
+}
+.ec-galeria-tipo__ver:focus-visible,
+.ec-visor__boton:focus-visible {
+  outline: 3px solid var(--ec-verde);
+  outline-offset: 2px;
+}
+.ec-visor {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(14, 51, 38, 0.82);
+}
+.ec-visor__dialogo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(960px, 100%);
+}
+.ec-visor__barra,
+.ec-visor__navegacion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ec-visor__contador {
+  color: #ffffff;
+  font-weight: 600;
+}
+.ec-visor__foto {
+  aspect-ratio: 16 / 10;
+  border-radius: var(--ec-radio-tarjeta);
+}
+.ec-visor__boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ec-papel);
+  color: var(--ec-tinta);
+  cursor: pointer;
+}
+
+@media (max-width: 1100px) {
+  .ec-detalle-tipo__lateral {
+    position: static;
+  }
+}
+
+@media (max-width: 767px) {
+  /* Móvil: contenido apilado, foto principal con "1/5" y barra fija abajo
+     con el total y "Reservar". */
+  .ec-detalle-tipo {
+    padding-bottom: 104px;
+  }
+  .ec-galeria-tipo__contador {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(14, 51, 38, 0.78);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .ec-galeria-tipo__ver {
+    right: 12px;
+    bottom: 12px;
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 14px;
+  }
+  .ec-detalle-tipo__comodidades {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ec-detalle-tipo__barra {
+    display: flex;
+  }
+  .ec-visor {
+    padding: 12px;
   }
 }

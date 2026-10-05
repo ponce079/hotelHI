@@ -13,6 +13,14 @@ async function getTipos(req, res) {
   }
 }
 
+async function getPlanes(req, res) {
+  try {
+    return res.json(await ecommerceServicio.obtenerPlanes());
+  } catch (err) {
+    return responderError(res, err);
+  }
+}
+
 async function getDisponibilidad(req, res) {
   try {
     return res.json(await ecommerceServicio.consultarDisponibilidad(req.query));
@@ -42,4 +50,4 @@ async function postReserva(req, res) {
   }
 }
 
-module.exports = { getTipos, getDisponibilidad, postCotizar, postReserva };
+module.exports = { getTipos, getPlanes, getDisponibilidad, postCotizar, postReserva };

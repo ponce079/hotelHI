@@ -57,6 +57,27 @@ async function habitacionesLibres({ fechaDesde, fechaHasta, lineas }) {
   return disponibilidad.habitaciones.map((h) => ({ id: h.id, capacidad: h.capacidad, tipoHabitacionId: h.tipoHabitacionId }));
 }
 
+// GET /api/web/planes (etapa 2) — planes activos y visibles en la web, con
+// sus condiciones de cancelación y no-show, para las políticas del detalle
+// del tipo (sin fechas). Solo estos campos.
+async function obtenerPlanes() {
+  const planes = await prisma.planTarifario.findMany({
+    where: { activo: true, visibleWeb: true },
+    select: { id: true, codigo: true, nombre: true, reembolsable: true, horasCancelacionSinCargo: true, penalidadNoShow: true },
+    orderBy: { id: "asc" },
+  });
+  return {
+    planes: planes.map((p) => ({
+      planTarifarioId: p.id,
+      codigo: p.codigo,
+      nombre: p.nombre,
+      reembolsable: p.reembolsable,
+      horasCancelacionSinCargo: p.reembolsable ? (p.horasCancelacionSinCargo ?? null) : null,
+      penalidadNoShow: p.penalidadNoShow,
+    })),
+  };
+}
+
 // GET /api/web/tipos
 async function obtenerTipos() {
   return { tipos: await tiposVendibles() };
@@ -137,4 +158,4 @@ async function cotizar(cuerpo) {
   return armarCotizacionWeb({ cotizacion, lineas: datos.habitaciones, representantes, nombrePorTipo });
 }
 
-module.exports = { obtenerTipos, consultarDisponibilidad, cotizar, tiposVendibles, planWeb, habitacionesLibres, CANAL_WEB };
+module.exports = { obtenerTipos, obtenerPlanes, consultarDisponibilidad, cotizar, tiposVendibles, planWeb, habitacionesLibres, CANAL_WEB };

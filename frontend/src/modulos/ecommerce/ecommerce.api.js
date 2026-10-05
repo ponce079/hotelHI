@@ -56,6 +56,12 @@ export function obtenerTipos() {
   return llamar((mock) => mock.mockObtenerTipos(), () => api.get("/web/tipos"));
 }
 
+// Etapa 2: planes activos y visibles en la web (condiciones de cancelación
+// y no-show), para las políticas del detalle del tipo.
+export function obtenerPlanes() {
+  return llamar((mock) => mock.mockObtenerPlanes(), () => api.get("/web/planes"));
+}
+
 // params: { fechaDesde, fechaHasta, adultos, menores }
 export function consultarDisponibilidad(params) {
   return llamar(
