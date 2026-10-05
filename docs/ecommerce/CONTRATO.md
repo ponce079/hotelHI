@@ -1,16 +1,18 @@
 # Contrato de la API del e-commerce (`/api/web`)
 
-> **Contrato v3 (etapa 1B-2: alta real de la reserva web). Cambios al contrato: solo Gimena.**
+> **Contrato v4 (etapa 2: pantallas de búsqueda terminadas y bloque "Reserva web" del mostrador). Cambios al contrato: solo Gimena.**
 
 ### Estado de cada endpoint
 
 | Endpoint | Estado |
 |---|---|
 | `GET /api/web/tipos` | **Real** (etapa 1B-1) |
+| `GET /api/web/planes` | **Real** (etapa 2) |
 | `GET /api/web/disponibilidad` | **Real** (etapa 1B-1) |
 | `POST /api/web/cotizar` | **Real** (etapa 1B-1) |
 | `POST /api/web/reservas` | **Real** (etapa 1B-2), con la pasarela simulada del backend |
 | `POST /api/web/mi-reserva` y `/mi-reserva/cancelar` | Mock — etapa 4 |
+| `GET /api/reservas-web/:reservaId` | **Real** (etapa 2) — **interno del mostrador**, con sesión; no es parte de `/api/web` |
 
 El mock (`ecommerce.mock.js`) **solo funciona en desarrollo** (`npm run dev`
 con `VITE_ECOMMERCE_MOCK=true`). Un build de producción nunca lo usa: ni
@@ -109,6 +111,27 @@ Respuesta real de la base local (4 de octubre de 2026):
 - `capacidadMaxima`: `TipoHabitacion` no tiene ese campo; se calcula como el
   máximo de `Habitacion.capacidad` entre las habitaciones activas del tipo.
 - Los ids son los de la base: el frontend nunca los asume fijos.
+
+---
+
+## GET `/api/web/planes`
+
+Planes **activos y visibles en la web**, con sus condiciones de cancelación y
+no-show. Lo usa el detalle del tipo para las políticas, sin necesidad de
+fechas. Respuesta real de la base local:
+
+```json
+{
+  "planes": [
+    { "planTarifarioId": 1, "codigo": "BAR", "nombre": "Best Available Rate", "reembolsable": true, "horasCancelacionSinCargo": 48, "penalidadNoShow": "PRIMERA_NOCHE" },
+    { "planTarifarioId": 2, "codigo": "NRF", "nombre": "No Reembolsable", "reembolsable": false, "horasCancelacionSinCargo": null, "penalidadNoShow": "TOTAL_ESTADIA" }
+  ]
+}
+```
+
+- Exactamente esos seis campos (sin precios: el precio depende de las fechas).
+- `horasCancelacionSinCargo` es `null` cuando el plan no es reembolsable.
+- El test recursivo de claves prohibidas también cubre esta respuesta.
 
 ---
 
@@ -462,6 +485,45 @@ Consulta de una reserva con código + email. No hay cuentas de huésped.
 
 ---
 
+## GET `/api/reservas-web/:reservaId` (interno del mostrador)
+
+No es parte de la API pública: lo usa el detalle de reserva del mostrador para
+el bloque "Reserva web". Exige **sesión** (`requiereSesion`) y el permiso de
+ver reservas (`requiereRol("admin", "recepcionista", "gerente")`, el mismo
+criterio que `verReservas` del frontend). `GET /api/reservas/:id` sigue sin
+sesión y **no** se le agregaron estos datos.
+
+**Response 200**
+
+```json
+{
+  "emailContacto": "maria@correo.com",
+  "telefonoContacto": "+54 9 387 555-1234",
+  "horaEstimadaLlegada": "20-22",
+  "solicitudesEspeciales": "Cuna para bebé, si es posible.",
+  "tarjeta": { "titular": "MARIA GONZALEZ", "marca": "VISA", "ultimos4": "4242", "vencimiento": "08/2028" },
+  "tipoGarantia": "GARANTIA",
+  "aceptaPoliticasEn": "2026-10-04T17:32:00.000Z",
+  "versionPoliticas": "2026-10-01",
+  "aceptaComunicaciones": false
+}
+```
+
+- `tipoGarantia`: `"GARANTIA"` (tarifa flexible) | `"PREPAGO"` (no reembolsable).
+- **Nunca** devuelve `garantiaToken` ni `pasarelaReferencia` (ni siquiera los lee).
+- `404` si la reserva no tiene datos web (reserva del mostrador); `401` sin
+  sesión; `403` con un rol que no ve reservas; `400` con un id inválido.
+
+En el detalle (`frontend/src/modulos/reservas/detalle/ColumnaDerecha.jsx`) la
+tarjeta "Reserva web" va después de "Quién reservó", solo si el endpoint
+devuelve datos (un 404 o un error no muestran nada): contacto, "Llegada
+estimada: 20 a 22 h", solicitudes (o "Sin solicitudes"), "Garantizada con VISA
+••4242 · vence 08/2028" o "Prepagada con VISA ••4242", "Aceptó términos
+v2026-10-01 el 04/10/2026 14:32" (hora argentina) y "Acepta comunicaciones:
+sí/no".
+
+---
+
 ## Errores
 
 Forma única:
@@ -740,6 +802,78 @@ titular con la forma nueva (sección **Huésped (titular)**). Respecto de la 1A:
     reembolsable" va aparte).
 
 ---
+
+## Cambios de la etapa 2
+
+Todos los cambios en archivos compartidos son **solo agregados**: no se
+renombró, borró ni cambió la firma o el comportamiento de nada que ya
+existiera.
+
+### Pantallas terminadas (de Gimena)
+
+- **Inicio** (`/web`), **Resultados** (`/web/resultados`) y **Detalle del
+  tipo** (`/web/habitacion/:tipoHabitacionId`), con el diseño del mockup (págs.
+  1 a 3, y móvil). Títulos de pestaña "<página> · Holiday Inn Salta".
+- **Búsqueda en la URL** de resultados y del detalle:
+  `?entrada=AAAA-MM-DD&salida=AAAA-MM-DD&adultos=N&menores=N`. Un F5 o un link
+  compartido repiten la búsqueda; si la URL no la trae, se completa con la del
+  contexto. Los links de la etapa 1 (`?desde&hasta`) se siguen aceptando.
+  Parámetros inválidos → aviso y buscador, sin consultar la API.
+- **Buscador web**: menores rotulados "Menores (0 a 12 años)" con la ayuda
+  "Desde los 13 años cuentan como adultos" (el motor cobra adulto desde los 13);
+  adultos de 1 a la **capacidad máxima entre los tipos** (de `/api/web/tipos`,
+  nunca un número fijo); adultos + menores no la superan ("Para más de N
+  personas, contactá a recepción"); entrada desde hoy, salida posterior, hasta
+  30 noches y **hasta 365 días** desde hoy. Las fechas se muestran "Vie 16 oct
+  2026" (texto superpuesto `aria-hidden` sobre el input nativo, que conserva
+  su label y su valor).
+- **Resultados**: disponibles primero por `desdePorNoche`, no disponibles al
+  final (atenuados, con su motivo y sin botones); "Ahorrás $ X" del no
+  reembolsable = diferencia real de totales contra la tarifa flexible del mismo
+  tipo; esqueletos de carga; "Reintentar" en errores de red; estado vacío con
+  el motivo más relevante y el teléfono de recepción. "Elegir" muestra
+  "Cotizando…" y bloquea los botones (sin doble envío); `SIN_DISPONIBILIDAD`
+  refresca los resultados y avisa "Ese tipo se agotó para tus fechas".
+- **Detalle del tipo**: galería 1 + 4 con "Ver las 5 fotos" (visor accesible:
+  foco, flechas, Esc) y "1/5" en móvil; políticas con check-in 14 h, check-out
+  10 h y la cancelación y el no-show **de cada plan** (`GET /api/web/planes`);
+  panel con los planes de ese tipo y "Reservar" (mismo flujo que "Elegir") o
+  "Elegí tus fechas para ver precios"; barra fija en móvil.
+- **Check-out**: `ecommerce.config.js → HOTEL.checkOut = "10 h"` (antes
+  "[COMPLETAR]"). Se ve en "Cómo llegar", en las políticas del detalle y en el
+  resumen (`ResumenReserva` ya lo mostraba).
+
+### Agregados en archivos compartidos
+
+| Archivo | Agregado |
+|---|---|
+| `componentes/BuscadorEstadia.jsx` | Props opcionales `capacidadMaxima`, `ventanaVentaDias`, `menoresConEdad`, `fechasLegibles`, `compacto` y `erroresExternos`; exporta `validarBusquedaWeb` y `sumarDias`. **Sin esas props el buscador es exactamente el de antes** (`validarBusqueda` no cambió). |
+| `componentes/CampoFecha.jsx` (nuevo) | Campo de fecha con el valor legible superpuesto. |
+| `componentes/TarjetaTipoResultado.jsx` (nuevo) | `TarjetaTipoResultado` y `FilaPlanResultado` (fila de plan con ahorro; el botón se llama "Elegir/Reservar <plan> por $ X"). |
+| `componentes/GaleriaTipo.jsx` (nuevo) | Galería con visor accesible. |
+| `componentes/ErrorConReintento.jsx` (nuevo) | `MensajeError` + "Reintentar"; `esReintentable(error)`. |
+| `componentes/Esqueleto.jsx` (nuevo) | `EsqueletoTarjetaTipo` y `CargandoTarjetas` (con `role="status"`). |
+| `busquedaWeb.js` (nuevo) | Funciones puras: `leerBusquedaDeUrl`, `busquedaComoQueryWeb`, `ordenarTipos`, `hayDisponibles`, `ahorroContraFlexible`, `motivoMasRelevante`, `textoResumenBusqueda`, `capacidadMaximaDeTipos`, `textoNoShow` y `VENTANA_VENTA_DIAS`. |
+| `useElegirPlan.js` (nuevo) | Hook de "Elegir"/"Reservar": cotiza, guarda y sigue a `/web/datos`. |
+| `useTituloPagina.js` (nuevo) | `useTituloPagina(nombre)` → "<nombre> · Holiday Inn Salta". |
+| `ecommerce.api.js` | `obtenerPlanes()`. |
+| `ecommerce.mock.js` | `mockObtenerPlanes()`, con la forma real. |
+| `ecommerce.css` | Solo clases nuevas `ec-` (campo de fecha, buscador web y compacto, esqueletos, error con reintento, `ec-solo-lector`, `ec-solo-escritorio`, ahorro, estado vacío, detalle del tipo, galería y visor). Ninguna regla existente cambió. |
+| `formato.js` y `ProcesoCompraContext.jsx` | **Sin cambios.** |
+
+### Para Tomás (etapa 2)
+
+- Tus páginas pueden usar `useTituloPagina("Tus datos")`, `useTituloPagina("Pago")`
+  y `useTituloPagina("Confirmación")` para el título de la pestaña.
+- `ErrorConReintento` sirve para un error reintentable (`ERROR_RED`,
+  `ERROR_INTERNO`, `DEMASIADOS_INTENTOS`) con su botón "Reintentar".
+- El check-out a las 10 h ya aparece en `ResumenReserva`; en
+  `ConfirmacionPage` sale de `HOTEL.checkOut`, así que tampoco hay que tocar
+  nada.
+- Para volver a resultados desde tus pantallas, usá
+  `/web/resultados?${busquedaComoQueryWeb(busqueda)}` (o simplemente
+  `/web/resultados`: si la URL no trae búsqueda, se completa con la del contexto).
+- Los tests de rutas usan fechas relativas a hoy (regla del proyecto).
 
 ## Cómo trabajar sobre esta base
 
