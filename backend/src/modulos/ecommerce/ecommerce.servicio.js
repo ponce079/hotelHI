@@ -114,17 +114,10 @@ async function cotizar(cuerpo) {
   });
   if (!plan) throw datosInvalidos("planTarifarioId", "La tarifa elegida no está disponible.");
 
-  // Mismo criterio de "libre" que el resto del sistema (incluida la regla de
-  // entrada hoy). La ocupación de esta consulta no importa: sus precios no
-  // se usan, solo la lista de habitaciones libres.
-  const disponibilidad = await reservasServicio.consultarDisponibilidad({
-    fechaDesde,
-    fechaHasta,
-    adultos: 1,
-    menores: 0,
-    canal: CANAL_WEB,
-  });
-  const representantes = elegirRepresentantes(disponibilidad.habitaciones, datos.habitaciones);
+  // Mismo criterio de "libre" que el resto del sistema; solo los tipos y la
+  // capacidad que hacen falta (habitacionesLibres).
+  const libres = await habitacionesLibres({ fechaDesde, fechaHasta, lineas: datos.habitaciones });
+  const representantes = elegirRepresentantes(libres, datos.habitaciones);
   if (!representantes) throw new ErrorWeb(409, CODIGO.SIN_DISPONIBILIDAD);
 
   const cotizacion = await reservasServicio.cotizarParaReserva({

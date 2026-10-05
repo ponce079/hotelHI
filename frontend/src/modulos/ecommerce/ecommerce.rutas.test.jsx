@@ -63,8 +63,8 @@ describe("las siete rutas /web renderizan", () => {
     expect(screen.getByRole("heading", { level: 1, name: /habitaciones disponibles/i })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Simple" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Doble" })).toBeInTheDocument();
-    expect(screen.getAllByText("Tarifa flexible · Cancelación sin cargo hasta 48 h antes de la llegada")).toHaveLength(2);
-    expect(screen.getAllByText("No reembolsable · Se cobra el total al reservar · Sin devolución")).toHaveLength(2);
+    expect(screen.getAllByText("Cancelación sin cargo hasta 48 h antes de la llegada")).toHaveLength(2);
+    expect(screen.getAllByText("Se cobra el total al reservar · Sin devolución")).toHaveLength(2);
     expect(screen.getByRole("button", { name: "Elegir No reembolsable por $ 42.500" })).toBeInTheDocument();
     expect(screen.getByText("Últimas disponibles")).toBeInTheDocument();
     // Nunca número de habitación, piso ni cantidad de libres.

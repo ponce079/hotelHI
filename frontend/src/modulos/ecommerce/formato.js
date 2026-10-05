@@ -76,9 +76,9 @@ export function nombreComercialPlan(plan) {
 export function textoCondicionesPlan(plan) {
   if (!plan) return "";
   if (plan.reembolsable) {
-    return `Tarifa flexible · Cancelación sin cargo hasta ${plan.horasCancelacionSinCargo} h antes de la llegada`;
+    return `Cancelación sin cargo hasta ${plan.horasCancelacionSinCargo} h antes de la llegada`;
   }
-  return "No reembolsable · Se cobra el total al reservar · Sin devolución";
+  return "Se cobra el total al reservar · Sin devolución";
 }
 
 export const LEYENDA_PRECIO_FINAL = "Precio final en pesos argentinos, IVA incluido";

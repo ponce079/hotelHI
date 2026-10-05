@@ -66,14 +66,14 @@ describe("formatearRangoFechas y calcularNoches", () => {
 describe("textoCondicionesPlan", () => {
   it("plan reembolsable: tarifa flexible con las horas de cancelación del plan", () => {
     expect(textoCondicionesPlan({ reembolsable: true, horasCancelacionSinCargo: 48 })).toBe(
-      "Tarifa flexible · Cancelación sin cargo hasta 48 h antes de la llegada"
+      "Cancelación sin cargo hasta 48 h antes de la llegada"
     );
     expect(textoCondicionesPlan({ reembolsable: true, horasCancelacionSinCargo: 24 })).toContain("hasta 24 h antes");
   });
 
   it("plan no reembolsable", () => {
     expect(textoCondicionesPlan({ reembolsable: false, horasCancelacionSinCargo: null })).toBe(
-      "No reembolsable · Se cobra el total al reservar · Sin devolución"
+      "Se cobra el total al reservar · Sin devolución"
     );
   });
 
@@ -106,5 +106,13 @@ describe("nombreComercialPlan", () => {
     expect(nombreComercialPlan({ codigo: "BAR", nombre: "Best Available Rate", reembolsable: true })).toBe("Tarifa flexible");
     expect(nombreComercialPlan({ codigo: "NRF", nombre: "No Reembolsable", reembolsable: false })).toBe("No reembolsable");
     expect(nombreComercialPlan(null)).toBe("");
+  });
+});
+
+describe("tarjetas de plan sin el nombre repetido", () => {
+  it("las condiciones no repiten el nombre comercial que ya muestra la tarjeta", () => {
+    for (const plan of [{ reembolsable: true, horasCancelacionSinCargo: 48 }, { reembolsable: false, horasCancelacionSinCargo: null }]) {
+      expect(textoCondicionesPlan(plan)).not.toContain(nombreComercialPlan(plan));
+    }
   });
 });
