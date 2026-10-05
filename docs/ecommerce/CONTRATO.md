@@ -1,6 +1,6 @@
 # Contrato de la API del e-commerce (`/api/web`)
 
-> **Contrato v4 (etapa 2: pantallas de búsqueda terminadas y bloque "Reserva web" del mostrador). Cambios al contrato: solo Gimena.**
+> **Contrato v5 (etapa 4: Mi reserva real, con cancelación online sin cargo). Cambios al contrato: solo Gimena.**
 
 ### Estado de cada endpoint
 
@@ -11,7 +11,7 @@
 | `GET /api/web/disponibilidad` | **Real** (etapa 1B-1) |
 | `POST /api/web/cotizar` | **Real** (etapa 1B-1) |
 | `POST /api/web/reservas` | **Real** (etapa 1B-2), con la pasarela simulada del backend |
-| `POST /api/web/mi-reserva` y `/mi-reserva/cancelar` | Mock — etapa 4 |
+| `POST /api/web/mi-reserva` y `/mi-reserva/cancelar` | **Real** (etapa 4) |
 | `GET /api/reservas-web/:reservaId` | **Real** (etapa 2) — **interno del mostrador**, con sesión; no es parte de `/api/web` |
 
 El mock (`ecommerce.mock.js`) **solo funciona en desarrollo** (`npm run dev`
@@ -421,12 +421,12 @@ el tipo o el plan, y la borra al llegar a la confirmación.
 
 ## POST `/api/web/mi-reserva`
 
-Consulta de una reserva con código + email. No hay cuentas de huésped.
+Consulta de una reserva con código + email (HU-104). No hay cuentas de huésped.
 
 **Request**
 
 ```json
-{ "codigo": "3FA9C21B", "email": "demo@hotel.com" }
+{ "codigo": "3FA9C21B", "email": "juan@correo.com" }
 ```
 
 **Response 200**
@@ -438,50 +438,106 @@ Consulta de una reserva con código + email. No hay cuentas de huésped.
   "fechaDesde": "2026-11-20",
   "fechaHasta": "2026-11-23",
   "noches": 3,
-  "plan": { "codigo": "BAR", "nombre": "Best Available Rate", "reembolsable": true, "horasCancelacionSinCargo": 48 },
+  "plan": {
+    "codigo": "BAR",
+    "nombre": "Best Available Rate",
+    "reembolsable": true,
+    "horasCancelacionSinCargo": 48,
+    "penalidadNoShow": "PRIMERA_NOCHE"
+  },
+  "habitaciones": [{ "tipo": "Doble", "adultos": 2, "menores": 1 }],
   "total": 75000,
   "cobrado": 0,
-  "habitaciones": [{ "tipo": "Doble", "adultos": 2, "menores": 1 }],
+  "garantia": { "tipo": "GARANTIA", "marca": "VISA", "ultimos4": "4242" },
   "titular": "Juan P.",
   "documento": "****222",
-  "puedeCancelar": true,
-  "penalidadCancelacion": {
-    "aplica": true,
-    "monto": 25000,
-    "mensaje": "Ya pasó el plazo de cancelación sin cargo: se cobra la primera noche.",
-    "limiteSinCargo": "2026-11-18T17:00:00.000Z"
+  "cancelacion": {
+    "puedeCancelarOnline": true,
+    "motivo": null,
+    "penalidad": {
+      "aplica": false,
+      "monto": 0,
+      "limiteSinCargo": "2026-11-18T17:00:00.000Z",
+      "mensaje": "Cancelación sin cargo."
+    }
   }
 }
 ```
 
-- `titular` y `documento` vienen enmascarados.
-- `penalidadCancelacion` es `null` si `puedeCancelar` es `false`.
-- El código no distingue mayúsculas. El email se compara (sin distinguir
-  mayúsculas) con:
-  - en una reserva **web**: `DatosReservaWeb.emailContacto`;
-  - en una reserva **del mostrador**: `Huesped.contacto`, **solo si es un
-    email**.
-- Código o email incorrectos, o una reserva del mostrador cuyo contacto es un
-  teléfono (no hay email con qué comparar) → `404 NO_ENCONTRADA`, **siempre
-  con el mismo mensaje**: no se revela si el código existe.
+- **Normalización**: el código se pasa a mayúsculas y se le sacan espacios y
+  guiones (`3fa9-c21b` = `3FA9C21B`); el email, a minúsculas y sin espacios.
+  Un código que no son 8 hexadecimales o un email mal formado dan **el mismo
+  404** que una reserva inexistente.
+- **Qué email vale** (decisión 6): en una reserva **web**,
+  `DatosReservaWeb.emailContacto`; en una **del mostrador**,
+  `Huesped.contacto`, **solo si es un email**.
+- **404 `NO_ENCONTRADA`**, siempre con el mismo mensaje ("No encontramos una
+  reserva con esos datos. Revisá el código y el email, o contactá a
+  recepción."): código inexistente, email que no coincide, formato inválido o
+  reserva del mostrador sin email. No se revela si el código existe: la base
+  se consulta igual en todos los casos, el email se compara en tiempo
+  constante y **toda respuesta (200 o 404) tarda al menos 400 ms**.
+- **Datos que nunca salen**: ids, números de habitación o piso, documento
+  completo (solo `****` + los últimos 3), email, nombre completo (`titular`:
+  primer nombre + inicial del apellido) ni datos de otros huéspedes.
+- `habitaciones`: tipo y ocupación de cada habitación, en el orden en que se
+  cargaron. `total`: suma de las noches; `cobrado`: suma de los pagos no
+  anulados (seña, prepago, etc.).
+- `garantia`: la tarjeta de una reserva web (`"GARANTIA"` en la tarifa
+  flexible, `"PREPAGO"` en la no reembolsable); `null` en una del mostrador.
+- `plan.horasCancelacionSinCargo` es `null` si el plan no es reembolsable.
+
+### `cancelacion` (decisión 14: online solo **sin cargo**)
+
+`puedeCancelarOnline` es `true` solo si **todo** esto se cumple, evaluado en
+este orden (el primero que falla da el `motivo`):
+
+| # | Regla | `motivo` si falla |
+|---|---|---|
+| 1 | Estado `Confirmada` | `Cancelada` → "Esta reserva ya fue cancelada."; `En curso` / `Cerrada` → `null` |
+| 2 | Antes de las 14 h (hora argentina) del día de llegada | "Tu llegada es hoy. Para cualquier cambio, contactá a recepción." (si el día ya pasó: "La fecha de llegada ya pasó. Para cualquier cambio, contactá a recepción.") |
+| 3 | Sin pagos activos (`PagoEstadia` no anulado; el **prepago** de la tarifa no reembolsable no cuenta acá: lo cubre la regla 4) | "Tu reserva tiene un pago registrado. Para cancelarla, contactá a recepción." |
+| 4 | Plan reembolsable | "Esta tarifa no admite reintegro. Si necesitás cancelar, contactá a recepción." |
+| 5 | Penalidad 0 según `calcularPenalidad` (motor de tarifas, sin cambios) | "Cancelar ahora tiene un cargo de $ X (<explicación del motor>). Para cancelar, contactá a recepción." |
+
+- `penalidad`: `{ aplica, monto, limiteSinCargo, mensaje }` de
+  `calcularPenalidad` (solo se calcula si la reserva está `Confirmada`);
+  `null` en los demás estados.
+- La cancelación **con cargo** no se hace online: se deriva a recepción hasta
+  que se integre el cobro de penalidades (Ricardo).
 
 ## POST `/api/web/mi-reserva/cancelar`
 
 **Request**
 
 ```json
-{ "codigo": "3FA9C21B", "email": "demo@hotel.com", "montoPenalidadAceptado": 25000 }
+{ "codigo": "3FA9C21B", "email": "juan@correo.com", "montoPenalidadAceptado": 0 }
 ```
 
 **Response 200**
 
 ```json
-{ "estado": "Cancelada", "penalidadCobrada": 25000 }
+{ "estado": "Cancelada", "penalidadCobrada": 0, "email": { "enviado": true } }
 ```
 
-- `montoPenalidadAceptado` es el monto que el huésped vio y aceptó. Si al
-  cancelar la penalidad es otra (por ejemplo, venció el plazo mientras
-  miraba) → `409 PENALIDAD_CAMBIO` con `montoNuevo`.
+- Busca la reserva igual que la consulta: mismos casos de **404
+  `NO_ENCONTRADA`** y mismo piso de 400 ms.
+- **Ya cancelada** → `200 { "estado": "Cancelada", "penalidadCobrada": 0 }`
+  (sin `email`): es idempotente, no cancela de nuevo ni manda otro email.
+- Recalcula todo en el servidor. Si ya no se puede cancelar online (pasó el
+  plazo, hay un pago, etc.) → **`409 PENALIDAD_CAMBIO`** con `montoNuevo` (la
+  penalidad actual, o 0) y `motivo` (el mismo texto de la tabla); `error` trae
+  ese mismo motivo.
+- `montoPenalidadAceptado` tiene que ser **0** (online solo se cancela sin
+  cargo); cualquier otro valor (o vacío) → `409 PENALIDAD_CAMBIO` con
+  `montoNuevo: 0` y `motivo: null`.
+- Si se puede: `cancelarReserva(id, { motivoCancelacion: "Cancelada por el
+  huésped desde la web" })` del módulo de reservas (sin cambios: estado
+  `Cancelada` y la habitación queda libre; una reserva cancelable online no
+  tiene pagos que anular) y el **email de cancelación** al email de la
+  reserva ("Tu reserva <código> fue cancelada", con fechas, tipo, tarifa y "No
+  se realizó ningún cargo"). `email.enviado` es `false` si el SMTP falla; la
+  cancelación queda hecha igual.
 
 ---
 
@@ -511,12 +567,12 @@ sesión y **no** se le agregaron estos datos.
 
 - `tipoGarantia`: `"GARANTIA"` (tarifa flexible) | `"PREPAGO"` (no reembolsable).
 - **Nunca** devuelve `garantiaToken` ni `pasarelaReferencia` (ni siquiera los lee).
-- `404` si la reserva no tiene datos web (reserva del mostrador); `401` sin
-  sesión; `403` con un rol que no ve reservas; `400` con un id inválido.
+- **`200` con `null`** si la reserva no tiene datos web (reserva del mostrador
+  o inexistente; antes era un 404, etapa 4); `401` sin sesión; `403` con un rol que no ve reservas; `400` con un id inválido.
 
 En el detalle (`frontend/src/modulos/reservas/detalle/ColumnaDerecha.jsx`) la
 tarjeta "Reserva web" va después de "Quién reservó", solo si el endpoint
-devuelve datos (un 404 o un error no muestran nada): contacto, "Llegada
+devuelve datos (`null` o un error no muestran nada): contacto, "Llegada
 estimada: 20 a 22 h", solicitudes (o "Sin solicitudes"), "Garantizada con VISA
 ••4242 · vence 08/2028" o "Prepagada con VISA ••4242", "Aceptó términos
 v2026-10-01 el 04/10/2026 14:32" (hora argentina) y "Acepta comunicaciones:
@@ -538,11 +594,11 @@ El frontend los normaliza a `{ codigo, mensaje, status, ...extra }`
 | Código | HTTP | Extra | Qué hace la pantalla |
 |---|---|---|---|
 | `DATOS_INVALIDOS` | 400 | `campo` (ej. `"huesped.email"`, `"tarjeta.numero"`) | Marca el campo con el error. |
-| `NO_ENCONTRADA` | 404 | — | Mensaje genérico, sin revelar si el código existe. |
+| `NO_ENCONTRADA` | 404 | — | Mensaje general único ("No encontramos una reserva con esos datos. Revisá el código y el email, o contactá a recepción."), sin revelar si el código existe. |
 | `PRECIO_CAMBIADO` | 409 | `totalNuevo` | Muestra el total nuevo y pide confirmar de nuevo. |
 | `SIN_DISPONIBILIDAD` | 409 | — | Solo cuando **no hay habitación libre** para la selección. Vuelve a resultados. |
 | `CLAVE_REUTILIZADA` | 409 | — | Genera una clave nueva y reintenta. |
-| `PENALIDAD_CAMBIO` | 409 | `montoNuevo` | Muestra el monto nuevo y pide aceptar de nuevo. |
+| `PENALIDAD_CAMBIO` | 409 | `montoNuevo`, `motivo` | Mi reserva vuelve a consultar y muestra el motivo nuevo (sin botón de cancelar). |
 | `PAGO_RECHAZADO` | 402 | `motivo` | Pide otra tarjeta. |
 | `TARJETA_VENCE_ANTES` | 422 | — | Pide otra tarjeta. |
 | `DEMASIADOS_INTENTOS` | 429 | — | Pide que espere unos minutos. |
@@ -745,8 +801,14 @@ huésped.
 
 El email se compara con `DatosReservaWeb.emailContacto` en las reservas web y
 con `Huesped.contacto` (solo si es un email) en las del mostrador. Sin email
-con qué comparar → `NO_ENCONTRADA` con el mensaje genérico. (Real en la
-etapa 4; hoy, en el mock.)
+con qué comparar → `NO_ENCONTRADA` con el mensaje genérico.
+
+La cancelación online usa `cancelarReserva` y `calcularPenalidad` tal cual
+(no se modificaron). El historial de la reserva queda con el estado
+`Cancelada` y el motivo "Cancelada por el huésped desde la web"; no se escribe
+un evento aparte (ver **Limitaciones**). Código:
+`backend/src/modulos/ecommerce/miReserva.js` (reglas puras),
+`miReserva.servicio.js` (consulta) y `miReserva.cancelacion.js`.
 
 ---
 
@@ -877,6 +939,49 @@ existiera.
   `/web/resultados`: si la URL no trae búsqueda, se completa con la del contexto).
 - Los tests de rutas usan fechas relativas a hoy (regla del proyecto).
 
+## Cambios de la etapa 4
+
+Mi reserva real (HU-104). Los cambios en archivos compartidos son **solo
+agregados**, salvo los que se detallan acá (la forma de Mi reserva y el 404
+del endpoint interno).
+
+- **Endpoints**: `POST /api/web/mi-reserva` y `/mi-reserva/cancelar` pasan a
+  ser reales. **Cambió la forma de la respuesta** respecto del mock de la
+  etapa 1: `puedeCancelar` y `penalidadCancelacion` se reemplazan por
+  `cancelacion: { puedeCancelarOnline, motivo, penalidad }`; se agregan
+  `garantia` y `plan.penalidadNoShow`. La cancelación online es **solo sin
+  cargo** (`montoPenalidadAceptado: 0`, `penalidadCobrada: 0`).
+- **Página** `/web/mi-reserva` terminada: código precargado desde `?codigo=`
+  (el email nunca va en la URL); campos "Código de reserva" y "Email" con los
+  errores de formato junto a cada uno; botón "Buscar"; el 404 como mensaje
+  general; tarjeta con estado, fechas, noches, habitaciones, tarifa y
+  condiciones, total, cobrado o garantía, y titular y documento enmascarados.
+  Si se puede cancelar: link "Cancelar reserva" → diálogo de confirmación
+  accesible → "Reserva cancelada. Te enviamos la confirmación por email." en
+  el lugar. Si no: el motivo con el teléfono de recepción. Sin "Modificar".
+  Insignia: `Confirmada` y `En curso` en verde, `Cerrada` en gris, `Cancelada`
+  en rojo.
+- **Emails**: el de confirmación ahora trae el link
+  `<WEB_PUBLIC_URL>/web/mi-reserva?codigo=<código>`; sin la variable, dice
+  "Ingresá a Mi reserva en nuestra web con tu código y tu email.". Nuevo email
+  de cancelación.
+- **Variable de entorno nueva (opcional)** en `backend/.env`: `WEB_PUBLIC_URL`
+  = URL pública del sitio, sin barra final (por ejemplo
+  `https://hotel.example.com`). Solo se usa para el link del email; si no
+  empieza con `http://` o `https://`, se ignora.
+- **Endpoint interno** `GET /api/reservas-web/:reservaId`: una reserva sin
+  datos web responde `200 null` en vez de 404 (así el detalle del mostrador no
+  deja un error en la consola). `401` y `403` no cambian.
+
+| Archivo | Cambio |
+|---|---|
+| `componentes/DialogoConfirmacion.jsx` (nuevo) | Diálogo modal accesible (foco inicial en "Volver", Tab encerrado, Esc, devuelve el foco). |
+| `componentes/MensajeError.jsx` | Texto nuevo de `NO_ENCONTRADA`; `PENALIDAD_CAMBIO` muestra `motivo` si viene. |
+| `formato.js` | Agregado `formatearInstanteHotel(iso)` → "Mié 18 nov 2026 a las 14:00" (hora de Salta). |
+| `ecommerce.mock.js` | Mi reserva con la forma nueva y más demos (ver "Mi reserva en el mock"). |
+| `ecommerce.css` | Solo clases nuevas `ec-` (tarjeta de Mi reserva, diálogo, botón y link de peligro). |
+| `reservas/detalle/reservaWeb.api.js` | Ya no depende del 404: `null` → sin bloque. |
+
 ## Cómo trabajar sobre esta base
 
 1. **Ramas**: creá tu rama desde `feature/ecommerce` (por ejemplo,
@@ -920,11 +1025,15 @@ existiera.
 
    | Código | Email | Resultado |
    |---|---|---|
-   | `3FA9C21B` | `demo@hotel.com` | reserva **web** de ejemplo, cancelable con penalidad |
-   | `B81D90E4` | `mostrador@hotel.com` | reserva **del mostrador** cuyo contacto es un email |
+   | `3FA9C21B` | `demo@hotel.com` | reserva **web** flexible, en plazo: se cancela sin cargo |
+   | `B81D90E4` | `mostrador@hotel.com` | reserva **del mostrador** cuyo contacto es un email, flexible y en plazo: se cancela |
    | `7C04E5A2` | cualquiera | reserva del mostrador con **teléfono** como único contacto → siempre `NO_ENCONTRADA` |
+   | `5D21A7F0` | `nrf@hotel.com` | reserva web **no reembolsable** (prepagada): no se cancela online |
+   | `9E4B0C37` | `plazo@hotel.com` | reserva web flexible **fuera de plazo** (con cargo): no se cancela online |
+   | `A6E3F218` | `sena@hotel.com` | reserva del mostrador **con seña**: no se cancela online |
 
-   Cualquier otra combinación → `NO_ENCONTRADA` con el mismo mensaje.
+   Cualquier otra combinación → `NO_ENCONTRADA` con el mismo mensaje. Una
+   reserva cancelada en el mock queda así hasta recargar la página.
 
 5. **Tarjetas de prueba** (iguales en el mock y en el backend real):
    `4242424242424242` aprobada; `4000000000000069` rechazada en cualquier
@@ -952,6 +1061,12 @@ existiera.
 - Sin servicios adicionales, facturación ni check-in online.
 - Sin modificación web de la reserva (HU-105 postergada): el huésped cancela y
   vuelve a reservar, o contacta a recepción.
+- Mi reserva cancela online **solo sin cargo**. Con penalidad, con un pago
+  registrado o con tarifa no reembolsable, se deriva a recepción hasta
+  integrar el cobro de penalidades (Ricardo).
+- El historial de la reserva **no registra la fecha de ninguna cancelación**
+  (ni web ni del mostrador): queda el estado `Cancelada` y el motivo, sin un
+  evento con fecha y hora. Mejora pendiente.
 - La UI de esta entrega maneja una habitación por reserva web (los grupos
   reservan por recepción); el contrato ya acepta hasta 3 (selector de varias
   habitaciones: etapa 2).
