@@ -4,6 +4,7 @@
 const ecommerceServicio = require("./ecommerce.servicio");
 const reservaWebServicio = require("./reservaWeb.servicio");
 const miReservaServicio = require("./miReserva.servicio");
+const miReservaCancelacion = require("./miReserva.cancelacion");
 const { responderError } = require("./ecommerce.errores");
 
 async function getTipos(req, res) {
@@ -60,4 +61,13 @@ async function postMiReserva(req, res) {
   }
 }
 
-module.exports = { getTipos, getPlanes, getDisponibilidad, postCotizar, postReserva, postMiReserva };
+// POST /api/web/mi-reserva/cancelar — cancelación online sin cargo (HU-104).
+async function postCancelarMiReserva(req, res) {
+  try {
+    return res.json(await miReservaCancelacion.cancelarMiReserva(req.body));
+  } catch (err) {
+    return responderError(res, err);
+  }
+}
+
+module.exports = { getTipos, getPlanes, getDisponibilidad, postCotizar, postReserva, postMiReserva, postCancelarMiReserva };

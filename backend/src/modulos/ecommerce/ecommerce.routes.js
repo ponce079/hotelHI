@@ -11,5 +11,6 @@ router.get("/disponibilidad", ecommerceControlador.getDisponibilidad);
 router.post("/cotizar", ecommerceControlador.postCotizar);
 router.post("/reservas", ecommerceControlador.postReserva);
 router.post("/mi-reserva", ecommerceControlador.postMiReserva);
+router.post("/mi-reserva/cancelar", ecommerceControlador.postCancelarMiReserva);
 
 module.exports = router;
