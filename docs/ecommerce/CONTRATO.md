@@ -827,7 +827,9 @@ existiera.
   30 noches y **hasta 365 días** desde hoy. Las fechas se muestran "Vie 16 oct
   2026" (texto superpuesto `aria-hidden` sobre el input nativo, que conserva
   su label y su valor).
-- **Resultados**: disponibles primero por `desdePorNoche`, no disponibles al
+- **Resultados**: cada tipo con su descripción, capacidad, "Desde $ X por
+  noche" y, por plan, condiciones de cancelación y de no-show (criterios de
+  HU-99); disponibles primero por `desdePorNoche`, no disponibles al
   final (atenuados, con su motivo y sin botones); "Ahorrás $ X" del no
   reembolsable = diferencia real de totales contra la tarifa flexible del mismo
   tipo; esqueletos de carga; "Reintentar" en errores de red; estado vacío con

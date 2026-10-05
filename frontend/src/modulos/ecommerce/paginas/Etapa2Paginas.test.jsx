@@ -145,6 +145,15 @@ describe("Resultados", () => {
     expect(document.title).toBe("Habitaciones disponibles · Holiday Inn Salta");
   });
 
+  it("criterios de HU-99: cada tipo con descripción, capacidad, 'desde $ X por noche' y no-show de cada plan", async () => {
+    renderRuta(`/web/resultados?${QUERY}`);
+    const doble = within(await screen.findByRole("article", { name: "Doble" }));
+    expect(doble.getByText(/Más espacio para parejas/)).toBeInTheDocument();
+    expect(doble.getByText(/Hasta 4 personas/).textContent).toMatch(/Desde \$\s?21\.250 por noche/);
+    expect(doble.getByText("Si no te presentás, se cobra la primera noche.")).toBeInTheDocument();
+    expect(doble.getByText("Si no te presentás, se cobra el total de la estadía.")).toBeInTheDocument();
+  });
+
   it("ordena por desdePorNoche: la Simple (más barata) antes que la Doble", async () => {
     renderRuta(`/web/resultados?${QUERY}`);
     await screen.findByRole("heading", { name: "Doble", level: 2 });
@@ -243,9 +252,10 @@ describe("Detalle del tipo", () => {
     expect(await screen.findByRole("button", { name: "Reservar Tarifa flexible por $ 50.000" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reservar No reembolsable por $ 42.500" })).toBeInTheDocument();
     expect(screen.queryByText("$ 40.000")).not.toBeInTheDocument(); // precio de la Simple
-    expect(screen.getByText(/se cobra la primera noche/)).toBeInTheDocument();
-    expect(screen.getByText(/se cobra el total de la estadía/)).toBeInTheDocument();
-    expect(screen.getByText(/salida hasta las 10 h/)).toBeInTheDocument();
+    const politicas = within(screen.getByRole("heading", { name: "Políticas de la estadía" }).closest("section"));
+    expect(politicas.getByText(/se cobra la primera noche/)).toBeInTheDocument();
+    expect(politicas.getByText(/se cobra el total de la estadía/)).toBeInTheDocument();
+    expect(politicas.getByText(/salida hasta las 10 h/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /volver a resultados/i })).toHaveAttribute("href", `/web/resultados?${QUERY}`);
     expect(document.title).toBe("Habitación Doble · Holiday Inn Salta");
   });

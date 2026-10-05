@@ -3,7 +3,7 @@ import { Boton } from "./Boton";
 import { FotoEjemplo } from "./FotoEjemplo";
 import { Insignia } from "./Insignia";
 import { Tarjeta } from "./Tarjeta";
-import { ahorroContraFlexible } from "../busquedaWeb";
+import { ahorroContraFlexible, textoNoShow } from "../busquedaWeb";
 import { contenidoDeTipo } from "../ecommerce.contenido";
 import { LEYENDA_PRECIO_FINAL, formatearPrecio, nombreComercialPlan, textoCondicionesPlan, textoNoches } from "../formato";
 
@@ -20,6 +20,7 @@ export function FilaPlanResultado({ plan, planes, noches, onElegir, cotizando = 
         <p className={`ec-plan__condiciones ${plan.reembolsable ? "" : "ec-plan__condiciones--nrf"}`.trim()}>
           {textoCondicionesPlan(plan)}
         </p>
+        {textoNoShow(plan.penalidadNoShow) && <p className="ec-plan-fila__no-show">{textoNoShow(plan.penalidadNoShow)}</p>}
         {ahorro !== null && <p className="ec-plan-fila__ahorro">Ahorrás {formatearPrecio(ahorro)}</p>}
       </div>
       <div className="ec-plan__precio">
@@ -73,7 +74,14 @@ export function TarjetaTipoResultado({ tipo, noches, onElegir, cotizando = null,
         </div>
         <p className="ec-fila ec-texto-2">
           <Users size={18} strokeWidth={1.7} aria-hidden="true" /> Hasta {tipo.capacidadMaxima} personas
+          {disponible && tipo.desdePorNoche != null && (
+            <span className="ec-resultado__desde">
+              {" "}
+              · Desde <strong>{formatearPrecio(tipo.desdePorNoche)}</strong> por noche
+            </span>
+          )}
         </p>
+        <p className="ec-texto-2">{contenido.descripcion}</p>
         <ul className="ec-chips" aria-label="Comodidades">
           {contenido.comodidades.map(({ nombre, Icono }) => (
             <li key={nombre} className="ec-chip">

@@ -1795,3 +1795,13 @@
     padding: 12px;
   }
 }
+
+/* Criterios de HU-99: no-show de cada plan y "desde $ X por noche" del tipo. */
+.ec-plan-fila__no-show {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ec-texto-2);
+}
+.ec-resultado__desde strong {
+  color: var(--ec-verde-profundo);
+}
