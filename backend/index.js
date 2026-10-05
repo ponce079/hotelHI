@@ -64,6 +64,8 @@ app.use("/api/consumos-servicios", require("./src/modulos/servicios-adicionales/
 app.use("/api/comprobantes-estadia", require("./src/modulos/comprobantes-estadia/comprobanteEstadia.routes"));
 app.use("/api/pagos-estadia", require("./src/modulos/pagos-estadia/pagoEstadia.routes"));
 app.use("/api/check-out", require("./src/modulos/check-out/checkOut.routes"));
+app.use("/api/web", require("./src/modulos/ecommerce/ecommerce.routes"));
+app.use("/api/reservas-web", require("./src/modulos/ecommerce/reservasWeb.routes"));
 
 // --- Usuarios y Seguridad (login real + gestión de usuarios) ---
 const usuariosRoutes = require("./src/modulos/usuarios/usuarios.routes");

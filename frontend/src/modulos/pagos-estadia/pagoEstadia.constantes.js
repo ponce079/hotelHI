@@ -12,7 +12,7 @@ export const ESTADO_PAGO_BADGE = { Pagado: "ok", Parcial: "alerta" };
 export const CONCEPTO_SENIA = "Seña";
 export const CONCEPTO_GARANTIA = "Garantía";
 export const CONCEPTO_PAGO_FINAL = "Pago final";
-export const CONCEPTOS_PAGO_ESTADIA = [CONCEPTO_SENIA, CONCEPTO_GARANTIA, CONCEPTO_PAGO_FINAL];
+export const CONCEPTOS_PAGO_ESTADIA = [CONCEPTO_SENIA, CONCEPTO_GARANTIA, CONCEPTO_PAGO_FINAL, "Prepago"];
 
 export const CONCEPTO_PAGO_BADGE = {
   [CONCEPTO_SENIA]: "info",

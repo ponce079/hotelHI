@@ -8,7 +8,7 @@ const { hoyComoFechaUTC } = require("../../lib/fechas");
 const { conTipoPlano } = require("../../lib/tipoHabitacion");
 const reservasServicio = require("../reservas/reservas.servicio");
 const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
-const { CONCEPTO_SENIA } = require("../pagos-estadia/pagoEstadia.constantes");
+const { CONCEPTO_SENIA, CONCEPTO_PREPAGO } = require("../pagos-estadia/pagoEstadia.constantes");
 
 const DIA = 24 * 60 * 60 * 1000;
 const MAX_LLEGADAS = 200;
@@ -42,10 +42,13 @@ async function listarLlegadas({ q } = {}) {
             reservaNoches: { select: { precioNoche: true } },
           },
         },
+        // Seña y prepago (reserva web no reembolsable), en la misma consulta.
         pagosEstadia: {
-          where: { concepto: CONCEPTO_SENIA, anulado: false },
+          where: { concepto: { in: [CONCEPTO_SENIA, CONCEPTO_PREPAGO] }, anulado: false },
           include: { medios: true },
         },
+        // Garantía con tarjeta de una reserva web: solo marca y últimos 4 (nunca el token ni la referencia).
+        datosWeb: { select: { tarjetaMarca: true, tarjetaUltimos4: true } },
       },
       orderBy: [{ codigoConfirmacion: "asc" }],
       take: MAX_LLEGADAS,
@@ -68,7 +71,8 @@ async function listarLlegadas({ q } = {}) {
         totalAlojamiento: rh.reservaNoches.reduce((a, n) => a + Number(n.precioNoche), 0),
       }));
       // Seña tal como existe hoy (HU-88): importes y la referencia guardada, sin armar datos de tarjeta.
-      const medios = r.pagosEstadia.flatMap((p) => p.medios);
+      const medios = r.pagosEstadia.filter((p) => p.concepto === CONCEPTO_SENIA).flatMap((p) => p.medios);
+      const mediosPrepago = r.pagosEstadia.filter((p) => p.concepto === CONCEPTO_PREPAGO).flatMap((p) => p.medios);
       return {
         id: r.id,
         codigoConfirmacion: r.codigoConfirmacion,
@@ -98,6 +102,16 @@ async function listarLlegadas({ q } = {}) {
           importe: medios.reduce((a, m) => a + Number(m.importe), 0),
           medios: medios.map((m) => ({ medioPago: m.medioPago, importe: Number(m.importe), referencia: m.referencia })),
         },
+        // Reserva web no reembolsable: pagada entera al reservar.
+        prepago: {
+          registrado: mediosPrepago.length > 0,
+          importe: mediosPrepago.reduce((a, m) => a + Number(m.importe), 0),
+        },
+        // Reserva web reembolsable: garantizada con tarjeta (no es un pago).
+        garantiaWeb:
+          r.datosWeb?.tarjetaMarca && r.datosWeb?.tarjetaUltimos4
+            ? { marca: r.datosWeb.tarjetaMarca, ultimos4: r.datosWeb.tarjetaUltimos4 }
+            : null,
       };
     }),
   };

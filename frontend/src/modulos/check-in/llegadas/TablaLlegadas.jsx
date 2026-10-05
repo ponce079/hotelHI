@@ -10,6 +10,15 @@ export function textoSenia(senia) {
   return medios.map((m) => m.referencia || `${m.medioPago} · ${formatearPrecio(m.importe)}`).join(" · ");
 }
 
+// Cómo está asegurada la reserva, en este orden: prepago (reserva web no
+// reembolsable) → garantía con tarjeta (reserva web reembolsable) → seña →
+// nada. null si no hay nada (la fila muestra "Sin garantía · tomar al ingreso").
+export function textoGarantia(r) {
+  if (r?.prepago?.registrado) return `Prepagada · ${formatearPrecio(r.prepago.importe)}`;
+  if (r?.garantiaWeb?.marca && r?.garantiaWeb?.ultimos4) return `Garantizada con tarjeta · ${r.garantiaWeb.marca} ••${r.garantiaWeb.ultimos4}`;
+  return textoSenia(r?.senia);
+}
+
 const estadia = (r) => `${formatearDiaCorto(r.fechaDesde)} → ${formatearDiaCorto(r.fechaHasta)} · ${r.noches} ${r.noches === 1 ? "noche" : "noches"}`;
 
 // Llegadas de hoy: un clic (o Enter) abre el check-in debajo. Flechas arriba/abajo recorren la lista.
@@ -71,7 +80,7 @@ export function TablaLlegadas({ busqueda, onBuscar, consulta, seleccionadaId, on
             {reservas.map((r) => {
               const adultos = r.habitaciones.reduce((a, h) => a + h.adultos, 0);
               const menores = r.habitaciones.reduce((a, h) => a + h.menores, 0);
-              const senia = textoSenia(r.senia);
+              const garantia = textoGarantia(r);
               const seleccionada = r.id === seleccionadaId;
               return (
                 <tr
@@ -99,9 +108,9 @@ export function TablaLlegadas({ busqueda, onBuscar, consulta, seleccionadaId, on
                   <td className="whitespace-nowrap border-b border-borde px-2.5 py-[11px]">{estadia(r)}</td>
                   <td className="border-b border-borde px-2.5 py-[11px]">{etiquetaOcupacion(adultos, menores)}</td>
                   <td className="border-b border-borde px-2.5 py-[11px]">
-                    {senia ? (
+                    {garantia ? (
                       <Chip variante="ok" envolver>
-                        {senia}
+                        {garantia}
                       </Chip>
                     ) : (
                       <Chip variante="aviso" envolver>

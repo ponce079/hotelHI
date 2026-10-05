@@ -1,8 +1,10 @@
+import { useQuery } from "@tanstack/react-query";
 import { Badge } from "../../../componentes/Badge";
 import { formatearFechaHora } from "../../../lib/fechas";
 import { formatearPrecio } from "../../../lib/moneda";
 import { CONCEPTO_GARANTIA } from "../../pagos-estadia/pagoEstadia.constantes";
 import { ESTADO_RESERVA } from "../reservas.constantes";
+import { esDatoWebValido, obtenerDatosReservaWeb, textoGarantiaWeb, textoHoraLlegada } from "./reservaWeb.api";
 
 const importe = (pago) => pago.medios.reduce((acc, m) => acc + Number(m.importe), 0);
 
@@ -134,6 +136,35 @@ function condiciones(plan, penalidad) {
   return partes.join(" ");
 }
 
+// Reserva hecha desde el e-commerce: contacto, llegada, solicitudes, garantía
+// y consentimiento (GET /api/reservas-web/:id, con sesión). En una reserva del
+// mostrador (404) o si la consulta falla, no se muestra nada.
+function ReservaWeb({ reservaId }) {
+  const consulta = useQuery({
+    queryKey: ["reservas-web", reservaId],
+    queryFn: () => obtenerDatosReservaWeb(reservaId),
+    retry: false,
+    enabled: Boolean(reservaId),
+  });
+  const datos = consulta.data;
+  if (!esDatoWebValido(datos)) return null;
+  return (
+    <Tarjeta titulo="Reserva web">
+      <Lista
+        filas={[
+          ["Email", datos.emailContacto],
+          ["Teléfono", datos.telefonoContacto || "—"],
+          ["Llegada estimada", textoHoraLlegada(datos.horaEstimadaLlegada)],
+          ["Solicitudes", datos.solicitudesEspeciales || "Sin solicitudes"],
+          ["Garantía", textoGarantiaWeb(datos)],
+          ["Términos", `Aceptó términos v${datos.versionPoliticas} el ${formatearFechaHora(datos.aceptaPoliticasEn)}`],
+          ["Acepta comunicaciones", datos.aceptaComunicaciones ? "sí" : "no"],
+        ]}
+      />
+    </Tarjeta>
+  );
+}
+
 export function ColumnaDerecha({ reserva, cuenta, pagos, penalidad }) {
   const plan = reserva.planTarifario;
   const garantias = (pagos?.pagos ?? []).filter((p) => p.concepto === CONCEPTO_GARANTIA);
@@ -179,6 +210,7 @@ export function ColumnaDerecha({ reserva, cuenta, pagos, penalidad }) {
           ]}
         />
       </Tarjeta>
+      <ReservaWeb reservaId={reserva.id} />
     </aside>
   );
 }
