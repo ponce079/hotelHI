@@ -1,29 +1,49 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Check, Copy } from "lucide-react";
+import { ArrowRight, CalendarCheck, Check, Copy, MapPin, TriangleAlert } from "lucide-react";
 import { Boton } from "../componentes/Boton";
 import { Insignia } from "../componentes/Insignia";
 import { Tarjeta } from "../componentes/Tarjeta";
 import { HOTEL } from "../ecommerce.config";
-import { formatearFecha, formatearPrecio, textoCondicionesPlan, textoEstadoReserva, textoOcupacion } from "../formato";
+import { textoTarjeta } from "../datosCompra";
+import {
+  formatearFecha,
+  formatearPrecio,
+  nombreComercialPlan,
+  textoCondicionesPlan,
+  textoEstadoReserva,
+  textoNoches,
+  textoOcupacion,
+} from "../formato";
 import { useProcesoCompra } from "../ProcesoCompraContext";
+import { useTituloPagina } from "../useTituloPagina";
 
-// /web/confirmacion — Responsable: Tomás. ESQUELETO con el layout correcto
-// (mockup pág. 6, con las decisiones de diseño: sin número de habitación,
-// sin descargar comprobante, sin agregar al calendario, sin check-in
-// online). El código es el que devuelve la API. La clave de idempotencia ya
-// se borró al registrar el resultado. Ver docs/ecommerce/CONTRATO.md.
+// /web/confirmacion — Responsable: Tomás (HU-103). Muestra la respuesta de
+// POST /api/web/reservas (CONTRATO.md → "Para Tomás: Pago y Confirmación"):
+// el código del sistema siempre; el aviso del email según email.enviado
+// (true / false / null); la garantía o el cobro; el plan con su nombre
+// comercial y sus condiciones. Sin número de habitación ni piso, sin
+// descargar comprobante, calendario ni check-in online (decisiones de
+// diseño). La clave de idempotencia ya se borró al registrar el resultado.
+
 export function ConfirmacionPage() {
+  useTituloPagina("Confirmación");
   const navigate = useNavigate();
   const { resultado, huesped, reiniciar } = useProcesoCompra();
-  const [copiado, setCopiado] = useState(false);
+  const [copiado, setCopiado] = useState(null); // null | "ok" | "error"
+
+  useEffect(() => {
+    if (copiado !== "ok") return undefined;
+    const temporizador = setTimeout(() => setCopiado(null), 2500);
+    return () => clearTimeout(temporizador);
+  }, [copiado]);
 
   async function copiar() {
     try {
       await navigator.clipboard.writeText(resultado.codigoConfirmacion);
-      setCopiado(true);
+      setCopiado("ok");
     } catch {
-      setCopiado(false);
+      setCopiado("error");
     }
   }
 
@@ -32,10 +52,16 @@ export function ConfirmacionPage() {
     reiniciar();
   }
 
-  const ocupacion = (resultado.habitaciones ?? []).reduce(
-    (acc, h) => ({ adultos: acc.adultos + h.adultos, menores: acc.menores + h.menores }),
+  const habitaciones = resultado.habitaciones ?? [];
+  const ocupacion = habitaciones.reduce(
+    (acc, h) => ({ adultos: acc.adultos + Number(h.adultos || 0), menores: acc.menores + Number(h.menores || 0) }),
     { adultos: 0, menores: 0 }
   );
+  const plan = resultado.plan;
+  const garantia = resultado.garantia;
+  const prepago = garantia?.tipo === "PREPAGO" || plan?.reembolsable === false;
+  const enviado = resultado.email?.enviado;
+  const linkMiReserva = `/web/mi-reserva?codigo=${encodeURIComponent(resultado.codigoConfirmacion)}`;
 
   return (
     <div className="ec-contenedor">
@@ -45,17 +71,36 @@ export function ConfirmacionPage() {
         </span>
         <p className="ec-sobretitulo">Reserva confirmada</p>
         <h1 className="ec-titulo-pagina">¡Listo, te esperamos!</h1>
-        {resultado.email?.enviado && (
-          <p className="ec-texto-2">Enviamos la confirmación a {huesped.email ? <strong>{huesped.email}</strong> : "tu email"}.</p>
+
+        {enviado === true && (
+          <p className="ec-texto-2">
+            Enviamos el comprobante a {huesped.email ? <strong>{huesped.email}</strong> : "tu email"}.
+          </p>
         )}
+        {enviado === false && (
+          <div className="ec-alerta ec-alerta--aviso" role="status">
+            <TriangleAlert size={20} strokeWidth={1.7} aria-hidden="true" />
+            <div>
+              <p className="ec-alerta__titulo">No pudimos enviarte el email de confirmación</p>
+              <p>
+                Tu reserva está hecha. Guardá este código: lo vas a necesitar, junto con tu email, para consultarla o cancelarla
+                en Mi reserva.
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="ec-codigo">
           <span>Código de reserva</span>
           <span className="ec-codigo__valor">{resultado.codigoConfirmacion}</span>
           <Boton variante="claro" formulario onClick={copiar} aria-label="Copiar el código de reserva">
-            <Copy size={18} strokeWidth={1.7} aria-hidden="true" /> {copiado ? "Copiado" : "Copiar"}
+            <Copy size={18} strokeWidth={1.7} aria-hidden="true" /> {copiado === "ok" ? "Copiado" : "Copiar"}
           </Boton>
         </div>
-        <p className="ec-responsable">Responsable: Tomás — ver docs/ecommerce/CONTRATO.md</p>
+        <p className="ec-texto-2 ec-chico" aria-live="polite">
+          {copiado === "ok" && "Código copiado."}
+          {copiado === "error" && "No pudimos copiarlo: anotalo a mano."}
+        </p>
 
         <Tarjeta className="ec-detalle">
           <div className="ec-detalle-encabezado">
@@ -64,8 +109,9 @@ export function ConfirmacionPage() {
           </div>
           <div className="ec-detalle-grilla">
             <div>
-              <p className="ec-resumen__etiqueta">Habitación</p>
-              <p>{(resultado.habitaciones ?? []).map((h) => h.tipo).join(" + ")}</p>
+              <p className="ec-resumen__etiqueta">{habitaciones.length > 1 ? "Habitaciones" : "Habitación"}</p>
+              <p>{habitaciones.map((h) => h.tipo).join(" + ")}</p>
+              {resultado.noches != null && <p className="ec-texto-2 ec-chico">{textoNoches(resultado.noches)}</p>}
             </div>
             <div>
               <p className="ec-resumen__etiqueta">Entrada</p>
@@ -82,32 +128,80 @@ export function ConfirmacionPage() {
             <div>
               <p className="ec-resumen__etiqueta">Huéspedes</p>
               <p>{textoOcupacion(ocupacion)}</p>
+              {huesped.nombres && (
+                <p className="ec-texto-2 ec-chico">
+                  Titular: {huesped.nombres} {huesped.apellido}
+                </p>
+              )}
             </div>
             <div>
               <p className="ec-resumen__etiqueta">Tarifa</p>
-              <p>{resultado.plan?.nombre}</p>
-              <p className="ec-texto-2 ec-chico">{textoCondicionesPlan(resultado.plan)}</p>
+              <p>{nombreComercialPlan(plan)}</p>
+              <p className="ec-texto-2 ec-chico">{textoCondicionesPlan(plan)}</p>
             </div>
             <div>
               <p className="ec-resumen__etiqueta">Pago</p>
-              {resultado.garantia && (
+              {garantia && (
                 <p>
-                  Tarjeta {resultado.garantia.marca} terminada en {resultado.garantia.ultimos4}
+                  {prepago
+                    ? `Cobrado ${formatearPrecio(resultado.cobradoAhora)} con ${textoTarjeta(garantia)}`
+                    : `Garantizada con ${textoTarjeta(garantia)}`}
                 </p>
               )}
-              <p>Total {formatearPrecio(resultado.total)}</p>
-              <p className="ec-texto-2 ec-chico">Cobrado ahora: {formatearPrecio(resultado.cobradoAhora)}</p>
+              <p className="ec-texto-2 ec-chico">
+                Total {formatearPrecio(resultado.total)}
+                {prepago ? " · pagado" : " · no se cobró nada ahora"}
+              </p>
             </div>
           </div>
         </Tarjeta>
 
         <div className="ec-fila">
-          <Boton variante="secundario" to="/web/mi-reserva">
+          <Boton variante="secundario" to={linkMiReserva}>
             Ver mi reserva
           </Boton>
           <Boton onClick={nuevaReserva}>Volver al inicio</Boton>
         </div>
       </div>
+
+      <section className="ec-seccion ec-pila" aria-labelledby="ec-antes-de-llegar">
+        <h2 id="ec-antes-de-llegar" className="ec-titulo-seccion">
+          Antes de llegar
+        </h2>
+        <div className="ec-grilla-2">
+          <Tarjeta relleno className="ec-pila ec-pila--chica">
+            <span className="ec-ventaja__icono">
+              <MapPin size={22} strokeWidth={1.7} aria-hidden="true" />
+            </span>
+            <h3>Cómo llegar</h3>
+            <p className="ec-texto-2">{HOTEL.direccion}</p>
+            <p className="ec-texto-2">
+              Check-in desde las {HOTEL.checkIn} · check-out hasta las {HOTEL.checkOut}. Traé el documento que declaraste.
+            </p>
+          </Tarjeta>
+          <Tarjeta relleno className="ec-pila ec-pila--chica">
+            <span className="ec-ventaja__icono">
+              <CalendarCheck size={22} strokeWidth={1.7} aria-hidden="true" />
+            </span>
+            <h3>Cambios y cancelación</h3>
+            {plan?.reembolsable ? (
+              <>
+                <p className="ec-texto-2">
+                  Podés cancelar sin cargo desde Mi reserva hasta {plan.horasCancelacionSinCargo} h antes de la llegada, con tu
+                  código y tu email.
+                </p>
+                <Boton variante="texto" to={linkMiReserva} style={{ alignSelf: "flex-start" }}>
+                  Gestionar mi reserva <ArrowRight size={18} strokeWidth={1.8} aria-hidden="true" />
+                </Boton>
+              </>
+            ) : (
+              <p className="ec-texto-2">
+                Esta tarifa no admite cancelación con devolución. Para cualquier consulta, contactá a recepción: {HOTEL.telefono}.
+              </p>
+            )}
+          </Tarjeta>
+        </div>
+      </section>
     </div>
   );
 }
