@@ -1,6 +1,6 @@
 # Contrato de la API del e-commerce (`/api/web`)
 
-> **Contrato v2 (etapa 1B-1, alineado con la ficha Huesped de master). Cambios al contrato: solo Gimena.**
+> **Contrato v3 (etapa 1B-2: alta real de la reserva web). Cambios al contrato: solo Gimena.**
 
 ### Estado de cada endpoint
 
@@ -9,7 +9,7 @@
 | `GET /api/web/tipos` | **Real** (etapa 1B-1) |
 | `GET /api/web/disponibilidad` | **Real** (etapa 1B-1) |
 | `POST /api/web/cotizar` | **Real** (etapa 1B-1) |
-| `POST /api/web/reservas` | Mock — el alta real llega en la etapa 1B-2 |
+| `POST /api/web/reservas` | **Real** (etapa 1B-2), con la pasarela simulada del backend |
 | `POST /api/web/mi-reserva` y `/mi-reserva/cancelar` | Mock — etapa 4 |
 
 El mock (`ecommerce.mock.js`) **solo funciona en desarrollo** (`npm run dev`
@@ -298,32 +298,52 @@ Crea la reserva (y garantiza o cobra con la tarjeta, según el plan).
 }
 ```
 
-Validaciones (la 1B las repite todas; el frontend las anticipa):
+Validaciones (el backend las hace **todas antes** de tocar la base o la
+pasarela; el frontend las anticipa). Cualquier falla → `400 DATOS_INVALIDOS`
+con `campo`, salvo el vencimiento de la tarjeta:
 
-- `claveIdempotencia`: string de 8 a 64 caracteres (el frontend usa un UUID).
-- `habitaciones`: 1 a 3 líneas; cada una dentro de la capacidad de su tipo.
-- `totalEsperado`: el total que el huésped vio. Si el precio real difiere → `PRECIO_CAMBIADO`.
-- `huesped`: el titular, con los campos de la ficha `Huesped` del sistema;
-  todos obligatorios. Ver la sección **Huésped (titular)**.
-- `llegada.horaEstimada`: `NO_SABE` | `14-16` | `16-18` | `18-20` | `20-22` | `DESPUES_22`.
-- `solicitudesEspeciales`: opcional, máx. 500 caracteres (`""` o `null` si no hay).
-- `consentimiento.aceptaPoliticas` tiene que ser `true`, y `versionPoliticas`
-  la vigente (`"2026-10-01"`). `aceptaComunicaciones` es opcional (default `false`).
-- `tarjeta`: Luhn válido, vencimiento posterior a `fechaHasta`, CVV de 3 o 4 dígitos.
+- `claveIdempotencia`: 8 a 64 caracteres `[A-Za-z0-9-]` (el frontend usa un UUID).
+- Fechas, noches, `adultos` y `menores`: las mismas reglas que `/cotizar`
+  (entrada >= hoy en hora argentina, máximo 30 noches). `habitaciones`: 1 a 3 líneas.
+- `planTarifarioId`: activo y visible en la web. `totalEsperado`: número > 0;
+  es el total que el huésped vio (si el precio real difiere → `409
+  PRECIO_CAMBIADO` con `totalNuevo`).
+- `huesped`: ver **Huésped (titular)**. Nombres y apellido (hasta 80
+  caracteres cada uno), tipo y país del documento de los catálogos, número,
+  fecha de nacimiento (mayor de 18 a la fecha de ingreso), `email` válido,
+  `telefono` de 7 a 40 caracteres (dígitos, espacios, `+`, `-`, paréntesis).
+  `nacionalidad` y `paisResidencia` son **opcionales**, pero si vienen tienen
+  que ser ISO-2 válidos.
+- `llegada.horaEstimada`: `NO_SABE` | `14-16` | `16-18` | `18-20` | `20-22` | `DESPUES_22` (o ausente).
+- `solicitudesEspeciales`: opcional, máx. 500 caracteres.
+- `consentimiento.aceptaPoliticas` tiene que ser `true` y `versionPoliticas`
+  la vigente (`"2026-10-01"`). `aceptaComunicaciones`: booleano (default `false`).
+- `tarjeta`: `titular` no vacío; `numero` solo dígitos (13 a 19) y válido por
+  Luhn; `vencimientoMes` 1–12; `vencimientoAnio` de 4 dígitos; `cvv` de 3 o 4 dígitos.
+- **Vencimiento**: la tarjeta vale hasta el último día de su mes.
+  - Ya vencida hoy → `402 PAGO_RECHAZADO` con `motivo: "Tarjeta vencida"`.
+  - Vence antes de la fecha de **salida** → `422 TARJETA_VENCE_ANTES`.
+  - Vence el mismo mes de la salida → aceptada.
 
-**Response 201** (o **200** si la clave ya existía con los mismos datos)
+Orden del backend: validación → idempotencia → habitaciones libres y
+precio (`409 SIN_DISPONIBILIDAD` / `409 PRECIO_CAMBIADO`, **sin** tocar la
+pasarela) → pasarela (`402 PAGO_RECHAZADO` con `motivo`) → una transacción
+→ captura (solo no reembolsable) → email.
+
+**Response 201** (o **200** si la clave ya existía con los mismos datos) —
+respuesta real de la base local (tarifa no reembolsable):
 
 ```json
 {
-  "codigoConfirmacion": "3FA9C21B",
+  "codigoConfirmacion": "F2AAF1C6",
   "estado": "Confirmada",
-  "fechaDesde": "2026-10-16",
-  "fechaHasta": "2026-10-18",
+  "fechaDesde": "2026-10-23",
+  "fechaHasta": "2026-10-25",
   "noches": 2,
-  "plan": { "codigo": "BAR", "nombre": "Best Available Rate", "reembolsable": true, "horasCancelacionSinCargo": 48 },
-  "total": 50000,
-  "cobradoAhora": 0,
-  "garantia": { "tipo": "GARANTIA", "marca": "VISA", "ultimos4": "4242" },
+  "plan": { "codigo": "NRF", "nombre": "No Reembolsable", "reembolsable": false, "horasCancelacionSinCargo": null },
+  "total": 74800,
+  "cobradoAhora": 74800,
+  "garantia": { "tipo": "PREPAGO", "marca": "VISA", "ultimos4": "4242" },
   "habitaciones": [{ "tipo": "Doble", "adultos": 2, "menores": 0 }],
   "email": { "enviado": true }
 }
@@ -333,10 +353,16 @@ Validaciones (la 1B las repite todas; el frontend las anticipa):
   pantalla muestra "Confirmada · garantizada con tarjeta".
 - Plan no reembolsable: `cobradoAhora = total`, `garantia.tipo = "PREPAGO"`. La
   pantalla muestra "Pagada".
-- En la respuesta repetida por idempotencia (200), `garantia` puede ser `null`.
-- Sin número de habitación. El código es el **código de confirmación del
-  sistema** (el mismo que ve el mostrador): 8 caracteres hexadecimales en
-  mayúsculas, por ejemplo `3FA9C21B`.
+- `email.enviado`:
+  - `true` → se envió la confirmación al email del titular;
+  - `false` → no se pudo enviar (la reserva **sí** quedó creada);
+  - `null` → **desconocido**: solo en la repetición idempotente (200), que no
+    vuelve a mandar el email.
+- En la repetición idempotente (200), `garantia` sale de lo guardado
+  (`DatosReservaWeb`): nunca es `null`.
+- Sin ids ni números de habitación. El código es el **código de confirmación
+  del sistema** (el mismo que ve el mostrador): 8 caracteres hexadecimales en
+  mayúsculas.
 
 ### Idempotencia
 
@@ -345,13 +371,17 @@ La clave de idempotencia evita que un doble clic, un F5 o un reintento creen
 
 1. **La clave se consume solo cuando la reserva se crea.** Un pedido que
    termina en error no "gasta" la clave en el servidor.
-2. **"Mismos datos" se compara sin la tarjeta.** Se comparan fechas, plan,
-   `totalEsperado`, habitaciones, huésped, llegada, solicitudes y
-   consentimiento. Los datos de la tarjeta no se guardan, así que no pueden
-   compararse.
-3. **Misma clave + mismos datos** → `200` con la misma reserva (sin volver a
-   cobrar; `garantia` puede venir `null`).
+2. **"Mismos datos" se compara sin la tarjeta.** Se comparan `fechaDesde`,
+   `fechaHasta`, `planTarifarioId`, las líneas como multiconjunto de
+   `{ tipoHabitacionId, adultos, menores }` (el orden no importa) y la
+   identidad del titular (tipo + país + número del documento, normalizados).
+   Los datos de la tarjeta no se guardan, así que no pueden compararse.
+3. **Misma clave + mismos datos** → `200` con la misma reserva, sin volver a
+   pasar por la pasarela ni a mandar el email (`email.enviado: null`).
 4. **Misma clave + datos distintos** → `409 CLAVE_REUTILIZADA`.
+5. **Dos pedidos con la misma clave al mismo tiempo**: el índice único de
+   `DatosReservaWeb.claveIdempotencia` deja pasar uno solo; el otro se
+   revierte (libera su preautorización) y responde según las reglas 3 y 4.
 
 Qué hace el frontend después de un error (`ecommerce.constantes.js →
 CODIGOS_REGENERAN_CLAVE`, `ProcesoCompraContext → tratarErrorReserva`):
@@ -506,22 +536,32 @@ que usan el mostrador y el check-in). Campos de `huesped` en
 - La identidad de la persona es **tipo + país + número** del documento, con la
   misma normalización que el sistema (`persona.servicio.js → claveDocumento`).
 
-## Cómo se procesa el pago (lo implementa la etapa 1B)
+## Cómo se procesa el pago (etapa 1B-2)
 
-- **Plan reembolsable**: validación de la tarjeta con monto 0 y token
-  (operación `GARANTIA`). No se cobra nada. El no-show se cobra después con el
-  token.
-- **Plan no reembolsable**: `PREAUTORIZACION` por el total → se crea la reserva
-  → `CAPTURA`.
-  - Si la reserva falla: `LIBERACION`.
-  - Si la captura falla después de crear la reserva: se cancela la reserva con
-    motivo "Pago no capturado" y se libera.
+- **Plan reembolsable** (tarifa flexible): `GARANTIA` con monto 0 — valida la
+  tarjeta y devuelve un token. **No se cobra nada y no es un pago**: no se
+  registra en `PagoEstadia` (`consolidarCargos` la restaría del saldo del
+  check-out). Marca, últimos 4, vencimiento, token y referencia van en
+  `DatosReservaWeb`. El no-show se cobrará después con el token.
+- **Plan no reembolsable**: `PREAUTORIZACION` por el total → se crea la
+  reserva **y** un `PagoEstadia` con concepto **"Prepago"**
+  (`CONCEPTO_PREPAGO`), medio "Tarjeta crédito" y la referencia de la
+  preautorización, en la misma transacción → `CAPTURA`.
+  - Si la transacción falla (cualquier error): `LIBERACION` y se responde el
+    error.
+  - Si la **captura** falla después de crear la reserva, se compensa con las
+    funciones del sistema: se anula el prepago con motivo "Pago no capturado"
+    (`anularPago`), se cancela la reserva con ese mismo motivo
+    (`cancelarReserva`, que no aplica penalidades ni manda emails), se libera
+    la preautorización y se responde `402 PAGO_RECHAZADO`: "No pudimos
+    confirmar el pago. No se realizó ningún cargo."
 - La llamada a la pasarela va **fuera de la transacción de la base**.
-- La **garantía** de un plan reembolsable **no es un pago**: no se registra en
-  `PagoEstadia` (`consolidarCargos` la restaría del saldo en el check-out).
-  Sus datos van en `DatosReservaWeb` (ver "Cómo funciona por dentro").
-- Pasarela simulada con la firma de `procesarTarjeta` de la guía de Ricardo;
-  cuando él la termine, se reemplaza.
+- En el check-out, el saldo de alojamiento de una reserva no reembolsable es 0
+  (el prepago se descuenta); en una flexible es el total (la garantía no).
+- La pasarela es **simulada**, propia del módulo
+  (`backend/src/modulos/ecommerce/pasarelaSimulada.js`), con la firma de
+  abajo. Es el único punto que se reemplaza por el módulo de garantías de
+  Ricardo.
 
 ### Firma de la pasarela — *propuesta enviada a Ricardo, a confirmar*
 
@@ -547,8 +587,13 @@ Tarjetas de prueba de la pasarela simulada:
 | Número | Resultado |
 |---|---|
 | `4242424242424242` | Aprobada |
-| `4000000000000002` | Rechazada — fondos insuficientes |
-| `4000000000000069` | Rechazada — tarjeta vencida |
+| `4000000000000002` | Tarifa **flexible**: aceptada (la garantía de monto 0 no mira el saldo). Tarifa **no reembolsable**: rechazada — fondos insuficientes |
+| `4000000000000069` | Rechazada en cualquier tarifa — tarjeta vencida |
+
+Marca por prefijo: VISA `4`; MASTERCARD `51`–`55` y `2221`–`2720`; AMEX `34` y
+`37`; cualquier otra, `OTRA`. La pasarela es idempotente en memoria por
+(clave, operación) y lleva el estado de cada preautorización (pendiente,
+capturada, liberada).
 
 ### Tarjetas: aclaración importante
 
@@ -556,7 +601,9 @@ En un e-commerce real los datos de la tarjeta **no pasan por el servidor del
 hotel**: los toma la pasarela (campos alojados en su dominio) y devuelve un
 token. Acá pasan por el backend porque la pasarela es simulada. Aun así:
 
-- el número y el CVV **nunca se guardan, nunca se loguean y nunca se devuelven**;
+- el número y el CVV **nunca se guardan, nunca se loguean y nunca se devuelven**
+  (el controlador separa `tarjeta` del body apenas llega y solo se la pasa al
+  servicio);
 - en el frontend no van al contexto ni a ningún storage: viven en el estado
   local de `PagoPage`, que los pasa directo a `crearReserva` y los limpia
   después de la respuesta.
@@ -609,6 +656,12 @@ En un plan reembolsable la tarjeta **garantiza** la reserva: no se cobra y no
 es un pago, así que **no** va a `PagoEstadia` (`consolidarCargos` la restaría
 del saldo). Sus datos, sin número ni CVV, van en `DatosReservaWeb`.
 
+En las **llegadas del check-in**, la columna "Garantía" muestra cómo está
+asegurada cada reserva, en este orden: "Prepagada · $ X" (prepago), "Garantizada
+con tarjeta · MARCA ••1234" (reserva web flexible), la seña como siempre o "Sin
+garantía · tomar al ingreso". El paso de garantía para consumos del check-in
+no cambia: se pide a todos, incluso a quien prepagó.
+
 ### Habitación representante
 
 La web vende por tipo; el sistema reserva habitaciones concretas. Para cotizar
@@ -660,6 +713,34 @@ titular con la forma nueva (sección **Huésped (titular)**). Respecto de la 1A:
   `nombreComercialPlan(plan)` de `formato.js` ("Tarifa flexible" / "No
   reembolsable"), como resultados, el resumen y Mi reserva.
 
+### Para Tomás: Pago y Confirmación (etapa 1B-2)
+
+`POST /api/web/reservas` ya es real. Lo que tienen que mostrar las pantallas:
+
+- **Pago** (`PagoPage.jsx`):
+  - según el plan elegido: "Tu tarjeta solo garantiza la reserva: no se cobra
+    nada ahora" (flexible) o "Se cobra el total ahora" (no reembolsable);
+  - los errores, con `MensajeError`: `PAGO_RECHAZADO` (con `motivo`: "Tarjeta
+    vencida", "Fondos insuficientes" o "No pudimos confirmar el pago…"),
+    `TARJETA_VENCE_ANTES`, `PRECIO_CAMBIADO` (mostrar `totalNuevo` y pedir
+    confirmar de nuevo), `SIN_DISPONIBILIDAD` (volver a resultados);
+  - la tarjeta vive solo en el estado local de la página y se limpia después
+    de la respuesta.
+- **Confirmación** (`ConfirmacionPage.jsx`):
+  - el **código** de la reserva, siempre;
+  - `email.enviado === true` → "Enviamos el comprobante a {email}";
+  - `email.enviado === false` → aviso de que **no se pudo enviar** el email y
+    que **guarde el código** (lo necesita para Mi reserva);
+  - `email.enviado === null` (repetición idempotente) → solo el código, sin
+    mensaje sobre el email;
+  - garantía: "Garantizada con tarjeta {marca} terminada en {ultimos4}" o
+    "Cobrado {cobradoAhora} con tarjeta {marca} terminada en {ultimos4}";
+  - el plan con `nombreComercialPlan(plan)` y `textoCondicionesPlan(plan)`
+    (las condiciones ya no repiten el nombre: "Tarifa flexible" / "No
+    reembolsable" va aparte).
+
+---
+
 ## Cómo trabajar sobre esta base
 
 1. **Ramas**: creá tu rama desde `feature/ecommerce` (por ejemplo,
@@ -709,10 +790,12 @@ titular con la forma nueva (sección **Huésped (titular)**). Respecto de la 1A:
 
    Cualquier otra combinación → `NO_ENCONTRADA` con el mismo mensaje.
 
-5. **Tarjetas de prueba**: `4242424242424242` aprobada; terminadas en `0002`
-   (`4000000000000002`) y `0069` (`4000000000000069`) rechazadas; un número que
-   no pasa Luhn → `DATOS_INVALIDOS` (`campo: "tarjeta.numero"`); vencimiento
-   anterior a la salida → `TARJETA_VENCE_ANTES`.
+5. **Tarjetas de prueba** (iguales en el mock y en el backend real):
+   `4242424242424242` aprobada; `4000000000000069` rechazada en cualquier
+   tarifa (tarjeta vencida); `4000000000000002` aceptada en la tarifa flexible
+   y rechazada en la no reembolsable (fondos insuficientes); un número que no
+   pasa Luhn → `DATOS_INVALIDOS` (`campo: "tarjeta.numero"`); ya vencida →
+   `402 PAGO_RECHAZADO`; vence antes de la salida → `TARJETA_VENCE_ANTES`.
 6. **Estilos**: solo clases `ec-` y variables de `.ec-raiz` (definidas en
    `ecommerce.css`). Nada de selectores de etiqueta sueltos ni `:root`. No
    reutilices los componentes de `frontend/src/componentes/` ni los de la web
@@ -725,7 +808,11 @@ titular con la forma nueva (sección **Huésped (titular)**). Respecto de la 1A:
 
 ## Limitaciones conocidas
 
-- Pago simulado (no hay pasarela real).
+- Pago simulado (no hay pasarela real). El estado de la pasarela simulada
+  (idempotencia y preautorizaciones) vive en memoria del proceso: se pierde al
+  reiniciar el backend. Se reemplaza por el módulo de garantías de Ricardo.
+- El email de confirmación es la versión simple del backend (texto y HTML
+  básicos); la versión final del contenido es de Tomás.
 - Sin servicios adicionales, facturación ni check-in online.
 - Sin modificación web de la reserva (HU-105 postergada): el huésped cancela y
   vuelve a reservar, o contacta a recepción.

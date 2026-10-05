@@ -13,9 +13,12 @@
 //                       clave nueva funciona.
 //   ERROR_INTERNO       todas las llamadas → 500.
 //   DEMASIADOS_INTENTOS todas las llamadas → 429.
-// Tarjetas: 4242424242424242 aprobada; terminada en 0002 → fondos
-// insuficientes; en 0069 → tarjeta vencida; sin Luhn → DATOS_INVALIDOS
-// (tarjeta.numero); vencimiento anterior a la salida → TARJETA_VENCE_ANTES.
+// Tarjetas (mismas reglas que la pasarela simulada del backend):
+// 4242424242424242 aprobada; terminada en 0069 → rechaza todo ("Tarjeta
+// vencida"); terminada en 0002 → rechaza la tarifa no reembolsable ("Fondos
+// insuficientes") pero ACEPTA la flexible (la garantía de monto 0 no mira el
+// saldo); sin Luhn → DATOS_INVALIDOS (tarjeta.numero); ya vencida hoy → 402
+// "Tarjeta vencida"; vence antes de la salida → 422 TARJETA_VENCE_ANTES.
 //
 // Mi reserva (código + email, decisión 6 de CONTRATO.md):
 //   3FA9C21B + demo@hotel.com        reserva WEB (email de DatosReservaWeb).
@@ -26,6 +29,7 @@ import {
   CLAVE_IDEMPOTENCIA_MAX,
   CLAVE_IDEMPOTENCIA_MIN,
   CODIGO_ERROR,
+  HORAS_LLEGADA,
   EDAD_MINIMA_TITULAR,
   MAX_HABITACIONES_WEB,
   MAX_SOLICITUDES,
@@ -222,14 +226,28 @@ export function pasaLuhn(numero) {
 
 function marcaDe(numero) {
   if (/^4/.test(numero)) return "VISA";
-  if (/^5[1-5]/.test(numero)) return "MASTERCARD";
+  const dos = Number(numero.slice(0, 2));
+  const cuatro = Number(numero.slice(0, 4));
+  if ((dos >= 51 && dos <= 55) || (cuatro >= 2221 && cuatro <= 2720)) return "MASTERCARD";
   if (/^3[47]/.test(numero)) return "AMEX";
   return "OTRA";
 }
 
-// Huella de los datos de la reserva SIN la tarjeta (idempotencia).
-function huella({ tarjeta: _tarjeta, claveIdempotencia: _clave, ...resto }) {
-  return JSON.stringify(resto);
+// "Mismos datos" para la idempotencia, igual que el backend: fechas, plan,
+// las líneas como multiconjunto de { tipo, adultos, menores } y la identidad
+// del titular (tipo + país + número). Nunca la tarjeta.
+function firma(cuerpo) {
+  const h = cuerpo.huesped ?? {};
+  const lineas = (cuerpo.habitaciones ?? []).map((l) => `${Number(l.tipoHabitacionId)}:${Number(l.adultos)}:${Number(l.menores ?? 0)}`).sort();
+  const identidad = [h.tipoDocumento, h.paisDocumento, h.numeroDocumento].map((v) => String(v ?? "").trim().toUpperCase().replace(/\s/g, ""));
+  return JSON.stringify([cuerpo.fechaDesde, cuerpo.fechaHasta, Number(cuerpo.planTarifarioId), lineas, identidad]);
+}
+
+const PATRON_CLAVE = /^[A-Za-z0-9-]{8,64}$/;
+const PATRON_TELEFONO = /^[\d\s+\-()]{7,40}$/;
+
+function hoyISO() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Argentina/Buenos_Aires" });
 }
 
 // Mismo formato que el código del sistema (generarCodigoConfirmacion en
@@ -261,14 +279,14 @@ function validarHuesped(huesped, fechaDesde) {
     "fechaNacimiento",
     "email",
     "telefono",
-    "nacionalidad",
-    "paisResidencia",
   ];
   for (const campo of campos) {
     if (!String(huesped[campo] ?? "").trim()) throw invalido(campo, "Completá todos los datos del titular.");
   }
   if (!normalizarTipoDocumento(huesped.tipoDocumento)) throw invalido("tipoDocumento", "Elegí un tipo de documento de la lista.");
   for (const campo of ["paisDocumento", "nacionalidad", "paisResidencia"]) {
+    // Nacionalidad y país de residencia son opcionales; si vienen, ISO-2 válidos.
+    if (campo !== "paisDocumento" && !String(huesped[campo] ?? "").trim()) continue;
     if (codigoPais(huesped[campo]) !== String(huesped[campo]).trim().toUpperCase()) {
       throw invalido(campo, "Elegí un país de la lista.");
     }
@@ -280,6 +298,26 @@ function validarHuesped(huesped, fechaDesde) {
     throw invalido("fechaNacimiento", `El titular tiene que tener al menos ${EDAD_MINIMA_TITULAR} años en la fecha de ingreso.`);
   }
   if (!esEmail(huesped.email)) throw invalido("email", "Ingresá un email válido.");
+  const telefono = String(huesped.telefono).trim();
+  if (!PATRON_TELEFONO.test(telefono) || !/\d/.test(telefono)) {
+    throw invalido("telefono", "Ingresá un teléfono válido (números, espacios, +, - o paréntesis).");
+  }
+}
+
+// Tarjeta: forma (400) y vencimiento (402 si ya venció, 422 si vence antes de la salida).
+function validarTarjeta(tarjeta, fechaHasta) {
+  const invalido = (campo, mensaje) => error(400, CODIGO_ERROR.DATOS_INVALIDOS, mensaje, { campo: `tarjeta.${campo}` });
+  if (!String(tarjeta.titular ?? "").trim()) throw invalido("titular", "Completá el nombre del titular de la tarjeta.");
+  const numero = String(tarjeta.numero ?? "").replace(/\s+/g, "");
+  if (!/^\d{13,19}$/.test(numero) || !pasaLuhn(numero)) throw invalido("numero", "El número de tarjeta no es válido.");
+  const mes = Number(tarjeta.vencimientoMes);
+  if (!Number.isInteger(mes) || mes < 1 || mes > 12) throw invalido("vencimientoMes", "El mes de vencimiento no es válido.");
+  if (!/^\d{4}$/.test(String(tarjeta.vencimientoAnio ?? ""))) throw invalido("vencimientoAnio", "El año de vencimiento no es válido.");
+  if (!/^\d{3,4}$/.test(String(tarjeta.cvv ?? ""))) throw invalido("cvv", "El código de seguridad no es válido.");
+  const finDeMes = new Date(Date.UTC(Number(tarjeta.vencimientoAnio), mes, 0)).toISOString().slice(0, 10);
+  if (finDeMes < hoyISO()) throw error(402, CODIGO_ERROR.PAGO_RECHAZADO, "Pago rechazado.", { motivo: "Tarjeta vencida" });
+  if (finDeMes < fechaHasta) throw error(422, CODIGO_ERROR.TARJETA_VENCE_ANTES, "La tarjeta vence antes de la salida.");
+  return numero;
 }
 
 async function conEscenarioGeneral(funcion) {
@@ -351,31 +389,25 @@ export function mockCotizar(cuerpo) {
   });
 }
 
+// Mismo orden que el backend (CONTRATO.md → POST /api/web/reservas):
+// validación completa → idempotencia → disponibilidad y precio → pasarela.
 export function mockCrearReserva(cuerpo) {
   return conEscenarioGeneral((escenario) => {
     const clave = String(cuerpo?.claveIdempotencia ?? "");
-    if (clave.length < CLAVE_IDEMPOTENCIA_MIN || clave.length > CLAVE_IDEMPOTENCIA_MAX) {
-      throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, "Falta la clave de idempotencia.", { campo: "claveIdempotencia" });
+    if (clave.length < CLAVE_IDEMPOTENCIA_MIN || clave.length > CLAVE_IDEMPOTENCIA_MAX || !PATRON_CLAVE.test(clave)) {
+      throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, "Falta la clave del pedido o no es válida.", { campo: "claveIdempotencia" });
     }
 
-    // Idempotencia: misma clave + mismos datos (sin tarjeta) → misma reserva (200).
-    const previa = estado.reservasPorClave.get(clave);
-    if (previa) {
-      if (previa.huella !== huella(cuerpo)) {
-        throw error(409, CODIGO_ERROR.CLAVE_REUTILIZADA, "La clave ya se usó con otros datos.");
-      }
-      return { ...previa.respuesta, garantia: null };
-    }
-
-    if (escenario === "CLAVE_REUTILIZADA" && !estado.claveReutilizadaDisparada) {
-      estado.claveReutilizadaDisparada = true;
-      throw error(409, CODIGO_ERROR.CLAVE_REUTILIZADA, "La clave ya se usó con otros datos.");
-    }
-
+    // 1. Validación completa (sin "base" ni pasarela).
     const { noches, plan, lineas, total } = cotizacionInterna(cuerpo);
-    const { huesped = {}, consentimiento = {}, tarjeta = {} } = cuerpo;
-
+    const { huesped = {}, consentimiento = {}, tarjeta = {}, llegada = {} } = cuerpo;
+    if (!(Number(cuerpo.totalEsperado) > 0)) {
+      throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, "Falta el total de la reserva.", { campo: "totalEsperado" });
+    }
     validarHuesped(huesped, cuerpo.fechaDesde);
+    if (llegada.horaEstimada != null && !HORAS_LLEGADA.some((h) => h.valor === llegada.horaEstimada)) {
+      throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, "Elegí una hora estimada de llegada de la lista.", { campo: "llegada.horaEstimada" });
+    }
     if (String(cuerpo.solicitudesEspeciales ?? "").length > MAX_SOLICITUDES) {
       throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, `Las solicitudes pueden tener hasta ${MAX_SOLICITUDES} caracteres.`, {
         campo: "solicitudesEspeciales",
@@ -386,40 +418,36 @@ export function mockCrearReserva(cuerpo) {
         campo: "consentimiento.aceptaPoliticas",
       });
     }
+    const numero = validarTarjeta(tarjeta, cuerpo.fechaHasta);
 
+    // 2. Idempotencia: misma clave + mismos datos (sin tarjeta) → la misma
+    // reserva (200), con la garantía guardada y email.enviado = null.
+    const previa = estado.reservasPorClave.get(clave);
+    if (previa) {
+      if (previa.firma !== firma(cuerpo)) {
+        throw error(409, CODIGO_ERROR.CLAVE_REUTILIZADA, "La clave ya se usó con otros datos.");
+      }
+      return { ...structuredClone(previa.respuesta), email: { enviado: null } };
+    }
+    if (escenario === "CLAVE_REUTILIZADA" && !estado.claveReutilizadaDisparada) {
+      estado.claveReutilizadaDisparada = true;
+      throw error(409, CODIGO_ERROR.CLAVE_REUTILIZADA, "La clave ya se usó con otros datos.");
+    }
+
+    // 3. Disponibilidad y precio (sin tocar la pasarela).
     if (escenario === "SIN_DISPONIBILIDAD") {
       throw error(409, CODIGO_ERROR.SIN_DISPONIBILIDAD, "Ya no hay disponibilidad para esta selección.");
     }
-    if (escenario === "PRECIO_CAMBIADO") {
-      const totalNuevo = redondear(total * 1.1);
-      if (Number(cuerpo.totalEsperado) !== totalNuevo) {
-        throw error(409, CODIGO_ERROR.PRECIO_CAMBIADO, "El precio cambió.", { totalNuevo });
-      }
-    } else if (Number(cuerpo.totalEsperado) !== total) {
-      throw error(409, CODIGO_ERROR.PRECIO_CAMBIADO, "El precio cambió.", { totalNuevo: total });
-    }
     const totalFinal = escenario === "PRECIO_CAMBIADO" ? redondear(total * 1.1) : total;
+    if (Number(cuerpo.totalEsperado) !== totalFinal) {
+      throw error(409, CODIGO_ERROR.PRECIO_CAMBIADO, "El precio cambió.", { totalNuevo: totalFinal });
+    }
 
-    // Tarjeta (se valida y no se guarda).
-    const numero = String(tarjeta.numero ?? "").replace(/\s+/g, "");
-    if (!pasaLuhn(numero)) {
-      throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, "El número de tarjeta no es válido.", { campo: "tarjeta.numero" });
-    }
-    if (!/^\d{3,4}$/.test(String(tarjeta.cvv ?? ""))) {
-      throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, "El código de seguridad no es válido.", { campo: "tarjeta.cvv" });
-    }
-    const mes = Number(tarjeta.vencimientoMes);
-    const anio = Number(tarjeta.vencimientoAnio);
-    if (!(mes >= 1 && mes <= 12) || !(anio >= 2000)) {
-      throw error(400, CODIGO_ERROR.DATOS_INVALIDOS, "El vencimiento no es válido.", { campo: "tarjeta.vencimiento" });
-    }
-    // Vence el último día del mes indicado; tiene que cubrir la salida.
-    const finDeMes = new Date(Date.UTC(anio, mes, 0)).toISOString().slice(0, 10);
-    if (finDeMes < cuerpo.fechaHasta) {
-      throw error(422, CODIGO_ERROR.TARJETA_VENCE_ANTES, "La tarjeta vence antes de la salida.");
-    }
-    if (numero.endsWith("0002")) throw error(402, CODIGO_ERROR.PAGO_RECHAZADO, "Pago rechazado.", { motivo: "Fondos insuficientes" });
+    // 4. Pasarela: garantía (flexible) o preautorización (no reembolsable).
     if (numero.endsWith("0069")) throw error(402, CODIGO_ERROR.PAGO_RECHAZADO, "Pago rechazado.", { motivo: "Tarjeta vencida" });
+    if (!plan.reembolsable && numero.endsWith("0002")) {
+      throw error(402, CODIGO_ERROR.PAGO_RECHAZADO, "Pago rechazado.", { motivo: "Fondos insuficientes" });
+    }
 
     const respuesta = {
       codigoConfirmacion: generarCodigo(),
@@ -440,7 +468,7 @@ export function mockCrearReserva(cuerpo) {
       email: { enviado: true },
     };
     // La clave se consume solo cuando la reserva se crea.
-    estado.reservasPorClave.set(clave, { huella: huella(cuerpo), respuesta });
+    estado.reservasPorClave.set(clave, { firma: firma(cuerpo), respuesta });
     return respuesta;
   });
 }
