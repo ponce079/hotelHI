@@ -32,6 +32,14 @@ const express = require("express");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Detrás de un proxy inverso (TRUST_PROXY, opcional): sin esto el límite de intentos de /api/web ve una sola IP.
+try {
+  require("./src/lib/trustProxy").configurarTrustProxy(app);
+} catch (error) {
+  console.error(`[configuración] ${error.message}`);
+  process.exit(1);
+}
+
 app.use(express.json());
 
 // --- Rutas (patrón controller/service/routes, dentro de src/modulos) ---
