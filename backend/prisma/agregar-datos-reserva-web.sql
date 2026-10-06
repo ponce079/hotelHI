@@ -38,3 +38,8 @@ CREATE TABLE IF NOT EXISTS `datos_reserva_web` (
     PRIMARY KEY (`id`),
     CONSTRAINT `datos_reserva_web_reservaId_fkey` FOREIGN KEY (`reservaId`) REFERENCES `reservas`(`id`) ON DELETE RESTRICT ON UPDATE CASCADE
 ) DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+-- IMPORTANTE: este archivo se aplica con `node scripts/actualizar-esquema-ecommerce.js --aplicar`
+-- (verificación previa: scripts/verificar-previo-ecommerce.js) y NO con `prisma db execute`: el
+-- script pasa por la guardia de la base compartida (_destinoMigracion.js), acepta solo este
+-- CREATE TABLE IF NOT EXISTS y se niega si la tabla ya existe con otra forma.
