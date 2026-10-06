@@ -6,9 +6,9 @@ import { AirVent, BedDouble, BedSingle, Monitor, Refrigerator, Table2, Wifi } fr
 export const CONTENIDO_TIPOS = {
   Simple: {
     descripcion:
-      "Pensada para viajes de trabajo o escapadas cortas. Cama simple, escritorio y todo lo necesario para descansar.",
+      "Cómoda y funcional, pensada para quien viaja por trabajo o por placer. A pocas cuadras del centro histórico de Salta.",
     descripcionAmpliada:
-      "Una habitación cómoda y silenciosa para una o dos personas. [COMPLETAR: ambientes, vista, metros cuadrados.]",
+      "Una habitación tranquila y luminosa para una o dos personas, con escritorio para trabajar, Wi-Fi, aire acondicionado, TV y frigobar. Ideal para estadías cortas: llegás, descansás y salís a recorrer la ciudad a pie, desde la Plaza 9 de Julio hasta el Cerro San Bernardo.",
     comodidades: [
       { nombre: "Wi-Fi", Icono: Wifi },
       { nombre: "TV", Icono: Monitor },
@@ -20,10 +20,9 @@ export const CONTENIDO_TIPOS = {
     fotos: ["Foto · Habitación simple", "Foto · Baño", "Foto · Vista", "Foto · Detalle cama", "Foto · Escritorio"],
   },
   Doble: {
-    descripcion:
-      "Más espacio para parejas, familias o grupos. Ideal para estadías largas con la comodidad de siempre.",
+    descripcion: "Más espacio para compartir el viaje en pareja, con amigos o en familia, hasta 3 personas.",
     descripcionAmpliada:
-      "Una habitación amplia para hasta cuatro huéspedes. [COMPLETAR: ambientes, vista, metros cuadrados.]",
+      "Amplia y equipada para estadías más largas, con capacidad para hasta tres personas. Tiene Wi-Fi, aire acondicionado, TV y frigobar. Un buen punto de partida para conocer Salta y salir de excursión a los Valles Calchaquíes, la Quebrada de Humahuaca o Cafayate.",
     comodidades: [
       { nombre: "Wi-Fi", Icono: Wifi },
       { nombre: "TV", Icono: Monitor },
@@ -38,7 +37,7 @@ export const CONTENIDO_TIPOS = {
 // Para un tipo que todavía no tenga contenido cargado.
 const CONTENIDO_GENERICO = {
   descripcion: "Habitación con todo lo necesario para tu estadía.",
-  descripcionAmpliada: "[COMPLETAR: descripción del tipo de habitación.]",
+  descripcionAmpliada: "Habitación equipada para tu estadía en Salta, con Wi-Fi y todo lo necesario para descansar.",
   comodidades: [{ nombre: "Wi-Fi", Icono: Wifi }],
   fotos: ["Foto · Habitación"],
 };

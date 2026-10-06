@@ -148,7 +148,7 @@ describe("Resultados", () => {
   it("criterios de HU-99: cada tipo con descripción, capacidad, 'desde $ X por noche' y no-show de cada plan", async () => {
     renderRuta(`/web/resultados?${QUERY}`);
     const doble = within(await screen.findByRole("article", { name: "Doble" }));
-    expect(doble.getByText(/Más espacio para parejas/)).toBeInTheDocument();
+    expect(doble.getByText(/Más espacio para compartir el viaje/)).toBeInTheDocument();
     expect(doble.getByText(/Hasta 4 personas/).textContent).toMatch(/Desde \$\s?21\.250 por noche/);
     expect(doble.getByText("Si no te presentás, se cobra la primera noche.")).toBeInTheDocument();
     expect(doble.getByText("Si no te presentás, se cobra el total de la estadía.")).toBeInTheDocument();

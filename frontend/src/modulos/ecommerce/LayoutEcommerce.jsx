@@ -126,6 +126,7 @@ function Footer() {
           <span>© 2026 {HOTEL.nombre} · Sistema de Gestión Hotelera</span>
           <span>Precios finales en pesos argentinos (ARS), IVA incluido</span>
         </div>
+        <p className="ec-footer__demo">Sitio de demostración · Proyecto académico de Sistemas III. Los datos de contacto son ficticios.</p>
       </div>
     </footer>
   );

@@ -597,6 +597,19 @@
   color: rgba(253, 252, 248, 0.7);
 }
 
+/* Leyenda de sitio de demostración (proyecto académico), debajo de la línea del ©. */
+.ec-footer__demo {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(253, 252, 248, 0.6);
+}
+
+/* Aviso de espera mientras se procesa la reserva (PagoPage). */
+.ec-compra__espera {
+  margin: 0;
+}
+
 /* --- Buscador de estadía --------------------------------------------------- */
 .ec-buscador {
   display: grid;
