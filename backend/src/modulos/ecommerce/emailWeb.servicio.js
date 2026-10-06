@@ -12,13 +12,21 @@
 // escaparHTML. Nunca lleva números de habitación ni datos de la tarjeta más
 // allá de la marca y los últimos 4, ni el email del huésped en un link.
 const { enviarCorreo } = require("../../lib/correo");
+const { formatearInstanteArgentina } = require("../../lib/fechas");
+const { calcularLimiteSinCargo } = require("../tarifas/limiteCancelacion");
+const { HOTEL } = require("./ecommerce.hotel");
 
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const DIAS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
-const HORA_CHECKIN = "14 h";
-const HORA_CHECKOUT = "10 h";
-const NOMBRE_HOTEL = "Holiday Inn";
-const BAJADA_HOTEL = "Hotel · Reservas online";
+const HORA_CHECKIN = HOTEL.checkIn;
+const HORA_CHECKOUT = HOTEL.checkOut;
+const NOMBRE_HOTEL = HOTEL.nombre;
+const BAJADA_HOTEL = HOTEL.bajada;
+
+// Contacto del hotel (datos ficticios del proyecto académico, ver ecommerce.hotel.js).
+const CONTACTO = `${HOTEL.telefono} · ${HOTEL.email}`;
+const LINEA_HOTEL = `${NOMBRE_HOTEL} · ${HOTEL.direccion} · ${CONTACTO}`;
+const TEXTO_DATOS_PERSONALES = `Usamos tus datos solo para gestionar tu reserva. Para consultarlos, corregirlos o pedir que los eliminemos, escribinos a ${HOTEL.email} (Ley 25.326).`;
 
 // Guía de estilo (mockups, pág. 15).
 const COLOR = {
@@ -82,11 +90,19 @@ function nombreComercialPlan(plan) {
   return plan.reembolsable ? "Tarifa flexible" : "No reembolsable";
 }
 
-function condicionesPlan(plan) {
-  return plan.reembolsable
-    ? `Cancelación sin cargo hasta ${plan.horasCancelacionSinCargo} h antes de la llegada`
-    : "Se cobra el total al reservar · Sin devolución";
+// "viernes 13/11/2026 a las 14:00": la llegada a la hora de check-in menos las horas del plan (la misma
+// fórmula que calcularPenalidad, vía calcularLimiteSinCargo), en hora argentina. Sin consultar la base.
+function limiteSinCargo(reserva) {
+  return formatearInstanteArgentina(calcularLimiteSinCargo(reserva.fechaDesde, reserva.plan.horasCancelacionSinCargo));
 }
+
+function condicionesPlan(plan, limite) {
+  return plan.reembolsable ? `Cancelación sin cargo hasta el ${limite}` : "Se cobra el total al reservar · Sin devolución";
+}
+
+const TEXTO_CARGO_DESPUES = "Después de esa fecha, la cancelación tiene un cargo de la primera noche.";
+const TEXTO_NO_SHOW_NRF = "Si no te presentás, no se reintegra el importe pagado.";
+const TEXTO_RECEPCION = `contactá a recepción (${CONTACTO})`;
 
 // Mismo texto que textoNoShow del frontend (busquedaWeb.js).
 function textoNoShow(penalidadNoShow) {
@@ -104,13 +120,19 @@ function textoTarjeta(garantia) {
 // Link a Mi reserva (HU-104): WEB_PUBLIC_URL (opcional) es la URL pública del
 // sitio, sin barra final. Con ella: <URL>/web/mi-reserva?codigo=<código> (el
 // email nunca viaja en la URL). Sin ella, el texto indica cómo llegar.
-function textoMiReserva(codigo) {
+// `cancelable` false (tarifa no reembolsable): solo se consulta, no se habla de cancelar.
+function textoMiReserva(codigo, { cancelable = true } = {}) {
   const base = String(process.env.WEB_PUBLIC_URL ?? "").trim().replace(/\/+$/, "");
   if (!/^https?:\/\//i.test(base)) {
-    return { texto: "Ingresá a Mi reserva en nuestra web con tu código y tu email.", url: null };
+    return {
+      texto: cancelable
+        ? "Ingresá a Mi reserva en nuestra web con tu código y tu email."
+        : "Consultá tu reserva en nuestra web con tu código y tu email.",
+      url: null,
+    };
   }
   const url = `${base}/web/mi-reserva?codigo=${encodeURIComponent(codigo)}`;
-  return { texto: `Consultá o cancelá tu reserva en ${url}`, url };
+  return { texto: cancelable ? `Consultá o cancelá tu reserva en ${url}` : `Consultá tu reserva en ${url}`, url };
 }
 
 const textoOcupacion = ({ adultos, menores }) =>
@@ -174,7 +196,9 @@ ${contenido}
           <tr>
             <td style="padding:20px 32px;font-family:${FUENTE};font-size:12px;line-height:1.5;color:${COLOR.texto2};text-align:center">
               Recibís este email porque se hizo una reserva con tu dirección en la web de ${NOMBRE_HOTEL}.<br>
-              Si no la hiciste vos, contactá a recepción del hotel.<br>
+              Si no la hiciste vos, ${escaparHTML(TEXTO_RECEPCION)}.<br>
+              ${escaparHTML(TEXTO_DATOS_PERSONALES)}<br>
+              ${escaparHTML(LINEA_HOTEL)}<br>
               Precios en pesos argentinos, IVA incluido.
             </td>
           </tr>
@@ -195,16 +219,17 @@ function armarEmail(reserva, extra = {}) {
   const { codigoConfirmacion, fechaDesde, fechaHasta, noches, plan, total, cobradoAhora, garantia, habitaciones } = reserva;
   const llegada = TEXTO_LLEGADA[extra.horaEstimadaLlegada] ?? null;
   const solicitudes = String(extra.solicitudesEspeciales ?? "").trim();
-  const noShow = textoNoShow(extra.penalidadNoShow);
-  const miReserva = textoMiReserva(codigoConfirmacion);
+  const noShow = plan.reembolsable ? textoNoShow(extra.penalidadNoShow) : TEXTO_NO_SHOW_NRF;
+  const miReserva = textoMiReserva(codigoConfirmacion, { cancelable: plan.reembolsable });
+  const limite = plan.reembolsable ? limiteSinCargo(reserva) : null;
 
   const estado = plan.reembolsable ? "Confirmada · garantizada con tarjeta" : "Pagada";
   const pago = plan.reembolsable
     ? `Garantizada con ${textoTarjeta(garantia)}, no se cobró nada.`
     : `Cobrado ${precio(cobradoAhora)} con ${textoTarjeta(garantia)}.`;
   const cancelacion = plan.reembolsable
-    ? `Podés cancelar sin cargo hasta ${plan.horasCancelacionSinCargo} h antes de la llegada desde Mi reserva, con tu código y tu email.`
-    : "Esta tarifa no admite cancelación con devolución. Para cualquier consulta, contactá a recepción.";
+    ? `Podés cancelar sin cargo hasta el ${limite} desde Mi reserva, con tu código y tu email.`
+    : `Esta tarifa no admite cancelación con devolución. Para cualquier consulta, ${TEXTO_RECEPCION}.`;
   const lineasHabitaciones = habitaciones.map((h) => `Habitación ${h.tipo} · ${textoOcupacion(h)}`);
 
   const lineas = [
@@ -218,7 +243,8 @@ function armarEmail(reserva, extra = {}) {
     `Salida: ${fechaLarga(fechaHasta)} (check-out hasta las ${HORA_CHECKOUT})`,
     textoNoches(noches),
     ...lineasHabitaciones,
-    `Tarifa: ${nombreComercialPlan(plan)} · ${condicionesPlan(plan)}`,
+    `Tarifa: ${nombreComercialPlan(plan)} · ${condicionesPlan(plan, limite)}`,
+    ...(plan.reembolsable ? [TEXTO_CARGO_DESPUES] : []),
     ...(noShow ? [noShow] : []),
     `Total: ${precio(total)} (IVA incluido)`,
     pago,
@@ -229,11 +255,14 @@ function armarEmail(reserva, extra = {}) {
     miReserva.texto,
     "",
     "Antes de llegar:",
-    "- Traé el documento que declaraste al reservar: lo pedimos en el check-in.",
+    "- Traé el DNI o pasaporte de cada persona que se aloja: registramos a todos los huéspedes en el check-in.",
+    "- Los menores de 18 años se alojan con un adulto responsable; si viajan sin sus padres, traé la autorización correspondiente.",
     `- El check-in es desde las ${HORA_CHECKIN}. Tu habitación está garantizada aunque llegues tarde.`,
     "- Guardá este código: lo necesitás para consultar o cancelar tu reserva.",
     "",
-    `${NOMBRE_HOTEL} · Precios en pesos argentinos, IVA incluido.`,
+    TEXTO_DATOS_PERSONALES,
+    LINEA_HOTEL,
+    "Precios en pesos argentinos, IVA incluido.",
   ];
 
   const filas = [
@@ -247,7 +276,9 @@ function armarEmail(reserva, extra = {}) {
     filaDato(
       "Tarifa",
       escaparHTML(nombreComercialPlan(plan)),
-      [escaparHTML(condicionesPlan(plan)), noShow && escaparHTML(noShow)].filter(Boolean).join("<br>")
+      [escaparHTML(condicionesPlan(plan, limite)), plan.reembolsable && escaparHTML(TEXTO_CARGO_DESPUES), noShow && escaparHTML(noShow)]
+        .filter(Boolean)
+        .join("<br>")
     ),
     filaDato("Total", `<strong>${escaparHTML(precio(total))}</strong>`, "IVA incluido"),
     filaDato("Pago", escaparHTML(pago)),
@@ -284,7 +315,8 @@ function armarEmail(reserva, extra = {}) {
 
           <h2 style="margin:28px 0 8px;font-family:${FUENTE_TITULO};font-size:20px;color:${COLOR.verdeProfundo}">Antes de llegar</h2>
           <ul style="margin:0;padding-left:20px;font-family:${FUENTE};font-size:14px;line-height:1.6;color:${COLOR.tinta}">
-            <li>Traé el documento que declaraste al reservar: lo pedimos en el check-in.</li>
+            <li>Traé el DNI o pasaporte de cada persona que se aloja: registramos a todos los huéspedes en el check-in.</li>
+            <li>Los menores de 18 años se alojan con un adulto responsable; si viajan sin sus padres, traé la autorización correspondiente.</li>
             <li>El check-in es desde las ${HORA_CHECKIN}. Tu habitación está garantizada aunque llegues tarde.</li>
             <li>Guardá este código: lo necesitás para consultar o cancelar tu reserva.</li>
           </ul>`;
@@ -324,9 +356,10 @@ function armarEmailCancelacion(reserva) {
     tarifa,
     ``,
     "No se realizó ningún cargo.",
-    "Si no fuiste vos quien canceló, contactá a recepción.",
+    `Si no fuiste vos quien canceló, ${TEXTO_RECEPCION}.`,
     "",
-    `${NOMBRE_HOTEL}`,
+    TEXTO_DATOS_PERSONALES,
+    LINEA_HOTEL,
   ];
 
   const filas = [
@@ -350,7 +383,7 @@ function armarEmailCancelacion(reserva) {
               <td style="padding:16px 20px;font-family:${FUENTE};font-size:15px;color:${COLOR.verde}"><strong>No se realizó ningún cargo.</strong></td>
             </tr>
           </table>
-          <p style="margin:20px 0 0;font-family:${FUENTE};font-size:14px;line-height:1.5;color:${COLOR.tinta}">Si no fuiste vos quien canceló, contactá a recepción.</p>`;
+          <p style="margin:20px 0 0;font-family:${FUENTE};font-size:14px;line-height:1.5;color:${COLOR.tinta}">${escaparHTML(`Si no fuiste vos quien canceló, ${TEXTO_RECEPCION}.`)}</p>`;
 
   return {
     asunto: `Tu reserva ${codigoConfirmacion} fue cancelada`,

@@ -255,6 +255,25 @@ describe("/web/pago (HU-102)", () => {
     );
   });
 
+  it("mientras procesa: botón 'Procesando…' deshabilitado y mensaje de espera con role=status; desaparece con la respuesta", async () => {
+    guardarProceso(DATOS_OK);
+    renderRuta("/web/pago");
+    cargarTarjeta();
+    const MENSAJE = "Estamos confirmando tu reserva, no cierres ni recargues esta ventana.";
+    expect(screen.queryByText(MENSAJE)).not.toBeInTheDocument();
+    let responder;
+    crearReserva.mockImplementationOnce(() => new Promise((resolver, rechazar) => (responder = rechazar)));
+    fireEvent.click(botonPrincipal(/confirmar reserva/i));
+
+    const aviso = await screen.findByText(MENSAJE);
+    expect(aviso.closest("[role='status']")).toHaveAttribute("aria-live", "polite");
+    expect(botonPrincipal(/procesando/i)).toBeDisabled();
+
+    await act(async () => responder({ codigo: "ERROR_INTERNO", mensaje: "x", status: 500 }));
+    await waitFor(() => expect(screen.queryByText(MENSAJE)).not.toBeInTheDocument());
+    expect(screen.getByText(/tuvimos un problema/i)).toBeInTheDocument();
+  });
+
   it("ERROR_INTERNO: mensaje genérico y conserva la MISMA clave para el reintento", async () => {
     window.history.replaceState({}, "", "/?mockEscenario=ERROR_INTERNO");
     guardarProceso(DATOS_OK);

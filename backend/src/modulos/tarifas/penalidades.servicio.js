@@ -20,9 +20,9 @@
 // del equipo de garantía y cancelaciones (ver docs/penalidades.md).
 
 const prisma = require("../../lib/prisma");
-const { combinarFechaConHoraArgentina } = require("../../lib/fechas");
+const { calcularLimiteSinCargo } = require("./limiteCancelacion");
 const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
-const { TIPO_PENALIDAD, TIPOS_PENALIDAD, PENALIDAD_NO_SHOW, HORA_CHECKIN } = require("./tarifas.constantes");
+const { TIPO_PENALIDAD, TIPOS_PENALIDAD, PENALIDAD_NO_SHOW } = require("./tarifas.constantes");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -111,10 +111,7 @@ async function calcularPenalidad({ reservaId, tipo, momento = new Date() }, clie
 
   if (tipo === TIPO_PENALIDAD.CANCELACION) {
     if (plan.reembolsable) {
-      const limiteSinCargo = new Date(
-        combinarFechaConHoraArgentina(new Date(reserva.fechaDesde), HORA_CHECKIN.hora, HORA_CHECKIN.minuto).getTime() -
-          Number(plan.horasCancelacionSinCargo ?? 0) * 60 * 60 * 1000
-      );
+      const limiteSinCargo = calcularLimiteSinCargo(reserva.fechaDesde, plan.horasCancelacionSinCargo);
       if (new Date(momento).getTime() <= limiteSinCargo.getTime()) {
         return {
           aplica: false,

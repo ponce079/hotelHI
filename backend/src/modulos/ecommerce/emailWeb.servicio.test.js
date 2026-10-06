@@ -25,7 +25,7 @@ test("tarifa flexible: código, fechas, noches, habitación sin número, nombre 
     "18 de octubre de 2026",
     "2 noches",
     "Habitación Doble <b> · 2 adultos y 1 menor",
-    "Tarifa flexible · Cancelación sin cargo hasta 48 h antes de la llegada",
+    "Tarifa flexible · Cancelación sin cargo hasta el miércoles 14/10/2026 a las 14:00",
     "Garantizada con tarjeta Visa terminada en 4242, no se cobró nada.",
     "check-in desde las 14 h",
     "Mi reserva",
@@ -44,6 +44,92 @@ test("no reembolsable: dice lo cobrado con los últimos 4", () => {
   expect(texto).toMatch(/Cobrado \$\s?80\.000 con tarjeta Visa terminada en 4242\./);
   expect(texto).toContain("Estado: Pagada");
   expect(texto).toContain("no admite cancelación con devolución");
+});
+
+describe("correcciones del email (fecha exacta, no reembolsable, contacto y datos personales)", () => {
+  const { HOTEL } = require("./ecommerce.hotel");
+  const anterior = process.env.WEB_PUBLIC_URL;
+  afterEach(() => {
+    if (anterior === undefined) delete process.env.WEB_PUBLIC_URL;
+    else process.env.WEB_PUBLIC_URL = anterior;
+  });
+
+  test("tarifa flexible: fecha y hora exactas del límite y el cargo posterior (texto y HTML)", () => {
+    const { texto, html } = armarEmail(reserva(true), { penalidadNoShow: "PRIMERA_NOCHE" });
+    expect(texto).toContain("Cancelación sin cargo hasta el miércoles 14/10/2026 a las 14:00");
+    expect(texto).toContain("Después de esa fecha, la cancelación tiene un cargo de la primera noche.");
+    expect(texto).not.toMatch(/48 h antes/);
+    expect(html).toContain("hasta el miércoles 14/10/2026 a las 14:00");
+    expect(html).toContain("Después de esa fecha, la cancelación tiene un cargo de la primera noche.");
+  });
+
+  test("no reembolsable: no se reintegra, sin 'cancelá', y el link solo consulta", () => {
+    delete process.env.WEB_PUBLIC_URL;
+    const sinUrl = armarEmail(reserva(false), { penalidadNoShow: "TOTAL_ESTADIA" });
+    expect(sinUrl.texto).toContain("Si no te presentás, no se reintegra el importe pagado.");
+    expect(sinUrl.texto).not.toMatch(/se cobra el total de la estadía|cancelá|Después de esa fecha/);
+    expect(sinUrl.texto).toContain("Consultá tu reserva en nuestra web con tu código y tu email.");
+    process.env.WEB_PUBLIC_URL = "https://hotel.example.com";
+    const conUrl = armarEmail(reserva(false), { penalidadNoShow: "TOTAL_ESTADIA" });
+    expect(conUrl.texto).toContain("Consultá tu reserva en https://hotel.example.com/web/mi-reserva?codigo=3FA9C21B");
+    expect(conUrl.texto + conUrl.html).not.toMatch(/cancelá/);
+  });
+
+  test("'Antes de llegar' con DNI o pasaporte de cada persona y la regla de menores", () => {
+    for (const r of [reserva(true), reserva(false)]) {
+      const { texto, html } = armarEmail(r);
+      for (const parte of [
+        "Traé el DNI o pasaporte de cada persona que se aloja: registramos a todos los huéspedes en el check-in.",
+        "Los menores de 18 años se alojan con un adulto responsable; si viajan sin sus padres, traé la autorización correspondiente.",
+        "El check-in es desde las 14 h. Tu habitación está garantizada aunque llegues tarde.",
+        "Guardá este código: lo necesitás para consultar o cancelar tu reserva.",
+      ]) {
+        expect(texto).toContain(parte);
+        expect(html).toContain(parte);
+      }
+      expect(texto).not.toContain("el documento que declaraste");
+    }
+  });
+
+  test("contacto del hotel, pie y aviso de datos personales (Ley 25.326) en confirmación y cancelación", () => {
+    const cancelada = { ...reserva(true), estado: "Cancelada" };
+    for (const { texto, html } of [armarEmail(reserva(true)), armarEmail(reserva(false)), armarEmailCancelacion(cancelada)]) {
+      for (const parte of [
+        `Usamos tus datos solo para gestionar tu reserva. Para consultarlos, corregirlos o pedir que los eliminemos, escribinos a ${HOTEL.email} (Ley 25.326).`,
+        `${HOTEL.nombre} · ${HOTEL.direccion} · ${HOTEL.telefono} · ${HOTEL.email}`,
+      ]) {
+        expect(texto).toContain(parte);
+        expect(html).toContain(parte);
+      }
+    }
+    expect(armarEmail(reserva(false)).texto).toContain(`contactá a recepción (${HOTEL.telefono} · ${HOTEL.email})`);
+    expect(armarEmailCancelacion(cancelada).texto).toContain(`contactá a recepción (${HOTEL.telefono} · ${HOTEL.email})`);
+  });
+
+  test("el límite del email coincide con el limiteSinCargo de calcularPenalidad", async () => {
+    jest.resetModules();
+    jest.doMock("../../lib/prisma", () => ({}));
+    const { calcularPenalidad } = require("../tarifas/penalidades.servicio");
+    const { formatearInstanteArgentina } = require("../../lib/fechas");
+    for (const [fechaDesde, horas] of [["2026-10-16", 48], ["2026-11-15", 24], ["2026-12-31", 72], ["2027-01-01", 0]]) {
+      const cliente = {
+        reserva: {
+          findUnique: async () => ({
+            id: 1,
+            estado: "Confirmada",
+            fechaDesde: new Date(`${fechaDesde}T00:00:00.000Z`),
+            planTarifario: { reembolsable: true, horasCancelacionSinCargo: horas, penalidadNoShow: "PRIMERA_NOCHE" },
+            reservaHabitaciones: [],
+          }),
+        },
+      };
+      const { limiteSinCargo } = await calcularPenalidad({ reservaId: 1, tipo: "CANCELACION", momento: new Date("2020-01-01") }, cliente);
+      const { armarEmail: armar } = require("./emailWeb.servicio");
+      const r = { ...reserva(true), fechaDesde, plan: { ...reserva(true).plan, horasCancelacionSinCargo: horas } };
+      expect(armar(r).texto).toContain(`hasta el ${formatearInstanteArgentina(limiteSinCargo)}`);
+    }
+    jest.dontMock("../../lib/prisma");
+  });
 });
 
 test("envía al email de contacto y devuelve enviado: true", async () => {
@@ -78,8 +164,8 @@ describe("email definitivo: datos del alta que no vienen en la respuesta", () =>
       "Llegada estimada: entre las 20 y las 22 h",
       "Solicitudes especiales: Cuna <script>alert(1)</script>",
       "Si no te presentás, se cobra la primera noche.",
-      "Podés cancelar sin cargo hasta 48 h antes de la llegada",
-      "Traé el documento que declaraste",
+      "Podés cancelar sin cargo hasta el miércoles 14/10/2026 a las 14:00 desde Mi reserva, con tu código y tu email.",
+      "Traé el DNI o pasaporte de cada persona que se aloja",
     ]) {
       expect(texto).toContain(parte);
     }

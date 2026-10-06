@@ -267,6 +267,13 @@ export function PagoPage() {
             </p>
           </Tarjeta>
 
+          {/* Mientras la reserva se procesa (la pasarela puede tardar varios segundos): aviso para lectores de pantalla y para la vista. */}
+          <div role="status" aria-live="polite">
+            {enviando && (
+              <p className="ec-texto-2 ec-compra__espera">Estamos confirmando tu reserva, no cierres ni recargues esta ventana.</p>
+            )}
+          </div>
+
           <div ref={errorRef} className="ec-pila ec-pila--chica">
             <MensajeError error={error} />
             {error?.codigo === CODIGO_ERROR.SIN_DISPONIBILIDAD && (
