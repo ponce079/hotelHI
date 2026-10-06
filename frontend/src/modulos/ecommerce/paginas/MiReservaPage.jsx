@@ -35,7 +35,9 @@ const CODIGO_VALIDO = /^[0-9A-F]{8}$/;
 const EMAIL_VALIDO = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Color de la insignia (guía de estilo: el dorado es solo para "pendiente").
-const COLOR_ESTADO = { Confirmada: "verde", "En curso": "verde", Cerrada: "neutro", Cancelada: "rojo" };
+const COLOR_ESTADO = { Confirmada: "verde", "En curso": "verde", Cerrada: "neutro", Cancelada: "rojo", "No-show": "rojo" };
+// Lo que ve el huésped: el estado interno "No-show" se muestra como "No presentada".
+const ETIQUETA_ESTADO = { "No-show": "No presentada" };
 
 const MOTIVO_CANCELADA = "Esta reserva ya fue cancelada.";
 
@@ -177,7 +179,9 @@ export function MiReservaPage() {
           <Tarjeta relleno className="ec-pila ec-mi-reserva__tarjeta" aria-live="polite">
             <div className="ec-mi-reserva__cabecera">
               <h2 className="ec-titulo-seccion">Reserva {reserva.codigoConfirmacion}</h2>
-              <Insignia estado={reserva.estado} color={COLOR_ESTADO[reserva.estado] ?? "neutro"} />
+              <Insignia estado={reserva.estado} color={COLOR_ESTADO[reserva.estado] ?? "neutro"}>
+                {ETIQUETA_ESTADO[reserva.estado] ?? reserva.estado}
+              </Insignia>
             </div>
 
             <dl className="ec-mi-reserva__datos">

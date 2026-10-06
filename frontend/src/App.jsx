@@ -41,6 +41,7 @@ import { ActualizacionesPage } from "./modulos/tarifas/ActualizacionesPage";
 import { CotizadorPage } from "./modulos/tarifas/CotizadorPage";
 import { ReservasPage } from "./modulos/reservas/ReservasPage";
 import { ReservaDetallePage } from "./modulos/reservas/detalle/ReservaDetallePage";
+import { NoShowPage } from "./modulos/garantias/NoShowPage";
 import { DisponibilidadPublicaPage } from "./modulos/reservas/DisponibilidadPublicaPage";
 import { ReservaWebPage } from "./modulos/reservas/ReservaWebPage";
 import { CheckInPage } from "./modulos/check-in/CheckInPage";
@@ -136,6 +137,7 @@ export default function App() {
           {/* Sprint 3 académico — Reservas (HU-36 a HU-42). */}
           <Route path="/reservas" element={<ReservasPage />} />
           <Route path="/reservas/disponibilidad" element={<DisponibilidadPublicaPage modoInterno />} />
+          <Route path="/reservas/no-show" element={<NoShowPage />} />
           <Route path="/reservas/:id" element={<ReservaDetallePage />} />
           {/* Sprint 3 académico — Check-in (HU-43 a HU-47). */}
           <Route path="/personas-alojadas" element={<AlojadosPage />} />

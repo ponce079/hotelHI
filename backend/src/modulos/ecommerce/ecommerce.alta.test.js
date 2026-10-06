@@ -273,11 +273,12 @@ describe("armarRespuestaAlta", () => {
       { id: 2, adultos: 2, menores: 1, habitacion: { tipoHabitacionId: 1, tipoHabitacion: { nombre: "Doble" } }, reservaNoches: [{ precioNoche: "40000.50" }, { precioNoche: "40000.25" }] },
     ],
     pagosEstadia: pagos,
+    // La garantía sale de GarantiaReserva (una sola fuente, también para la web).
+    garantiaReserva: { tipo: "TARJETA", marca: "Visa", ultimos4: "4242", estado: reembolsable ? "Vigente" : "Capturada" },
   });
-  const web = { tarjetaMarca: "VISA", tarjetaUltimos4: "4242" };
 
   test("reembolsable: GARANTIA y cobradoAhora 0, sin ids ni números de habitación", () => {
-    const r = armarRespuestaAlta(reserva(true), web, { enviado: true });
+    const r = armarRespuestaAlta(reserva(true), { enviado: true });
     expect(r).toEqual({
       codigoConfirmacion: "3FA9C21B",
       estado: "Confirmada",
@@ -287,7 +288,7 @@ describe("armarRespuestaAlta", () => {
       plan: { codigo: "BAR", nombre: "x", reembolsable: true, horasCancelacionSinCargo: 48 },
       total: 80000.75,
       cobradoAhora: 0,
-      garantia: { tipo: "GARANTIA", marca: "VISA", ultimos4: "4242" },
+      garantia: { tipo: "GARANTIA", marca: "Visa", ultimos4: "4242" },
       habitaciones: [{ tipo: "Doble", adultos: 2, menores: 1 }],
       email: { enviado: true },
     });
@@ -298,7 +299,7 @@ describe("armarRespuestaAlta", () => {
       { anulado: false, medios: [{ importe: "80000.75" }] },
       { anulado: true, medios: [{ importe: "999" }] },
     ];
-    const r = armarRespuestaAlta(reserva(false, pagos), web, { enviado: null });
-    expect(r).toMatchObject({ cobradoAhora: 80000.75, garantia: { tipo: "PREPAGO" }, email: { enviado: null } });
+    const r = armarRespuestaAlta(reserva(false, pagos), { enviado: null });
+    expect(r).toMatchObject({ cobradoAhora: 80000.75, garantia: { tipo: "PREPAGO", marca: "Visa", ultimos4: "4242" }, email: { enviado: null } });
   });
 });

@@ -19,10 +19,3 @@ export function textoHoraLlegada(valor) {
   if (!valor) return "No la indicó";
   return HORAS_LLEGADA.find((h) => h.valor === valor)?.etiqueta ?? valor;
 }
-
-// "Garantizada con VISA ••4242 · vence 08/2028" o "Prepagada con VISA ••4242".
-export function textoGarantiaWeb({ tipoGarantia, tarjeta } = {}) {
-  const medio = `${tarjeta?.marca ?? "tarjeta"} ••${tarjeta?.ultimos4 ?? "----"}`;
-  if (tipoGarantia === "PREPAGO") return `Prepagada con ${medio}`;
-  return `Garantizada con ${medio}${tarjeta?.vencimiento ? ` · vence ${tarjeta.vencimiento}` : ""}`;
-}

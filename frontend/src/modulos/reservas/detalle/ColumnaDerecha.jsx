@@ -4,7 +4,7 @@ import { formatearFechaHora } from "../../../lib/fechas";
 import { formatearPrecio } from "../../../lib/moneda";
 import { CONCEPTO_GARANTIA } from "../../pagos-estadia/pagoEstadia.constantes";
 import { ESTADO_RESERVA } from "../reservas.constantes";
-import { esDatoWebValido, obtenerDatosReservaWeb, textoGarantiaWeb, textoHoraLlegada } from "./reservaWeb.api";
+import { esDatoWebValido, obtenerDatosReservaWeb, textoHoraLlegada } from "./reservaWeb.api";
 
 const importe = (pago) => pago.medios.reduce((acc, m) => acc + Number(m.importe), 0);
 
@@ -42,8 +42,13 @@ function Lista({ filas }) {
 // Resumen: sale del mismo cálculo del check-out (GET /check-out/:id/cuenta), así el saldo coincide con
 // el de esa pantalla. Sin permiso para verlo (gerente), solo se muestra el alojamiento reservado.
 function ResumenDeCuenta({ reserva, cuenta, garantiaVigente }) {
-  if (reserva.estado === ESTADO_RESERVA.CANCELADA)
-    return <p className="text-sm text-piedra">Reserva cancelada: no hay cargos de alojamiento.</p>;
+  if (reserva.estado === ESTADO_RESERVA.CANCELADA || reserva.estado === ESTADO_RESERVA.NO_SHOW)
+    return (
+      <p className="text-sm text-piedra">
+        {reserva.estado === ESTADO_RESERVA.NO_SHOW ? "Reserva no-show" : "Reserva cancelada"}: no hay cargos de
+        alojamiento.
+      </p>
+    );
   if (!cuenta)
     return (
       <>
@@ -136,8 +141,8 @@ function condiciones(plan, penalidad) {
   return partes.join(" ");
 }
 
-// Reserva hecha desde el e-commerce: contacto, llegada, solicitudes, garantía
-// y consentimiento (GET /api/reservas-web/:id, con sesión). En una reserva del
+// Reserva hecha desde el e-commerce: contacto, llegada, solicitudes, titular de
+// la tarjeta y consentimiento (la garantía misma se muestra una sola vez, arriba) (GET /api/reservas-web/:id, con sesión). En una reserva del
 // mostrador (404) o si la consulta falla, no se muestra nada.
 function ReservaWeb({ reservaId }) {
   const consulta = useQuery({
@@ -156,7 +161,7 @@ function ReservaWeb({ reservaId }) {
           ["Teléfono", datos.telefonoContacto || "—"],
           ["Llegada estimada", textoHoraLlegada(datos.horaEstimadaLlegada)],
           ["Solicitudes", datos.solicitudesEspeciales || "Sin solicitudes"],
-          ["Garantía", textoGarantiaWeb(datos)],
+          ["Titular de la tarjeta", datos.tarjetaTitular || "—"],
           ["Términos", `Aceptó términos v${datos.versionPoliticas} el ${formatearFechaHora(datos.aceptaPoliticasEn)}`],
           ["Acepta comunicaciones", datos.aceptaComunicaciones ? "sí" : "no"],
         ]}
@@ -179,7 +184,7 @@ export function ColumnaDerecha({ reserva, cuenta, pagos, penalidad }) {
       <Tarjeta titulo="Resumen de cuenta">
         <ResumenDeCuenta reserva={reserva} cuenta={cuenta} garantiaVigente={garantiaVigente} />
       </Tarjeta>
-      {reserva.estado !== ESTADO_RESERVA.CANCELADA && pagos && (
+      {reserva.estado !== ESTADO_RESERVA.CANCELADA && reserva.estado !== ESTADO_RESERVA.NO_SHOW && pagos && (
         <section className="rounded-lg border border-dashed border-neutro-300 bg-white/60 p-4">
           <h3 className="mb-2 font-heading text-[17px] font-semibold">Garantía para consumos</h3>
           <CajaGarantia reserva={reserva} garantias={garantias} />

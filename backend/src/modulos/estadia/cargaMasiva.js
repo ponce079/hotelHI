@@ -17,7 +17,9 @@ const normalizar = (v) =>
     .toUpperCase()
     .replace(/\s/g, "");
 const ACTIVOS = ["Previsto", "Alojado"];
-const claveDeDocumento = (p) => [p.tipoDocumento, p.paisDocumento, p.numeroDocumento].map(normalizar).join("|");
+const { normalizarNumeroDocumento } = require("../../lib/documento");
+const claveDeDocumento = (p) =>
+  [normalizar(p.tipoDocumento), normalizar(p.paisDocumento), normalizarNumeroDocumento(p.numeroDocumento)].join("|");
 
 function capacidadTotal(reserva) {
   return reserva.reservaHabitaciones.reduce((total, rh) => total + rh.habitacion.capacidad, 0);
@@ -40,7 +42,7 @@ function validarLote(reserva, entradas, existentes) {
     const esTitular = entrada.esTitular === true;
     const comoTitularDeReserva =
       titularDeReserva &&
-      normalizar(p.numeroDocumento) === normalizar(titularDeReserva.numeroDocumento) &&
+      normalizarNumeroDocumento(p.numeroDocumento) === normalizarNumeroDocumento(titularDeReserva.numeroDocumento) &&
       normalizar(p.tipoDocumento) === normalizar(titularDeReserva.tipoDocumento);
     if ((esTitular || comoTitularDeReserva) && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD))
       throw new ErrorDeNegocio("El titular debe tener al menos 18 años al ingresar.", 400, {
@@ -158,7 +160,7 @@ async function resolverHuespedes(tx, reserva, fichas) {
     const esElTitular =
       titular &&
       normalizar(titular.tipoDocumento) === normalizar(ficha.tipoDocumento) &&
-      normalizar(titular.numeroDocumento) === normalizar(ficha.numeroDocumento) &&
+      normalizarNumeroDocumento(titular.numeroDocumento) === normalizarNumeroDocumento(ficha.numeroDocumento) &&
       (!titular.paisDocumento || personasServicio.normalizarPais(titular.paisDocumento) === datos.paisDocumento);
     if (esElTitular && !encontrado) {
       const contacto = esEmail(ficha.email) || !esEmail(titular.contacto) ? datos.contacto : titular.contacto;

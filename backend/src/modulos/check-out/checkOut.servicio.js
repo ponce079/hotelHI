@@ -4,6 +4,7 @@ const prisma = require('../../lib/prisma');
 const { redondear } = require('../../lib/comprobantes');
 const { conTipoPlano } = require('../../lib/tipoHabitacion');
 const reservasServicio = require('../reservas/reservas.servicio');
+const garantiaCheckOut = require('../garantias/garantiaEstadiaCheckOut.servicio');
 const {
   TIPOS_CARGO_VERIFICACION,
   TIPO_VERIFICACION_SIN_NOVEDADES,
@@ -171,6 +172,9 @@ async function consolidarCargos(reservaId, cliente = prisma) {
   const totalAdeudado = redondear(alojamiento + serviciosAdicionales + verificacion);
   const totalPagado = redondear(Number(pagado._sum.importe || 0));
   const saldo = Math.max(0, redondear(totalAdeudado - totalPagado));
+  // Lo pagado por encima de lo adeudado (ej. un descuento del gerente sobre una tarifa no
+  // reembolsable ya pagada). Antes quedaba oculto: el saldo se truncaba en 0 y nadie lo veía.
+  const saldoAFavor = Math.max(0, redondear(totalPagado - totalAdeudado));
   for (const h of habitaciones) {
     h.adicionales = redondear(
       consumos.filter((c) => c.habitacionId === h.habitacionId).reduce((total, c) => total + c.monto, 0)
@@ -199,6 +203,7 @@ async function consolidarCargos(reservaId, cliente = prisma) {
     totalAdeudado,
     totalPagado,
     saldo,
+    saldoAFavor,
   };
 }
 
@@ -300,7 +305,7 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
     );
   }
 
-  return prisma.$transaction(
+  const cierre = await prisma.$transaction(
     async (tx) => {
       await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${id} FOR UPDATE`;
       const cuenta = await consolidarCargos(id, tx);
@@ -335,6 +340,22 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
           `La cuenta tiene un saldo pendiente de ${cuenta.saldo}. Registrá el pago antes de confirmar el check-out.`,
           409
         );
+      }
+
+      // Saldo a favor: se devuelve en vez de truncarse en cero sin explicación.
+      let devolucionSaldoAFavor = 0;
+      if (centavos(cuenta.saldoAFavor) > 0) {
+        const primerPago = await tx.pagoEstadia.findFirst({
+          where: { reservaId: id, anulado: false },
+          include: { medios: true },
+          orderBy: { id: 'asc' },
+        });
+        await garantiaCheckOut.registrarDevolucionSaldoAFavor(tx, {
+          reservaId: id,
+          monto: cuenta.saldoAFavor,
+          medioPago: primerPago?.medios?.[0]?.medioPago,
+        });
+        devolucionSaldoAFavor = cuenta.saldoAFavor;
       }
 
       try {
@@ -450,12 +471,18 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
         estadoReserva: 'Cerrada',
         totalAdeudado: cuenta.totalAdeudado,
         totalPagado: cuenta.totalPagado,
+        devolucionSaldoAFavor,
         habitaciones,
         notificaciones,
       };
     },
     OPCIONES_TRANSACCION
   );
+
+  // Con la cuenta ya cerrada: se libera la preautorización o se devuelve el depósito. Va FUERA
+  // de la transacción (la pasarela es de red) y no puede hacer fallar un check-out ya hecho.
+  const garantia = await garantiaCheckOut.cerrarGarantiaDeEstadia(id);
+  return { ...cierre, garantia };
 }
 
 module.exports = {

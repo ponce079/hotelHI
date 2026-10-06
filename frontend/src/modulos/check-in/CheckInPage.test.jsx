@@ -12,6 +12,10 @@ vi.setConfig({ testTimeout: 20000 });
 
 vi.mock("../../lib/sesion", () => ({ useSesion: () => ({ usuario: "recepcionista.prueba", puede: () => true }) }));
 vi.mock("./checkIn.api");
+// La reserva de estas pruebas no dejó una tarjeta en garantía: el check-in pide depósito o tarjeta.
+vi.mock("../garantias/garantias.api", () => ({
+  obtenerGarantiasReserva: vi.fn().mockResolvedValue({ reserva: null, estadia: null }),
+}));
 vi.mock("../reservas/reservas.api", () => ({ cotizarReserva: vi.fn() }));
 vi.mock("../pagos-estadia/TarjetaSimuladaPanel", () => ({ TarjetaSimuladaPanel: () => null }));
 
@@ -113,7 +117,7 @@ async function abrirReserva(codigo = "C43B1F20") {
 }
 
 // Completa la reserva de 2 adultos + 1 menor (titular precargado).
-function completarFamilia() {
+async function completarFamilia() {
   const [titular, adulto2, menor] = filas();
   cambiar(titular, "Nombres", "Martín");
   cambiar(titular, "Apellido", "Gutiérrez");
@@ -125,7 +129,8 @@ function completarFamilia() {
   cambiar(menor, "Apellido", "Gutiérrez");
   cambiar(menor, "Nacimiento", haceAnios(8).texto.replace(/\//g, ""));
   cambiar(menor, "Vínculo", "Padre o madre");
-  fireEvent.click(screen.getByLabelText(/Confirmo que recibí/));
+  // La sección de garantía aparece cuando termina la consulta de la tarjeta guardada.
+  fireEvent.click(await screen.findByLabelText(/Confirmo que recibí/));
 }
 
 beforeEach(() => {
@@ -209,7 +214,7 @@ describe("Check-in con reserva", () => {
     api.confirmarCheckInConReserva.mockResolvedValue({ ...reservaDe({ habitaciones: [HAB_270] }), estado: "En curso" });
     renderizar("/check-in?codigo=C43B1F20");
     await waitFor(() => expect(filas()).toHaveLength(3));
-    completarFamilia();
+    await completarFamilia();
     const menor = filas()[2];
     cambiar(menor, "Vínculo", "Otro adulto a cargo");
     expect(within(menor).getByText("Pedí la autorización de los padres o tutores.")).toBeInTheDocument();
@@ -230,7 +235,7 @@ describe("Check-in con reserva", () => {
     renderizar("/check-in?codigo=C43B1F20");
     await waitFor(() => expect(filas()).toHaveLength(3));
     expect(botonConfirmar()).toBeDisabled();
-    completarFamilia();
+    await completarFamilia();
     await waitFor(() => expect(botonConfirmar()).toBeEnabled());
     fireEvent.click(botonConfirmar());
     fireEvent.click(botonConfirmar());
@@ -338,7 +343,7 @@ describe("Check-in con reserva", () => {
     prepararReserva(reservaDe({ habitaciones: [HAB_270] }), [fichaTitular()]);
     renderizar("/check-in?codigo=C43B1F20");
     await waitFor(() => expect(filas()).toHaveLength(3));
-    completarFamilia();
+    await completarFamilia();
     await waitFor(() => expect(botonConfirmar()).toBeEnabled());
 
     cambiar(filas()[0], "Apellido", "");
@@ -403,7 +408,7 @@ describe("Check-in con reserva", () => {
     fireEvent.click(await screen.findByRole("button", { name: /315/ }));
     expect(api.listarHabitacionesLibresAhora).toHaveBeenCalledWith(expect.objectContaining({ tipoHabitacionId: 1, adultos: 2, menores: 1, excluir: "270" }));
     expect(screen.getByText("Cambiada (era la 270)")).toBeInTheDocument();
-    completarFamilia();
+    await completarFamilia();
     api.confirmarCheckInConReserva.mockResolvedValue({ ...reservaDe({ habitaciones: [{ ...HAB_270, id: 315, numero: "315" }] }), estado: "En curso" });
     await waitFor(() => expect(botonConfirmar()).toBeEnabled());
     fireEvent.click(botonConfirmar());
@@ -422,7 +427,7 @@ describe("Check-in con reserva", () => {
       .mockResolvedValueOnce({ ...reservaDe({ habitaciones: [HAB_270] }), estado: "En curso" });
     renderizar("/check-in?codigo=C43B1F20");
     await waitFor(() => expect(filas()).toHaveLength(3));
-    completarFamilia();
+    await completarFamilia();
     await waitFor(() => expect(botonConfirmar()).toBeEnabled());
     fireEvent.click(botonConfirmar());
     expect(await screen.findByText("El precio cambió: antes $ 294.000, ahora $ 300.000.")).toBeInTheDocument();
@@ -435,7 +440,7 @@ describe("Check-in con reserva", () => {
     prepararReserva(reservaDe({ habitaciones: [HAB_270] }), [fichaTitular()]);
     renderizar("/check-in?codigo=C43B1F20");
     await waitFor(() => expect(filas()).toHaveLength(3));
-    completarFamilia();
+    await completarFamilia();
     const idAdulto2 = Number(filas()[1].id.replace("ci-fila-", ""));
     api.confirmarCheckInConReserva.mockRejectedValueOnce({
       response: { status: 409, data: { codigo: "PERSONA_ALOJADA", error: "Ya figura alojada en otra estadía: Carolina Paz (reserva X1).", detalle: { personas: [idAdulto2] } } },
@@ -497,7 +502,7 @@ describe("Walk-in", () => {
     completar(a1, { "Número": "27093318", Nombres: "Raúl", Apellido: "Ibarra", Nacimiento: haceAnios(46).texto, Localidad: "Jujuy", Domicilio: "Belgrano 845", Teléfono: "+54 388 555-0147" });
     completar(a2, { "Número": "27093319", Nombres: "Ana", Apellido: "Ibarra", Nacimiento: haceAnios(44).texto });
     completar(b1, { "Número": "27093320", Nombres: "Tomás", Apellido: "Ibarra", Nacimiento: haceAnios(24).texto, Localidad: "Jujuy", Domicilio: "Belgrano 845" });
-    fireEvent.click(screen.getByLabelText(/Confirmo que recibí/));
+    fireEvent.click(await screen.findByLabelText(/Confirmo que recibí/));
     await waitFor(() => expect(botonConfirmar()).toBeEnabled());
     fireEvent.click(botonConfirmar());
     expect(await screen.findByText("Check-in confirmado · Habitaciones 315 y 204")).toBeInTheDocument();

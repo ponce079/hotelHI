@@ -47,10 +47,10 @@ const {
 } = require("../../lib/fechas");
 const { conTipoPlano } = require("../../lib/tipoHabitacion");
 const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
-// Sin ciclo: pagoEstadia.constantes.js no importa nada (a diferencia de
-// pagoEstadia.servicio.js, que sí forma ciclo — ver el require diferido en
-// crearReservaConSena, más abajo).
-const { CONCEPTO_SENIA } = require("../pagos-estadia/pagoEstadia.constantes");
+// Garantía con tarjeta (feature/garantia-tarjeta). Sin ciclo: ese módulo no
+// importa reservas.servicio.js (solo reservas.constantes.js).
+const garantiasServicio = require("../garantias/garantias.servicio");
+const cierreReservaServicio = require("../garantias/cierreReserva.servicio");
 // Etapa 4A (HU-95/96) — el motor de cotización es la ÚNICA fuente de
 // cálculo de precio: acá nunca se calcula un importe a mano. Sin ciclo:
 // cotizacion.servicio.js (y todo lo que importa, dentro de tarifas/) no
@@ -73,6 +73,7 @@ const {
 // módulo de tarifas (no reservas): reservas solo expone el endpoint de
 // lectura, la lógica de negocio de la penalidad vive con las tarifas.
 const penalidadesServicio = require("../tarifas/penalidades.servicio");
+const { normalizarNumeroDocumento, claveNombre } = require("../../lib/documento");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -232,6 +233,14 @@ function validarTitularAdulto(nacimiento, fechaIngreso) {
 
 // HU-39: los campos obligatorios de la ficha del huésped se validan antes
 // de confirmar la reserva, no después.
+// Se guarda sin puntos, guiones ni espacios: "45.112.902" y "45112902" son el mismo documento.
+function numeroDocumentoValido(valor) {
+  const ingresado = textoObligatorio(valor, "El número de documento", LIMITES_RESERVA.numeroDocumento);
+  const normalizado = normalizarNumeroDocumento(ingresado);
+  if (!normalizado) throw new ErrorDeNegocio("El número de documento tiene que tener letras o números.");
+  return normalizado;
+}
+
 function normalizarHuesped(data, fechaIngreso = hoyComoFechaUTC()) {
   if (!data || typeof data !== "object") {
     throw new ErrorDeNegocio("Faltan los datos del huésped.");
@@ -277,8 +286,10 @@ function normalizarHuesped(data, fechaIngreso = hoyComoFechaUTC()) {
           ),
         }
       : {}),
-    numeroDocumento: textoObligatorio(data.numeroDocumento, "El número de documento", LIMITES_RESERVA.numeroDocumento),
+    numeroDocumento: numeroDocumentoValido(data.numeroDocumento),
     contacto,
+    // Solo lo fija el controlador, y únicamente para un administrador con sesión.
+    corregirNombre: data.corregirNombre === true,
     preferencias: textoOpcional(data.preferencias, "Las preferencias del huésped", LIMITES_RESERVA.preferencias),
   };
 }
@@ -773,28 +784,48 @@ async function reservarCodigoLibre(tx) {
 // numeroDocumento) no tiene @@unique en la base — el schema está congelado
 // y nadie lo toca sin avisar al grupo — así que la búsqueda es por findFirst
 // y la unicidad es best-effort, no una garantía del motor.
-async function resolverHuesped(tx, datos) {
+//
+// El nombre de una ficha existente está protegido: si el documento ya está registrado con otro
+// nombre, solo un administrador puede corregirlo (corregirNombre, que fija el controlador según
+// la sesión). Cualquier otro rol —o la reserva web, sin sesión— recibe un 409 NOMBRE_DISTINTO.
+function exigirMismoNombre(existente, datos, corregirNombre) {
+  if (corregirNombre || claveNombre(existente.nombre) === claveNombre(datos.nombre)) return;
+  const error = new ErrorDeNegocio(
+    "Ese documento ya está registrado con otro nombre. Verificá el número o pedile a un administrador que corrija el nombre.",
+    409
+  );
+  error.codigo = "NOMBRE_DISTINTO";
+  throw error;
+}
+
+async function resolverHuesped(tx, datosConPermiso) {
+  const { corregirNombre = false, ...datos } = datosConPermiso;
   const identidadDocumento = require("../estadia/persona.servicio").claveDocumento(datos);
   if (identidadDocumento) {
     // Persona que vuelve: se reutiliza su ficha y se actualiza. El correo manda: un correo ya
     // guardado no se reemplaza por un teléfono (por ejemplo, un walk-in que solo dejó teléfono).
     const existente = await tx.huesped.findUnique({ where: { identidadDocumento } });
     if (!existente) return tx.huesped.create({ data: { ...datos, identidadDocumento } });
+    exigirMismoNombre(existente, datos, corregirNombre);
+    const { nombre, nombres, apellido, ...resto } = datos;
+    const nombreNuevo = corregirNombre ? { nombre, nombres: nombres ?? null, apellido: apellido ?? null } : {};
     const contacto = esEmail(datos.contacto) || !esEmail(existente.contacto) ? datos.contacto : existente.contacto;
-    return tx.huesped.update({ where: { id: existente.id }, data: { ...datos, contacto } });
+    return tx.huesped.update({ where: { id: existente.id }, data: { ...resto, ...nombreNuevo, contacto } });
   }
   const existente = await tx.huesped.findFirst({
     where: { tipoDocumento: datos.tipoDocumento, numeroDocumento: datos.numeroDocumento, paisDocumento: null },
   });
   if (!existente) return tx.huesped.create({ data: datos });
+  exigirMismoNombre(existente, datos, corregirNombre);
 
   // Solo se pisan los campos con valor nuevo: un alta que no repite el
   // contacto no tiene que borrar el que ya estaba cargado.
   return tx.huesped.update({
     where: { id: existente.id },
     data: {
-      nombre: datos.nombre,
-      ...(datos.nombres ? { nombres: datos.nombres, apellido: datos.apellido } : {}),
+      ...(corregirNombre
+        ? { nombre: datos.nombre, ...(datos.nombres ? { nombres: datos.nombres, apellido: datos.apellido } : {}) }
+        : {}),
       ...(datos.fechaNacimiento ? { fechaNacimiento: datos.fechaNacimiento } : {}),
       contacto: datos.contacto ?? existente.contacto,
       preferencias: datos.preferencias ?? existente.preferencias,
@@ -1131,34 +1162,35 @@ async function crearReserva(data) {
   throw new ErrorDeNegocio("No se pudo generar un código de confirmación único, intentá de nuevo.", 503);
 }
 
-// HU-88 (extensión de HU-36) — alta de reserva CON seña, como una única
-// operación atómica.
+// Alta de reserva CON garantía (tarjeta de crédito o prepago). Reemplazó al alta
+// con seña del 20 % (HU-88, retirada): la tarjeta respalda la reserva y los
+// consumos, y en el caso normal hay un solo cobro, al final.
 //
-// Antes esto eran 2 llamadas HTTP separadas (crearReserva y luego
-// pagoEstadia.crearPago) con la Reserva ya "Confirmada" en el medio: si el
-// cobro de la seña fallaba (tarjeta rechazada) o el recepcionista cerraba
-// el modal antes de terminar, quedaba una Reserva huérfana sin seña,
-// bloqueando la habitación — no hay ningún job que la detecte ni la
-// limpie. Envolver alta + cobro en una sola transacción de Prisma hace que
-// ese estado intermedio deje de ser posible: si el cobro falla en
-// cualquier punto, Prisma revierte TODO, incluida la Reserva recién creada.
+//   BAR (reembolsable):  se tokeniza la tarjeta, no se cobra nada.
+//   NRF (no reembolsable): preautorizar → crear la reserva → capturar si salió
+//     bien, liberar si falló. Si el pago se rechaza, la reserva no se crea.
 //
-// No reimplementa nada: reusa crearReservaEnTransaccion tal cual (mismo
-// código que usa el alta sin seña y el walk-in de Check-in) y
-// pagoEstadia.crearPagoEnTransaccion tal cual (mismo código que usa el
-// cobro de HU-50) — lo único nuevo acá es que corren dentro de la MISMA
-// transacción en vez de en dos llamadas separadas.
-//
-// Require diferido, mismo motivo que en cancelarReserva: pagoEstadia.
-// servicio.js importa checkOut.servicio.js, que importa este archivo — un
-// require al tope formaría un ciclo.
-async function crearReservaConSena(data) {
+// La llamada a la pasarela NUNCA va dentro de la transacción (es de red y el
+// doc de timeouts lo prohíbe). La reserva y el registro de la garantía sí
+// van en la misma transacción: si algo falla, no se crea ninguna de las dos.
+// El precio no se calcula acá: lo valida crearReservaEnTransaccion contra la
+// cotización (ReservaNoche).
+async function crearReservaConGarantia(data) {
   const datos = normalizarAltaReserva(data);
-  const pagoEstadiaServicio = require("../pagos-estadia/pagoEstadia.servicio");
 
-  // Chequeo rápido antes de abrir la transacción, mismo criterio (y mismos
-  // límites) que crearReserva: buena UX, no es lo que protege contra la
-  // carrera.
+  const plan = await prisma.planTarifario.findUnique({ where: { id: datos.planTarifarioId } });
+  if (!plan) throw new ErrorDeNegocio("El plan tarifario elegido no existe.", 404);
+
+  const validada = envolverErrorGarantias(() =>
+    garantiasServicio.validarGarantiaDeReserva({
+      garantia: data?.garantia,
+      plan,
+      totalEsperado: datos.totalEsperado,
+      fechaHasta: datos.fechaHasta,
+    })
+  );
+
+  // Chequeo rápido antes de cobrar nada ni abrir la transacción.
   const conflictosPrevios = await buscarConflictos(prisma, {
     habitacionIds: datos.habitaciones.map((h) => h.habitacionId),
     fechaDesde: datos.fechaDesde,
@@ -1166,74 +1198,103 @@ async function crearReservaConSena(data) {
   });
   if (conflictosPrevios.length > 0) throw errorPorConflictos(conflictosPrevios);
 
-  // Mismo reintento ante colisión de codigoConfirmacion que crearReserva:
-  // rehacer TODO (reserva + seña) es seguro porque nada quedó persistido en
-  // el intento fallido — la transacción entera se revirtió.
-  let ultimoError;
-  for (let intento = 0; intento < MAX_INTENTOS_CODIGO; intento += 1) {
-    try {
-      const { reserva, pago } = await prisma.$transaction(
-        async (tx) => {
-          const reservaCreada = await crearReservaEnTransaccion(tx, datos);
-          // Sin lock explícito acá (a diferencia de crearPago): la reserva
-          // recién se creó DENTRO de esta misma transacción, todavía no
-          // existe para nadie más — no hay ninguna otra transacción que
-          // pueda estar disputando su saldo.
-          let pagoCreado;
-          try {
-            pagoCreado = await pagoEstadiaServicio.crearPagoEnTransaccion(tx, {
-              reservaId: reservaCreada.id,
-              medios: data?.medios,
-              concepto: CONCEPTO_SENIA,
-            });
-          } catch (err) {
-            // El ErrorDeNegocio de pagoEstadia es OTRA clase (mismo caso que
-            // calcularSaldoReserva reenvolviendo el de checkOut, en
-            // pagoEstadia.servicio.js): sin traducirlo acá, el controlador
-            // de reservas lo trataría como error inesperado (500) en vez de
-            // devolver el mensaje real de la validación (tarjeta sin
-            // referencia, importe inválido, etc.) con su status code.
-            if (err instanceof pagoEstadiaServicio.ErrorDeNegocio) {
-              throw new ErrorDeNegocio(err.message, err.statusCode);
-            }
-            throw err;
-          }
-          return { reserva: reservaCreada, pago: pagoCreado };
-        },
-        // Margen para la latencia de la base compartida. Se mantiene el alta
-        // y la seña atómicas; no se reintenta automáticamente un timeout.
-        OPCIONES_TRANSACCION
-      ).catch((err) => {
-        // Solo una consulta sobre una transacción ya expirada garantiza
-        // que este intento no llegó al commit. Otros P2028 no se etiquetan
-        // como seguros para reintentar (p. ej. errores durante el commit).
-        if (err.code === "P2028" && err.meta?.operation === "query" && /expired transaction/i.test(err.message)) {
-          const vencido = new ErrorDeNegocio(
-            "Se terminó el tiempo de guardado (1 minuto). La reserva y la seña no se guardaron. " +
-              "Actualizá la disponibilidad para volver a intentarlo.",
-            408
-          );
-          vencido.codigo = "RESERVA_TIEMPO_AGOTADO";
-          throw vencido;
-        }
-        throw err;
-      });
+  // Un reintento del mismo pedido (doble clic, red caída) no vuelve a cobrar.
+  const claveIdempotencia =
+    typeof data?.claveIdempotencia === "string" && data.claveIdempotencia.trim()
+      ? data.claveIdempotencia.trim()
+      : crypto.randomUUID();
 
-      // Relectura con include fuera del commit (ver OPCIONES_TRANSACCION).
-      const reservaCompleta = await prisma.reserva.findUnique({ where: { id: reserva.id }, include: INCLUDE_RESERVA });
-      const confirmacionEmail = await enviarConfirmacionPorEmail(reservaCompleta);
-      return { ...formatearReserva(reservaCompleta), confirmacionEmail, pagoSenia: pago };
-    } catch (err) {
-      const esCodigoDuplicado =
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === "P2002" &&
-        String(err.meta?.target ?? "").includes("codigoConfirmacion");
-      if (!esCodigoDuplicado) throw err;
-      ultimoError = err;
+  const autorizada = await envolverErrorGarantiasAsync(() =>
+    garantiasServicio.autorizarGarantia({ validada, totalEsperado: datos.totalEsperado, claveIdempotencia })
+  );
+
+  let creada;
+  try {
+    let ultimoError;
+    for (let intento = 0; intento < MAX_INTENTOS_CODIGO && !creada; intento += 1) {
+      try {
+        creada = await prisma.$transaction(async (tx) => {
+          const reservaCreada = await crearReservaEnTransaccion(tx, datos);
+          await garantiasServicio.registrarEnTransaccion(tx, {
+            reservaId: reservaCreada.id,
+            autorizada,
+            totalEsperado: datos.totalEsperado,
+          });
+          return reservaCreada;
+        }, OPCIONES_TRANSACCION).catch(etiquetarTransaccionVencida);
+      } catch (err) {
+        const esCodigoDuplicado =
+          err instanceof Prisma.PrismaClientKnownRequestError &&
+          err.code === "P2002" &&
+          String(err.meta?.target ?? "").includes("codigoConfirmacion");
+        if (!esCodigoDuplicado) throw err;
+        ultimoError = err;
+      }
     }
+    if (!creada) {
+      console.error("[reservas] Colisión repetida de codigoConfirmacion:", ultimoError);
+      throw new ErrorDeNegocio("No se pudo generar un código de confirmación único, intentá de nuevo.", 503);
+    }
+  } catch (err) {
+    // La reserva no se creó: se suelta la retención de la tarjeta.
+    await garantiasServicio.liberarPreautorizacion(autorizada, claveIdempotencia);
+    throw err;
   }
-  console.error("[reservas] Colisión repetida de codigoConfirmacion:", ultimoError);
-  throw new ErrorDeNegocio("No se pudo generar un código de confirmación único, intentá de nuevo.", 503);
+
+  // NRF con tarjeta: recién ahora se captura (y si falla, la reserva se cancela).
+  await envolverErrorGarantiasAsync(() =>
+    garantiasServicio.capturarCobroDeReserva({ reservaId: creada.id, autorizada, claveIdempotencia })
+  );
+
+  // Relectura con include fuera del commit (ver OPCIONES_TRANSACCION).
+  const reservaCompleta = await prisma.reserva.findUnique({ where: { id: creada.id }, include: INCLUDE_RESERVA });
+  const confirmacionEmail = await enviarConfirmacionPorEmail(reservaCompleta);
+  const estadoFinal = autorizada.preautorizacion ? "Capturada" : autorizada.estado ?? "Capturada";
+  return {
+    ...formatearReserva(reservaCompleta),
+    confirmacionEmail,
+    garantia: garantiasServicio.resumenDeGarantia(autorizada, estadoFinal),
+  };
+}
+
+// Igual que en el alta de siempre: solo una consulta sobre una transacción ya
+// expirada garantiza que este intento no llegó al commit (otros P2028, por
+// ejemplo durante el commit, NO se etiquetan como seguros para reintentar).
+// El wizard reconoce `codigo` y ofrece actualizar la disponibilidad y reintentar.
+function etiquetarTransaccionVencida(err) {
+  if (err.code === "P2028" && err.meta?.operation === "query" && /expired transaction/i.test(err.message)) {
+    const vencido = new ErrorDeNegocio(
+      "Se terminó el tiempo de guardado (1 minuto). La reserva y la garantía no se guardaron " +
+        "(si había una retención en la tarjeta, se liberó). Actualizá la disponibilidad para volver a intentarlo.",
+      408
+    );
+    vencido.codigo = "RESERVA_TIEMPO_AGOTADO";
+    throw vencido;
+  }
+  throw err;
+}
+
+// El módulo de garantías tiene su propia clase de error (mismo patrón que
+// pagoEstadia): sin traducirla, el controlador la trataría como un error
+// inesperado (500) en vez de devolver el mensaje y el status reales (402 por
+// tarjeta rechazada, 400 por datos inválidos).
+function traducirErrorGarantias(err) {
+  if (err instanceof garantiasServicio.ErrorDeNegocio) return new ErrorDeNegocio(err.message, err.statusCode);
+  return err;
+}
+function envolverErrorGarantias(fn) {
+  try {
+    return fn();
+  } catch (err) {
+    throw traducirErrorGarantias(err);
+  }
+}
+async function envolverErrorGarantiasAsync(fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    throw traducirErrorGarantias(err);
+  }
 }
 
 // --------------------------------------------------------------
@@ -1292,7 +1353,7 @@ async function obtenerPorCodigoODocumento(termino) {
   if (porCodigo) return formatearReserva(porCodigo);
 
   const candidatas = await prisma.reserva.findMany({
-    where: { huesped: { numeroDocumento: buscado } },
+    where: { huesped: { numeroDocumento: { in: [...new Set([buscado, normalizarNumeroDocumento(buscado)])] } } },
     include: INCLUDE_RESERVA,
     orderBy: [{ fechaDesde: "desc" }, { id: "desc" }],
   });
@@ -1328,6 +1389,9 @@ async function listarReservas({ q, estado, desde, hasta, habitacionId } = {}) {
               { codigoConfirmacion: { contains: texto } },
               { huesped: { nombre: { contains: texto } } },
               { huesped: { numeroDocumento: { contains: texto } } },
+              ...(normalizarNumeroDocumento(texto) && normalizarNumeroDocumento(texto) !== texto
+                ? [{ huesped: { numeroDocumento: { contains: normalizarNumeroDocumento(texto) } } }]
+                : []),
               { reservaHabitaciones: { some: { habitacion: { numero: { contains: texto } } } } },
             ],
           }
@@ -1828,26 +1892,15 @@ async function obtenerPenalidad(id, tipo) {
   }
 }
 
-// HU-37 — al cancelar, el período vuelve a estar disponible (lo hace solo:
-// ESTADOS_QUE_OCUPAN deja afuera a "Cancelada", así que la próxima consulta
-// de disponibilidad ya no la cuenta). El motivo es obligatorio.
+// HU-37 + garantía con tarjeta. Reemplaza la regla fija de 24 hs (que
+// anulaba la seña entera o la dejaba entera): ahora la penalidad la calcula
+// tarifas (calcularPenalidad: sin cargo dentro del plazo del plan, primera
+// noche fuera de plazo, total en tarifa no reembolsable) y el módulo de
+// garantías la cobra. Ver garantias/cierreReserva.servicio.js.
 //
-// Política de cancelación (extensión de HU-37, atada a la seña de HU-88):
-// con 24hs o más de anticipación respecto a la fecha de ingreso, la seña
-// (el/los PagoEstadia activos de la reserva) se anula sola — reusa
-// anularPago, nunca reimplementa la baja lógica. Con menos de 24hs, o si la
-// fecha de ingreso ya pasó (no-show: nunca hubo check-in y la reserva sigue
-// "Confirmada"), NO se anula nada: en los dos casos la anticipación real
-// (fechaDesde - ahora) da menos de 24hs, así que un solo chequeo cubre
-// ambos, sin necesidad de distinguirlos aparte.
-//
-// El require de pagoEstadiaServicio queda DIFERIDO a propósito (no al tope
-// del archivo): pagoEstadia.servicio.js importa checkOut.servicio.js, que a
-// su vez importa ESTE archivo — un require al tope formaría un ciclo, y
-// checkOut.servicio.js capturaría un reservasServicio a medio cargar
-// (module.exports todavía no asignado en ese punto). Adentro de la función
-// no hay ciclo: para cuando esto corre, la carga inicial de módulos ya
-// terminó.
+// Devuelve la reserva cancelada MÁS `penalidad`: cuánto se retuvo, devolvió y
+// cobró, y si algo quedó pendiente de cobro (la reserva se cancela igual: el
+// huésped tiene derecho a cancelar aunque la tarjeta rechace).
 async function cancelarReserva(id, data) {
   const reservaId = enteroPositivo(id, "id");
   const motivoCancelacion = textoObligatorio(
@@ -1861,33 +1914,79 @@ async function cancelarReserva(id, data) {
   if (actual.estado === ESTADO_RESERVA.CANCELADA) {
     throw new ErrorDeNegocio("La reserva ya está cancelada.");
   }
+  if (actual.estado === ESTADO_RESERVA.NO_SHOW) {
+    throw new ErrorDeNegocio("La reserva ya fue marcada como no-show.");
+  }
   if (actual.estado !== ESTADO_RESERVA.CONFIRMADA) {
     throw new ErrorDeNegocio(
       `No se puede cancelar una reserva en estado "${actual.estado}": con el huésped ya alojado corresponde el check-out.`
     );
   }
 
-  const anticipacionMs = new Date(actual.fechaDesde).getTime() - Date.now();
-  const anulaSenia = anticipacionMs >= MILISEGUNDOS_POR_DIA;
+  const penalidad = await envolverErrorGarantiasAsync(() =>
+    cierreReservaServicio.cerrarReservaConPenalidad({
+      reservaId,
+      tipo: "CANCELACION",
+      estadoDestino: ESTADO_RESERVA.CANCELADA,
+      motivo: motivoCancelacion,
+    })
+  );
+  const reserva = await prisma.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
+  return { ...formatearReserva(reserva), penalidad };
+}
 
-  const reserva = await prisma.$transaction(async (tx) => {
-    const actualizada = await tx.reserva.update({
-      where: { id: reservaId },
-      data: { estado: ESTADO_RESERVA.CANCELADA, motivoCancelacion },
-      include: INCLUDE_RESERVA,
-    });
+// Vista previa de lo que pasaría al cancelar o marcar no-show: la misma
+// liquidación que hace el cierre real (retenido / devuelto / a cobrar), sin
+// escribir nada. La pantalla la muestra ANTES de confirmar.
+async function previsualizarCierreReserva(id, tipo) {
+  const reservaId = enteroPositivo(id, "id");
+  if (tipo !== "CANCELACION" && tipo !== "NO_SHOW") {
+    throw new ErrorDeNegocio('tipo debe ser "CANCELACION" o "NO_SHOW".');
+  }
+  return envolverErrorGarantiasAsync(() => cierreReservaServicio.previsualizarCierre({ reservaId, tipo }));
+}
 
-    if (anulaSenia) {
-      const pagoEstadiaServicio = require("../pagos-estadia/pagoEstadia.servicio");
-      const pagosActivos = await tx.pagoEstadia.findMany({ where: { reservaId, anulado: false } });
-      for (const pago of pagosActivos) {
-        await pagoEstadiaServicio.anularPago(pago.id, "Cancelación con anticipación (24hs+)", tx);
-      }
-    }
+// Llegadas no presentadas: reservas Confirmadas cuya fecha de llegada ya pasó.
+// "Pasó" = anterior a hoy (hora argentina); el mismo día todavía puede llegar.
+async function listarNoShowPendientes() {
+  const reservas = await prisma.reserva.findMany({
+    where: { estado: ESTADO_RESERVA.CONFIRMADA, fechaDesde: { lt: hoyComoFechaUTC() } },
+    include: INCLUDE_RESERVA,
+    orderBy: [{ fechaDesde: "asc" }, { id: "asc" }],
+  });
+  return reservas.map(formatearReserva);
+}
 
-    return actualizada;
-  }, OPCIONES_TRANSACCION);
-  return formatearReserva(reserva);
+// Marca el no-show: cobra la penalidad que corresponde al plan (calcularPenalidad
+// con tipo NO_SHOW), pasa la reserva a "No-show" y libera las habitaciones
+// (ESTADOS_QUE_OCUPAN no incluye No-show).
+async function marcarNoShow(id, data) {
+  const reservaId = enteroPositivo(id, "id");
+  const actual = await prisma.reserva.findUnique({ where: { id: reservaId } });
+  if (!actual) throw new ErrorDeNegocio("La reserva no existe.", 404);
+  if (actual.estado === ESTADO_RESERVA.NO_SHOW) throw new ErrorDeNegocio("La reserva ya fue marcada como no-show.");
+  if (actual.estado !== ESTADO_RESERVA.CONFIRMADA) {
+    throw new ErrorDeNegocio(`Solo se puede marcar no-show una reserva "${ESTADO_RESERVA.CONFIRMADA}" (ésta está "${actual.estado}").`);
+  }
+  if (new Date(actual.fechaDesde) >= hoyComoFechaUTC()) {
+    throw new ErrorDeNegocio("Todavía no corresponde marcar no-show: la fecha de llegada no pasó.");
+  }
+  const observacion =
+    typeof data?.motivo === "string" && data.motivo.trim()
+      ? textoObligatorio(data.motivo, "El motivo", LIMITES_RESERVA.motivoCancelacion)
+      : null;
+  const motivo = observacion ? `No-show: ${observacion}` : "No-show: el huésped no se presentó.";
+
+  const penalidad = await envolverErrorGarantiasAsync(() =>
+    cierreReservaServicio.cerrarReservaConPenalidad({
+      reservaId,
+      tipo: "NO_SHOW",
+      estadoDestino: ESTADO_RESERVA.NO_SHOW,
+      motivo: motivo.slice(0, LIMITES_RESERVA.motivoCancelacion),
+    })
+  );
+  const reserva = await prisma.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
+  return { ...formatearReserva(reserva), penalidad };
 }
 
 // --------------------------------------------------------------
@@ -1947,8 +2046,12 @@ function marcarCerrada(reservaId, cliente = prisma) {
 module.exports = {
   // Alta y edición
   crearReserva,
-  crearReservaConSena,
+  crearReservaConGarantia,
+  previsualizarCierreReserva,
+  listarNoShowPendientes,
+  marcarNoShow,
   crearReservaEnTransaccion,
+  resolverHuesped,
   normalizarAltaReserva,
   modificarReserva,
   ajustarPrecioReserva,

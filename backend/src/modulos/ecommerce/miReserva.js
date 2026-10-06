@@ -13,6 +13,7 @@ const PATRON_EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const MOTIVO = {
   CANCELADA: "Esta reserva ya fue cancelada.",
+  NO_PRESENTADA: "La reserva figura como no presentada. Contactá a recepción.",
   LLEGADA_HOY: "Tu llegada es hoy. Para cualquier cambio, contactá a recepción.",
   LLEGADA_PASADA: "La fecha de llegada ya pasó. Para cualquier cambio, contactá a recepción.",
   CON_PAGO: "Tu reserva tiene un pago registrado. Para cancelarla, contactá a recepción.",
@@ -68,7 +69,7 @@ function formatoPesos(monto) {
 }
 
 // Decisión 14 — cancelación online. Orden:
-//   1. estado (solo "Confirmada" se puede cancelar; "Cancelada" lo dice);
+//   1. estado (solo "Confirmada" se puede cancelar; "Cancelada" y "No-show" lo dicen);
 //   2. horario (después de las 14 h del día de llegada, hora argentina);
 //   3. pagos activos (seña u otro PagoEstadia: lo resuelve recepción);
 //   4. plan (no reembolsable);
@@ -77,6 +78,7 @@ function formatoPesos(monto) {
 function evaluarCancelacion({ estado, fechaDesde, reembolsable, tienePagosActivos }, penalidad, ahora = new Date()) {
   const sinCancelar = (motivo, pen = null) => ({ puedeCancelarOnline: false, motivo, penalidad: pen });
   if (estado === "Cancelada") return sinCancelar(MOTIVO.CANCELADA);
+  if (estado === "No-show") return sinCancelar(MOTIVO.NO_PRESENTADA);
   if (estado !== "Confirmada") return sinCancelar(null);
 
   const desde = new Date(fechaDesde);
@@ -132,8 +134,9 @@ function armarRespuestaMiReserva(reserva, cancelacion) {
       .map((rh) => ({ tipo: rh.habitacion.tipoHabitacion.nombre, adultos: rh.adultos, menores: rh.menores })),
     total: sumarDecimal(reserva.reservaHabitaciones.flatMap((rh) => rh.reservaNoches.map((n) => n.precioNoche))),
     cobrado: sumarDecimal(pagosActivos.flatMap((p) => p.medios.map((m) => m.importe))),
-    garantia: reserva.datosWeb
-      ? { tipo: plan.reembolsable ? "GARANTIA" : "PREPAGO", marca: reserva.datosWeb.tarjetaMarca, ultimos4: reserva.datosWeb.tarjetaUltimos4 }
+    // De la garantía registrada (GarantiaReserva), la misma que ve el mostrador.
+    garantia: reserva.garantiaReserva?.ultimos4
+      ? { tipo: plan.reembolsable ? "GARANTIA" : "PREPAGO", marca: reserva.garantiaReserva.marca, ultimos4: reserva.garantiaReserva.ultimos4 }
       : null,
     titular: enmascararTitular(reserva.huesped),
     documento: enmascararDocumento(reserva.huesped?.numeroDocumento),

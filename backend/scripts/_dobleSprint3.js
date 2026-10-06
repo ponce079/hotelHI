@@ -128,6 +128,10 @@ const TABLAS = [
   // Etapa 4A de tarifas por temporada (HU-95/96) — precio por noche
   // congelado, una fila por ReservaHabitacion y fecha.
   "reservaNoche",
+  // Garantía con tarjeta (feature/garantia-tarjeta): la de la reserva y la del
+  // check-in. cancelarReserva, la penalidad y el check-in las leen siempre.
+  "garantiaReserva",
+  "garantiaEstadia",
 ];
 
 // Campos `@default(now())` del schema real que ningún servicio setea a
@@ -183,6 +187,9 @@ const CAMPO_STRING_POR_DEFECTO = {
   ocupanteReserva: { estado: "Previsto", verificadoEn: null },
   asignacionOcupanteHabitacion: { hasta: null },
   loteActualizacionTarifaria: { estado: "Aplicado" },
+  // Defaults del schema de la garantía con tarjeta.
+  garantiaReserva: { estado: "Vigente", monto: 0 },
+  garantiaEstadia: { estado: "Pendiente", monto: 0, montoUsado: 0 },
 };
 
 // Relaciones 1-a-N creadas con la sintaxis anidada de Prisma

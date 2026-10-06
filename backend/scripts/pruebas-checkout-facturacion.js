@@ -73,12 +73,13 @@ async function esperaError(fn, textoEsperado) {
 const HUESPED = {
   paisDocumento: "AR",
   fechaNacimiento: "1990-01-01",
-  nombre: "Ana Pérez",
+  nombre: "Persona Prueba",
   tipoDocumento: "DNI",
   numeroDocumento: "30111222",
   contacto: "ana@mail.com",
 };
-const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Tarjeta crédito", referenciaGarantia: "PRUEBA-LOCAL" };
+// La garantía del check-in es un depósito en efectivo (no es un pago, no resta del saldo).
+const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Efectivo" };
 
 // --------------------------------------------------------------
 // Fixture mínima de tarifas (Etapa 4A) — crearReserva ahora pasa por el
@@ -162,9 +163,8 @@ async function crearReservaEnCurso({ numero, precioPorNoche = 10000, noches = 2 
     numeroDocumentoIngresado: HUESPED.numeroDocumento,
     ...GARANTIA_OK,
   });
-  // Aislar las pruebas de pagos: anular el deposito previo con el contrato publico.
-  const garantia = base._datos.pagoEstadia.find((p) => p.reservaId === reserva.id && p.concepto === "Garantía");
-  await pagoEstadiaServicio.anularPago(garantia.id, "Fixture: verificar pagos sin deposito previo");
+  // La garantía del check-in ya no es un pago (vive en garantias_estadia): no hay un depósito
+  // previo que anular para aislar las pruebas de pagos.
   return { habitacion, reserva };
 }
 

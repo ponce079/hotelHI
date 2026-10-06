@@ -45,13 +45,9 @@ const FILA = {
   horaEstimadaLlegada: "20-22",
   solicitudesEspeciales: "Cuna",
   tarjetaTitular: "MARIA GONZALEZ",
-  tarjetaMarca: "VISA",
-  tarjetaUltimos4: "4242",
-  tarjetaVencimiento: "08/2028",
   aceptaPoliticasEn: new Date("2026-10-04T17:32:00.000Z"),
   versionPoliticas: "2026-10-01",
   aceptaComunicaciones: true,
-  reserva: { planTarifario: { reembolsable: true } },
 };
 
 test("sin sesión → 401 y no se consulta la base", async () => {
@@ -73,8 +69,7 @@ test("recepcionista: 200 con los datos web, sin token ni referencia de la pasare
     telefonoContacto: "+54 9 387 555-1234",
     horaEstimadaLlegada: "20-22",
     solicitudesEspeciales: "Cuna",
-    tarjeta: { titular: "MARIA GONZALEZ", marca: "VISA", ultimos4: "4242", vencimiento: "08/2028" },
-    tipoGarantia: "GARANTIA",
+    tarjetaTitular: "MARIA GONZALEZ",
     aceptaPoliticasEn: "2026-10-04T17:32:00.000Z",
     versionPoliticas: "2026-10-01",
     aceptaComunicaciones: true,
@@ -83,14 +78,18 @@ test("recepcionista: 200 con los datos web, sin token ni referencia de la pasare
   const { select } = prisma.datosReservaWeb.findUnique.mock.calls[0][0];
   expect(select).not.toHaveProperty("garantiaToken");
   expect(select).not.toHaveProperty("pasarelaReferencia");
+  // La garantía no se repite: ni marca, ni últimos 4, ni vencimiento, ni tipo.
+  for (const campo of ["tarjetaMarca", "tarjetaUltimos4", "tarjetaVencimiento", "reserva"]) expect(select).not.toHaveProperty(campo);
+  expect(body).not.toHaveProperty("tipoGarantia");
+  expect(body).not.toHaveProperty("tarjeta");
   expect(JSON.stringify(body)).not.toMatch(/garantiaToken|pasarelaReferencia/);
 });
 
-test("gerente también la ve; no reembolsable → PREPAGO", async () => {
-  prisma.datosReservaWeb.findUnique.mockResolvedValue({ ...FILA, reserva: { planTarifario: { reembolsable: false } } });
+test("gerente también la ve", async () => {
+  prisma.datosReservaWeb.findUnique.mockResolvedValue(FILA);
   const { status, body } = await pedir("/170", 2);
   expect(status).toBe(200);
-  expect(body.tipoGarantia).toBe("PREPAGO");
+  expect(body.tarjetaTitular).toBe("MARIA GONZALEZ");
 });
 
 test("reserva del mostrador (sin datos web) → 200 con null", async () => {

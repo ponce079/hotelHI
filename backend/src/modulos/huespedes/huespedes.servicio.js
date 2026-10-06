@@ -55,6 +55,12 @@ async function buscarPorDocumento({ tipo, pais, numero } = {}) {
       : huesped.nombres && huesped.apellido
         ? { nombre: huesped.nombres, apellido: huesped.apellido }
         : { nombre: huesped.nombre, apellido: null }),
+    // Nombre tal como está guardado en la ficha del huésped: es el que protege el alta de reservas
+    // (reservas.servicio.js, resolverHuesped), así que el mostrador autocompleta con este.
+    nombreRegistrado: {
+      nombres: huesped.nombres || huesped.nombre,
+      apellido: huesped.nombres && huesped.apellido ? huesped.apellido : "",
+    },
     fechaNacimiento: soloFecha(huesped.fechaNacimiento),
     nacionalidad: huesped.nacionalidad,
     paisResidencia: huesped.paisResidencia,

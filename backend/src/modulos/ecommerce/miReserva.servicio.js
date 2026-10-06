@@ -14,7 +14,7 @@
 // La cancelación online está en miReserva.cancelacion.js.
 const prisma = require("../../lib/prisma");
 const { calcularPenalidad } = require("../tarifas/penalidades.servicio");
-const { CONCEPTO_PREPAGO } = require("../pagos-estadia/pagoEstadia.constantes");
+const { CONCEPTO_PAGO_ANTICIPADO } = require("../garantias/garantias.constantes");
 const { ErrorWeb, CODIGO } = require("./ecommerce.errores");
 const {
   normalizarCodigo,
@@ -45,7 +45,8 @@ const INCLUDE_MI_RESERVA = {
     },
   },
   pagosEstadia: { select: { anulado: true, concepto: true, medios: { select: { importe: true } } } },
-  datosWeb: { select: { emailContacto: true, tarjetaMarca: true, tarjetaUltimos4: true } },
+  datosWeb: { select: { emailContacto: true } },
+  garantiaReserva: { select: { tipo: true, marca: true, ultimos4: true } },
 };
 
 const esperar = (ms) => new Promise((resolver) => setTimeout(resolver, ms));
@@ -100,9 +101,9 @@ async function evaluar(reserva, ahora = new Date()) {
       estado: reserva.estado,
       fechaDesde: reserva.fechaDesde,
       reembolsable: reserva.planTarifario.reembolsable,
-      // El "Prepago" no cuenta acá: solo existe en tarifas no reembolsables, que tienen su propio
-      // motivo (la regla siguiente). Cualquier otro pago activo (por ejemplo, una seña) sí bloquea.
-      tienePagosActivos: (reserva.pagosEstadia ?? []).some((p) => !p.anulado && p.concepto !== CONCEPTO_PREPAGO),
+      // El "Pago anticipado" no cuenta acá: en una reserva web solo existe en tarifas no reembolsables, que
+      // tienen su propio motivo (la regla siguiente). Cualquier otro pago activo (por ejemplo, una seña) sí bloquea.
+      tienePagosActivos: (reserva.pagosEstadia ?? []).some((p) => !p.anulado && p.concepto !== CONCEPTO_PAGO_ANTICIPADO),
     },
     penalidad,
     ahora

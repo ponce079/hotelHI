@@ -14,7 +14,7 @@ const { esEmail, esTelefono } = require("../../lib/contacto");
 const { LIMITES_RESERVA } = require("../reservas/reservas.constantes");
 const { ErrorWeb, CODIGO, datosInvalidos } = require("./ecommerce.errores");
 const { validarCotizacion } = require("./ecommerce.validacion");
-const { pasaLuhn } = require("./pasarelaSimulada");
+const { luhnValido: pasaLuhn } = require("../garantias/pasarela.servicio");
 
 // Mismos valores que frontend/src/modulos/ecommerce/ecommerce.constantes.js.
 const VERSION_POLITICAS = "2026-10-01";
@@ -235,7 +235,7 @@ function armarTitular(web, ficha) {
 
 // Respuesta pública del alta (201) y de la repetición idempotente (200), a
 // partir de lo que quedó en la base. Sin ids ni números de habitación.
-function armarRespuestaAlta(reserva, datosWeb, email) {
+function armarRespuestaAlta(reserva, email) {
   const plan = reserva.planTarifario;
   const total = reserva.reservaHabitaciones
     .flatMap((rh) => rh.reservaNoches)
@@ -261,8 +261,9 @@ function armarRespuestaAlta(reserva, datosWeb, email) {
     cobradoAhora: plan.reembolsable ? 0 : cobrado.toNumber(),
     garantia: {
       tipo: plan.reembolsable ? "GARANTIA" : "PREPAGO",
-      marca: datosWeb.tarjetaMarca,
-      ultimos4: datosWeb.tarjetaUltimos4,
+      // De la garantía registrada (GarantiaReserva), la misma fuente que el resto del sistema.
+      marca: reserva.garantiaReserva?.marca ?? null,
+      ultimos4: reserva.garantiaReserva?.ultimos4 ?? null,
     },
     habitaciones: [...reserva.reservaHabitaciones]
       .sort((a, b) => a.id - b.id)

@@ -1,4 +1,5 @@
 import { X } from "lucide-react";
+import { useCerrarConEsc } from "./useCerrarConEsc";
 
 // Overlay generico para altas/ediciones en modal (mismo look que ya usan
 // DepositoModal/ProveedorModal/ArticuloModal, pero factorizado para no
@@ -11,12 +12,18 @@ import { X } from "lucide-react";
 // elemento libre (ej. un badge de transición de estado) antes del botón
 // de cerrar — pensado para SolicitarPresupuestosModal, pero cualquier
 // modal puede usarlos.
-export function Modal({ titulo, subtitulo, extra, onClose, children, ancho = "max-w-lg" }) {
+// Se cierra con la X o con Esc. Un clic en el fondo NO lo cierra (un clic
+// accidental hacía perder todo lo cargado en formularios y wizards), salvo
+// que el modal pase `cerrarAlClickFuera`.
+export function Modal({ titulo, subtitulo, extra, onClose, children, ancho = "max-w-lg", cerrarAlClickFuera = false }) {
+  const overlayRef = useCerrarConEsc(true, onClose);
+
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-30 flex items-start justify-center overflow-y-auto bg-tinta/45 p-6 py-10"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (cerrarAlClickFuera && e.target === e.currentTarget) onClose();
       }}
     >
       <div

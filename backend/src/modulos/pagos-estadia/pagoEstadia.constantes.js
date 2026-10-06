@@ -16,8 +16,24 @@ const MEDIOS_CON_TARJETA = ['Tarjeta crédito', 'Tarjeta débito'];
 const CONCEPTO_SENIA = 'Seña';
 const CONCEPTO_GARANTIA = 'Garantía';
 const CONCEPTO_PAGO_FINAL = 'Pago final';
-const CONCEPTO_PREPAGO = 'Prepago'; // E-commerce (HU-102): tarifa no reembolsable pagada al reservar
-const CONCEPTOS_PAGO_ESTADIA = [CONCEPTO_SENIA, CONCEPTO_GARANTIA, CONCEPTO_PAGO_FINAL, CONCEPTO_PREPAGO];
+// Conceptos de la garantía con tarjeta (feature/garantia-tarjeta). Viven en
+// modulos/garantias/garantias.constantes.js; se listan acá porque la pantalla
+// de Movimientos de Pago filtra y valida contra esta lista. "Seña" y
+// "Garantía" quedan como conceptos HISTÓRICOS: ya no se crean filas nuevas,
+// pero las existentes siguen mostrándose y filtrándose.
+const CONCEPTO_PAGO_ANTICIPADO = 'Pago anticipado';
+const CONCEPTO_PENALIDAD_CANCELACION = 'Penalidad por cancelación';
+const CONCEPTO_PENALIDAD_NO_SHOW = 'Penalidad no-show';
+const CONCEPTO_DEVOLUCION = 'Devolución';
+const CONCEPTOS_PAGO_ESTADIA = [
+  CONCEPTO_SENIA,
+  CONCEPTO_GARANTIA,
+  CONCEPTO_PAGO_FINAL,
+  CONCEPTO_PAGO_ANTICIPADO,
+  CONCEPTO_PENALIDAD_CANCELACION,
+  CONCEPTO_PENALIDAD_NO_SHOW,
+  CONCEPTO_DEVOLUCION,
+];
 
 module.exports = {
   MEDIOS_PAGO_ESTADIA,
@@ -25,6 +41,9 @@ module.exports = {
   CONCEPTO_SENIA,
   CONCEPTO_GARANTIA,
   CONCEPTO_PAGO_FINAL,
-  CONCEPTO_PREPAGO,
+  CONCEPTO_PAGO_ANTICIPADO,
+  CONCEPTO_PENALIDAD_CANCELACION,
+  CONCEPTO_PENALIDAD_NO_SHOW,
+  CONCEPTO_DEVOLUCION,
   CONCEPTOS_PAGO_ESTADIA,
 };

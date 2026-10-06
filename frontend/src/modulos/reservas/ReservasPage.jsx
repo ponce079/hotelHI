@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, Search, Ban, Eye } from "lucide-react";
+import { Plus, Search, Ban, Eye, UserX } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -20,6 +20,7 @@ import { Toast } from "../../componentes/Toast";
 import { formatearFechaDdMmAaaa } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
+import { CierrePrevio } from "../garantias/CierrePrevio";
 import { ReservaWizard } from "./ReservaWizard";
 import { cancelarReserva, listarReservas } from "./reservas.api";
 import {
@@ -90,7 +91,7 @@ export function ReservasPage() {
     mutationFn: ({ id, motivoCancelacion }) => cancelarReserva(id, motivoCancelacion),
     onSuccess: (reserva) => {
       queryClient.invalidateQueries({ queryKey: ["reservas"] });
-      mostrarToast(`Reserva ${reserva.codigoConfirmacion} cancelada.`);
+      mostrarToast(`Reserva ${reserva.codigoConfirmacion} cancelada. ${reserva.penalidad?.mensaje ?? ""}`.trim());
       setACancelar(null);
       setMotivo("");
     },
@@ -128,7 +129,7 @@ export function ReservasPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {ESTADOS_RESERVA.map((valor) => {
           const cantidad = resumen.filter((r) => r.estado === valor).length;
           const color = ESTADO_RESERVA_COLOR[valor];
@@ -194,6 +195,11 @@ export function ReservasPage() {
           <Button variante="secundario" icono={Eye} onClick={() => navigate("/reservas/disponibilidad")}>
             Ver disponibilidad
           </Button>
+          {puedeGestionar && (
+            <Button variante="secundario" icono={UserX} onClick={() => navigate("/reservas/no-show")}>
+              Llegadas no presentadas
+            </Button>
+          )}
           {puedeGestionar && (
             <Button icono={Plus} onClick={() => setModal({ tipo: "alta" })}>
               Nueva reserva
@@ -330,6 +336,7 @@ export function ReservasPage() {
           mutacionCancelar.mutate({ id: aCancelar.id, motivoCancelacion: motivo.trim() });
         }}
       >
+        {aCancelar && <CierrePrevio reservaId={aCancelar.id} tipo="CANCELACION" />}
         <label className="flex flex-col gap-1.5 font-body text-sm">
           <span className="text-[12px] text-tinta/70">Motivo de la cancelación *</span>
           <textarea

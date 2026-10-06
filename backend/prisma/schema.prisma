@@ -600,6 +600,8 @@ model Reserva {
   consumosServicioAdicional  ConsumoServicioAdicional[]
   cargosVerificacionCheckout CargoVerificacionCheckout[]
   pagosEstadia               PagoEstadia[]
+  garantiaReserva            GarantiaReserva?
+  garantiaEstadia            GarantiaEstadia?
   comprobantesEstadia        ComprobanteEstadia[]
   notificaciones             Notificacion[]
 
@@ -1126,4 +1128,58 @@ model DatosReservaWeb {
   creadoEn              DateTime @default(now())
 
   @@map("datos_reserva_web")
+}
+
+// ---------------------------------------------------------------------
+// Garantía con tarjeta de crédito (feature/garantia-tarjeta).
+// Bloque propio y aditivo: no modifica ningún campo existente.
+// NUNCA se guarda el número completo de la tarjeta ni el CVV (PCI-DSS):
+// solo el token de la pasarela, la marca, los últimos 4 y el vencimiento.
+// ---------------------------------------------------------------------
+model GarantiaReserva {
+  id          Int      @id @default(autoincrement())
+  reservaId   Int      @unique
+  // TARJETA | PREPAGO | NO_GARANTIZADA
+  tipo        String
+  token       String?  @db.VarChar(255)
+  marca       String?  @db.VarChar(40)
+  ultimos4    String?  @db.VarChar(4)
+  // "MM/AA"
+  vencimiento String?  @db.VarChar(5)
+  // Referencia de la autorización (preautorización o garantía) en la pasarela.
+  referencia  String?  @db.VarChar(191)
+  monto       Decimal  @default(0) @db.Decimal(12, 2)
+  // Vigente | Preautorizada | Capturada | Liberada
+  estado      String   @default("Vigente")
+  creadoEn    DateTime @default(now())
+  reserva     Reserva  @relation(fields: [reservaId], references: [id])
+
+  @@map("garantias_reserva")
+}
+
+// Garantía del check-in (feature/garantia-tarjeta): lo que respalda los consumos
+// y daños DURANTE la estadía. NO es un pago: no suma a lo pagado ni resta del
+// saldo. Con tarjeta de crédito es una PREAUTORIZACIÓN (retiene el monto, no lo
+// cobra); en efectivo es un DEPÓSITO que el hotel tiene en custodia. En el
+// check-out se libera, se captura para cubrir el saldo, se aplica o se devuelve.
+model GarantiaEstadia {
+  id           Int      @id @default(autoincrement())
+  reservaId    Int      @unique
+  // PREAUTORIZACION | DEPOSITO_EFECTIVO
+  tipo         String
+  monto        Decimal  @default(0) @db.Decimal(12, 2)
+  // Cuánto de la garantía se usó para cubrir saldo en el check-out.
+  montoUsado   Decimal  @default(0) @db.Decimal(12, 2)
+  token        String?  @db.VarChar(255)
+  // Referencia de la preautorización en la pasarela (PRE-nnnnnn).
+  referencia   String?  @db.VarChar(191)
+  marca        String?  @db.VarChar(40)
+  ultimos4     String?  @db.VarChar(4)
+  // Pendiente | Capturada | Liberada | Aplicada | Devuelta
+  estado       String   @default("Pendiente")
+  creadoEn     DateTime @default(now())
+  actualizadoEn DateTime @updatedAt
+  reserva      Reserva  @relation(fields: [reservaId], references: [id])
+
+  @@map("garantias_estadia")
 }

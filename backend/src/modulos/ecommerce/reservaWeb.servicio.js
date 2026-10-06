@@ -4,19 +4,31 @@
 // las llegadas, el check-in y el check-out. DatosReservaWeb es su
 // complemento 1 a 1 (y lo que la marca como web).
 //
+// La garantía es la MISMA que la del alta del mostrador (POST
+// /api/reservas/con-garantia, módulo garantias/ de Ricardo): una sola fila
+// GarantiaReserva por reserva, sin importar el canal, y una sola pasarela
+// (garantias/pasarela.servicio.js). Este archivo reutiliza sus funciones, no
+// las copia: mismos estados, tipos, conceptos y orden.
+//
 // Orden (CONTRATO.md → "Cómo funciona por dentro"):
 //   1. validación completa del cuerpo (ecommerce.alta.js), sin base ni pasarela;
 //   2. idempotencia por claveIdempotencia (200 / 409 CLAVE_REUTILIZADA);
 //   3. candidatas libres y precotización (409 SIN_DISPONIBILIDAD / PRECIO_CAMBIADO);
-//   4. pasarela: GARANTIA (reembolsable) o PREAUTORIZACION (no reembolsable);
-//   5. UNA transacción, solo con tx: lock, asignación, titular, alta, prepago
-//      y DatosReservaWeb;
-//   6. si la transacción falla: LIBERACION; si sale bien y es no
-//      reembolsable: CAPTURA (y compensación si la captura falla);
+//   4. pasarela (autorizarGarantia): GARANTIA (reembolsable → GarantiaReserva
+//      "Vigente") o PREAUTORIZACION por el total (no reembolsable →
+//      "Preautorizada");
+//   5. UNA transacción, solo con tx: lock, asignación, titular, alta,
+//      GarantiaReserva (registrarEnTransaccion) y DatosReservaWeb;
+//   6. si la transacción falla: LIBERACION de la preautorización; si sale bien
+//      y es no reembolsable: CAPTURA (capturarCobroDeReserva: recién ahí se
+//      registra el PagoEstadia "Pago anticipado" y la garantía pasa a
+//      "Capturada"). Si la captura falla, ese mismo camino libera la
+//      retención y cancela la reserva SIN penalidad (no pasa por cancelarReserva);
 //   7. relectura, email y respuesta.
 //
 // La tarjeta llega separada del cuerpo y solo se usa para validarla y para
-// la pasarela: número y CVV nunca se guardan, se loguean ni se devuelven.
+// la pasarela: número y CVV nunca se guardan, se loguean ni se devuelven. De
+// la tarjeta, DatosReservaWeb conserva solo el titular.
 const crypto = require("node:crypto");
 const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
@@ -24,16 +36,14 @@ const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 const reservasServicio = require("../reservas/reservas.servicio");
 const { MAX_INTENTOS_CODIGO } = require("../reservas/reservas.constantes");
 const { claveDocumento } = require("../estadia/persona.servicio");
-const pagoEstadiaServicio = require("../pagos-estadia/pagoEstadia.servicio");
-const { CONCEPTO_PREPAGO } = require("../pagos-estadia/pagoEstadia.constantes");
-const pasarela = require("./pasarelaSimulada");
+const { CONCEPTO_PAGO_ANTICIPADO, TIPO_GARANTIA } = require("../garantias/garantias.constantes");
+const garantiasServicio = require("../garantias/garantias.servicio");
 const { ErrorWeb, CODIGO, datosInvalidos } = require("./ecommerce.errores");
 const { elegirRepresentantes } = require("./ecommerce.transformacion");
 const { tiposVendibles, planWeb, habitacionesLibres, CANAL_WEB } = require("./ecommerce.servicio");
 const { validarAlta, firmaAlta, firmaDeReserva, armarTitular, armarRespuestaAlta, MENSAJE_RECHAZO } = require("./ecommerce.alta");
 const emailWeb = require("./emailWeb.servicio");
 
-const MEDIO_TARJETA_CREDITO = "Tarjeta crédito";
 const MOTIVO_PAGO_NO_CAPTURADO = "Pago no capturado";
 const MENSAJE_PAGO_NO_CAPTURADO = "No pudimos confirmar el pago. No se realizó ningún cargo.";
 
@@ -49,7 +59,9 @@ const INCLUDE_RESPUESTA = {
       reservaNoches: { select: { precioNoche: true } },
     },
   },
-  pagosEstadia: { where: { concepto: CONCEPTO_PREPAGO }, include: { medios: true } },
+  pagosEstadia: { where: { concepto: CONCEPTO_PAGO_ANTICIPADO }, include: { medios: true } },
+  // Solo lo que se puede mostrar: nunca el token ni la referencia de la pasarela.
+  garantiaReserva: { select: { tipo: true, marca: true, ultimos4: true, estado: true } },
 };
 
 function esUnicoDuplicado(err, campo) {
@@ -76,7 +88,7 @@ async function repeticionIdempotente(datos, identidad) {
     identidad,
   });
   if (firmaDeReserva(previa.reserva) !== firmaPedido) throw new ErrorWeb(409, CODIGO.CLAVE_REUTILIZADA);
-  return { status: 200, cuerpo: armarRespuestaAlta(previa.reserva, previa, { enviado: null }) };
+  return { status: 200, cuerpo: armarRespuestaAlta(previa.reserva, { enviado: null }) };
 }
 
 async function precotizar(datos, representantes) {
@@ -97,7 +109,7 @@ function precioCambiado(totalNuevo) {
 }
 
 // Paso 5: todo adentro de UNA transacción, solo con tx.
-async function transaccionAlta(tx, { datos, candidatas, pago, total, reembolsable }) {
+async function transaccionAlta(tx, { datos, candidatas, autorizada, total }) {
   const ids = candidatas.map((h) => h.id);
   // a. Lock de las filas de todas las candidatas (mismo patrón que crearReservaEnTransaccion).
   await tx.$queryRaw(Prisma.sql`SELECT id FROM reservas_habitaciones WHERE habitacionId IN (${Prisma.join(ids)}) FOR UPDATE`);
@@ -147,16 +159,10 @@ async function transaccionAlta(tx, { datos, candidatas, pago, total, reembolsabl
     await tx.huesped.update({ where: { id: reserva.huespedId }, data: residencia });
   }
 
-  // f. Solo no reembolsable: el prepago, con la referencia de la preautorización.
-  if (!reembolsable) {
-    await pagoEstadiaServicio.crearPagoEnTransaccion(tx, {
-      reservaId: reserva.id,
-      medios: [{ tipo: MEDIO_TARJETA_CREDITO, importe: total, referencia: pago.referencia }],
-      concepto: CONCEPTO_PREPAGO,
-    });
-  }
+  // f. La garantía, con la misma función y los mismos estados que el alta del mostrador.
+  await garantiasServicio.registrarEnTransaccion(tx, { reservaId: reserva.id, autorizada, totalEsperado: total });
 
-  // g. El complemento web (sin número ni CVV).
+  // g. El complemento web (sin número, CVV ni datos de la tarjeta salvo el titular).
   await tx.datosReservaWeb.create({
     data: {
       reservaId: reserva.id,
@@ -169,46 +175,28 @@ async function transaccionAlta(tx, { datos, candidatas, pago, total, reembolsabl
       versionPoliticas: datos.versionPoliticas,
       aceptaComunicaciones: datos.aceptaComunicaciones,
       tarjetaTitular: datos.tarjeta.titular,
-      tarjetaMarca: pago.marca,
-      tarjetaUltimos4: pago.ultimos4,
-      tarjetaVencimiento: datos.tarjeta.vencimiento,
-      garantiaToken: reembolsable ? pago.token : null,
-      pasarelaReferencia: pago.referencia,
     },
   });
   return reserva.id;
 }
 
-async function liberar(referencia, claveIdempotencia) {
-  try {
-    const r = await pasarela.procesarTarjeta({ operacion: pasarela.OPERACION.LIBERACION, referenciaPrevia: referencia, claveIdempotencia });
-    if (!r.aprobado) console.error(`[ecommerce] No se pudo liberar la preautorización ${referencia}: ${r.motivoRechazo}`);
-  } catch (err) {
-    console.error(`[ecommerce] No se pudo liberar la preautorización ${referencia}:`, err?.message);
-  }
+// Un rechazo de la garantía (ErrorDeNegocio del módulo de Ricardo, 402) se traduce a la respuesta
+// pública del e-commerce.
+function motivoDeRechazo(err) {
+  const texto = String(err?.message ?? "");
+  const i = texto.indexOf(": ");
+  return (i >= 0 ? texto.slice(i + 2) : texto).replace(/\.$/, "");
 }
 
-// Regla 8: la captura falló después de crear la reserva. Se compensa con las
-// funciones existentes, en este orden: anular el prepago con su motivo (antes
-// de cancelar: con 24 h o más de anticipación cancelarReserva anularía los
-// pagos con otro motivo), cancelar la reserva (ya no encuentra pagos activos)
-// y liberar la preautorización. Cada paso que falla se loguea y se sigue.
-async function compensarCapturaFallida(reservaId, referencia, claveIdempotencia) {
+async function autorizar({ validada, total, claveGarantia }) {
   try {
-    const prepago = await prisma.pagoEstadia.findFirst({
-      where: { reservaId, concepto: CONCEPTO_PREPAGO, anulado: false },
-      select: { id: true },
-    });
-    if (prepago) await pagoEstadiaServicio.anularPago(prepago.id, MOTIVO_PAGO_NO_CAPTURADO);
+    return await garantiasServicio.autorizarGarantia({ validada, totalEsperado: total, claveIdempotencia: claveGarantia });
   } catch (err) {
-    console.error(`[ecommerce] Compensación: no se pudo anular el prepago de la reserva ${reservaId}:`, err?.message);
+    if (err instanceof garantiasServicio.ErrorDeNegocio && err.statusCode === 402) {
+      throw new ErrorWeb(402, CODIGO.PAGO_RECHAZADO, MENSAJE_RECHAZO, { motivo: motivoDeRechazo(err) });
+    }
+    throw err;
   }
-  try {
-    await reservasServicio.cancelarReserva(reservaId, { motivoCancelacion: MOTIVO_PAGO_NO_CAPTURADO });
-  } catch (err) {
-    console.error(`[ecommerce] Compensación: no se pudo cancelar la reserva ${reservaId}:`, err?.message);
-  }
-  await liberar(referencia, claveIdempotencia);
 }
 
 async function crearReservaWeb(cuerpo, tarjeta) {
@@ -245,13 +233,21 @@ async function crearReservaWeb(cuerpo, tarjeta) {
   // intento anterior falló, su preautorización ya se liberó); la garantía sí
   // se pide con la clave del pedido.
   const reembolsable = plan.reembolsable;
-  const pago = await pasarela.procesarTarjeta({
-    operacion: reembolsable ? pasarela.OPERACION.GARANTIA : pasarela.OPERACION.PREAUTORIZACION,
-    monto: reembolsable ? new Prisma.Decimal(0) : new Prisma.Decimal(total),
-    tarjeta,
-    claveIdempotencia: reembolsable ? datos.claveIdempotencia : `${datos.claveIdempotencia}:${crypto.randomUUID()}`,
-  });
-  if (!pago.aprobado) throw new ErrorWeb(402, CODIGO.PAGO_RECHAZADO, MENSAJE_RECHAZO, { motivo: pago.motivoRechazo });
+  let validada;
+  try {
+    validada = garantiasServicio.validarGarantiaDeReserva({
+      garantia: { tipo: TIPO_GARANTIA.TARJETA, tarjeta },
+      plan,
+      totalEsperado: total,
+      fechaHasta: datos.fechaHasta,
+    });
+  } catch (err) {
+    // validarAlta ya revisó la tarjeta con los códigos públicos: esto es una red de seguridad.
+    if (err instanceof garantiasServicio.ErrorDeNegocio) throw datosInvalidos("tarjeta", err.message);
+    throw err;
+  }
+  const claveGarantia = reembolsable ? datos.claveIdempotencia : `${datos.claveIdempotencia}:${crypto.randomUUID()}`;
+  const autorizada = await autorizar({ validada, total, claveGarantia });
 
   // 5. Transacción (con reintento solo ante un choque de codigoConfirmacion, como crearReserva).
   let reservaId;
@@ -259,7 +255,7 @@ async function crearReservaWeb(cuerpo, tarjeta) {
     for (let intento = 0; ; intento += 1) {
       try {
         reservaId = await prisma.$transaction(
-          (tx) => transaccionAlta(tx, { datos, candidatas, pago, total, reembolsable }),
+          (tx) => transaccionAlta(tx, { datos, candidatas, autorizada, total }),
           OPCIONES_TRANSACCION
         );
         break;
@@ -268,8 +264,8 @@ async function crearReservaWeb(cuerpo, tarjeta) {
       }
     }
   } catch (err) {
-    // 6. Falló: nada quedó en la base. Se libera la preautorización.
-    if (!reembolsable) await liberar(pago.referencia, datos.claveIdempotencia);
+    // 6. Falló: nada quedó en la base. Se libera la preautorización (no hace nada en el plan flexible).
+    await garantiasServicio.liberarPreautorizacion(autorizada, claveGarantia);
     // Dos pedidos con la misma clave chocaron: misma regla de idempotencia.
     if (esUnicoDuplicado(err, "claveIdempotencia")) {
       const repetidaTarde = await repeticionIdempotente(datos, identidad);
@@ -283,22 +279,22 @@ async function crearReservaWeb(cuerpo, tarjeta) {
     throw err;
   }
 
-  // 6. No reembolsable: captura; si falla, compensación y 402.
-  if (!reembolsable) {
-    const captura = await pasarela.procesarTarjeta({
-      operacion: pasarela.OPERACION.CAPTURA,
-      referenciaPrevia: pago.referencia,
-      claveIdempotencia: datos.claveIdempotencia,
-    });
-    if (!captura.aprobado) {
-      await compensarCapturaFallida(reservaId, pago.referencia, datos.claveIdempotencia);
-      throw new ErrorWeb(402, CODIGO.PAGO_RECHAZADO, MENSAJE_PAGO_NO_CAPTURADO, { motivo: captura.motivoRechazo });
+  // 6. No reembolsable: captura (y registro del "Pago anticipado"). Si falla, el mismo camino del
+  // mostrador libera la retención y cancela la reserva sin penalidad; acá se responde 402.
+  if (autorizada.preautorizacion) {
+    try {
+      await garantiasServicio.capturarCobroDeReserva({ reservaId, autorizada, claveIdempotencia: claveGarantia });
+    } catch (err) {
+      if (err instanceof garantiasServicio.ErrorDeNegocio) {
+        throw new ErrorWeb(402, CODIGO.PAGO_RECHAZADO, MENSAJE_PAGO_NO_CAPTURADO, { motivo: MOTIVO_PAGO_NO_CAPTURADO });
+      }
+      throw err;
     }
   }
 
   // 7. Relectura, email y respuesta.
   const reserva = await prisma.reserva.findUnique({ where: { id: reservaId }, include: { ...INCLUDE_RESPUESTA, datosWeb: true } });
-  const respuesta = armarRespuestaAlta(reserva, reserva.datosWeb, { enviado: false });
+  const respuesta = armarRespuestaAlta(reserva, { enviado: false });
   respuesta.email = await emailWeb.enviarConfirmacion(respuesta, reserva.datosWeb.emailContacto, {
     nombre: datos.huesped.nombres,
     horaEstimadaLlegada: reserva.datosWeb.horaEstimadaLlegada,

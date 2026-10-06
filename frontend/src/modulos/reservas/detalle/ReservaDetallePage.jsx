@@ -18,7 +18,13 @@ import { EstadiaModales } from "../../estadia/EstadiaModales";
 import { useEstadia } from "../../estadia/useEstadia";
 import { PagoEstadiaWizard } from "../../pagos-estadia/PagoEstadiaWizard";
 import { listarPagosEstadia } from "../../pagos-estadia/pagoEstadia.api";
-import { CONCEPTO_SENIA } from "../../pagos-estadia/pagoEstadia.constantes";
+import {
+  CONCEPTO_DEVOLUCION,
+  CONCEPTO_PENALIDAD_CANCELACION,
+  CONCEPTO_PENALIDAD_NO_SHOW,
+  CONCEPTO_SENIA,
+} from "../../pagos-estadia/pagoEstadia.constantes";
+import { CierrePrevio } from "../../garantias/CierrePrevio";
 import { ConsumoModal } from "../../servicios-adicionales/ConsumoModal";
 import { listarConsumosPorReserva } from "../../servicios-adicionales/serviciosAdicionales.api";
 import { AjustePrecioModal } from "../AjustePrecioModal";
@@ -44,21 +50,37 @@ import {
   puedeAjustarPrecioEn,
 } from "./reservaDetalle";
 
-const MS_POR_DIA = 24 * 60 * 60 * 1000;
 const importe = (pago) => pago.medios.reduce((acc, m) => acc + Number(m.importe), 0);
 
-// Cancelada: qué pasó con la seña (se conserva, o se devolvió y con qué motivo). No hay fecha de
-// cancelación ni "penalidad aplicada": hoy cancelar solo retiene o anula la seña.
+// Cancelada o No-show: qué pasó con el dinero. Sale de los pagos de la reserva: la penalidad cobrada a la
+// tarjeta, lo devuelto (la devolución se registra con importe negativo) y, en reservas anteriores a la
+// garantía con tarjeta, la seña que se conservó o se devolvió.
 function ResumenCancelacion({ reserva, pagos }) {
-  const senias = (pagos?.pagos ?? []).filter((p) => p.concepto === CONCEPTO_SENIA);
+  const noShow = reserva.estado === ESTADO_RESERVA.NO_SHOW;
+  const lista = pagos?.pagos ?? [];
+  const senias = lista.filter((p) => p.concepto === CONCEPTO_SENIA);
+  const penalidades = lista.filter(
+    (p) => [CONCEPTO_PENALIDAD_CANCELACION, CONCEPTO_PENALIDAD_NO_SHOW].includes(p.concepto) && !p.anulado
+  );
+  const devoluciones = lista.filter((p) => p.concepto === CONCEPTO_DEVOLUCION && !p.anulado);
   return (
     <div className="rounded-lg border border-error bg-error-suave px-5 py-4 text-error-texto">
       {reserva.motivoCancelacion && (
         <>
-          <p className="text-[11px] uppercase tracking-wide">Motivo de la cancelación</p>
+          <p className="text-[11px] uppercase tracking-wide">{noShow ? "Motivo del no-show" : "Motivo de la cancelación"}</p>
           <p className="mt-1 text-[13.5px]">{reserva.motivoCancelacion}</p>
         </>
       )}
+      {penalidades.map((p) => (
+        <p key={p.id} className="mt-2 text-[13.5px]">
+          Se cobró una penalidad de {formatearPrecio(importe(p))}.
+        </p>
+      ))}
+      {devoluciones.map((d) => (
+        <p key={d.id} className="mt-2 text-[13.5px]">
+          Se devolvieron {formatearPrecio(Math.abs(importe(d)))} al huésped.
+        </p>
+      ))}
       {senias.map((s) => (
         <p key={s.id} className="mt-2 text-[13.5px]">
           {s.anulado
@@ -109,7 +131,7 @@ function DetalleReserva({ reserva }) {
   const puedeVerCuenta = puedeVerPagos || puede("verCheckOut");
   const puedeAjustarPrecio = puede("ajustarPrecioReserva") && puedeAjustarPrecioEn(reserva.estado);
   const confirmada = reserva.estado === ESTADO_RESERVA.CONFIRMADA;
-  const cancelada = reserva.estado === ESTADO_RESERVA.CANCELADA;
+  const cancelada = reserva.estado === ESTADO_RESERVA.CANCELADA || reserva.estado === ESTADO_RESERVA.NO_SHOW;
   const cerrada = reserva.estado === ESTADO_RESERVA.CERRADA;
 
   const [tab, setTab] = useState("huespedes");
@@ -121,8 +143,6 @@ function DetalleReserva({ reserva }) {
   const [pagoAbierto, setPagoAbierto] = useState(false);
   // Ajuste manual de precio (gerente): { nocheId } con la noche de la fila elegida.
   const [ajustando, setAjustando] = useState(null);
-  // Congelado al montar (como en HabitacionesPage): alcanza para decidir la política de 24hs de la seña.
-  const [ahora] = useState(() => Date.now());
 
   const estadia = useEstadia(reserva);
 
@@ -154,7 +174,8 @@ function DetalleReserva({ reserva }) {
     queryFn: () => obtenerHistorialReserva(id),
     enabled: tab === "historial",
   });
-  // Solo informativa: no se cobra nada al cancelar (la regla de cobro la define otro equipo).
+  // Informativa, para la columna derecha: lo que dice el plan sobre la penalidad. El detalle de lo que
+  // realmente se cobra, retiene y devuelve al cancelar lo muestra el diálogo (CierrePrevio).
   const penalidadQuery = useQuery({
     queryKey: ["reservas", "penalidad", id],
     queryFn: () => obtenerPenalidadReserva(id, "CANCELACION"),
@@ -169,13 +190,14 @@ function DetalleReserva({ reserva }) {
 
   const mutacionCancelar = useMutation({
     mutationFn: () => cancelarReserva(id, motivo.trim()),
-    onSuccess: () => {
+    onSuccess: (cancelada) => {
       queryClient.invalidateQueries({ queryKey: ["reservas"] });
       queryClient.invalidateQueries({ queryKey: ["pagos-estadia"] });
       queryClient.invalidateQueries({ queryKey: ["reserva-historial"] });
       setCancelando(false);
       setMotivo("");
-      mostrarToast("Reserva cancelada.");
+      // El backend devuelve cuánto se retuvo, devolvió y cobró (o si algo quedó pendiente).
+      mostrarToast(`Reserva cancelada. ${cancelada?.penalidad?.mensaje ?? ""}`.trim());
     },
     onError: (error) => {
       mostrarToast(error?.response?.data?.error ?? "No se pudo cancelar la reserva.");
@@ -190,11 +212,6 @@ function DetalleReserva({ reserva }) {
     verCheckOut: puede("verCheckOut"),
     verComprobantesEstadia: puede("verComprobantesEstadia"),
   });
-
-  // Mismo umbral que cancelarReserva (backend): con 24hs o más de anticipación la seña se anula sola.
-  const seniaVigente = pagosQuery.data?.pagos.find((p) => p.concepto === CONCEPTO_SENIA && !p.anulado);
-  const montoSenia = seniaVigente ? importe(seniaVigente) : 0;
-  const seniaSeDevuelve = new Date(reserva.fechaDesde).getTime() - ahora >= MS_POR_DIA;
 
   const movimientos = armarMovimientos({
     reserva,
@@ -349,24 +366,7 @@ function DetalleReserva({ reserva }) {
           mutacionCancelar.mutate();
         }}
       >
-        {seniaVigente && (
-          <p
-            className={`mb-3 rounded-md border px-4 py-2.5 text-[12.5px] ${
-              seniaSeDevuelve ? "border-pino-300 bg-pino-100 text-pino-700" : "border-laton-300 bg-laton-100 text-laton-700"
-            }`}
-          >
-            {seniaSeDevuelve
-              ? `Se cancela con más de 24hs de anticipación — la seña de ${formatearPrecio(montoSenia)} va a devolverse.`
-              : `Se cancela con menos de 24hs de anticipación — la seña de ${formatearPrecio(montoSenia)} no se devuelve.`}
-          </p>
-        )}
-        {penalidadQuery.data && (
-          <p className="mb-3 rounded-md border border-borde bg-hueso px-4 py-2.5 text-[12.5px] text-piedra">
-            Según el plan tarifario: {penalidadQuery.data.mensaje}
-            {penalidadQuery.data.aplica ? ` (${formatearPrecio(penalidadQuery.data.monto)})` : ""} Es solo informativo: al
-            cancelar no se cobra nada.
-          </p>
-        )}
+        {cancelando && <CierrePrevio reservaId={reserva.id} tipo="CANCELACION" />}
         <label className="flex flex-col gap-1.5 font-body text-sm">
           <span className="text-[12px] text-tinta/70">Motivo de la cancelación *</span>
           <textarea

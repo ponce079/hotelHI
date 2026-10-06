@@ -3,10 +3,10 @@
 //
 // Es la ÚNICA fuente de cálculo de precio por temporada del sistema — la
 // Etapa 4 la reutiliza tal cual para reservas, web, walk-in, modificaciones
-// y check-out (vía ReservaNoche). La seña (HU-88) y la regla fija de 24hs
-// de cancelación siguen sin conectarse acá — ver calcularPenalidad
-// (penalidades.servicio.js) para el cálculo de penalidad por cancelación/
-// no-show, tampoco conectado a cancelarReserva todavía.
+// y check-out (vía ReservaNoche). La seña (HU-88) y la regla fija de 24 hs de
+// cancelación se retiraron: la penalidad por cancelación y por no-show la calcula
+// calcularPenalidad (penalidades.servicio.js) y la cobra el módulo de garantías
+// (garantias/cierreReserva.servicio.js).
 //
 // Toda la aritmética de precio (bruto, modificador, descuento, redondeo,
 // total y promedio) se hace con Prisma.Decimal, nunca con Number/float: el

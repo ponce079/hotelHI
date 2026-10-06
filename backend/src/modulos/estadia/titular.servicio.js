@@ -3,11 +3,7 @@ const prisma = require("../../lib/prisma");
 const estadia = require("./estadia.servicio");
 const { titularActivoEn } = require("./titularHabitacion");
 const ACCION = "Titular incorporado como ocupante";
-const documento = (valor) =>
-  String(valor || "")
-    .trim()
-    .toUpperCase()
-    .replace(/\s/g, "");
+const { normalizarNumeroDocumento: documento } = require("../../lib/documento");
 
 function tienePlaza(r, habitacionId, capacidad, personas) {
   const eventos = [

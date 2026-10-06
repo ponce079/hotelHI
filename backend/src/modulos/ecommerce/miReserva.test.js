@@ -98,6 +98,14 @@ describe("evaluarCancelacion (decisión 14)", () => {
     expect(evaluarCancelacion({ ...base, estado: "En curso" }, null, ANTES)).toEqual({ puedeCancelarOnline: false, motivo: null, penalidad: null });
   });
 
+  test("estado No-show: no se cancela y dice que figura como no presentada", () => {
+    expect(evaluarCancelacion({ ...base, estado: "No-show" }, null, ANTES)).toEqual({
+      puedeCancelarOnline: false,
+      motivo: "La reserva figura como no presentada. Contactá a recepción.",
+      penalidad: null,
+    });
+  });
+
   test("sin penalidad calculable → no se cancela online", () => {
     expect(evaluarCancelacion(base, null, ANTES).puedeCancelarOnline).toBe(false);
   });
@@ -120,7 +128,8 @@ describe("armarRespuestaMiReserva", () => {
       { anulado: false, concepto: "Seña", medios: [{ importe: "10000" }, { importe: "5000" }] },
       { anulado: true, concepto: "Seña", medios: [{ importe: "99999" }] },
     ],
-    datosWeb: { emailContacto: "juan@correo.com", tarjetaMarca: "VISA", tarjetaUltimos4: "4242" },
+    datosWeb: { emailContacto: "juan@correo.com" },
+    garantiaReserva: { tipo: "TARJETA", marca: "Visa", ultimos4: "4242" },
   };
 
   const CLAVES_PROHIBIDAS = ["id", "reservaId", "huespedId", "habitacionId", "numero", "numeroDocumento", "email", "emailContacto", "contacto", "token"];
@@ -149,7 +158,7 @@ describe("armarRespuestaMiReserva", () => {
       ],
       total: 90001,
       cobrado: 15000,
-      garantia: { tipo: "GARANTIA", marca: "VISA", ultimos4: "4242" },
+      garantia: { tipo: "GARANTIA", marca: "Visa", ultimos4: "4242" },
       titular: "Juan P.",
       documento: "****222",
       cancelacion,
@@ -166,7 +175,7 @@ describe("armarRespuestaMiReserva", () => {
   });
 
   test("mostrador: sin garantía; no reembolsable → PREPAGO y sin horas", () => {
-    expect(armarRespuestaMiReserva({ ...reserva, datosWeb: null }, null).garantia).toBeNull();
+    expect(armarRespuestaMiReserva({ ...reserva, datosWeb: null, garantiaReserva: null }, null).garantia).toBeNull();
     const nrf = armarRespuestaMiReserva({ ...reserva, planTarifario: { ...reserva.planTarifario, reembolsable: false } }, null);
     expect(nrf.garantia.tipo).toBe("PREPAGO");
     expect(nrf.plan.horasCancelacionSinCargo).toBeNull();

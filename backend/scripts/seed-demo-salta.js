@@ -202,10 +202,9 @@ async function asegurarModificadorFinDeSemana() {
 }
 
 // --------------------------------------------------------------
-// 4. Reservas de demostración — SIN seña (alta normal de mostrador,
-// crearReserva/cotizarParaReserva reales — nunca crearReservaConSena: el
-// equipo de garantía va a eliminar la seña, y este seed no puede depender
-// de algo que está por desaparecer). Huéspedes "DEMO ..." con documento
+// 4. Reservas de demostración — SIN garantía (alta simple,
+// crearReserva/cotizarParaReserva reales: son datos de demostración, no una
+// reserva de mostrador con tarjeta). Huéspedes "DEMO ..." con documento
 // fijo para poder detectar en la próxima corrida si ya se creó cada una.
 // --------------------------------------------------------------
 

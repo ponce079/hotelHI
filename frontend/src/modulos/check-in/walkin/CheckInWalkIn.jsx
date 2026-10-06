@@ -118,7 +118,7 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" }) {
       <EstadiaOcupacion estado={estado} hoy={hoy} dispatch={dispatch} />
       <HabitacionTarifa estado={estado} libres={libres} planes={planes} dispatch={dispatch} />
       <SeccionHuespedes estado={estado} contexto={contexto} dispatch={dispatch} />
-      <SeccionGarantia garantia={estado.garantia} dispatch={dispatch} />
+      <SeccionGarantia garantia={estado.garantia} dispatch={dispatch} fechaHasta={fechaHasta} />
       <BarraCheckIn
         resumen={resumen}
         faltantes={planCotizado || faltantes.length ? faltantes : [{ texto: "Calculando el total…", campoId: "ci-tarifa" }]}

@@ -6,7 +6,7 @@ const { getHistorial } = require("./reservas.historial");
 // exige sesión + rol gerente en el backend (no solo el gate del botón en el
 // frontend, como el resto de reservas/tarifas hoy). No se toca
 // usuarios.middleware.js ni ninguna otra ruta de este router.
-const { requiereSesion, requiereRol } = require("../usuarios/usuarios.middleware");
+const { requiereSesion, sesionOpcional, requiereRol } = require("../usuarios/usuarios.middleware");
 
 const router = express.Router();
 
@@ -15,13 +15,22 @@ const router = express.Router();
 // con "/tipos").
 router.get("/disponibilidad", reservasControlador.getDisponibilidad);
 router.get("/codigo/:codigo", reservasControlador.getReservaPorCodigo);
+// Cancelar y marcar no-show COBRAN la penalidad a la tarjeta de la garantía:
+// solo personal con permiso de gestionar reservas (mismo criterio que el
+// frontend: admin y recepcionista). Antes /cancelar no pedía sesión.
+const gestionaReservas = [requiereSesion, requiereRol("admin", "recepcionista")];
+router.get("/no-show-pendientes", ...gestionaReservas, reservasControlador.getNoShowPendientes);
 router.get("/", reservasControlador.getReservas);
 router.post("/cotizar", reservasControlador.postCotizar);
-router.post("/", reservasControlador.postReserva);
-router.post("/con-sena", reservasControlador.postReservaConSenia);
+router.post("/", sesionOpcional, reservasControlador.postReserva);
+router.post("/con-garantia", sesionOpcional, reservasControlador.postReservaConGarantia);
 router.get("/:id", reservasControlador.getReservaPorId);
-router.patch("/:id", reservasControlador.patchReserva);
-router.post("/:id/cancelar", reservasControlador.postCancelar);
+router.patch("/:id", sesionOpcional, reservasControlador.patchReserva);
+router.post("/:id/cancelar", ...gestionaReservas, reservasControlador.postCancelar);
+router.post("/:id/no-show", ...gestionaReservas, reservasControlador.postNoShow);
+router.get("/:id/cierre-previo", ...gestionaReservas, reservasControlador.getCierrePrevio);
+router.get("/:id/garantia", ...gestionaReservas, reservasControlador.getGarantias);
+router.post("/:id/garantia/aplicar", ...gestionaReservas, reservasControlador.postAplicarGarantia);
 router.post("/:id/ajuste-precio", requiereSesion, requiereRol("gerente"), reservasControlador.postAjustePrecio);
 router.get("/:id/penalidad", reservasControlador.getPenalidad);
 // Historial de la reserva (solo lectura): mismos roles que la lectura de estadía, porque incluye

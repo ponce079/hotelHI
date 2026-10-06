@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, fireEvent, act, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReservaWizard } from "./ReservaWizard";
-import { consultarDisponibilidad, cotizarReserva, crearReserva, crearReservaConSena, modificarReserva } from "./reservas.api";
+import { consultarDisponibilidad, cotizarReserva, crearReserva, crearReservaConGarantia, modificarReserva } from "./reservas.api";
 import { listarTiposHabitacion } from "../tipos-habitacion/tiposHabitacion.api";
 import { listarPlanesTarifarios } from "../tarifas/tarifas.api";
 
@@ -10,7 +10,7 @@ vi.mock("./reservas.api", () => ({
   consultarDisponibilidad: vi.fn(),
   cotizarReserva: vi.fn(),
   crearReserva: vi.fn(),
-  crearReservaConSena: vi.fn(),
+  crearReservaConGarantia: vi.fn(),
   modificarReserva: vi.fn(),
 }));
 
@@ -79,7 +79,7 @@ const RESERVA_CREADA = {
   estado: "Confirmada",
   totalEstimadoAlojamiento: 150000,
   habitaciones: [{ ...HABITACION_101, adultos: 2, menores: 0 }],
-  pagoSenia: { id: 1, estado: "Parcial", concepto: "Seña" },
+  garantia: { tipo: "TARJETA", estado: "Vigente", marca: "Visa", ultimos4: "4242", monto: 0 },
 };
 
 function renderWizard(props = {}) {
@@ -95,7 +95,7 @@ function renderWizard(props = {}) {
 }
 
 // Completa los pasos 1 a 4 (Fechas, Habitaciones, Plan, Huésped — idénticos
-// con o sin seña) y deja el wizard parado justo antes del botón final del
+// con o sin garantía) y deja el wizard parado justo antes del botón final del
 // paso que corresponda.
 async function completarPasos1a4() {
   fireEvent.change(screen.getByLabelText("Entrada (check-in) *"), { target: { value: "2026-10-10" } });
@@ -129,44 +129,47 @@ beforeEach(() => {
   ]);
 });
 
-describe("ReservaWizard — alta asistida por mostrador (seña obligatoria, HU-88)", () => {
-  it("muestra 5 pasos, con 'Seña' al final, y el paso de huésped avanza en vez de confirmar", async () => {
+const TARJETA_OK = "4242424242424242";
+
+// Llena el formulario de tarjeta del paso Garantía.
+function completarTarjeta({ numero = TARJETA_OK, titular = "ANA PEREZ", vencimiento = "1230", cvv = "123" } = {}) {
+  fireEvent.change(screen.getByLabelText("Número de tarjeta *"), { target: { value: numero } });
+  fireEvent.change(screen.getByLabelText("Titular *"), { target: { value: titular } });
+  fireEvent.change(screen.getByLabelText("Vencimiento (MM/AA) *"), { target: { value: vencimiento } });
+  fireEvent.change(screen.getByLabelText("Código de seguridad *"), { target: { value: cvv } });
+}
+
+describe("ReservaWizard — alta asistida por mostrador (garantía con tarjeta)", () => {
+  it("muestra 5 pasos, con 'Garantía' al final, y el paso de huésped avanza en vez de confirmar", async () => {
     renderWizard({ origen: "RECEPCION" });
 
-    expect(screen.getByText(/Seña/)).toBeInTheDocument();
+    expect(screen.getByText(/Garantía/)).toBeInTheDocument();
     await completarPasos1a4();
 
-    // Paso de huésped (no es el último): botón "Siguiente", no "Confirmar
-    // reserva" — todavía no se mandó nada a la base (ni la reserva ni la
-    // seña).
+    // Paso de huésped (no es el último): "Siguiente", no "Confirmar reserva" —
+    // todavía no se mandó nada (ni la reserva ni la garantía).
     expect(screen.getByRole("button", { name: "Siguiente" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Confirmar reserva" })).not.toBeInTheDocument();
-    expect(crearReservaConSena).not.toHaveBeenCalled();
+    expect(crearReservaConGarantia).not.toHaveBeenCalled();
   });
 
-  it("paso final: un único submit crea la reserva y cobra la seña en efectivo de forma atómica", async () => {
-    crearReservaConSena.mockResolvedValue(RESERVA_CREADA);
+  it("BAR con tarjeta: un único POST con la tarjeta, sin cobro; el CVV y el número se descartan al terminar", async () => {
+    crearReservaConGarantia.mockResolvedValue(RESERVA_CREADA);
     const { onExito } = renderWizard({ origen: "RECEPCION" });
 
     await completarPasos1a4();
     fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
 
-    expect(await screen.findByText("Seña requerida (20%)")).toBeInTheDocument();
-    expect(screen.getByText("$ 30.000")).toBeInTheDocument(); // 20% de 150000 (plan BAR cotizado)
+    // BAR es reembolsable: no se cobra nada al reservar.
+    expect(await screen.findByText("Se cobra al reservar")).toBeInTheDocument();
+    expect(screen.getByText("$ 0")).toBeInTheDocument();
+    expect(screen.getByText(/no se cobra nada ahora/i)).toBeInTheDocument();
 
-    const confirmar = screen.getByRole("button", { name: "Confirmar reserva" });
-    expect(confirmar).toBeDisabled();
+    completarTarjeta();
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
 
-    fireEvent.change(screen.getByLabelText("Medio de pago de la seña *"), { target: { value: "Efectivo" } });
-    fireEvent.click(screen.getByRole("checkbox"));
-    expect(confirmar).toBeEnabled();
-
-    fireEvent.click(confirmar);
-
-    // Un solo POST con todo junto: datos de reserva + medio de pago de la
-    // seña — nunca 2 llamadas separadas.
-    await waitFor(() => expect(crearReservaConSena).toHaveBeenCalledTimes(1));
-    expect(crearReservaConSena).toHaveBeenCalledWith(
+    await waitFor(() => expect(crearReservaConGarantia).toHaveBeenCalledTimes(1));
+    expect(crearReservaConGarantia).toHaveBeenCalledWith(
       expect.objectContaining({
         fechaDesde: "2026-10-10",
         fechaHasta: "2026-10-13",
@@ -174,103 +177,172 @@ describe("ReservaWizard — alta asistida por mostrador (seña obligatoria, HU-8
         planTarifarioId: 1,
         totalEsperado: 150000,
         origen: "RECEPCION",
-        medios: [{ tipo: "Efectivo", importe: 30000, referencia: undefined }],
         huesped: expect.objectContaining({ nombres: "Ana María", apellido: "Pérez de la Vega" }),
+        garantia: {
+          tipo: "TARJETA",
+          tarjeta: { titular: "ANA PEREZ", numero: TARJETA_OK, vencimientoMes: 12, vencimientoAnio: 2030, cvv: "123" },
+        },
+        claveIdempotencia: expect.any(String),
       })
     );
-    expect(crearReservaConSena.mock.calls[0][0].huesped).not.toHaveProperty("nombre");
+    expect(crearReservaConGarantia.mock.calls[0][0].huesped).not.toHaveProperty("nombre");
     await waitFor(() => expect(onExito).toHaveBeenCalledWith(RESERVA_CREADA));
+    // El número y el CVV no viajan a ningún lado más: ni a la reserva ya creada
+    // que recibe onExito ni a localStorage.
+    expect(JSON.stringify(onExito.mock.calls)).not.toContain(TARJETA_OK);
+    expect(JSON.stringify({ ...localStorage })).not.toContain(TARJETA_OK);
   });
 
-  it("paso final con tarjeta: no deja confirmar hasta autorizar la terminal simulada", async () => {
+  it("no deja confirmar con datos de tarjeta inválidos y marca qué falta (sin llamar al backend)", async () => {
     renderWizard({ origen: "RECEPCION" });
     await completarPasos1a4();
     fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
-    await screen.findByText("Seña requerida (20%)");
+    await screen.findByText("Se cobra al reservar");
 
-    fireEvent.change(screen.getByLabelText("Medio de pago de la seña *"), { target: { value: "Tarjeta crédito" } });
-    const confirmar = screen.getByRole("button", { name: "Confirmar reserva" });
-    expect(confirmar).toBeDisabled();
-    expect(screen.getByRole("button", { name: /Autorizar tarjeta/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
 
-    fireEvent.click(screen.getByRole("button", { name: /Autorizar tarjeta/ }));
-
-    vi.useFakeTimers();
-    try {
-      fireEvent.change(screen.getByLabelText("Número de tarjeta"), { target: { value: "4242424242424242" } });
-      fireEvent.change(screen.getByLabelText("Titular"), { target: { value: "ANA PEREZ" } });
-      fireEvent.change(screen.getByLabelText("Vencimiento (MM/AA)"), { target: { value: "1228" } });
-      fireEvent.change(screen.getByLabelText("Código de seguridad"), { target: { value: "123" } });
-      fireEvent.click(screen.getByRole("button", { name: /Autorizar \$/ }));
-      await act(async () => {
-        vi.advanceTimersByTime(1600);
-      });
-    } finally {
-      vi.useRealTimers();
-    }
-
-    expect(screen.getByText("Autorizada")).toBeInTheDocument();
-    expect(confirmar).toBeEnabled();
+    expect(await screen.findByText("Número de tarjeta inválido.")).toBeInTheDocument();
+    expect(screen.getByText("Ingresá el titular.")).toBeInTheDocument();
+    expect(screen.getByText("Vencimiento inválido (MM/AA).")).toBeInTheDocument();
+    expect(crearReservaConGarantia).not.toHaveBeenCalled();
   });
 
-  it("con Transferencia, alcanza con la confirmación manual (sin terminal de tarjeta)", async () => {
-    crearReservaConSena.mockResolvedValue(RESERVA_CREADA);
+  it("tarjeta que vence antes de la salida: se rechaza en pantalla", async () => {
+    renderWizard({ origen: "RECEPCION" });
+    await completarPasos1a4(); // salida 2026-10-13
+    fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+    await screen.findByText("Se cobra al reservar");
+
+    completarTarjeta({ vencimiento: "0926" }); // vence 30/09/2026
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+
+    expect(await screen.findByText("La tarjeta vence antes de la fecha de salida.")).toBeInTheDocument();
+    expect(crearReservaConGarantia).not.toHaveBeenCalled();
+  });
+
+  it("tarjeta rechazada por la pasarela: no se crea nada, el CVV se borra y el reintento usa otra clave de idempotencia", async () => {
+    crearReservaConGarantia.mockRejectedValueOnce({
+      response: { status: 402, data: { error: "La tarjeta fue rechazada: Fondos insuficientes." } },
+    });
+    crearReservaConGarantia.mockResolvedValueOnce(RESERVA_CREADA);
     const { onExito } = renderWizard({ origen: "RECEPCION" });
 
     await completarPasos1a4();
     fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
-    await screen.findByText("Seña requerida (20%)");
+    await screen.findByText("Se cobra al reservar");
+    completarTarjeta({ numero: "4000000000000002" });
 
-    fireEvent.change(screen.getByLabelText("Medio de pago de la seña *"), { target: { value: "Transferencia" } });
-    expect(screen.queryByRole("button", { name: /Autorizar tarjeta/ })).not.toBeInTheDocument();
-
-    const confirmar = screen.getByRole("button", { name: "Confirmar reserva" });
-    expect(confirmar).toBeDisabled();
-    fireEvent.click(screen.getByRole("checkbox"));
-    expect(confirmar).toBeEnabled();
-
-    fireEvent.click(confirmar);
-    await waitFor(() =>
-      expect(crearReservaConSena).toHaveBeenCalledWith(
-        expect.objectContaining({
-          medios: [{ tipo: "Transferencia", importe: 30000, referencia: undefined }],
-        })
-      )
-    );
-    await waitFor(() => expect(onExito).toHaveBeenCalledWith(RESERVA_CREADA));
-  });
-
-  it("si el cobro de la seña falla, no queda nada creado — Atrás/Cancelar siguen disponibles y el reintento manda todo de nuevo", async () => {
-    crearReservaConSena.mockRejectedValueOnce({ response: { data: { error: "Tarjeta rechazada" } } });
-    crearReservaConSena.mockResolvedValueOnce(RESERVA_CREADA);
-    const { onExito } = renderWizard({ origen: "RECEPCION" });
-
-    await completarPasos1a4();
-    fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
-    await screen.findByText("Seña requerida (20%)");
-    fireEvent.change(screen.getByLabelText("Medio de pago de la seña *"), { target: { value: "Efectivo" } });
-    fireEvent.click(screen.getByRole("checkbox"));
-
-    const confirmar = screen.getByRole("button", { name: "Confirmar reserva" });
-    fireEvent.click(confirmar);
-    await waitFor(() => expect(crearReservaConSena).toHaveBeenCalledTimes(1));
-    await screen.findByText(/Tarjeta rechazada/);
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+    await waitFor(() => expect(crearReservaConGarantia).toHaveBeenCalledTimes(1));
+    await screen.findByText(/Fondos insuficientes/);
+    // Master reemplazó el aviso "No se guardó nada" por el manejo de vencimiento del guardado.
     expect(screen.queryByText(/No se guardó nada/)).not.toBeInTheDocument();
+    expect(onExito).not.toHaveBeenCalled();
 
-    // Como nada se persistió (la transacción atómica revirtió todo), el
-    // recepcionista puede seguir volviendo atrás o cancelar.
+    // El código de seguridad no se conserva tras un intento fallido.
+    expect(screen.getByLabelText("Código de seguridad *")).toHaveValue("");
+    // Atrás/Cancelar siguen disponibles: nada quedó persistido.
     expect(screen.getByRole("button", { name: "Atrás" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancelar" })).toBeInTheDocument();
 
-    // Reintentar manda TODO de nuevo (reserva + seña), no solo el pago.
-    fireEvent.click(confirmar);
-    await waitFor(() => expect(crearReservaConSena).toHaveBeenCalledTimes(2));
-    expect(crearReservaConSena.mock.calls[1][0]).toMatchObject({
-      fechaDesde: "2026-10-10",
-      fechaHasta: "2026-10-13",
-      habitaciones: [{ habitacionId: 1, adultos: 2, menores: 0 }],
-    });
+    // Reintento con otra tarjeta: manda TODO de nuevo y con una clave nueva.
+    completarTarjeta({ numero: TARJETA_OK });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+    await waitFor(() => expect(crearReservaConGarantia).toHaveBeenCalledTimes(2));
+    const [primera, segunda] = crearReservaConGarantia.mock.calls.map((c) => c[0]);
+    expect(segunda.claveIdempotencia).not.toBe(primera.claveIdempotencia);
+    expect(segunda).toMatchObject({ fechaDesde: "2026-10-10", habitaciones: [{ habitacionId: 1, adultos: 2, menores: 0 }] });
     await waitFor(() => expect(onExito).toHaveBeenCalledWith(RESERVA_CREADA));
+  });
+
+  it("prepago (sin tarjeta) en BAR: manda medios con el importe, sin datos de tarjeta", async () => {
+    crearReservaConGarantia.mockResolvedValue(RESERVA_CREADA);
+    renderWizard({ origen: "RECEPCION" });
+    await completarPasos1a4();
+    fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+    await screen.findByText("Se cobra al reservar");
+
+    fireEvent.change(screen.getByLabelText("Cómo se garantiza la reserva *"), { target: { value: "PREPAGO" } });
+    fireEvent.change(screen.getByLabelText("Medio de pago *"), { target: { value: "Transferencia" } });
+    fireEvent.change(screen.getByLabelText("Importe prepagado *"), { target: { value: "50000" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+
+    await waitFor(() => expect(crearReservaConGarantia).toHaveBeenCalledTimes(1));
+    expect(crearReservaConGarantia.mock.calls[0][0].garantia).toEqual({
+      tipo: "PREPAGO",
+      medios: [{ tipo: "Transferencia", importe: 50000 }],
+    });
+  });
+
+  it("prepago: no puede superar el total y el débito exige la autorización", async () => {
+    renderWizard({ origen: "RECEPCION" });
+    await completarPasos1a4();
+    fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+    await screen.findByText("Se cobra al reservar");
+
+    fireEvent.change(screen.getByLabelText("Cómo se garantiza la reserva *"), { target: { value: "PREPAGO" } });
+    fireEvent.change(screen.getByLabelText("Medio de pago *"), { target: { value: "Tarjeta débito" } });
+    fireEvent.change(screen.getByLabelText("Importe prepagado *"), { target: { value: "999999" } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+
+    expect(await screen.findByText("El prepago no puede superar el total de la estadía.")).toBeInTheDocument();
+    expect(screen.getByText("Ingresá la autorización de la tarjeta.")).toBeInTheDocument();
+    expect(crearReservaConGarantia).not.toHaveBeenCalled();
+  });
+});
+
+describe("ReservaWizard — tarifa no reembolsable (NRF)", () => {
+  beforeEach(() => {
+    const nrf = { codigo: "NRF", nombre: "Tarifa promocional NRF", total: 135000, promedioPorNoche: 45000, reembolsable: false };
+    cotizarReserva.mockResolvedValue({ ...COTIZACION, planes: [...COTIZACION.planes, nrf] });
+    listarPlanesTarifarios.mockResolvedValue([
+      { id: 1, codigo: "BAR", nombre: "Best Available Rate", reembolsable: true, horasCancelacionSinCargo: 48, activo: true },
+      { id: 2, codigo: "NRF", nombre: "Tarifa promocional NRF", reembolsable: false, horasCancelacionSinCargo: null, activo: true },
+    ]);
+  });
+
+  async function irAGarantiaConNRF() {
+    fireEvent.change(screen.getByLabelText("Entrada (check-in) *"), { target: { value: "2026-10-10" } });
+    fireEvent.change(screen.getByLabelText("Salida (check-out) *"), { target: { value: "2026-10-13" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: /Ver disponibilidad/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: /Ver disponibilidad/ }));
+    fireEvent.click(await screen.findByText("101"));
+    fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+    fireEvent.click(await screen.findByText("Tarifa promocional NRF"));
+    fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+    fireEvent.change(await screen.findByLabelText("Nombres*"), { target: { value: "Ana" } });
+    fireEvent.change(screen.getByLabelText("Apellido*"), { target: { value: "Pérez" } });
+    fireEvent.change(screen.getByLabelText("País emisor*"), { target: { value: "AR" } });
+    fireEvent.change(screen.getByLabelText("Nacimiento*"), { target: { value: "1990-01-01" } });
+    fireEvent.change(screen.getByLabelText("Número*"), { target: { value: "30111222" } });
+    fireEvent.change(screen.getByLabelText("Correo electrónico*"), { target: { value: "ana@mail.com" } });
+    fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
+  }
+
+  it("avisa que se cobra el total al confirmar y manda totalEsperado del NRF", async () => {
+    crearReservaConGarantia.mockResolvedValue(RESERVA_CREADA);
+    renderWizard({ origen: "RECEPCION" });
+    await irAGarantiaConNRF();
+
+    expect(await screen.findByText(/Se cobra al confirmar \(tarifa no reembolsable\)/)).toBeInTheDocument();
+    // El total aparece en el resumen y como cifra del cobro al confirmar.
+    expect(screen.getAllByText("$ 135.000")).toHaveLength(2);
+
+    completarTarjeta();
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
+    await waitFor(() => expect(crearReservaConGarantia).toHaveBeenCalledTimes(1));
+    expect(crearReservaConGarantia.mock.calls[0][0]).toMatchObject({ planTarifarioId: 2, totalEsperado: 135000 });
+  });
+
+  it("sin tarjeta, el prepago del NRF es por el total y el importe no se puede editar", async () => {
+    renderWizard({ origen: "RECEPCION" });
+    await irAGarantiaConNRF();
+    await screen.findByText(/Se cobra al confirmar/);
+
+    fireEvent.change(screen.getByLabelText("Cómo se garantiza la reserva *"), { target: { value: "PREPAGO" } });
+
+    expect(screen.getByLabelText("Importe prepagado *")).toHaveValue("135000");
+    expect(screen.getByLabelText("Importe prepagado *")).toBeDisabled();
   });
 });
 
@@ -279,8 +351,8 @@ describe("ReservaWizard — vencimiento del guardado", () => {
     renderWizard();
     await completarPasos1a4();
     fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
-    fireEvent.change(await screen.findByLabelText("Medio de pago de la seña *"), { target: { value: "Efectivo" } });
-    fireEvent.click(screen.getByRole("checkbox"));
+    await screen.findByText("Se cobra al reservar");
+    completarTarjeta();
     fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
   }
   const vencido = {
@@ -291,7 +363,7 @@ describe("ReservaWizard — vencimiento del guardado", () => {
   };
 
   it("conserva datos, actualiza disponibilidad y permite un segundo intento explícito", async () => {
-    crearReservaConSena.mockRejectedValueOnce(vencido).mockResolvedValueOnce(RESERVA_CREADA);
+    crearReservaConGarantia.mockRejectedValueOnce(vencido).mockResolvedValueOnce(RESERVA_CREADA);
     await enviar();
     await screen.findByRole("alert");
     expect(screen.getByRole("button", { name: "Confirmar reserva" })).toBeDisabled();
@@ -299,19 +371,23 @@ describe("ReservaWizard — vencimiento del guardado", () => {
     fireEvent.click(screen.getByRole("button", { name: /Actualizar disponibilidad para reintentar/ }));
     await waitFor(() => expect(screen.queryByText(/El intento venció/)).not.toBeInTheDocument());
     expect(consultarDisponibilidad.mock.calls.length).toBeGreaterThan(consultas);
-    expect(crearReservaConSena).toHaveBeenCalledTimes(1);
+    expect(crearReservaConGarantia).toHaveBeenCalledTimes(1);
     fireEvent.click(await screen.findByText("Best Available Rate"));
     fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
     fireEvent.click(screen.getByRole("button", { name: "Siguiente" }));
-    expect(screen.getByRole("checkbox")).not.toBeChecked();
-    fireEvent.click(screen.getByRole("checkbox"));
+    // El número y el titular se conservan; el código de seguridad NO (se borra tras un intento fallido).
+    expect(screen.getByLabelText("Código de seguridad *")).toHaveValue("");
+    fireEvent.change(screen.getByLabelText("Código de seguridad *"), { target: { value: "123" } });
     fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
-    await waitFor(() => expect(crearReservaConSena).toHaveBeenCalledTimes(2));
-    expect(crearReservaConSena.mock.calls[1][0]).toEqual(crearReservaConSena.mock.calls[0][0]);
+    await waitFor(() => expect(crearReservaConGarantia).toHaveBeenCalledTimes(2));
+    // Mismo pedido; solo cambia la clave de idempotencia (cada intento usa una nueva).
+    const [primero, segundo] = crearReservaConGarantia.mock.calls.map((c) => c[0]);
+    expect({ ...segundo, claveIdempotencia: undefined }).toEqual({ ...primero, claveIdempotencia: undefined });
+    expect(segundo.claveIdempotencia).not.toBe(primero.claveIdempotencia);
   });
 
   it("si actualizar falla conserva el bloqueo; si la habitación se ocupó vuelve a selección", async () => {
-    crearReservaConSena.mockRejectedValueOnce(vencido);
+    crearReservaConGarantia.mockRejectedValueOnce(vencido);
     await enviar();
     await screen.findByRole("alert");
     consultarDisponibilidad.mockRejectedValueOnce(new Error("Sin conexión"));
@@ -322,11 +398,11 @@ describe("ReservaWizard — vencimiento del guardado", () => {
     fireEvent.click(screen.getByRole("button", { name: /Actualizar disponibilidad para reintentar/ }));
     await screen.findByText(/La disponibilidad cambió/);
     expect(screen.getByRole("button", { name: "Siguiente" })).toBeDisabled();
-    expect(crearReservaConSena).toHaveBeenCalledTimes(1);
+    expect(crearReservaConGarantia).toHaveBeenCalledTimes(1);
   });
 
   it("sin respuesta del servidor no ofrece reintento ni afirma que no se guardó", async () => {
-    crearReservaConSena.mockRejectedValueOnce(new Error("Network Error"));
+    crearReservaConGarantia.mockRejectedValueOnce(new Error("Network Error"));
     await enviar();
     await screen.findByText(/Revisá el listado de reservas/);
     expect(screen.getByRole("button", { name: "Confirmar reserva" })).toBeDisabled();
@@ -336,7 +412,7 @@ describe("ReservaWizard — vencimiento del guardado", () => {
 
   it("bloquea los controles mientras el servidor sigue procesando y acepta el éxito", async () => {
     let resolver;
-    crearReservaConSena.mockImplementationOnce(
+    crearReservaConGarantia.mockImplementationOnce(
       () =>
         new Promise((resolve) => {
           resolver = resolve;
@@ -346,8 +422,8 @@ describe("ReservaWizard — vencimiento del guardado", () => {
     await screen.findByRole("status");
     expect(screen.getByRole("button", { name: "Cancelar" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Atrás" })).toBeDisabled();
-    expect(screen.getByLabelText("Medio de pago de la seña *")).toBeDisabled();
-    expect(crearReservaConSena).toHaveBeenCalledTimes(1);
+    expect(screen.getByLabelText("Número de tarjeta *")).toBeDisabled();
+    expect(crearReservaConGarantia).toHaveBeenCalledTimes(1);
     await act(async () => resolver(RESERVA_CREADA));
     await waitFor(() => expect(screen.queryByRole("status")).not.toBeInTheDocument());
   });
@@ -381,7 +457,7 @@ describe("ReservaWizard — arranca con habitaciones ya elegidas (desde Disponib
   });
 });
 
-describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin seña)", () => {
+describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin garantía)", () => {
   const RESERVA_EXISTENTE = {
     id: 7,
     fechaDesde: "2026-10-10T00:00:00.000Z",
@@ -402,11 +478,11 @@ describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin 
     },
   };
 
-  it("edición: sin 'Seña', y el paso de huésped confirma directo ('Guardar cambios')", async () => {
+  it("edición: sin 'Garantía', y el paso de huésped confirma directo ('Guardar cambios')", async () => {
     modificarReserva.mockResolvedValue({ ...RESERVA_EXISTENTE });
     const { onExito } = renderWizard({ reserva: RESERVA_EXISTENTE });
 
-    expect(screen.queryByText(/Seña/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Garantía/)).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: /Ver disponibilidad/ })).toBeEnabled());
 
     fireEvent.click(screen.getByRole("button", { name: /Ver disponibilidad/ }));
@@ -425,22 +501,22 @@ describe("ReservaWizard — edición y autoservicio web quedan sin cambios (sin 
 
     await waitFor(() => expect(modificarReserva).toHaveBeenCalledTimes(1));
     expect(crearReserva).not.toHaveBeenCalled();
-    expect(crearReservaConSena).not.toHaveBeenCalled();
+    expect(crearReservaConGarantia).not.toHaveBeenCalled();
     await waitFor(() => expect(onExito).toHaveBeenCalled());
   });
 
-  it("autoservicio web (origen WEB): tampoco pide seña, y sigue usando el alta simple (sin seña)", async () => {
+  it("autoservicio web (origen WEB): tampoco pide garantía, y sigue usando el alta simple (HU-40 no se toca)", async () => {
     crearReserva.mockResolvedValue({ ...RESERVA_CREADA, totalEstimadoAlojamiento: 150000 });
     renderWizard({ origen: "WEB" });
 
-    expect(screen.queryByText(/Seña/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Garantía/)).not.toBeInTheDocument();
     await completarPasos1a4();
 
     const confirmar = screen.getByRole("button", { name: "Confirmar reserva" });
     fireEvent.click(confirmar);
 
     await waitFor(() => expect(crearReserva).toHaveBeenCalledTimes(1));
-    expect(crearReservaConSena).not.toHaveBeenCalled();
+    expect(crearReservaConGarantia).not.toHaveBeenCalled();
   });
 });
 
@@ -455,5 +531,90 @@ describe("ReservaWizard — HU-89: el filtro de tipo del paso 2 respeta el orige
   it('origen "RECEPCION" (mostrador): pide todos los tipos activos, sin conHabitacionActiva', async () => {
     renderWizard({ origen: "RECEPCION" });
     await waitFor(() => expect(listarTiposHabitacion).toHaveBeenCalledWith({ activo: "true" }));
+  });
+});
+
+describe("ReservaWizard — ocupación limitada por la capacidad de la habitación", () => {
+  const SIMPLE_102 = { ...HABITACION_101, id: 2, numero: "102", tipo: "Simple", capacidad: 1 };
+  const TRIPLE_103 = { ...HABITACION_101, id: 3, numero: "103", tipo: "Triple", capacidad: 3 };
+
+  beforeEach(() => {
+    const habitaciones = [HABITACION_101, SIMPLE_102, TRIPLE_103];
+    consultarDisponibilidad.mockResolvedValue({
+      ...DISPONIBILIDAD,
+      habitaciones,
+      todas: habitaciones.map((h) => ({ ...h, disponible: true, motivo: null })),
+    });
+  });
+
+  async function elegir(numero) {
+    fireEvent.change(screen.getByLabelText("Entrada (check-in) *"), { target: { value: "2026-10-10" } });
+    fireEvent.change(screen.getByLabelText("Salida (check-out) *"), { target: { value: "2026-10-13" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: /Ver disponibilidad/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: /Ver disponibilidad/ }));
+    fireEvent.click(await screen.findByText(numero));
+  }
+
+  it("una Simple arranca con 1 adulto y 0 menores, muestra la capacidad y no el aviso de exceso", async () => {
+    renderWizard({ origen: "RECEPCION" });
+    await elegir("102");
+
+    const adultos = screen.getByLabelText("Adultos en habitación 102");
+    const menores = screen.getByLabelText("Menores en habitación 102");
+    expect(adultos).toHaveValue(1);
+    expect(adultos).toHaveAttribute("max", "1");
+    expect(menores).toHaveValue(0);
+    expect(menores).toHaveAttribute("max", "0");
+    expect(screen.getByText("Capacidad máx.: 1")).toBeInTheDocument();
+    expect(screen.queryByText(/Supera la capacidad/)).not.toBeInTheDocument();
+  });
+
+  it("con capacidad 1 y un adulto, los menores no se pueden subir ni los adultos pasar de 1", async () => {
+    renderWizard({ origen: "RECEPCION" });
+    await elegir("102");
+
+    fireEvent.change(screen.getByLabelText("Menores en habitación 102"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Adultos en habitación 102"), { target: { value: "3" } });
+
+    expect(screen.getByLabelText("Adultos en habitación 102")).toHaveValue(1);
+    expect(screen.getByLabelText("Menores en habitación 102")).toHaveValue(0);
+  });
+
+  it("una habitación arranca con tantos adultos como su capacidad, y adultos + menores no la supera", async () => {
+    renderWizard({ origen: "RECEPCION" });
+    await elegir("103");
+
+    const adultos = () => screen.getByLabelText("Adultos en habitación 103");
+    const menores = () => screen.getByLabelText("Menores en habitación 103");
+    expect(adultos()).toHaveValue(3);
+    expect(menores()).toHaveValue(0);
+    expect(menores()).toHaveAttribute("max", "0");
+    expect(screen.getByText("Capacidad máx.: 3")).toBeInTheDocument();
+
+    // Bajando adultos se liberan lugares para menores, hasta la capacidad.
+    fireEvent.change(adultos(), { target: { value: "1" } });
+    fireEvent.change(menores(), { target: { value: "5" } });
+    expect(menores()).toHaveValue(2);
+    expect(menores()).toHaveAttribute("max", "2");
+
+    // Subir los adultos baja los menores para no pasarse.
+    fireEvent.change(adultos(), { target: { value: "3" } });
+    expect(adultos()).toHaveValue(3);
+    expect(menores()).toHaveValue(0);
+  });
+
+  it("habitaciones que llegan ya elegidas se ajustan a su capacidad cuando se conoce", async () => {
+    renderWizard({
+      origen: "RECEPCION",
+      valoresIniciales: {
+        fechaDesde: "2026-10-10",
+        fechaHasta: "2026-10-13",
+        habitaciones: [{ habitacionId: 2, adultos: 2, menores: 1 }],
+      },
+    });
+
+    await waitFor(() => expect(screen.getByLabelText("Adultos en habitación 102")).toHaveValue(1));
+    expect(screen.getByLabelText("Menores en habitación 102")).toHaveValue(0);
+    expect(screen.queryByText(/Supera la capacidad/)).not.toBeInTheDocument();
   });
 });

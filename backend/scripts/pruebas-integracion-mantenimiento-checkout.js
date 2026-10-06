@@ -81,7 +81,8 @@ const HUESPED = {
   numeroDocumento: "30111222",
   contacto: "ana@mail.com",
 };
-const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Tarjeta crédito", referenciaGarantia: "PRUEBA-LOCAL" };
+// La garantía del check-in es un depósito en efectivo (no es un pago, no resta del saldo).
+const GARANTIA_OK = { garantiaConfirmada: true, medioGarantia: "Efectivo" };
 
 // Etapa 4A — crearReserva ahora pasa por el motor de cotización: hace falta
 // una temporada Base + un plan BAR + una Tarifa vigente por tipo, aunque

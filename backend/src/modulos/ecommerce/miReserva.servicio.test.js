@@ -101,10 +101,10 @@ describe("POST /api/web/mi-reserva", () => {
     expect(r.body).toMatchObject({ titular: "Ana L.", garantia: null });
   });
 
-  test("Prepago (no reembolsable) no cuenta como pago: el motivo es el de la tarifa; una seña sí bloquea", async () => {
+  test("Pago anticipado (no reembolsable) no cuenta como pago: el motivo es el de la tarifa; una seña sí bloquea", async () => {
     const nrf = { ...reservaWeb().planTarifario, reembolsable: false };
     prisma.reserva.findUnique.mockResolvedValue(
-      reservaWeb({ planTarifario: nrf, pagosEstadia: [{ anulado: false, concepto: "Prepago", medios: [{ importe: "50000" }] }] })
+      reservaWeb({ planTarifario: nrf, pagosEstadia: [{ anulado: false, concepto: "Pago anticipado", medios: [{ importe: "50000" }] }] })
     );
     calcularPenalidad.mockResolvedValue(CON_CARGO);
     expect((await llamar(postMiReserva, { codigo: "3FA9C21B", email: "juan@correo.com" })).body.cancelacion.motivo).toBe(MOTIVO.NO_REEMBOLSABLE);

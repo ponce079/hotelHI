@@ -1,67 +1,77 @@
-// Columna "Garantía" de las llegadas: cómo está asegurada cada reserva.
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, within } from "@testing-library/react";
-import { TablaLlegadas, textoGarantia } from "./TablaLlegadas";
+import { render, screen } from "@testing-library/react";
+import { TablaLlegadas, textoSenia } from "./TablaLlegadas";
 
-const SIN_SENIA = { registrada: false, importe: 0, medios: [] };
-const SIN_PREPAGO = { registrado: false, importe: 0 };
+const BASE = {
+  id: 1,
+  codigoConfirmacion: "AAA111",
+  fechaDesde: "2099-10-10T00:00:00.000Z",
+  fechaHasta: "2099-10-13T00:00:00.000Z",
+  noches: 3,
+  titular: { nombre: "Ana Pérez" },
+  habitaciones: [{ id: 1, numero: "101", tipo: "Doble", adultos: 2, menores: 0 }],
+  plan: { nombre: "Best Available Rate" },
+  senia: { registrada: false, importe: 0, medios: [] },
+  garantia: null,
+};
 
-function llegada(id, extra = {}) {
-  return {
-    id,
-    codigoConfirmacion: `0000000${id}`,
-    fechaDesde: "2026-10-04T00:00:00.000Z",
-    fechaHasta: "2026-10-06T00:00:00.000Z",
-    noches: 2,
-    titular: { nombre: `Titular ${id}` },
-    habitaciones: [{ id, numero: "030", tipo: "Doble", adultos: 2, menores: 0 }],
-    senia: SIN_SENIA,
-    prepago: SIN_PREPAGO,
-    garantiaWeb: null,
-    ...extra,
-  };
+function renderTabla(reserva) {
+  return render(
+    <TablaLlegadas busqueda="" onBuscar={vi.fn()} consulta={{ data: { reservas: [reserva], anterioresPendientes: 0 } }} seleccionadaId={null} onSeleccionar={vi.fn()} />
+  );
 }
 
-const PREPAGADA = llegada(1, { prepago: { registrado: true, importe: 80000 }, garantiaWeb: { marca: "VISA", ultimos4: "4242" } });
-const GARANTIZADA = llegada(2, { garantiaWeb: { marca: "MASTERCARD", ultimos4: "4444" } });
-const CON_SENIA = llegada(3, {
-  senia: { registrada: true, importe: 24000, medios: [{ medioPago: "Tarjeta crédito", importe: 24000, referencia: "VISA ****4242 · aut. 5521" }] },
-});
-const SIN_NADA = llegada(4);
-
-describe("textoGarantia", () => {
-  it("prepago → Prepagada (aunque también tenga datos de tarjeta)", () => {
-    expect(textoGarantia(PREPAGADA)).toMatch(/^Prepagada · \$\s?80\.000$/);
+describe("TablaLlegadas — qué respaldo trae cada reserva", () => {
+  it("reserva con tarjeta en garantía: lo muestra con marca y últimos 4 (nunca como 'Sin garantía')", () => {
+    renderTabla({ ...BASE, garantia: { tipo: "TARJETA", marca: "Visa", ultimos4: "4242" } });
+    expect(screen.getByText(/Tarjeta en garantía · Visa \*\*\*\*4242/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sin garantía/)).not.toBeInTheDocument();
   });
 
-  it("tarjeta web sin prepago → Garantizada con tarjeta · MARCA ••1234", () => {
-    expect(textoGarantia(GARANTIZADA)).toBe("Garantizada con tarjeta · MASTERCARD ••4444");
+  it("reserva con pago anticipado (prepago o tarifa no reembolsable): muestra el pago", () => {
+    renderTabla({ ...BASE, senia: { registrada: true, importe: 90000, medios: [{ medioPago: "Transferencia", importe: 90000, referencia: null }] } });
+    expect(screen.getByText(/Transferencia/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sin garantía/)).not.toBeInTheDocument();
   });
 
-  it("seña → como siempre (la referencia de la seña)", () => {
-    expect(textoGarantia(CON_SENIA)).toBe("VISA ****4242 · aut. 5521");
+  it("sin tarjeta ni pago anticipado: avisa que hay que tomar la garantía al ingreso", () => {
+    renderTabla(BASE);
+    expect(screen.getByText(/Sin garantía · tomar al ingreso/)).toBeInTheDocument();
   });
 
-  it("nada → null", () => {
-    expect(textoGarantia(SIN_NADA)).toBeNull();
+  it("tarjeta y pago anticipado a la vez: muestra las dos cosas", () => {
+    renderTabla({
+      ...BASE,
+      garantia: { tipo: "TARJETA", marca: "Visa", ultimos4: "4242" },
+      senia: { registrada: true, importe: 30000, medios: [{ medioPago: "Efectivo", importe: 30000, referencia: null }] },
+    });
+    expect(screen.getByText(/Tarjeta en garantía/)).toBeInTheDocument();
+    expect(screen.getByText(/Efectivo/)).toBeInTheDocument();
   });
-});
 
-describe("TablaLlegadas — columna Garantía", () => {
-  it("muestra los cuatro casos", () => {
-    render(
-      <TablaLlegadas
-        busqueda=""
-        onBuscar={vi.fn()}
-        consulta={{ isLoading: false, data: { reservas: [PREPAGADA, GARANTIZADA, CON_SENIA, SIN_NADA], anterioresPendientes: 0 } }}
-        seleccionadaId={null}
-        onSeleccionar={vi.fn()}
-      />
-    );
-    const fila = (id) => screen.getAllByRole("row").find((r) => r.getAttribute("data-reserva") === String(id));
-    expect(within(fila(1)).getByText(/^Prepagada · \$\s?80\.000$/)).toBeInTheDocument();
-    expect(within(fila(2)).getByText("Garantizada con tarjeta · MASTERCARD ••4444")).toBeInTheDocument();
-    expect(within(fila(3)).getByText("VISA ****4242 · aut. 5521")).toBeInTheDocument();
-    expect(within(fila(4)).getByText("Sin garantía · tomar al ingreso")).toBeInTheDocument();
+  it("reserva web no reembolsable (tarjeta cobrada al reservar): muestra la tarjeta en garantía y el pago anticipado con su referencia", () => {
+    renderTabla({
+      ...BASE,
+      garantia: { tipo: "TARJETA", marca: "Visa", ultimos4: "4242" },
+      senia: {
+        registrada: true,
+        importe: 190000,
+        medios: [{ medioPago: "Tarjeta crédito", importe: 190000, referencia: "Visa ****4242 · aut. CAP-123456" }],
+      },
+    });
+    expect(screen.getByText(/Tarjeta en garantía · Visa \*\*\*\*4242/)).toBeInTheDocument();
+    expect(screen.getByText(/aut\. CAP-123456/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sin garantía/)).not.toBeInTheDocument();
+  });
+
+  it("reserva web flexible (solo tarjeta en garantía, sin pagos): no aparece como sin garantía", () => {
+    renderTabla({ ...BASE, garantia: { tipo: "TARJETA", marca: "Visa", ultimos4: "1111" }, senia: { registrada: false, importe: 0, medios: [] } });
+    expect(screen.getByText(/Visa \*\*\*\*1111/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sin garantía/)).not.toBeInTheDocument();
+  });
+
+  it("textoSenia: sin pagos devuelve null", () => {
+    expect(textoSenia({ registrada: false, importe: 0, medios: [] })).toBeNull();
+    expect(textoSenia(undefined)).toBeNull();
   });
 });
