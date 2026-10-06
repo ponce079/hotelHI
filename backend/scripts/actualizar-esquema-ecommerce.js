@@ -1,88 +1,195 @@
-// Migración aditiva y reejecutable del e-commerce: crea la tabla datos_reserva_web
-// (backend/prisma/agregar-datos-reserva-web.sql). Sin --aplicar solo muestra el plan.
+// Migración aditiva y reejecutable del despliegue del e-commerce y la garantía con tarjeta: crea las
+// cuatro tablas nuevas. Sin --aplicar solo muestra el plan.
+//
+//   datos_reserva_web      backend/prisma/agregar-datos-reserva-web.sql   (e-commerce)
+//   garantias_reserva      backend/prisma/garantia-tarjeta.sql            (garantía de la reserva)
+//   garantias_estadia      backend/prisma/garantia-tarjeta.sql            (garantía del check-in)
+//   pasarela_operaciones   backend/prisma/pasarela-operaciones.sql        (registro de la pasarela simulada)
 //
 //   node scripts/actualizar-esquema-ecommerce.js             plan (no modifica nada)
-//   node scripts/actualizar-esquema-ecommerce.js --aplicar   crea la tabla si falta
+//   node scripts/actualizar-esquema-ecommerce.js --aplicar   crea las tablas que falten
 //
 // Destino: DATABASE_URL de la terminal (no de .env). Misma guardia que la migración de estadía
 // (_destinoMigracion.js): por defecto solo una base local; para otra hace falta
 // CONFIRMAR_BASE_COMPARTIDA=<nombre-de-la-base> y escribir ese nombre por teclado (también en modo
 // plan: conectarse ya es parte del despliegue). Nunca muestra usuario ni contraseña.
 //
-// Acepta ÚNICAMENTE el CREATE TABLE IF NOT EXISTS de datos_reserva_web. Si la tabla ya existe con
-// otra forma, se niega: nunca la corrige ni la borra. No hace respaldo JSON porque no modifica
-// ninguna tabla existente.
+// Acepta ÚNICAMENTE sentencias CREATE TABLE IF NOT EXISTS de esas cuatro tablas (cada archivo, solo las
+// suyas). Si una tabla ya existe con otra forma, se niega: nunca la corrige ni la borra. No hace respaldo
+// JSON porque no modifica ninguna tabla existente.
 const fs = require("node:fs");
 const path = require("node:path");
 
 const TABLA = "datos_reserva_web";
 const ARCHIVO_SQL = path.resolve(__dirname, "../prisma/agregar-datos-reserva-web.sql");
+const ARCHIVO_GARANTIAS = path.resolve(__dirname, "../prisma/garantia-tarjeta.sql");
+const ARCHIVO_PASARELA = path.resolve(__dirname, "../prisma/pasarela-operaciones.sql");
 
-// Forma esperada de la tabla: tiene que coincidir con el .sql (lo verifica
-// actualizar-esquema-ecommerce.test.js). tipo: como lo informa information_schema
-// (los enteros sin ancho de visualización: int(11) y int se tratan igual, ver `normalizarTipo`).
-const FORMA_ESPERADA = {
-  tabla: TABLA,
-  engine: "InnoDB",
-  collation: "utf8mb4_unicode_ci",
-  columnas: [
-    { nombre: "id", tipo: "int", nulo: false, defecto: null, autoincremental: true },
-    { nombre: "reservaId", tipo: "int", nulo: false, defecto: null },
-    { nombre: "claveIdempotencia", tipo: "varchar(64)", nulo: false, defecto: null },
-    { nombre: "emailContacto", tipo: "varchar(190)", nulo: false, defecto: null },
-    { nombre: "telefonoContacto", tipo: "varchar(40)", nulo: false, defecto: null },
-    { nombre: "horaEstimadaLlegada", tipo: "varchar(30)", nulo: true, defecto: null },
-    { nombre: "solicitudesEspeciales", tipo: "varchar(500)", nulo: true, defecto: null },
-    { nombre: "aceptaPoliticasEn", tipo: "datetime(3)", nulo: false, defecto: null },
-    { nombre: "versionPoliticas", tipo: "varchar(20)", nulo: false, defecto: null },
-    { nombre: "aceptaComunicaciones", tipo: "tinyint(1)", nulo: false, defecto: "0" },
-    { nombre: "tarjetaTitular", tipo: "varchar(120)", nulo: true, defecto: null },
-    { nombre: "tarjetaMarca", tipo: "varchar(20)", nulo: true, defecto: null },
-    { nombre: "tarjetaUltimos4", tipo: "char(4)", nulo: true, defecto: null },
-    { nombre: "tarjetaVencimiento", tipo: "varchar(7)", nulo: true, defecto: null },
-    { nombre: "garantiaToken", tipo: "varchar(64)", nulo: true, defecto: null },
-    { nombre: "pasarelaReferencia", tipo: "varchar(64)", nulo: true, defecto: null },
-    { nombre: "creadoEn", tipo: "datetime(3)", nulo: false, defecto: "current_timestamp(3)" },
-  ],
-  // Todos los índices de la tabla (la FK reutiliza el único de reservaId, no crea otro).
-  indices: [
-    { nombre: "PRIMARY", unico: true, columnas: ["id"] },
-    { nombre: "datos_reserva_web_reservaId_key", unico: true, columnas: ["reservaId"] },
-    { nombre: "datos_reserva_web_claveIdempotencia_key", unico: true, columnas: ["claveIdempotencia"] },
-  ],
-  relaciones: [
-    {
-      nombre: "datos_reserva_web_reservaId_fkey",
-      columna: "reservaId",
-      tablaRef: "reservas",
-      columnaRef: "id",
-      alBorrar: "RESTRICT",
-      alActualizar: "CASCADE",
-    },
-  ],
+// Cuántas y cuáles tablas trae cada archivo (el orden es el de aplicación).
+const ARCHIVOS = [
+  { archivo: ARCHIVO_SQL, tablas: ["datos_reserva_web"] },
+  { archivo: ARCHIVO_GARANTIAS, tablas: ["garantias_reserva", "garantias_estadia"] },
+  { archivo: ARCHIVO_PASARELA, tablas: ["pasarela_operaciones"] },
+];
+const TABLAS = ARCHIVOS.flatMap((a) => a.tablas);
+
+const COLLATION = "utf8mb4_unicode_ci";
+const columna = (nombre, tipo, nulo = false, defecto = null, extra = {}) => ({ nombre, tipo, nulo, defecto, ...extra });
+const id = columna("id", "int", false, null, { autoincremental: true });
+const fkAReservas = (tabla) => ({
+  nombre: `${tabla}_reservaId_fkey`,
+  columna: "reservaId",
+  tablaRef: "reservas",
+  columnaRef: "id",
+  alBorrar: "RESTRICT",
+  alActualizar: "CASCADE",
+});
+
+// Forma esperada de cada tabla: tiene que coincidir con su .sql (lo verifica
+// actualizar-esquema-ecommerce.test.js, una por tabla). tipo: como lo informa information_schema
+// (los enteros sin ancho de visualización: int(11) y int se tratan igual, ver `normalizarTipo`; los
+// decimales sin espacios; los defectos de texto en minúsculas, sin comillas; los numéricos como número).
+const FORMAS_ESPERADAS = {
+  datos_reserva_web: {
+    tabla: "datos_reserva_web",
+    engine: "InnoDB",
+    collation: COLLATION,
+    columnas: [
+      id,
+      columna("reservaId", "int"),
+      columna("claveIdempotencia", "varchar(64)"),
+      columna("emailContacto", "varchar(190)"),
+      columna("telefonoContacto", "varchar(40)"),
+      columna("horaEstimadaLlegada", "varchar(30)", true),
+      columna("solicitudesEspeciales", "varchar(500)", true),
+      columna("aceptaPoliticasEn", "datetime(3)"),
+      columna("versionPoliticas", "varchar(20)"),
+      columna("aceptaComunicaciones", "tinyint(1)", false, "0"),
+      columna("tarjetaTitular", "varchar(120)", true),
+      columna("tarjetaMarca", "varchar(20)", true),
+      columna("tarjetaUltimos4", "char(4)", true),
+      columna("tarjetaVencimiento", "varchar(7)", true),
+      columna("garantiaToken", "varchar(64)", true),
+      columna("pasarelaReferencia", "varchar(64)", true),
+      columna("creadoEn", "datetime(3)", false, "current_timestamp(3)"),
+    ],
+    // Todos los índices de la tabla (la FK reutiliza el único de reservaId, no crea otro).
+    indices: [
+      { nombre: "PRIMARY", unico: true, columnas: ["id"] },
+      { nombre: "datos_reserva_web_reservaId_key", unico: true, columnas: ["reservaId"] },
+      { nombre: "datos_reserva_web_claveIdempotencia_key", unico: true, columnas: ["claveIdempotencia"] },
+    ],
+    relaciones: [fkAReservas("datos_reserva_web")],
+  },
+  garantias_reserva: {
+    tabla: "garantias_reserva",
+    engine: "InnoDB",
+    collation: COLLATION,
+    columnas: [
+      id,
+      columna("reservaId", "int"),
+      columna("tipo", "varchar(191)"),
+      columna("token", "varchar(255)", true),
+      columna("marca", "varchar(40)", true),
+      columna("ultimos4", "varchar(4)", true),
+      columna("vencimiento", "varchar(5)", true),
+      columna("referencia", "varchar(191)", true),
+      columna("monto", "decimal(12,2)", false, "0"),
+      columna("estado", "varchar(191)", false, "vigente"),
+      columna("creadoEn", "datetime(3)", false, "current_timestamp(3)"),
+    ],
+    indices: [
+      { nombre: "PRIMARY", unico: true, columnas: ["id"] },
+      { nombre: "garantias_reserva_reservaId_key", unico: true, columnas: ["reservaId"] },
+    ],
+    relaciones: [fkAReservas("garantias_reserva")],
+  },
+  garantias_estadia: {
+    tabla: "garantias_estadia",
+    engine: "InnoDB",
+    collation: COLLATION,
+    columnas: [
+      id,
+      columna("reservaId", "int"),
+      columna("tipo", "varchar(191)"),
+      columna("monto", "decimal(12,2)", false, "0"),
+      columna("montoUsado", "decimal(12,2)", false, "0"),
+      columna("token", "varchar(255)", true),
+      columna("referencia", "varchar(191)", true),
+      columna("marca", "varchar(40)", true),
+      columna("ultimos4", "varchar(4)", true),
+      columna("estado", "varchar(191)", false, "pendiente"),
+      columna("creadoEn", "datetime(3)", false, "current_timestamp(3)"),
+      columna("actualizadoEn", "datetime(3)"),
+    ],
+    indices: [
+      { nombre: "PRIMARY", unico: true, columnas: ["id"] },
+      { nombre: "garantias_estadia_reservaId_key", unico: true, columnas: ["reservaId"] },
+    ],
+    relaciones: [fkAReservas("garantias_estadia")],
+  },
+  pasarela_operaciones: {
+    tabla: "pasarela_operaciones",
+    engine: "InnoDB",
+    collation: COLLATION,
+    columnas: [
+      id,
+      columna("operacion", "varchar(20)"),
+      columna("claveIdempotencia", "varchar(191)", true),
+      columna("referencia", "varchar(40)", true),
+      columna("referenciaPrevia", "varchar(255)", true),
+      columna("monto", "decimal(12,2)", false, "0"),
+      columna("aprobada", "tinyint(1)"),
+      columna("motivo", "varchar(191)", true),
+      columna("marca", "varchar(40)", true),
+      columna("ultimos4", "char(4)", true),
+      columna("token", "varchar(255)", true),
+      columna("estadoPreautorizacion", "varchar(40)", true),
+      columna("montoCapturado", "decimal(12,2)", true),
+      columna("creadoEn", "datetime(3)", false, "current_timestamp(3)"),
+      columna("actualizadoEn", "datetime(3)"),
+    ],
+    indices: [
+      { nombre: "PRIMARY", unico: true, columnas: ["id"] },
+      { nombre: "pasarela_operaciones_claveIdempotencia_key", unico: true, columnas: ["claveIdempotencia"] },
+      { nombre: "pasarela_operaciones_referencia_key", unico: true, columnas: ["referencia"] },
+    ],
+    relaciones: [],
+  },
 };
+// La tabla del e-commerce original (compatibilidad con quien importa FORMA_ESPERADA).
+const FORMA_ESPERADA = FORMAS_ESPERADAS.datos_reserva_web;
 
 // (DELETE y UPDATE no van: aparecen legítimamente en `ON DELETE RESTRICT ON UPDATE CASCADE`.)
 const PALABRAS_PROHIBIDAS = /\b(DROP|ALTER|INSERT|TRUNCATE|GRANT|REVOKE|RENAME|SELECT|REPLACE)\b/i;
 
-// Lee y valida el .sql: una sola sentencia, CREATE TABLE IF NOT EXISTS `datos_reserva_web`.
-// Se evalúa ANTES de conectarse a nada.
-function operaciones(sql) {
+// Lee y valida el texto de UN .sql: solo sentencias CREATE TABLE IF NOT EXISTS de las tablas que ese archivo
+// trae (ni más, ni menos, ni repetidas). Se evalúa ANTES de conectarse a nada.
+function operaciones(sql, tablas = [TABLA]) {
   const sentencias = String(sql)
     .replace(/^--.*$/gm, "")
     .split(";")
     .map((s) => s.trim())
     .filter(Boolean);
   const noReconocida = () => new Error("La actualización contiene una operación no aditiva o no reconocida.");
-  if (sentencias.length !== 1) throw noReconocida();
-  const [sentencia] = sentencias;
-  if (!sentencia.startsWith(`CREATE TABLE IF NOT EXISTS \`${TABLA}\` (`) || PALABRAS_PROHIBIDAS.test(sentencia)) {
-    throw noReconocida();
+  if (sentencias.length !== tablas.length) throw noReconocida();
+  const vistas = new Set();
+  const pasos = [];
+  for (const sentencia of sentencias) {
+    const m = sentencia.match(/^CREATE TABLE IF NOT EXISTS `(\w+)` \(/);
+    if (!m || !tablas.includes(m[1]) || vistas.has(m[1]) || PALABRAS_PROHIBIDAS.test(sentencia)) throw noReconocida();
+    vistas.add(m[1]);
+    pasos.push({ tipo: "tabla", tabla: m[1], nombre: m[1], sql: sentencia });
   }
-  return [{ tipo: "tabla", tabla: TABLA, nombre: TABLA, sql: sentencia }];
+  return pasos;
 }
 
-// --- Forma de la tabla ----------------------------------------------------------------------
+// Lee los tres archivos del despliegue y devuelve las cuatro operaciones, en orden.
+function leerSql() {
+  return ARCHIVOS.flatMap(({ archivo, tablas }) => operaciones(fs.readFileSync(archivo, "utf8"), tablas));
+}
+
+// --- Forma de las tablas ----------------------------------------------------------------------
 // Solo se normaliza la REPRESENTACIÓN (cada una con su motivo); nunca nombres, tipos, longitudes,
 // NULL, índices, relaciones, engine ni collation.
 
@@ -91,19 +198,21 @@ function operaciones(sql) {
 function normalizarTipo(tipo) {
   return String(tipo ?? "")
     .toLowerCase()
+    .replace(/\s/g, "")
     .replace(/^(int|integer)\(\d+\)/, "int")
     .replace(/^integer$/, "int");
 }
 
 // Mayúsculas/minúsculas (MariaDB `current_timestamp(3)`, MySQL `CURRENT_TIMESTAMP(3)`), comillas
-// del literal (MariaDB `'0'`) y `NULL` literal que MariaDB informa para una columna nula sin default.
-// `false`/`0` del BOOLEAN: el .sql dice `false` y la base guarda `0`.
+// del literal (MariaDB `'0'`), `NULL` literal que MariaDB informa para una columna nula sin default,
+// `false`/`0` del BOOLEAN y `0.00` de un DECIMAL(12,2) con DEFAULT 0 (el .sql dice 0 y la base guarda 0.00).
 function normalizarDefecto(defecto, nulo) {
   if (defecto === null || defecto === undefined) return null;
   let d = String(defecto).trim().replace(/^'(.*)'$/, "$1").toLowerCase();
   if (nulo && d === "null") return null;
   if (d === "false") d = "0";
   if (d === "true") d = "1";
+  if (/^-?\d+(\.\d+)?$/.test(d)) d = String(Number(d));
   return d;
 }
 
@@ -179,12 +288,12 @@ function compararForma(filas, esperada = FORMA_ESPERADA) {
 }
 
 // Cuatro consultas a information_schema (una por categoría), todas de solo lectura.
-async function leerForma(conn) {
+async function leerForma(conn, nombreTabla = TABLA) {
   const tabla = (
     await conn.query(
       "SELECT TABLE_NAME AS nombre, ENGINE AS engine, TABLE_COLLATION AS collation FROM information_schema.TABLES " +
         "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?",
-      [TABLA],
+      [nombreTabla],
     )
   )[0];
   if (!tabla) return null;
@@ -193,7 +302,7 @@ async function leerForma(conn) {
       "SELECT COLUMN_NAME AS nombre, COLUMN_TYPE AS tipo, IS_NULLABLE AS nulo, COLUMN_DEFAULT AS defecto, EXTRA AS extra, " +
         "COLLATION_NAME AS collation FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? " +
         "ORDER BY ORDINAL_POSITION",
-      [TABLA],
+      [nombreTabla],
     )
   ).map((c) => ({
     nombre: c.nombre,
@@ -206,7 +315,7 @@ async function leerForma(conn) {
   const filasIndices = await conn.query(
     "SELECT INDEX_NAME AS nombre, NON_UNIQUE AS noUnico, COLUMN_NAME AS columna FROM information_schema.STATISTICS " +
       "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? ORDER BY INDEX_NAME, SEQ_IN_INDEX",
-    [TABLA],
+    [nombreTabla],
   );
   const indices = [];
   for (const f of filasIndices) {
@@ -221,22 +330,27 @@ async function leerForma(conn) {
         "FROM information_schema.KEY_COLUMN_USAGE k JOIN information_schema.REFERENTIAL_CONSTRAINTS r " +
         "ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME AND r.TABLE_NAME=k.TABLE_NAME " +
         "WHERE k.TABLE_SCHEMA=DATABASE() AND k.TABLE_NAME=? AND k.REFERENCED_TABLE_NAME IS NOT NULL",
-      [TABLA],
+      [nombreTabla],
     )
   ).map((r) => ({ ...r }));
   return { tabla, columnas, indices, relaciones };
 }
 
-// "falta" | "igual" | "distinta" (con sus diferencias).
-async function calcularPlan(conn) {
-  const forma = await leerForma(conn);
-  if (!forma) return { estado: "falta", diferencias: [] };
-  const diferencias = compararForma(forma);
-  return { estado: diferencias.length ? "distinta" : "igual", diferencias };
+// Estado de UNA tabla: "falta" | "igual" | "distinta" (con sus diferencias).
+async function planDeTabla(conn, nombreTabla) {
+  const forma = await leerForma(conn, nombreTabla);
+  if (!forma) return { tabla: nombreTabla, estado: "falta", diferencias: [] };
+  const diferencias = compararForma(forma, FORMAS_ESPERADAS[nombreTabla]);
+  return { tabla: nombreTabla, estado: diferencias.length ? "distinta" : "igual", diferencias };
 }
 
-function leerSql() {
-  return operaciones(fs.readFileSync(ARCHIVO_SQL, "utf8"));
+// Estado de las cuatro tablas: { estado, tablas: [{tabla, estado, diferencias}] }.
+// estado = "distinta" si alguna lo es (no se sigue), si no "falta" si falta alguna, si no "igual".
+async function calcularPlan(conn) {
+  const tablas = [];
+  for (const nombre of TABLAS) tablas.push(await planDeTabla(conn, nombre));
+  const estado = tablas.some((t) => t.estado === "distinta") ? "distinta" : tablas.some((t) => t.estado === "falta") ? "falta" : "igual";
+  return { estado, tablas, diferencias: tablas.flatMap((t) => t.diferencias.map((d) => `${t.tabla}: ${d}`)) };
 }
 
 async function conectar(u) {
@@ -253,19 +367,27 @@ async function conectar(u) {
 }
 
 function mostrarDistinta(plan) {
-  console.log(`La tabla ${TABLA} ya existe con una forma distinta: NO seguir.`);
-  for (const d of plan.diferencias) console.log(`  - ${d}`);
+  for (const t of plan.tablas.filter((x) => x.estado === "distinta")) {
+    console.log(`La tabla ${t.tabla} ya existe con una forma distinta: NO seguir.`);
+    for (const d of t.diferencias) console.log(`  - ${d}`);
+  }
   console.log("Este script nunca corrige ni borra una tabla existente: revisar con el equipo antes de continuar.");
+}
+
+// Las operaciones que faltan (las de las tablas que no existen), en el orden de aplicación.
+function operacionesFaltantes(pasos, plan) {
+  const faltan = new Set(plan.tablas.filter((t) => t.estado === "falta").map((t) => t.tabla));
+  return pasos.filter((p) => faltan.has(p.tabla));
 }
 
 async function main() {
   const inicio = Date.now();
   const aplicar = process.argv.includes("--aplicar");
-  // Primero el archivo (sin conectarse a nada): si no es exactamente lo esperado, se niega.
+  // Primero los archivos (sin conectarse a nada): si no son exactamente lo esperado, se niega.
   const pasos = leerSql();
   // Solo una base local, salvo el modo explícito de despliegue (CONFIRMAR_BASE_COMPARTIDA + teclado).
   // Sin --aplicar solo muestra el plan, pero igual pide la confirmación.
-  const u = await require("./_destinoMigracion").exigirDestino(process.env, "la migración del e-commerce");
+  const u = await require("./_destinoMigracion").exigirDestino(process.env, "la migración del e-commerce y las garantías");
   const conn = await conectar(u);
   try {
     const plan = await calcularPlan(conn);
@@ -274,7 +396,7 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    const faltan = plan.estado === "falta" ? pasos : [];
+    const faltan = operacionesFaltantes(pasos, plan);
     console.log(`Operaciones faltantes: ${faltan.length} de ${pasos.length}`);
     for (const p of faltan) console.log(`${p.tipo}: ${p.tabla}\n${p.sql}`);
     if (!aplicar) return;
@@ -282,7 +404,7 @@ async function main() {
       console.log("Nada que aplicar.");
       return;
     }
-    console.log("Sin respaldo JSON: esta migración solo crea una tabla nueva y no modifica ninguna tabla existente.");
+    console.log("Sin respaldo JSON: esta migración solo crea tablas nuevas y no modifica ninguna tabla existente.");
     // DDL: MySQL lo confirma por sentencia. Si se corta, volver a ejecutar: el plan lo recalcula.
     for (const p of faltan) await conn.query(p.sql);
     const despues = await calcularPlan(conn);
@@ -291,7 +413,7 @@ async function main() {
       process.exitCode = 1;
       return;
     }
-    const pendientes = despues.estado === "falta" ? pasos.length : 0;
+    const pendientes = despues.tablas.filter((t) => t.estado === "falta").length;
     console.log(`Actualización terminada. Pendientes: ${pendientes} (${((Date.now() - inicio) / 1000).toFixed(1)} s)`);
     if (pendientes) process.exitCode = 1;
   } finally {
@@ -305,4 +427,20 @@ if (require.main === module)
     process.exitCode = 1;
   });
 
-module.exports = { operaciones, leerSql, leerForma, compararForma, calcularPlan, conectar, FORMA_ESPERADA, TABLA, ARCHIVO_SQL };
+module.exports = {
+  operaciones,
+  leerSql,
+  leerForma,
+  compararForma,
+  calcularPlan,
+  planDeTabla,
+  operacionesFaltantes,
+  conectar,
+  normalizarDefecto,
+  FORMA_ESPERADA,
+  FORMAS_ESPERADAS,
+  TABLA,
+  TABLAS,
+  ARCHIVOS,
+  ARCHIVO_SQL,
+};

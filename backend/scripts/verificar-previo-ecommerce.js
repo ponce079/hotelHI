@@ -1,5 +1,5 @@
-// Verificación de SOLO LECTURA para el despliegue de la migración del e-commerce (tabla
-// datos_reserva_web). Nunca escribe en la base: solo SELECT, information_schema y
+// Verificación de SOLO LECTURA para el despliegue de la migración del e-commerce y las garantías (cuatro
+// tablas: datos_reserva_web, garantias_reserva, garantias_estadia y pasarela_operaciones). Nunca escribe en la base: solo SELECT, information_schema y
 // `prisma migrate diff`, que solo compara. Lo único que escribe es el JSON local de conteos.
 //
 //   node scripts/verificar-previo-ecommerce.js            antes de migrar
@@ -15,7 +15,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { spawnSync } = require("node:child_process");
 const { exigirDestino, describirDestino } = require("./_destinoMigracion");
-const { leerSql, calcularPlan, conectar, TABLA } = require("./actualizar-esquema-ecommerce");
+const { leerSql, calcularPlan, conectar, TABLAS } = require("./actualizar-esquema-ecommerce");
 
 const DESPUES = process.argv.includes("--despues");
 const DIAS_VENTANA = 60;
@@ -80,7 +80,7 @@ async function main() {
   // El .sql se valida antes de conectarse (si no es exactamente lo esperado, no se sigue).
   const pasos = leerSql();
   const conn = await conectar(url);
-  let estadoTabla = "falta";
+  let estadoPlan = "falta";
   try {
     const tablas = new Set(
       (await conn.query("SELECT TABLE_NAME AS t FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()")).map((r) => r.t),
@@ -92,25 +92,29 @@ async function main() {
     console.log(faltantesBase.length ? `  Faltan: ${faltantesBase.join(", ")}` : `  Están las ${TABLAS_BASE.length} tablas base.`);
     if (faltantesBase.length) bloqueos.push(`Faltan tablas base del sistema: ${faltantesBase.join(", ")}. La base no está en el esquema de master.`);
 
-    // 2) Plan de la migración (mismo cálculo que el runner).
-    titulo("Migración del e-commerce");
+    // 2) Plan de la migración (mismo cálculo que el runner): las cuatro tablas.
+    titulo("Migración del e-commerce y las garantías");
     const plan = await calcularPlan(conn);
-    estadoTabla = plan.estado;
-    if (plan.estado === "distinta") {
-      console.log(`  La tabla ${TABLA} ya existe con una forma distinta: NO seguir.`);
-      for (const d of plan.diferencias) console.log(`    - ${d}`);
-      bloqueos.push(`La tabla ${TABLA} ya existe con una forma distinta a la esperada (ver arriba): no se la corrige sola.`);
-    } else {
-      const faltan = plan.estado === "falta" ? pasos.length : 0;
+    estadoPlan = plan.estado;
+    for (const t of plan.tablas) {
+      console.log(`  ${t.tabla.padEnd(24)} ${{ falta: "falta (la va a crear)", igual: "existe con la forma esperada", distinta: "EXISTE CON UNA FORMA DISTINTA" }[t.estado]}`);
+    }
+    for (const t of plan.tablas.filter((x) => x.estado === "distinta")) {
+      console.log(`  La tabla ${t.tabla} ya existe con una forma distinta: NO seguir.`);
+      for (const d of t.diferencias) console.log(`    - ${d}`);
+      bloqueos.push(`La tabla ${t.tabla} ya existe con una forma distinta a la esperada (ver arriba): no se la corrige sola.`);
+    }
+    if (plan.estado !== "distinta") {
+      const faltan = plan.tablas.filter((t) => t.estado === "falta").length;
       console.log(`  Operaciones faltantes: ${faltan} de ${pasos.length}`);
       if (DESPUES && faltan) bloqueos.push(`Quedan ${faltan} operaciones de la migración sin aplicar: correr actualizar-esquema-ecommerce.js --aplicar.`);
-      if (DESPUES && !faltan) console.log("  0 operaciones pendientes y la tabla tiene la forma esperada.");
-      if (!DESPUES && !faltan) console.log("  La tabla ya existe con la forma esperada: no falta nada.");
+      if (DESPUES && !faltan) console.log(`  0 operaciones pendientes y las ${TABLAS.length} tablas tienen la forma esperada.`);
+      if (!DESPUES && !faltan) console.log("  Las tablas ya existen con la forma esperada: no falta nada.");
     }
 
     // 3) Conteos (una sola consulta).
     titulo("Filas por tabla");
-    const presentes = [...TABLAS_BASE, TABLA].filter((t) => tablas.has(t));
+    const presentes = [...TABLAS_BASE, ...TABLAS].filter((t) => tablas.has(t));
     const conteos = {};
     if (presentes.length) {
       const fila = (await conn.query(`SELECT ${presentes.map((t) => `(SELECT COUNT(*) FROM \`${t}\`) AS \`${t}\``).join(", ")}`))[0];
@@ -163,15 +167,15 @@ async function main() {
   } else {
     console.log(`  ${sentencias.length} sentencias de diferencia:`);
     for (const l of sentencias) console.log(`    ${l.trim().slice(0, 160)}`);
-    const ajenas = sentencias.filter((l) => !l.includes(`\`${TABLA}\``));
+    const ajenas = sentencias.filter((l) => !TABLAS.some((t) => l.includes(`\`${t}\``)));
     if (DESPUES) bloqueos.push("Después de migrar, schema.prisma y la base deberían coincidir y todavía hay diferencias (ver arriba).");
     else if (ajenas.length) {
       bloqueos.push(
-        `Hay ${ajenas.length} diferencias de esquema que NO son de la tabla ${TABLA} (ver arriba): la base no está en el esquema de master. Frenar y revisar con el equipo antes de migrar.`,
+        `Hay ${ajenas.length} diferencias de esquema que NO son de las tablas de este despliegue (${TABLAS.join(", ")}) (ver arriba): la base no está en el esquema de master. Frenar y revisar con el equipo antes de migrar.`,
       );
-    } else if (estadoTabla === "igual") {
-      bloqueos.push(`La tabla ${TABLA} existe con la forma esperada pero schema.prisma todavía difiere en ella (ver arriba).`);
-    } else console.log(`  Todas son de la tabla ${TABLA} (es lo que va a agregar).`);
+    } else if (estadoPlan === "igual") {
+      bloqueos.push("Las tablas existen con la forma esperada pero schema.prisma todavía difiere en ellas (ver arriba).");
+    } else console.log("  Todas son de las tablas de este despliegue (es lo que va a agregar).");
   }
 
   titulo("Resultado");

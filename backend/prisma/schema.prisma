@@ -1183,3 +1183,37 @@ model GarantiaEstadia {
 
   @@map("garantias_estadia")
 }
+
+// ---------------------------------------------------------------------
+// Registro del proveedor de pagos SIMULADO (pasarela). No es del negocio: es lo que un proveedor real
+// guardaría de su lado. Una fila por operación (GARANTIA, COBRO, PREAUTORIZACION, CAPTURA, LIBERACION),
+// con la idempotencia (la misma clave devuelve el mismo resultado, incluso después de reiniciar el
+// backend) y el estado de cada preautorización. Sin FK a reservas a propósito.
+// NUNCA el número completo de la tarjeta ni el CVV: solo marca, últimos 4 y el token de la pasarela.
+// ---------------------------------------------------------------------
+model PasarelaOperacion {
+  id                    Int      @id @default(autoincrement())
+  // GARANTIA | COBRO | PREAUTORIZACION | CAPTURA | LIBERACION
+  operacion             String   @db.VarChar(20)
+  // "<OPERACION>:<clave del que llama>": la misma clave con otra operación es otra fila.
+  claveIdempotencia     String?  @unique @db.VarChar(191)
+  // GAR-/COB-/PRE-/CAP-/LIB-nnnnnn (solo las aprobadas).
+  referencia            String?  @unique @db.VarChar(40)
+  // En CAPTURA y LIBERACION, la referencia de la preautorización; en COBRO, el token de la tarjeta.
+  referenciaPrevia      String?  @db.VarChar(255)
+  monto                 Decimal  @default(0) @db.Decimal(12, 2)
+  aprobada              Boolean
+  motivo                String?  @db.VarChar(191)
+  marca                 String?  @db.VarChar(40)
+  ultimos4              String?  @db.Char(4)
+  // Token devuelto (GARANTIA y operaciones con tarjeta nueva): permite repetir el resultado idempotente.
+  token                 String?  @db.VarChar(255)
+  // Solo PREAUTORIZACION: Vigente | Capturada | Capturada, remanente liberado | Liberada
+  estadoPreautorizacion String?  @db.VarChar(40)
+  // Solo PREAUTORIZACION capturada: lo capturado (puede ser menos que el monto retenido).
+  montoCapturado        Decimal? @db.Decimal(12, 2)
+  creadoEn              DateTime @default(now())
+  actualizadoEn         DateTime @updatedAt
+
+  @@map("pasarela_operaciones")
+}
