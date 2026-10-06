@@ -177,6 +177,12 @@ test("tarifa flexible: 201, GARANTIA de monto 0, sin PagoEstadia, la habitación
   expect(datosWeb.garantiaToken).toMatch(/^TOK-/);
   expect(body).toMatchObject({ codigoConfirmacion: "3FA9C21B", cobradoAhora: 0, garantia: { tipo: "GARANTIA" }, email: { enviado: true } });
   expect(emailWeb.enviarConfirmacion).toHaveBeenCalledTimes(1);
+  // Email definitivo: recibe los nombres del titular para el saludo (y nunca la tarjeta).
+  expect(emailWeb.enviarConfirmacion).toHaveBeenCalledWith(
+    expect.objectContaining({ codigoConfirmacion: "3FA9C21B" }),
+    "maria@correo.com",
+    expect.objectContaining({ nombre: expect.any(String) })
+  );
 });
 
 test("no reembolsable: PREAUTORIZACION por el total, prepago con su referencia dentro de la transacción y CAPTURA", async () => {
