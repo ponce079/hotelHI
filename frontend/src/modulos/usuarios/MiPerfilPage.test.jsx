@@ -6,8 +6,10 @@ import { MemoryRouter } from "react-router-dom";
 import { MiPerfilPage } from "./MiPerfilPage";
 import { useSesion } from "../../lib/sesion";
 import { actualizarMiPerfil, cambiarMiContrasena, obtenerMiPerfil } from "./usuarios.api";
+import { prepararFoto } from "./fotoPerfil";
 
 vi.mock("../../lib/sesion", () => ({ useSesion: vi.fn() }));
+vi.mock("./fotoPerfil", () => ({ prepararFoto: vi.fn() }));
 vi.mock("./usuarios.api", () => ({
   actualizarMiPerfil: vi.fn(),
   cambiarMiContrasena: vi.fn(),
@@ -119,6 +121,7 @@ describe("MiPerfilPage — 'Mi perfil' como página (no modal)", () => {
   });
 
   it("rechaza una foto que no es JPG/PNG sin mandar nada", async () => {
+    prepararFoto.mockRejectedValue(new Error("La foto tiene que ser JPG o PNG."));
     const usuario = userEvent.setup({ applyAccept: false });
     renderPagina();
     const archivo = new File(["GIF89a"], "animada.gif", { type: "image/gif" });
@@ -147,7 +150,7 @@ describe("MiPerfilPage — 'Mi perfil' como página (no modal)", () => {
       email: "",
       foto: null,
     });
-    expect(await screen.findByText("Foto de perfil quitada.")).toBeInTheDocument();
+    expect(await screen.findByText("Foto eliminada")).toBeInTheDocument();
   });
 
   it("los requisitos de la contraseña se marcan en vivo", async () => {
@@ -195,5 +198,88 @@ describe("MiPerfilPage — 'Mi perfil' como página (no modal)", () => {
     await usuario.click(screen.getByRole("button", { name: "Actualizar contraseña" }));
     expect(cambiarMiContrasena).toHaveBeenLastCalledWith("secreta1", "nueva123");
     expect(await screen.findByText(/Contraseña actualizada/)).toBeInTheDocument();
+  });
+});
+
+describe("MiPerfilPage — foto y refresco del formulario", () => {
+  it("al elegir una foto manda SOLO los datos ya guardados (no lo escrito sin guardar), confirma y conserva los cambios del formulario", async () => {
+    prepararFoto.mockResolvedValue("data:image/jpeg;base64,BBBB");
+    actualizarMiPerfil.mockResolvedValue({ ...PERFIL, foto: "data:image/jpeg;base64,BBBB" });
+    const usuario = userEvent.setup();
+    renderPagina();
+
+    const nombre = screen.getByLabelText("Nombre *");
+    await usuario.clear(nombre);
+    await usuario.type(nombre, "Cambio sin guardar");
+
+    const archivo = new File(["x"], "foto.png", { type: "image/png" });
+    await usuario.upload(screen.getByLabelText("Elegir foto de perfil"), archivo);
+
+    expect(actualizarMiPerfil).toHaveBeenCalledTimes(1);
+    expect(actualizarMiPerfil).toHaveBeenCalledWith({
+      nombre: "Prueba",
+      apellido: "Gerente",
+      dni: "10000006",
+      email: "",
+      foto: "data:image/jpeg;base64,BBBB",
+    });
+    expect(await screen.findByText("Foto actualizada")).toBeInTheDocument();
+    // El cambio sin guardar sigue en pantalla y el botón de guardar sigue habilitado.
+    expect(screen.getByLabelText("Nombre *")).toHaveValue("Cambio sin guardar");
+    expect(screen.getByRole("button", { name: "Guardar cambios" })).toBeEnabled();
+  });
+
+  it("quitar la foto con cambios sin guardar: tampoco los manda, los conserva y confirma 'Foto eliminada'", async () => {
+    useSesion.mockReturnValue({
+      perfil: { ...PERFIL, foto: "data:image/png;base64,AAAA" },
+      usuario: "gerente.prueba",
+      rolInfo: { label: "Gerente" },
+      actualizarPerfil,
+    });
+    obtenerMiPerfil.mockResolvedValue({ ...PERFIL, foto: "data:image/png;base64,AAAA" });
+    actualizarMiPerfil.mockResolvedValue(PERFIL);
+    const usuario = userEvent.setup();
+    renderPagina();
+
+    await waitFor(() => expect(obtenerMiPerfil).toHaveBeenCalled());
+    const apellido = screen.getByLabelText("Apellido *");
+    await usuario.clear(apellido);
+    await usuario.type(apellido, "Editado");
+    await usuario.click(await screen.findByRole("button", { name: /Quitar foto/ }));
+
+    expect(actualizarMiPerfil).toHaveBeenCalledWith(expect.objectContaining({ apellido: "Gerente", foto: null }));
+    expect(await screen.findByText("Foto eliminada")).toBeInTheDocument();
+    expect(screen.getByLabelText("Apellido *")).toHaveValue("Editado");
+  });
+
+  it("cuando llegan los datos del servidor y no se editó nada, el formulario se refresca", async () => {
+    obtenerMiPerfil.mockResolvedValue({ ...PERFIL, nombre: "Del servidor" });
+    renderPagina();
+    await waitFor(() => expect(screen.getByLabelText("Nombre *")).toHaveValue("Del servidor"));
+    expect(screen.getByRole("button", { name: "Guardar cambios" })).toBeDisabled();
+  });
+
+  it("si se empezó a editar antes de que lleguen los datos del servidor, lo escrito se conserva", async () => {
+    let resolver;
+    obtenerMiPerfil.mockReturnValue(new Promise((r) => (resolver = r)));
+    const usuario = userEvent.setup();
+    renderPagina();
+    const nombre = screen.getByLabelText("Nombre *");
+    await usuario.clear(nombre);
+    await usuario.type(nombre, "Escribiendo");
+    resolver({ ...PERFIL, nombre: "Del servidor" });
+    await waitFor(() => expect(obtenerMiPerfil).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Guardar cambios" })).toBeEnabled());
+    expect(screen.getByLabelText("Nombre *")).toHaveValue("Escribiendo");
+  });
+
+  it("no actualiza estado mientras renderiza (sin advertencias de React)", async () => {
+    const consola = vi.spyOn(console, "error").mockImplementation(() => {});
+    renderPagina();
+    await waitFor(() => expect(obtenerMiPerfil).toHaveBeenCalled());
+    await screen.findByRole("heading", { name: "Prueba Gerente" });
+    const advertencias = consola.mock.calls.map((c) => String(c[0])).filter((m) => /while rendering|Cannot update/i.test(m));
+    expect(advertencias).toEqual([]);
+    consola.mockRestore();
   });
 });

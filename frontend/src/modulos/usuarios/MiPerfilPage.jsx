@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Camera, Check, FileText, Info, KeyRound, Lock, Save, Trash2, User } from "lucide-react";
@@ -104,13 +104,16 @@ export function MiPerfilPage() {
   const [cargadoDelServidor, setCargadoDelServidor] = useState(false);
 
   // Cuando llega la versión del backend por primera vez, se refresca el
-  // formulario solo si la persona todavía no empezó a editarlo.
-  if (perfilQuery.data && !cargadoDelServidor) {
-    setCargadoDelServidor(true);
+  // formulario solo si la persona todavía no empezó a editarlo. Va en un efecto
+  // (no durante el render): actualizar estado mientras se renderiza es un patrón
+  // frágil y React lo advierte.
+  useEffect(() => {
+    if (!perfilQuery.data || cargadoDelServidor) return;
     const delServidor = formularioDesde(perfilQuery.data);
+    setCargadoDelServidor(true);
     setBase(delServidor);
-    if (JSON.stringify(form) === JSON.stringify(base)) setForm(delServidor);
-  }
+    setForm((actual) => (JSON.stringify(actual) === JSON.stringify(base) ? delServidor : actual));
+  }, [perfilQuery.data, cargadoDelServidor, base]);
 
   const hayCambios = JSON.stringify(form) !== JSON.stringify(base);
 
@@ -166,17 +169,19 @@ export function MiPerfilPage() {
   const [procesandoFoto, setProcesandoFoto] = useState(false);
 
   const mutacionFoto = useMutation({
+    // Se mandan SOLO los datos ya guardados (`base`): nunca lo que hay escrito en el formulario sin
+    // guardar. Esos cambios se conservan en pantalla (no se tocan `form` ni `base`).
     mutationFn: (foto) =>
       actualizarMiPerfil({
-        nombre: datos.nombre,
-        apellido: datos.apellido,
-        dni: datos.dni,
-        email: datos.email ?? "",
+        nombre: base.nombre,
+        apellido: base.apellido,
+        dni: base.dni,
+        email: base.email,
         foto,
       }),
     onSuccess: (actualizado, foto) => {
       alGuardarPerfil(actualizado);
-      mostrarToast(foto ? "Foto de perfil actualizada." : "Foto de perfil quitada.");
+      mostrarToast(foto ? "Foto actualizada" : "Foto eliminada");
     },
     onError: (error) => setErrorFoto(mensajeDeError(error, "No se pudo guardar la foto.")),
   });
