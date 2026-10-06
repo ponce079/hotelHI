@@ -1,6 +1,8 @@
 # Contrato de la API del e-commerce (`/api/web`)
 
-> **Contrato v5 (etapa 4: Mi reserva real, con cancelación online sin cargo). Cambios al contrato: solo Gimena.**
+> **Contrato v6 (integración de Datos, Pago y Confirmación de Tomás; email definitivo y límite de intentos). Cambios al contrato: solo Gimena.**
+>
+> Estado de las pantallas: **Datos, Pago y Confirmación reales** (integradas el 2026-10-06 en `feature/ecommerce`), junto con Inicio, Resultados, Detalle y Mi reserva. El proceso de compra completo funciona contra la API real.
 
 ### Estado de cada endpoint
 
@@ -96,12 +98,12 @@ No trae precios: el precio aparece recién después de buscar fechas.
 
 **Response 200**
 
-Respuesta real de la base local (4 de octubre de 2026):
+Respuesta real de la base local (6 de octubre de 2026):
 
 ```json
 {
   "tipos": [
-    { "tipoHabitacionId": 1, "nombre": "Doble", "capacidadMaxima": 4 },
+    { "tipoHabitacionId": 1, "nombre": "Doble", "capacidadMaxima": 3 },
     { "tipoHabitacionId": 2, "nombre": "Simple", "capacidadMaxima": 2 }
   ]
 }
@@ -155,7 +157,7 @@ extiende este endpoint; el cambio lo define Gimena.)
     {
       "tipoHabitacionId": 1,
       "nombre": "Doble",
-      "capacidadMaxima": 4,
+      "capacidadMaxima": 3,
       "ultimasDisponibles": false,
       "desdePorNoche": 37400,
       "planes": [
@@ -188,14 +190,14 @@ extiende este endpoint; el cambio lo define Gimena.)
 }
 ```
 
-Mismas fechas con `adultos=4` (respuesta real, recortada): la única Doble de
-capacidad 4 está ocupada en esas fechas y la Simple admite 2.
+Mismas fechas con `adultos=4` (respuesta real, recortada): la capacidad máxima
+de la Doble es 3 y la de la Simple es 2, así que ninguna admite 4 personas.
 
 ```json
 {
   "tipos": [
-    { "tipoHabitacionId": 1, "nombre": "Doble", "capacidadMaxima": 4, "ultimasDisponibles": false,
-      "desdePorNoche": null, "planes": [], "motivoNoDisponible": "Sin disponibilidad para estas fechas" },
+    { "tipoHabitacionId": 1, "nombre": "Doble", "capacidadMaxima": 3, "ultimasDisponibles": false,
+      "desdePorNoche": null, "planes": [], "motivoNoDisponible": "Admite hasta 3 personas" },
     { "tipoHabitacionId": 2, "nombre": "Simple", "capacidadMaxima": 2, "ultimasDisponibles": false,
       "desdePorNoche": null, "planes": [], "motivoNoDisponible": "Admite hasta 2 personas" }
   ]
@@ -630,7 +632,9 @@ de tarifas) se traducen en `backend/src/modulos/ecommerce/ecommerce.errores.js`:
 
 El titular de una reserva web **es la ficha `Huesped` del sistema** (la misma
 que usan el mostrador y el check-in). Campos de `huesped` en
-`POST /api/web/reservas`, **todos obligatorios**:
+`POST /api/web/reservas`: **obligatorios todos salvo `nacionalidad` y
+`paisResidencia`**, que son **opcionales** (si vienen, tienen que ser ISO-2
+válidos):
 
 | Campo | Formato | Validación |
 |---|---|---|
@@ -642,15 +646,21 @@ que usan el mostrador y el check-in). Campos de `huesped` en
 | `fechaNacimiento` | `AAAA-MM-DD` | el titular tiene que tener **al menos 18 años a la fecha de ingreso** (`fechaDesde`), igual que `normalizarAltaReserva` |
 | `email` | email | formato válido; es el email de contacto de la reserva |
 | `telefono` | texto | no vacío |
-| `nacionalidad` | ISO 3166-1 alfa-2 | código de `PAISES` |
-| `paisResidencia` | ISO 3166-1 alfa-2 | código de `PAISES` |
+| `nacionalidad` | ISO 3166-1 alfa-2 | **opcional**; si viene, código de `PAISES` |
+| `paisResidencia` | ISO 3166-1 alfa-2 | **opcional**; si viene, código de `PAISES` |
 
 - El frontend importa los catálogos de `frontend/src/lib/` (vía
   `ecommerce.constantes.js`); no hay listas propias del e-commerce.
 - **Nacionalidad y país de residencia empiezan vacíos** en el formulario. Son
   datos de la ficha de registro de pasajeros y la residencia define la posible
   exención de IVA: un extranjero que no los toca no puede quedar como
-  argentino residente. `paisDocumento` sí empieza en `AR`.
+  argentino residente. `paisDocumento` sí empieza en `AR`. Si el huésped no los
+  completa, se piden en el check-in.
+- **El consentimiento se acepta en la pantalla Datos** (`/web/datos`): una
+  casilla obligatoria (términos, política de cancelación y privacidad, Ley
+  25.326) y otra opcional de comunicaciones, ambas sin tildar. Pago redirige a
+  Datos si falta la aceptación. El backend registra la fecha, la hora y la
+  versión (`"2026-10-01"`) en `DatosReservaWeb`.
 - La identidad de la persona es **tipo + país + número** del documento, con la
   misma normalización que el sistema (`persona.servicio.js → claveDocumento`).
 
@@ -812,7 +822,7 @@ un evento aparte (ver **Limitaciones**). Código:
 
 ---
 
-## Para Tomás: qué cambió en Datos
+## Para Tomás: qué cambió en Datos *(histórico — integrado el 2026-10-06)*
 
 El formulario de `/web/datos` (`DatosHuespedPage.jsx`) tiene que cargar el
 titular con la forma nueva (sección **Huésped (titular)**). Respecto de la 1A:
@@ -837,7 +847,7 @@ titular con la forma nueva (sección **Huésped (titular)**). Respecto de la 1A:
   `nombreComercialPlan(plan)` de `formato.js` ("Tarifa flexible" / "No
   reembolsable"), como resultados, el resumen y Mi reserva.
 
-### Para Tomás: Pago y Confirmación (etapa 1B-2)
+### Para Tomás: Pago y Confirmación (etapa 1B-2) *(histórico — integrado el 2026-10-06)*
 
 `POST /api/web/reservas` ya es real. Lo que tienen que mostrar las pantallas:
 
@@ -925,7 +935,7 @@ existiera.
 | `ecommerce.css` | Solo clases nuevas `ec-` (campo de fecha, buscador web y compacto, esqueletos, error con reintento, `ec-solo-lector`, `ec-solo-escritorio`, ahorro, estado vacío, detalle del tipo, galería y visor). Ninguna regla existente cambió. |
 | `formato.js` y `ProcesoCompraContext.jsx` | **Sin cambios.** |
 
-### Para Tomás (etapa 2)
+### Para Tomás (etapa 2) *(histórico — integrado el 2026-10-06)*
 
 - Tus páginas pueden usar `useTituloPagina("Tus datos")`, `useTituloPagina("Pago")`
   y `useTituloPagina("Confirmación")` para el título de la pestaña.
@@ -1051,13 +1061,73 @@ del endpoint interno).
 
 ---
 
+## Límite de intentos (HU-106, parcial)
+
+Protección del canal público: cada ruta de `/api/web` pasa primero por un
+límite de intentos **por IP** (`backend/src/modulos/ecommerce/limiteIntentos.js`).
+Ventanas deslizantes, con dos límites por grupo:
+
+| Grupo | Rutas | Pedidos | Fallos que cuentan |
+|---|---|---|---|
+| `consulta` | `GET /tipos`, `/planes`, `/disponibilidad` | 120 por minuto | — |
+| `cotizar` | `POST /cotizar` | 30 por minuto | — |
+| `reserva` | `POST /reservas` | 10 cada 10 minutos | 5 en 30 minutos: tarjeta rechazada (402), vence antes de la salida (422) o número inválido (400 con `campo` `tarjeta.*`). Frena el "card testing". |
+| `miReserva` | `POST /mi-reserva` y `/mi-reserva/cancelar` | 20 cada 15 minutos | 8 en 15 minutos: respuestas 404 (probar códigos al azar) |
+
+- Al superarlo: `429` `DEMASIADOS_INTENTOS` con la forma de error común más
+  `reintentarEn` (segundos) y el header `Retry-After`:
+  `{ "error": "Hiciste demasiados intentos seguidos…", "codigo": "DEMASIADOS_INTENTOS", "reintentarEn": 120 }`.
+  Para el frontend es una respuesta sin definitiva: reintenta con la misma
+  clave de idempotencia.
+- El estado vive **en memoria del proceso**: se reinicia con el backend y no se
+  comparte entre instancias.
+- `WEB_LIMITE_INTENTOS=off` (en `backend/.env`) lo desactiva; **solo para
+  pruebas de carga locales**.
+- **`TRUST_PROXY` (opcional)**: detrás de un proxy inverso (Clever Cloud),
+  `req.ip` es la IP del proxy y todos los visitantes compartirían un mismo
+  contador. Con `TRUST_PROXY=1` (cantidad de proxies delante; también acepta una
+  lista de IPs o subredes separadas por comas) el límite usa la IP real de
+  `X-Forwarded-For`. Ausente, vacío o `false`: no se confía en ningún proxy.
+  `true` y cualquier valor inválido **se rechazan al arrancar** (`true`
+  permitiría falsificar la IP para saltear el límite). Código:
+  `backend/src/lib/trustProxy.js`.
+
+## Email definitivo (HU-103)
+
+`emailWeb.servicio.js` envía la confirmación (texto plano y HTML para clientes
+de correo: tablas, estilos en línea, ancho máximo 600 px, sin imágenes ni
+scripts) y el aviso de cancelación. La confirmación incluye: saludo con el
+nombre del titular, código, estado, entrada y salida con check-in 14 h y
+check-out 10 h, noches, tipo(s) de habitación y ocupación, tarifa (nombre
+comercial y condiciones), penalidad de no-show, total con IVA incluido, cómo se
+pagó o se garantizó (marca y últimos 4), llegada estimada y solicitudes
+especiales (si las hay), el link a Mi reserva (con `WEB_PUBLIC_URL`, o el texto
+alternativo) y "Antes de llegar". **Nunca** lleva números de habitación, ids ni
+datos de la tarjeta más allá de la marca y los últimos 4, y el email del
+huésped nunca viaja en un link. **Todo dato variable se escapa**
+(`escaparHTML`) en el HTML. El límite de cancelación sin cargo se informa como
+"hasta N h antes de la llegada", sin fecha ni hora exactas (Mi reserva sí las
+muestra).
+
 ## Limitaciones conocidas
 
 - Pago simulado (no hay pasarela real). El estado de la pasarela simulada
   (idempotencia y preautorizaciones) vive en memoria del proceso: se pierde al
   reiniciar el backend. Se reemplaza por el módulo de garantías de Ricardo.
-- El email de confirmación es la versión simple del backend (texto y HTML
-  básicos); la versión final del contenido es de Tomás.
+- Si falla el envío del email, la reserva igual queda confirmada y la
+  Confirmación avisa al huésped que guarde el código; el fallo solo se registra
+  en el log del backend (no queda guardado para reintentar ni hay reenvío desde
+  el mostrador): pendiente.
+- El límite de intentos es **por IP y en memoria** (se reinicia con el backend y
+  no se comparte entre instancias).
+- HU-106: el **cierre de los endpoints de `/api`** (middleware de sesión con
+  lista blanca) está **pendiente** (Tomás).
+- **Cancelar desde el mostrador una reserva web no reembolsable** (con prepago)
+  con 24 h o más de anticipación **anula el prepago en el sistema sin devolver
+  el cobro** en la pasarela: `cancelarReserva` (de Ricardo) anula todos los
+  pagos activos sin distinguir el concepto "Prepago". Pendiente.
+- El resumen "Tu reserva" del proceso de compra no muestra el detalle por noche
+  (criterio de HU-101): pendiente.
 - Sin servicios adicionales, facturación ni check-in online.
 - Sin modificación web de la reserva (HU-105 postergada): el huésped cancela y
   vuelve a reservar, o contacta a recepción.
