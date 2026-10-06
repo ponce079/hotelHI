@@ -27,6 +27,7 @@
 const crypto = require("node:crypto");
 const { Prisma } = require("@prisma/client");
 const { hoyComoFechaUTC } = require("../../lib/fechas");
+const { leerSecreto } = require("./pasarelaSecreto");
 const {
   OPERACIONES_TARJETA,
   OPERACION_TARJETA,
@@ -37,7 +38,12 @@ const {
 // "Bóveda" simulada: el token es autodescriptivo y está firmado, así la
 // pasarela no necesita base de datos y nadie puede fabricar uno a mano. NO
 // contiene el número (solo marca, últimos 4 y vencimiento).
-const SECRETO_TOKEN = process.env.PASARELA_SIMULADA_SECRETO || "sgh-pasarela-simulada-solo-desarrollo";
+// El secreto sale de PASARELA_TOKEN_SECRETO (ver pasarelaSecreto.js: obligatorio en producción).
+let secretoToken = null;
+function secreto() {
+  if (secretoToken === null) secretoToken = leerSecreto();
+  return secretoToken;
+}
 const MAX_CLAVES_IDEMPOTENCIA = 1000;
 const cacheIdempotencia = new Map();
 
@@ -95,7 +101,7 @@ function vencida(venc) {
 }
 
 function firmar(cuerpo) {
-  return crypto.createHmac("sha256", SECRETO_TOKEN).update(cuerpo).digest("base64url").slice(0, 22);
+  return crypto.createHmac("sha256", secreto()).update(cuerpo).digest("base64url").slice(0, 22);
 }
 
 function emitirToken({ marca, ultimos4, mes, anio }) {

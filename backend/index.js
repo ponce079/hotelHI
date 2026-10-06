@@ -40,6 +40,14 @@ try {
   process.exit(1);
 }
 
+// Secreto de la pasarela de pagos simulada: en producción es obligatorio (PASARELA_TOKEN_SECRETO, 32+ caracteres).
+try {
+  require("./src/modulos/garantias/pasarelaSecreto").leerSecreto();
+} catch (error) {
+  console.error(`[configuración] ${error.message}`);
+  process.exit(1);
+}
+
 app.use(express.json());
 
 // --- Rutas (patrón controller/service/routes, dentro de src/modulos) ---
