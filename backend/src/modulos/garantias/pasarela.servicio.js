@@ -192,7 +192,8 @@ function datosDeRegistro({ operacion, importe, referenciaPrevia, resultado }) {
   return {
     operacion,
     referenciaPrevia: referenciaPrevia ? String(referenciaPrevia).slice(0, 255) : null,
-    monto: importe,
+    // Como texto con dos decimales: Prisma lo acepta para un Decimal(12,2) y no hay que clonar un Decimal.
+    monto: importe.toFixed(2),
     aprobada: resultado.aprobado,
     motivo: resultado.motivoRechazo ? String(resultado.motivoRechazo).slice(0, 191) : null,
     marca: resultado.marca ?? null,
@@ -315,7 +316,7 @@ async function procesar({ operacion, monto, tarjeta, referenciaPrevia }) {
         referencia: referenciaPrevia,
         desde: pre.estadoPreautorizacion,
         hasta: decision.hasta,
-        ...(decision.montoCapturado !== undefined ? { montoCapturado: decision.montoCapturado } : {}),
+        ...(decision.montoCapturado !== undefined ? { montoCapturado: decision.montoCapturado.toFixed(2) } : {}),
       });
     }
 
