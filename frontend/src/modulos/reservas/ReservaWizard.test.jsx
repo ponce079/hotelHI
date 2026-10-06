@@ -580,18 +580,22 @@ describe("ReservaWizard — ocupación limitada por la capacidad de la habitaci�
     expect(screen.getByLabelText("Menores en habitación 102")).toHaveValue(0);
   });
 
-  it("una habitación más grande sigue arrancando en 2 adultos, y adultos + menores no supera la capacidad", async () => {
+  it("una habitación arranca con tantos adultos como su capacidad, y adultos + menores no la supera", async () => {
     renderWizard({ origen: "RECEPCION" });
     await elegir("103");
 
     const adultos = () => screen.getByLabelText("Adultos en habitación 103");
     const menores = () => screen.getByLabelText("Menores en habitación 103");
-    expect(adultos()).toHaveValue(2);
+    expect(adultos()).toHaveValue(3);
+    expect(menores()).toHaveValue(0);
+    expect(menores()).toHaveAttribute("max", "0");
     expect(screen.getByText("Capacidad máx.: 3")).toBeInTheDocument();
 
+    // Bajando adultos se liberan lugares para menores, hasta la capacidad.
+    fireEvent.change(adultos(), { target: { value: "1" } });
     fireEvent.change(menores(), { target: { value: "5" } });
-    expect(menores()).toHaveValue(1);
-    expect(menores()).toHaveAttribute("max", "1");
+    expect(menores()).toHaveValue(2);
+    expect(menores()).toHaveAttribute("max", "2");
 
     // Subir los adultos baja los menores para no pasarse.
     fireEvent.change(adultos(), { target: { value: "3" } });

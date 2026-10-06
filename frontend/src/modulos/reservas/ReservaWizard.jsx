@@ -57,14 +57,19 @@ const HUESPED_VACIO = {
   preferencias: "",
 };
 
-// Ocupación por defecto de una habitación recién elegida — mismo default
-// que ya usaba el motor de forma implícita antes de esta etapa (2 adultos,
-// 0 menores).
+// Ocupación de respaldo cuando no se conoce la capacidad de la habitación —
+// mismo default que ya usaba el motor de forma implícita antes de esta etapa
+// (2 adultos, 0 menores). Una habitación recién elegida arranca llena de
+// adultos (adultos = capacidad), ver ocupacionInicial.
 const OCUPACION_DEFECTO = { adultos: 2, menores: 0 };
 
 // Lleva una ocupación al rango que admite la habitación: entre 1 y
 // `capacidad` adultos, y menores solo hasta completar la capacidad. Sin
 // capacidad conocida (todavía no llegó la disponibilidad) la deja igual.
+function ocupacionInicial(capacidad) {
+  return capacidad == null ? { ...OCUPACION_DEFECTO } : { adultos: capacidad, menores: 0 };
+}
+
 function ajustarOcupacion({ adultos, menores }, capacidad) {
   if (capacidad == null) return { adultos, menores };
   const adultosAjustados = Math.min(Math.max(1, adultos), capacidad);
@@ -321,7 +326,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       ...f,
       habitaciones: f.habitaciones.some((h) => h.habitacionId === id)
         ? f.habitaciones.filter((h) => h.habitacionId !== id)
-        : [...f.habitaciones, { habitacionId: id, ...ajustarOcupacion(OCUPACION_DEFECTO, habitacionPorId.get(id)?.capacidad) }],
+        : [...f.habitaciones, { habitacionId: id, ...ocupacionInicial(habitacionPorId.get(id)?.capacidad) }],
     }));
   }
 
