@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { X, Search, Save } from "lucide-react";
 import { Button } from "../../componentes/Button";
+import { useCerrarConEsc } from "../../componentes/useCerrarConEsc";
 import { habilitarArticuloEnDeposito, listarHabilitaciones } from "./articuloDeposito.api";
 import { listarArticulos } from "../articulos/articulos.api";
 
@@ -13,6 +14,7 @@ export function HabilitarArticuloModal({ depositoId, depositoNombre, onClose, on
   const [articuloIds, setArticuloIds] = useState([]);
   const [filtro, setFiltro] = useState("");
   const [error, setError] = useState("");
+  const overlayRef = useCerrarConEsc(true, onClose);
   const queryClient = useQueryClient();
 
   const { data: articulos } = useQuery({
@@ -98,12 +100,8 @@ export function HabilitarArticuloModal({ depositoId, depositoNombre, onClose, on
   }
 
   return (
-    <div
-      className="fixed inset-0 z-30 flex items-center justify-center bg-tinta/45 p-6"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
+    // Formulario: un clic en el fondo no lo cierra (ver Modal.jsx); la X y Esc sí.
+    <div ref={overlayRef} className="fixed inset-0 z-30 flex items-center justify-center bg-tinta/45 p-6">
       <div className="flex max-h-[85vh] w-full max-w-md flex-col rounded-2xl bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-borde px-6 py-5">
           <h3 className="font-heading text-[20px] font-semibold text-tinta">Habilitar artículos</h3>
