@@ -1,4 +1,5 @@
 import { Button } from "./Button";
+import { useCerrarConEsc } from "./useCerrarConEsc";
 
 // `children` es opcional (default nada, no cambia ningún uso existente) —
 // contenido libre entre el mensaje y los botones, ej. un campo extra que
@@ -10,6 +11,10 @@ import { Button } from "./Button";
 // deshabilita solo, y además se bloquea Cancelar y el click en el fondo
 // para cerrar — así no queda una ventana donde alguien cancela justo
 // mientras la mutación ya está en curso.
+//
+// Esc cancela. El clic en el fondo cancela solo en una confirmación simple:
+// con `children` suele haber un campo cargándose (motivo, comentario) que
+// un clic accidental haría perder.
 export function ConfirmDialog({
   abierto,
   titulo,
@@ -24,12 +29,15 @@ export function ConfirmDialog({
   onCancelar,
   children,
 }) {
+  const overlayRef = useCerrarConEsc(abierto && !cargando, onCancelar);
+
   if (!abierto) return null;
 
   return (
     <div
+      ref={overlayRef}
       className="fixed inset-0 z-40 flex items-center justify-center bg-tinta/45 p-5"
-      onClick={(e) => { if (e.target === e.currentTarget && !cargando) onCancelar(); }}
+      onClick={(e) => { if (e.target === e.currentTarget && !cargando && !children) onCancelar(); }}
     >
       <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
         <h3 className="font-heading text-[20px] font-semibold text-tinta">{titulo}</h3>

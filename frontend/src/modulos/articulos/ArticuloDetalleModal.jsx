@@ -2,17 +2,19 @@ import { useQuery } from "@tanstack/react-query";
 import { X, Pencil } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
+import { useCerrarConEsc } from "../../componentes/useCerrarConEsc";
 import { consultarStock } from "../stock/stock.api";
 import { UNIDADES_MEDIDA_NOMBRES } from "./articulos.constantes";
 
 export function ArticuloDetalleModal({ articulo, onClose, onEditar }) {
+  const overlayRef = useCerrarConEsc(true, onClose);
   const { data: filas, isLoading } = useQuery({
     queryKey: ["stock", { articuloId: String(articulo.id) }],
     queryFn: () => consultarStock({ articuloId: articulo.id }),
   });
 
   return (
-    <div className="fixed inset-0 z-30 flex items-start justify-center overflow-y-auto bg-tinta/45 p-6 py-10" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+    <div ref={overlayRef} className="fixed inset-0 z-30 flex items-start justify-center overflow-y-auto bg-tinta/45 p-6 py-10" onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl">
         <div className="flex items-start justify-between gap-3 border-b border-borde px-6 py-5">
           <div>
