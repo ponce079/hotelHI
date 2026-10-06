@@ -4,6 +4,7 @@ const prisma = require('../../lib/prisma');
 const { redondear } = require('../../lib/comprobantes');
 const { crearConNumeroSecuencial } = require('../../lib/numeracion');
 const { TIPOS_COMPROBANTE_ESTADIA } = require('./comprobanteEstadia.constantes');
+const { armarDetalleCuenta } = require('./comprobanteDetalle');
 const { CUIT_REGEX, normalizarCuit } = require('../proveedores/proveedores.constantes');
 
 class ErrorDeNegocio extends Error {
@@ -26,6 +27,12 @@ function centavos(n) {
 //     diferencia). Es la que usan el check-out y las notas de crédito: la
 //     cuenta del huésped es un precio final, no un neto.
 const viene = (v) => v !== undefined && v !== null;
+
+// Lazy: checkOut.servicio arrastra reservas/garantías; no se carga al
+// arrancar este módulo (mismo criterio que garantiaEstadiaCheckOut).
+function consolidarCuenta(reservaId) {
+  return require('../check-out/checkOut.servicio').consolidarCargos(reservaId);
+}
 
 function resolverImportes({ importeNeto, importeTotal, alicuotaIVA }) {
   if (viene(importeNeto) === viene(importeTotal)) {
@@ -61,7 +68,22 @@ async function crearComprobante(data) {
   const { reservaId, alicuotaIVA, razonSocialTercero, cuitTercero } = data;
 
   if (!reservaId) throw new ErrorDeNegocio('reservaId es obligatorio.');
-  const importes = resolverImportes(data);
+  // Observación 3: el total del comprobante lo fija el servidor desde la
+  // cuenta consolidada (alojamiento + cargos adicionales + verificación), no
+  // el frontend. Si el cliente manda un importeTotal, tiene que coincidir con
+  // la cuenta: si no, la cuenta cambió desde que la vio y se rechaza.
+  let datosImporte = data;
+  if (!viene(data.importeNeto)) {
+    const cuenta = await consolidarCuenta(reservaId);
+    if (viene(data.importeTotal) && centavos(data.importeTotal) !== centavos(cuenta.totalAdeudado)) {
+      throw new ErrorDeNegocio(
+        'El total informado no coincide con la cuenta de la estadía (cambió desde que se mostró). Actualizá la pantalla y reintentá.',
+        409
+      );
+    }
+    datosImporte = { ...data, importeTotal: cuenta.totalAdeudado };
+  }
+  const importes = resolverImportes(datosImporte);
   // HU-55: si se carga uno de los dos datos del tercero, hace falta el otro
   // — un comprobante "a medias" a nombre de tercero no sirve para nada.
   const esATerceroRazon = (razonSocialTercero || '').trim();
@@ -210,7 +232,23 @@ async function obtenerComprobante(id) {
     },
   });
   if (!comprobante) throw new ErrorDeNegocio('Comprobante no encontrado.', 404);
-  return comprobante;
+  return { ...comprobante, detalle: await detalleDelComprobante(comprobante) };
+}
+
+// Observación 3: líneas que componen el total (alojamiento, cargos
+// adicionales, verificación). Solo para el Comprobante, no para las Notas de
+// Crédito (que acreditan un importe, no re-detallan la cuenta). Se arma desde
+// la cuenta de la reserva; si no se puede armar (reserva vieja sin precio
+// congelado, etc.) devuelve null y la ficha sigue mostrando los importes.
+async function detalleDelComprobante(comprobante) {
+  if (comprobante.tipo !== 'Comprobante') return null;
+  try {
+    const detalle = armarDetalleCuenta(await consolidarCuenta(comprobante.reservaId));
+    return detalle;
+  } catch (err) {
+    console.error('No se pudo armar el detalle del comprobante', comprobante.id, err.message);
+    return null;
+  }
 }
 
 async function listarPorReserva(reservaId) {
