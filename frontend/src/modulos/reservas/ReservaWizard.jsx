@@ -57,10 +57,24 @@ const HUESPED_VACIO = {
   preferencias: "",
 };
 
-// Ocupación por defecto de una habitación recién elegida — mismo default
-// que ya usaba el motor de forma implícita antes de esta etapa (2 adultos,
-// 0 menores).
+// Ocupación de respaldo cuando no se conoce la capacidad de la habitación —
+// mismo default que ya usaba el motor de forma implícita antes de esta etapa
+// (2 adultos, 0 menores). Una habitación recién elegida arranca llena de
+// adultos (adultos = capacidad), ver ocupacionInicial.
 const OCUPACION_DEFECTO = { adultos: 2, menores: 0 };
+
+// Lleva una ocupación al rango que admite la habitación: entre 1 y
+// `capacidad` adultos, y menores solo hasta completar la capacidad. Sin
+// capacidad conocida (todavía no llegó la disponibilidad) la deja igual.
+function ocupacionInicial(capacidad) {
+  return capacidad == null ? { ...OCUPACION_DEFECTO } : { adultos: capacidad, menores: 0 };
+}
+
+function ajustarOcupacion({ adultos, menores }, capacidad) {
+  if (capacidad == null) return { adultos, menores };
+  const adultosAjustados = Math.min(Math.max(1, adultos), capacidad);
+  return { adultos: adultosAjustados, menores: Math.min(Math.max(0, menores), capacidad - adultosAjustados) };
+}
 
 function soloFecha(valorISO) {
   return valorISO ? String(valorISO).slice(0, 10) : "";
@@ -312,18 +326,37 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       ...f,
       habitaciones: f.habitaciones.some((h) => h.habitacionId === id)
         ? f.habitaciones.filter((h) => h.habitacionId !== id)
-        : [...f.habitaciones, { habitacionId: id, ...OCUPACION_DEFECTO }],
+        : [...f.habitaciones, { habitacionId: id, ...ocupacionInicial(habitacionPorId.get(id)?.capacidad) }],
     }));
   }
 
   function cambiarOcupacion(habitacionId, campo, valor) {
     setErrorGeneral("");
     const numero = Math.max(0, Number(valor) || 0);
+    const capacidad = habitacionPorId.get(habitacionId)?.capacidad;
     setForm((f) => ({
       ...f,
-      habitaciones: f.habitaciones.map((h) => (h.habitacionId === habitacionId ? { ...h, [campo]: numero } : h)),
+      habitaciones: f.habitaciones.map((h) =>
+        h.habitacionId === habitacionId ? { ...h, ...ajustarOcupacion({ ...h, [campo]: numero }, capacidad) } : h
+      ),
     }));
   }
+
+  // Habitaciones que llegaron ya elegidas (Disponibilidad, edición) o cuya
+  // disponibilidad se volvió a consultar: recién acá se conoce su capacidad,
+  // así que se ajusta lo cargado para no dejar una ocupación imposible.
+  useEffect(() => {
+    setForm((f) => {
+      let cambio = false;
+      const habitaciones = f.habitaciones.map((h) => {
+        const ajustada = ajustarOcupacion(h, habitacionPorId.get(h.habitacionId)?.capacidad);
+        if (ajustada.adultos === h.adultos && ajustada.menores === h.menores) return h;
+        cambio = true;
+        return { ...h, ...ajustada };
+      });
+      return cambio ? { ...f, habitaciones } : f;
+    });
+  }, [habitacionPorId, form.habitaciones]);
 
   // Etapa 4A (HU-95) — cotización real contra el motor para el paso "Plan":
   // misma ocupación por habitación que ya eligió el paso anterior. Se
@@ -776,13 +809,16 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
                       <input
                         type="number"
                         min={0}
-                        max={h.info?.capacidad}
+                        max={h.info?.capacidad != null ? h.info.capacidad - h.adultos : undefined}
                         value={h.menores}
                         onChange={(e) => cambiarOcupacion(h.habitacionId, "menores", e.target.value)}
                         aria-label={`Menores en habitación ${h.info?.numero ?? h.habitacionId}`}
                         className="w-16 rounded border border-borde px-2 py-1 text-[13px] text-tinta"
                       />
                     </label>
+                    {h.info?.capacidad != null && (
+                      <span className="text-[11.5px] text-piedra">Capacidad máx.: {h.info.capacidad}</span>
+                    )}
                     {h.info?.capacidad != null && h.adultos + h.menores > h.info.capacidad && (
                       <span className="text-[11.5px] text-error-texto">
                         Supera la capacidad ({h.info.capacidad}).
