@@ -24,7 +24,7 @@ import { useToast } from "../../lib/useToast";
 import { formatearFechaSinHora, hoyEnHoraLocal } from "../../lib/fechas";
 import { buscarReservaParaCheckIn } from "../check-in/checkIn.api";
 import { listarReservas } from "../reservas/reservas.api";
-import { ESTADO_RESERVA, ESTADO_RESERVA_BADGE } from "../reservas/reservas.constantes";
+import { ESTADO_RESERVA, ESTADO_RESERVA_BADGE, etiquetaEstadoReserva } from "../reservas/reservas.constantes";
 import { listarHabitaciones, listarOrdenesMantenimiento } from "../habitaciones/habitaciones.api";
 import { ESTADO_HABITACION_COLOR } from "../habitaciones/habitaciones.constantes";
 import { listarArticulos } from "../articulos/articulos.api";
@@ -441,7 +441,7 @@ export function AdminInicio() {
                     {formatearFechaSinHora(r.fechaDesde)} → {formatearFechaSinHora(r.fechaHasta)}
                   </td>
                   <td className="px-3 py-2.5">
-                    <Badge variante={ESTADO_RESERVA_BADGE[r.estado] ?? "neutro"}>{r.estado}</Badge>
+                    <Badge variante={ESTADO_RESERVA_BADGE[r.estado] ?? "neutro"}>{etiquetaEstadoReserva(r.estado)}</Badge>
                   </td>
                 </tr>
               )}

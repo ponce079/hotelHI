@@ -85,7 +85,14 @@ function normalizarPersona(d, reserva) {
     }
     r.tipoDocumento = canonico;
   }
-  if (r.numeroDocumento) r.numeroDocumento = require("../../lib/documento").normalizarNumeroDocumento(r.numeroDocumento);
+  if (r.numeroDocumento) {
+    r.numeroDocumento = require("../../lib/documento").normalizarNumeroDocumento(r.numeroDocumento);
+    // "-" o "." no son un documento: tras normalizar no queda nada y no se puede armar una identidad.
+    if (!r.numeroDocumento) {
+      const mensaje = "El número de documento tiene que tener letras o números.";
+      throw new ErrorDeNegocio(mensaje, 400, { numeroDocumento: mensaje });
+    }
+  }
   if (r.email && !esEmail(r.email))
     throw new ErrorDeNegocio("Correo electrónico inválido.", 400, {
       email: "Ingresá un correo electrónico válido.",

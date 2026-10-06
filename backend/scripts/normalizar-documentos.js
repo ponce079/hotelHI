@@ -8,7 +8,7 @@
 const path = require("node:path");
 require("dotenv").config({ path: path.resolve(__dirname, "../.env"), quiet: true });
 const { exigirDestino } = require("./_destinoMigracion");
-const { planificar } = require("./_normalizarDocumentos");
+const { planificar, describirRevisarAMano, enmascararDocumento } = require("./_normalizarDocumentos");
 
 async function main() {
   const aplicar = process.argv.includes("--aplicar");
@@ -43,13 +43,12 @@ async function main() {
     console.log(`Fichas a corregir: ${plan.fichasACorregir.length}`);
     console.log(`Documentos duplicados a unificar: ${plan.fusiones.length}`);
     for (const f of plan.fusiones) console.log(`  ficha ${f.principalId} absorbe ${f.duplicadosIds.join(", ")}`);
-    console.log(`Mismo documento con nombres distintos (decidir a mano): ${plan.nombresDistintos.length}`);
-    for (const d of plan.nombresDistintos)
-      console.log(`  documento ${d.documento}: ${d.fichas.map((f) => `ficha ${f.id} "${f.nombre}"`).join(" | ")}`);
+    console.log(`Revisar a mano (mismo documento, nombres distintos; no se tocan ni se unifican): ${plan.nombresDistintos.length}`);
+    for (const linea of describirRevisarAMano(plan.nombresDistintos)) console.log(`  ${linea}`);
     console.log(`Ocupantes a corregir: ${plan.ocupantesACorregir.length}`);
     console.log(`Conflictos (revisar a mano): ${plan.conflictos.length}`);
     for (const c of plan.conflictos)
-      console.log(`  ocupantes ${c.ocupanteIds.join(" y ")} alojados a la vez con el documento ${c.documento}`);
+      console.log(`  ocupantes ${c.ocupanteIds.join(" y ")} alojados a la vez con el documento ${enmascararDocumento(c.documento)}`);
     if (!aplicar) return console.log("\nSimulación: no se escribió nada. Para aplicar: --aplicar");
 
     await prisma.$transaction(

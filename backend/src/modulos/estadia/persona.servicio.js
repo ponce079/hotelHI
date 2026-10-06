@@ -7,12 +7,22 @@ const normalizar = (v) =>
     .trim()
     .toUpperCase()
     .replace(/\s/g, "");
+// Error de validación (400) con el mismo formato que los ErrorDeNegocio del módulo (message, statusCode, campos).
+class ErrorDocumento extends Error {
+  constructor(mensaje) {
+    super(mensaje);
+    this.statusCode = 400;
+    this.campos = { numeroDocumento: mensaje };
+  }
+}
+// La identidad se calcula con el número YA normalizado (solo letras y dígitos). Un número que queda vacío
+// ("-", ".") no tiene que producir una identidad: todas las personas con ese "número" compartirían la misma.
 function claveDocumento(p) {
   if (!p.tipoDocumento || !p.paisDocumento || !p.numeroDocumento) return null;
+  const numero = normalizarNumeroDocumento(p.numeroDocumento);
+  if (!numero) throw new ErrorDocumento("El número de documento tiene que tener letras o números.");
   return createHash("sha256")
-    .update(
-      [normalizar(p.tipoDocumento), normalizarPais(p.paisDocumento), normalizarNumeroDocumento(p.numeroDocumento)].join("|"),
-    )
+    .update([normalizar(p.tipoDocumento), normalizarPais(p.paisDocumento), numero].join("|"))
     .digest("hex");
 }
 // Cualquier país del catálogo ISO se reduce a su código; lo que no está en el
@@ -188,6 +198,7 @@ module.exports = {
   nombresDeFicha,
   sincronizarNombres,
   claveDocumento,
+  ErrorDocumento,
   vincularPersona,
   normalizarPais,
   actualizarResidencia,

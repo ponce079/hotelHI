@@ -218,7 +218,7 @@ export function lineaDeTiempo(reserva, personas = []) {
   if (e === ESTADO_RESERVA.NO_SHOW)
     return [
       { texto: "Confirmada", estado: "hecho", sub: "" },
-      { texto: "No-show", estado: "actual", sub: "" },
+      { texto: "No presentada", estado: "actual", sub: "" },
     ];
   if (e === ESTADO_RESERVA.CANCELADA)
     return [
@@ -280,7 +280,7 @@ export function datosClave(reserva, personas = [], hoy = hoyEnHoraLocal()) {
             : e === ESTADO_RESERVA.CANCELADA
               ? "cancelada"
               : e === ESTADO_RESERVA.NO_SHOW
-                ? "no-show"
+                ? "no presentada"
                 : "sin iniciar",
     },
     habitacion: {

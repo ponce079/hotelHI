@@ -24,6 +24,8 @@ async function buscarPorDocumento({ tipo, pais, numero } = {}) {
     throw new ErrorDeNegocio("Indicá el tipo de documento, el país emisor y el número.");
   const tipoDocumento = normalizarTipoDocumento(tipo);
   if (!tipoDocumento) throw new ErrorDeNegocio("El tipo de documento no es válido.");
+  if (!require("../../lib/documento").normalizarNumeroDocumento(texto(numero)))
+    throw new ErrorDeNegocio("El número de documento tiene que tener letras o números.");
   const identidad = claveDocumento({ tipoDocumento, paisDocumento: texto(pais), numeroDocumento: texto(numero) });
   const huesped = identidad ? await prisma.huesped.findUnique({ where: { identidadDocumento: identidad } }) : null;
   if (!huesped) throw new ErrorDeNegocio("No hay ningún huésped registrado con ese documento.", 404);

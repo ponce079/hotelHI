@@ -45,7 +45,7 @@ function ResumenDeCuenta({ reserva, cuenta, garantiaVigente }) {
   if (reserva.estado === ESTADO_RESERVA.CANCELADA || reserva.estado === ESTADO_RESERVA.NO_SHOW)
     return (
       <p className="text-sm text-piedra">
-        {reserva.estado === ESTADO_RESERVA.NO_SHOW ? "Reserva no-show" : "Reserva cancelada"}: no hay cargos de
+        {reserva.estado === ESTADO_RESERVA.NO_SHOW ? "Reserva no presentada" : "Reserva cancelada"}: no hay cargos de
         alojamiento.
       </p>
     );

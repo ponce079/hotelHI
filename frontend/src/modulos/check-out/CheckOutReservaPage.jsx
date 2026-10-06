@@ -28,7 +28,7 @@ import { formatearMonto } from "../../lib/moneda";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { useVolver } from "../../lib/useVolver";
-import { ESTADO_RESERVA, ESTADO_RESERVA_BADGE } from "../reservas/reservas.constantes";
+import { ESTADO_RESERVA, ESTADO_RESERVA_BADGE, etiquetaEstadoReserva } from "../reservas/reservas.constantes";
 import { listarComprobantesReserva } from "../comprobantes-estadia/comprobanteEstadia.api";
 import { EmitirComprobanteModal } from "../comprobantes-estadia/EmitirComprobanteModal";
 import { anularPagoEstadia, listarPagosEstadia } from "../pagos-estadia/pagoEstadia.api";
@@ -216,7 +216,7 @@ export function CheckOutReservaPage() {
           <h1 className="font-heading text-[34px] font-semibold">Check-out</h1>
           <CodigoClave className="text-[20px]">{cuenta.codigoConfirmacion}</CodigoClave>
           <Badge variante={ESTADO_RESERVA_BADGE[resultado ? ESTADO_RESERVA.CERRADA : cuenta.estadoReserva]}>
-            {resultado ? ESTADO_RESERVA.CERRADA : cuenta.estadoReserva}
+            {etiquetaEstadoReserva(resultado ? ESTADO_RESERVA.CERRADA : cuenta.estadoReserva)}
           </Badge>
         </div>
         <p className="mt-1.5 font-mono text-[11px] text-tinta/55">

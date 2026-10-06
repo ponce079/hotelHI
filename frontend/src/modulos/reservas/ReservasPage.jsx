@@ -29,6 +29,7 @@ import {
   ESTADOS_RESERVA,
   ESTADO_RESERVA_BADGE,
   ESTADO_RESERVA_COLOR,
+  etiquetaEstadoReserva,
   LIMITES_RESERVA,
 } from "./reservas.constantes";
 
@@ -142,7 +143,7 @@ export function ReservasPage() {
               style={{ backgroundColor: color.fondo, color: color.texto, borderColor: activo ? color.texto : color.borde }}
               className={`stat-chip cursor-pointer rounded-lg border p-4 text-center ${activo ? "ring-2 ring-offset-1" : ""}`}
             >
-              <div className="text-[11px] font-semibold uppercase tracking-[0.03em]">{valor}</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.03em]">{etiquetaEstadoReserva(valor)}</div>
               <Cifra tamano={30} className="mt-1">
                 {cantidad}
               </Cifra>
@@ -170,7 +171,7 @@ export function ReservasPage() {
           <option value="">Estado: todos</option>
           {ESTADOS_RESERVA.map((opcion) => (
             <option key={opcion} value={opcion}>
-              {opcion}
+              {etiquetaEstadoReserva(opcion)}
             </option>
           ))}
         </Select>
@@ -220,7 +221,8 @@ export function ReservasPage() {
             vacio={hayFiltros ? "Ninguna reserva coincide con los filtros." : "Todavía no hay reservas cargadas."}
             renderFila={(reserva) => {
               const { pasos, pasoActual } = construirPasosReserva(reserva);
-              const cancelada = reserva.estado === ESTADO_RESERVA.CANCELADA;
+              // Cancelada y No presentada: la fila se ve apagada y no tiene acciones (solo Ver detalle).
+              const cancelada = reserva.estado === ESTADO_RESERVA.CANCELADA || reserva.estado === ESTADO_RESERVA.NO_SHOW;
               const acciones = [{ label: "Ver detalle", onClick: () => navigate(`/reservas/${reserva.id}`) }];
               if (puedeGestionar && reserva.estado === ESTADO_RESERVA.CONFIRMADA) {
                 acciones.push({ label: "Modificar", onClick: () => setModal({ tipo: "edicion", reserva }) });
@@ -269,7 +271,7 @@ export function ReservasPage() {
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono text-xs">{reserva.noches}</td>
                   <td className="px-3 py-2.5">
-                    <Badge variante={ESTADO_RESERVA_BADGE[reserva.estado]}>{reserva.estado}</Badge>
+                    <Badge variante={ESTADO_RESERVA_BADGE[reserva.estado]}>{etiquetaEstadoReserva(reserva.estado)}</Badge>
                   </td>
                   <td className="px-3 py-2.5 text-right">
                     <div className="flex justify-end">

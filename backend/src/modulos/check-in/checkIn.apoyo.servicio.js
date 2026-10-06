@@ -6,6 +6,7 @@
 const prisma = require("../../lib/prisma");
 const { hoyComoFechaUTC } = require("../../lib/fechas");
 const { conTipoPlano } = require("../../lib/tipoHabitacion");
+const { normalizarNumeroDocumento } = require("../../lib/documento");
 const reservasServicio = require("../reservas/reservas.servicio");
 const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
 const { CONCEPTO_SENIA } = require("../pagos-estadia/pagoEstadia.constantes");
@@ -28,6 +29,11 @@ async function listarLlegadas({ q } = {}) {
           { codigoConfirmacion: { contains: texto } },
           { huesped: { nombre: { contains: texto } } },
           { huesped: { numeroDocumento: { contains: texto } } },
+          // El número se guarda sin puntos, guiones ni espacios: "45.112.902" encuentra "45112902"
+          // (mismo criterio que listarReservas).
+          ...(normalizarNumeroDocumento(texto) && normalizarNumeroDocumento(texto) !== texto
+            ? [{ huesped: { numeroDocumento: { contains: normalizarNumeroDocumento(texto) } } }]
+            : []),
         ],
       }
     : {};

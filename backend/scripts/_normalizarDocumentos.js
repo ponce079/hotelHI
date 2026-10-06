@@ -9,7 +9,9 @@
 //   - cada OcupanteReserva: número normalizado e identidadActiva recalculada (solo la tienen
 //     quienes están alojados);
 //   - fichas viejas sin país: se unen a las del mismo tipo y número si hay un solo país posible;
-//   - mismo documento con NOMBRES DISTINTOS: no se unifica nada, se informa para que lo decida una persona;
+//   - mismo documento con NOMBRES DISTINTOS: no se unifica NI SE CORRIGE nada de esas fichas (quedan fuera
+//     de la transacción) y se informa en "Revisar a mano" para que lo decida una persona. Corregir una
+//     sola de ellas dejaría dos fichas con la misma identidad y la transacción abortaría por P2002;
 //   - conflictos (dos personas alojadas a la vez con el mismo documento): se informan y no se tocan.
 const { normalizarNumeroDocumento, claveNombre } = require("../src/lib/documento");
 const { claveDocumento, normalizarPais } = require("../src/modulos/estadia/persona.servicio");
@@ -39,6 +41,7 @@ function planificar({ huespedes, ocupantes }) {
   }
 
   const descartadas = new Set();
+  const aRevisarAMano = new Set(); // ids de fichas con el mismo documento y nombres distintos: no se tocan
   const paisFinal = new Map(); // id -> país con el que queda la ficha
   const subgrupos = [];
   for (const miembros of grupos.values()) {
@@ -62,6 +65,7 @@ function planificar({ huespedes, ocupantes }) {
         documento: miembros[0].numero,
         fichas: miembros.map((m) => ({ id: m.h.id, nombre: m.h.nombre })),
       });
+      for (const m of miembros) aRevisarAMano.add(m.h.id);
       continue;
     }
     // La ficha que ya tiene país (identidad) manda; si ninguna lo tiene, la de menor id.
@@ -72,7 +76,7 @@ function planificar({ huespedes, ocupantes }) {
   }
 
   for (const h of ordenados) {
-    if (descartadas.has(h.id)) continue;
+    if (descartadas.has(h.id) || aRevisarAMano.has(h.id)) continue;
     const numero = normalizarNumeroDocumento(h.numeroDocumento);
     const pais = paisFinal.get(h.id) ?? (h.paisDocumento ? normalizarPais(h.paisDocumento) : "");
     const nueva = claveDocumento({ tipoDocumento: h.tipoDocumento, paisDocumento: pais, numeroDocumento: numero });
@@ -106,4 +110,22 @@ function planificar({ huespedes, ocupantes }) {
   return plan;
 }
 
-module.exports = { planificar };
+// Para mostrar "Revisar a mano" sin datos personales completos: iniciales del nombre y documento
+// enmascarado (solo los últimos 3 caracteres), más los ids para encontrar las fichas.
+function iniciales(nombre) {
+  const partes = String(nombre ?? "").trim().split(/\s+/).filter(Boolean);
+  return partes.length ? partes.map((p) => `${p[0].toUpperCase()}.`).join(" ") : "(sin nombre)";
+}
+
+function enmascararDocumento(numero) {
+  const texto = String(numero ?? "");
+  return texto ? `****${texto.slice(-3)}` : "(vacío)";
+}
+
+function describirRevisarAMano(nombresDistintos) {
+  return nombresDistintos.map(
+    (d) => `documento ${enmascararDocumento(d.documento)}: ${d.fichas.map((f) => `ficha ${f.id} (${iniciales(f.nombre)})`).join(" | ")}`
+  );
+}
+
+module.exports = { planificar, describirRevisarAMano, iniciales, enmascararDocumento };
