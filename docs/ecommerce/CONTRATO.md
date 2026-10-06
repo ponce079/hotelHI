@@ -1,6 +1,8 @@
 # Contrato de la API del e-commerce (`/api/web`)
 
-> **Contrato v6 (integración de Datos, Pago y Confirmación de Tomás; email definitivo y límite de intentos). Cambios al contrato: solo Gimena.**
+> **Contrato v7 (desglose por noche en `/cotizar`, email con el límite de cancelación exacto, contenido y datos de contacto completos). Cambios al contrato: solo Gimena.**
+>
+> v6: integración de Datos, Pago y Confirmación de Tomás, email definitivo y límite de intentos.
 >
 > Estado de las pantallas: **Datos, Pago y Confirmación reales** (integradas el 2026-10-06 en `feature/ecommerce`), junto con Inicio, Resultados, Detalle y Mi reserva. El proceso de compra completo funciona contra la API real.
 
@@ -237,34 +239,49 @@ Recotiza una selección concreta (por ejemplo, antes de pagar).
 
 ```json
 {
-  "fechaDesde": "2026-10-12",
-  "fechaHasta": "2026-10-14",
-  "planTarifarioId": 2,
+  "fechaDesde": "2026-11-12",
+  "fechaHasta": "2026-11-14",
+  "planTarifarioId": 1,
   "habitaciones": [
-    { "tipoHabitacionId": 1, "adultos": 2, "menores": 0 },
-    { "tipoHabitacionId": 1, "adultos": 3, "menores": 0 }
+    { "tipoHabitacionId": 1, "adultos": 2, "menores": 0 }
   ]
 }
 ```
 
-**Response 200** — respuesta real de la base local:
+**Response 200** — respuesta real de la base local (jueves a sábado: el viernes
+lleva el modificador de día de semana de +10 %):
 
 ```json
 {
-  "total": 157100,
-  "promedioPorNoche": 78550,
+  "total": 84000,
+  "promedioPorNoche": 42000,
   "noches": 2,
   "plan": {
-    "planTarifarioId": 2, "codigo": "NRF", "nombre": "No Reembolsable",
-    "reembolsable": false, "horasCancelacionSinCargo": null,
-    "penalidadNoShow": "TOTAL_ESTADIA", "total": 157100, "promedioPorNoche": 78550
+    "planTarifarioId": 1, "codigo": "BAR", "nombre": "Best Available Rate",
+    "reembolsable": true, "horasCancelacionSinCargo": 48,
+    "penalidadNoShow": "PRIMERA_NOCHE", "total": 84000, "promedioPorNoche": 42000
   },
   "habitaciones": [
-    { "tipo": "Doble", "adultos": 2, "menores": 0, "subtotal": 74800 },
-    { "tipo": "Doble", "adultos": 3, "menores": 0, "subtotal": 82300 }
+    {
+      "tipo": "Doble", "adultos": 2, "menores": 0, "subtotal": 84000,
+      "noches": [
+        { "fecha": "2026-11-12", "precio": 40000 },
+        { "fecha": "2026-11-13", "precio": 44000 }
+      ]
+    }
   ]
 }
 ```
+
+- **`noches` (por línea, desde la v7)**: el desglose del `subtotal`, una entrada por
+  noche, en orden: `fecha` (`AAAA-MM-DD`, la noche que empieza ese día) y `precio`
+  (precio final de esa noche, IVA incluido). Sale del **mismo cálculo** que el
+  `subtotal` (`cotizarParaReserva`): **la suma de los `precio` de una línea es
+  exactamente su `subtotal`**. Cambio aditivo: no cambia ningún otro campo. Con
+  varias líneas, cada una trae su propio `noches`.
+- Mismas fechas hasta el 17 de noviembre (5 noches, jueves a martes), respuesta
+  real recortada a la línea: `"subtotal": 208000`, `"noches"`: 40000 (jue 12),
+  44000 (vie 13), 44000 (sáb 14), 40000 (dom 15) y 40000 (lun 16).
 
 - 1 a 3 líneas. `planTarifarioId` tiene que ser un plan activo y visible en la
   web (si no → `400 DATOS_INVALIDOS`, `campo: "planTarifarioId"`); cada
@@ -1094,20 +1111,67 @@ Ventanas deslizantes, con dos límites por grupo:
 
 ## Email definitivo (HU-103)
 
-`emailWeb.servicio.js` envía la confirmación (texto plano y HTML para clientes
-de correo: tablas, estilos en línea, ancho máximo 600 px, sin imágenes ni
-scripts) y el aviso de cancelación. La confirmación incluye: saludo con el
-nombre del titular, código, estado, entrada y salida con check-in 14 h y
-check-out 10 h, noches, tipo(s) de habitación y ocupación, tarifa (nombre
-comercial y condiciones), penalidad de no-show, total con IVA incluido, cómo se
-pagó o se garantizó (marca y últimos 4), llegada estimada y solicitudes
-especiales (si las hay), el link a Mi reserva (con `WEB_PUBLIC_URL`, o el texto
-alternativo) y "Antes de llegar". **Nunca** lleva números de habitación, ids ni
-datos de la tarjeta más allá de la marca y los últimos 4, y el email del
-huésped nunca viaja en un link. **Todo dato variable se escapa**
-(`escaparHTML`) en el HTML. El límite de cancelación sin cargo se informa como
-"hasta N h antes de la llegada", sin fecha ni hora exactas (Mi reserva sí las
-muestra).
+`emailWeb.servicio.js` envía la confirmación (texto plano y HTML con el mismo
+contenido, para clientes de correo: tablas, estilos en línea, ancho máximo
+600 px, sin imágenes ni scripts) y el aviso de cancelación. La confirmación
+incluye: saludo con el nombre del titular, código, estado, entrada y salida con
+check-in 14 h y check-out 10 h, noches, tipo(s) de habitación y ocupación,
+tarifa (nombre comercial y condiciones), total con IVA incluido, cómo se pagó o
+se garantizó (marca y últimos 4), llegada estimada y solicitudes especiales (si
+las hay), el link a Mi reserva (con `WEB_PUBLIC_URL`, o el texto alternativo) y
+"Antes de llegar". **Nunca** lleva números de habitación, ids ni datos de la
+tarjeta más allá de la marca y los últimos 4, y el email del huésped nunca viaja
+en un link. **Todo dato variable se escapa** (`escaparHTML`) en el HTML.
+
+Lo que dice según la tarifa (v7):
+
+- **Flexible**: "Cancelación sin cargo hasta el *viernes 13/11/2026 a las
+  14:00*" (hora argentina), "Después de esa fecha, la cancelación tiene un
+  cargo de la primera noche." y "Podés cancelar sin cargo hasta el … desde Mi
+  reserva". El límite es **exacto y sin consultar la base**: la llegada a la hora
+  de check-in menos las horas del plan, con la misma función pura que usa
+  `calcularPenalidad` (`tarifas/limiteCancelacion.js`, `calcularLimiteSinCargo`),
+  y formateado en hora argentina (`lib/fechas.js`, `formatearInstanteArgentina`). Un
+  test comprueba que coincide con el `limiteSinCargo` de `calcularPenalidad`.
+- **No reembolsable**: "Si no te presentás, no se reintegra el importe pagado."
+  El link dice "Consultá tu reserva en …" (no habla de cancelar; sin
+  `WEB_PUBLIC_URL`: "Consultá tu reserva en nuestra web con tu código y tu
+  email.").
+- **Antes de llegar** (ambas): "Traé el DNI o pasaporte de cada persona que se
+  aloja: registramos a todos los huéspedes en el check-in." y "Los menores de 18
+  años se alojan con un adulto responsable; si viajan sin sus padres, traé la
+  autorización correspondiente.", además del check-in desde las 14 h y de
+  guardar el código.
+- **Contacto y datos personales** (confirmación y cancelación): donde dice
+  "contactá a recepción" va el teléfono y el email del hotel; el pie lleva el
+  nombre, la dirección, el teléfono y el email, y "Usamos tus datos solo para
+  gestionar tu reserva. Para consultarlos, corregirlos o pedir que los
+  eliminemos, escribinos a <email del hotel> (Ley 25.326)."
+
+## Datos de contacto del hotel (proyecto académico: datos ficticios)
+
+Viven en **dos archivos que tienen que coincidir** (un test del backend lo
+verifica leyendo el del frontend como texto): `frontend/src/modulos/ecommerce/ecommerce.config.js`
+(el sitio) y `backend/src/modulos/ecommerce/ecommerce.hotel.js` (los emails).
+
+| Dato | Valor |
+|---|---|
+| Dirección | Av. Belgrano 1450, A4400 Salta Capital, Salta |
+| Teléfono | +54 387 421-0000 |
+| Email | hotelhi.notificaciones@gmail.com |
+| Check-in / check-out | 14 h / 10 h |
+
+El pie del sitio lleva la leyenda "Sitio de demostración · Proyecto académico
+de Sistemas III. Los datos de contacto son ficticios." y no queda ningún
+`[COMPLETAR]` en el módulo.
+
+## Pantalla de Pago: mensaje de espera
+
+Mientras `POST /api/web/reservas` se procesa (la pasarela y la transacción
+pueden tardar varios segundos contra una base remota), `PagoPage` muestra el
+botón "Procesando…" deshabilitado y, en un elemento `role="status"`
+(`aria-live="polite"`), "Estamos confirmando tu reserva, no cierres ni
+recargues esta ventana.". Desaparece con la respuesta, sea cual sea.
 
 ## Limitaciones conocidas
 
@@ -1126,8 +1190,10 @@ muestra).
   con 24 h o más de anticipación **anula el prepago en el sistema sin devolver
   el cobro** en la pasarela: `cancelarReserva` (de Ricardo) anula todos los
   pagos activos sin distinguir el concepto "Prepago". Pendiente.
-- El resumen "Tu reserva" del proceso de compra no muestra el detalle por noche
-  (criterio de HU-101): pendiente.
+- El desglose por noche del resumen "Tu reserva" sale de la cotización de
+  `/cotizar`: **tras un `PRECIO_CAMBIADO` el desglose desaparece** (el total
+  nuevo reemplaza la cotización sin `noches`, porque ya no sumaría lo mismo) y el
+  resumen queda solo con el total, hasta que se vuelve a cotizar desde Resultados.
 - Sin servicios adicionales, facturación ni check-in online.
 - Sin modificación web de la reserva (HU-105 postergada): el huésped cancela y
   vuelve a reservar, o contacta a recepción.
