@@ -35,6 +35,37 @@ la preautorización.
 - Tarjetas de prueba: terminación `0002` → fondos insuficientes · `0069` → vencida · cualquier otra
   que pase Luhn y no esté vencida → aprobada (ej. `4242 4242 4242 4242`).
 
+## Registro de la pasarela y secuencias de operaciones
+
+La pasarela es **simulada**, pero se comporta como un proveedor real: guarda cada operación en `pasarela_operaciones`
+(`garantias/pasarelaRegistro.js`), así que la **idempotencia sobrevive a un reinicio del backend** (la misma
+`claveIdempotencia` con la misma operación devuelve el resultado ya guardado) y cada preautorización tiene un **estado**:
+
+`Vigente` → `Capturada` (con el monto capturado) · `Liberada` · `Capturada, remanente liberado` (estado final).
+
+Reglas: CAPTURA y LIBERACION exigen una PREAUTORIZACION **existente y aprobada** (si no: "Preautorización desconocida.");
+no se puede capturar más de lo preautorizado; una segunda captura o liberación se rechaza; una captura **parcial** deja la
+preautorización en `Capturada` y admite **una** liberación del remanente. Si el registro no se puede escribir, la operación
+se informa como error de la pasarela (nunca se aprueba en silencio). El secreto de los tokens es `PASARELA_TOKEN_SECRETO`.
+
+Secuencias reales que hacen los flujos sobre una referencia (cada una tiene su test en `garantias/pasarela.registro.test.js`):
+
+| # | Flujo | Secuencia sobre el proveedor |
+|---|---|---|
+| 1 | Alta BAR (mostrador o web) | `GARANTIA` (monto 0) |
+| 2 | Alta NRF | `PREAUTORIZACION` (total) → `CAPTURA` (total) |
+| 3 | Falla de la captura en el alta NRF | `PREAUTORIZACION` → `CAPTURA` (falla) → `LIBERACION` |
+| 4 | Falla la transacción del alta, o el check-in, o el registro de la garantía | `PREAUTORIZACION` → `LIBERACION` |
+| 5 | Preautorización del check-in (por token o con tarjeta nueva) | `PREAUTORIZACION` ($30.000) |
+| 6 | Check-out: la garantía cubre el saldo | `PREAUTORIZACION` → `CAPTURA` parcial (hasta el saldo) |
+| 7 | Check-out sin usar la garantía | `PREAUTORIZACION` → `LIBERACION` (total retenido) |
+| 8 | Cancelación con penalidad | `COBRO` por token |
+| 9 | No-show | `COBRO` por token |
+
+Nota: tras la captura parcial del punto 6, el flujo de check-out **no** pide liberar el remanente (su comentario dice que se
+libera solo). Con este registro la preautorización queda en `Capturada` con el monto capturado, y el remanente se puede liberar
+una vez si se lo pide; hoy ningún flujo lo hace.
+
 ## Alta de reserva: `POST /api/reservas/con-garantia`
 
 Body: el mismo de una reserva (`fechaDesde`, `fechaHasta`, `habitaciones`, `planTarifarioId`,

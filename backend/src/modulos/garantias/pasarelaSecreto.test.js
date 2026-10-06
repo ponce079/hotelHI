@@ -52,6 +52,7 @@ describe("firma de tokens", () => {
     jest.resetModules();
     process.env.PASARELA_TOKEN_SECRETO = "secreto-numero-uno-de-prueba";
     jest.doMock("../../lib/prisma", () => ({}));
+    jest.doMock("./pasarelaRegistro", () => require("./pasarelaRegistro.doble"));
     const uno = require("./pasarela.servicio");
     return uno
       .procesarTarjeta({
@@ -64,6 +65,7 @@ describe("firma de tokens", () => {
         jest.resetModules();
         process.env.PASARELA_TOKEN_SECRETO = "secreto-numero-dos-de-prueba";
         jest.doMock("../../lib/prisma", () => ({}));
+        jest.doMock("./pasarelaRegistro", () => require("./pasarelaRegistro.doble"));
         const dos = require("./pasarela.servicio");
         expect(dos.leerToken(r.token)).toBeNull();
         delete process.env.PASARELA_TOKEN_SECRETO;

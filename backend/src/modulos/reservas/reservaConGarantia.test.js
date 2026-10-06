@@ -465,6 +465,8 @@ describe("crearReservaConGarantia (garantía con tarjeta, alta atómica)", () =>
   // Espía la pasarela real: sigue calculando de verdad, pero queda registro
   // de cada operación (y se puede forzar un fallo puntual).
   function instalarPasarela(forzar = () => null) {
+    // La pasarela registra sus operaciones en la base: acá, el doble en memoria.
+    jest.doMock("../garantias/pasarelaRegistro", () => require("../garantias/pasarelaRegistro.doble"));
     jest.doMock("../garantias/pasarela.servicio", () => {
       const real = jest.requireActual("../garantias/pasarela.servicio");
       return { ...real, procesarTarjeta: jest.fn(async (p) => forzar(p) ?? real.procesarTarjeta(p)) };
