@@ -42,6 +42,8 @@ export function EmitirComprobanteModal({ reservaId, total, huesped, onClose, onE
     mutationFn: () =>
       emitirComprobanteEstadia({
         reservaId: Number(reservaId),
+        // El importe lo fija el servidor desde la cuenta; se manda `importeTotal`
+        // solo como control: si la cuenta cambió, el backend lo rechaza (409).
         importeTotal: Number(total),
         alicuotaIVA: Number(alicuota),
         razonSocialTercero: aTercero ? razonSocial.trim() : undefined,

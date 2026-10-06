@@ -31,6 +31,68 @@ function Dato({ etiqueta, children }) {
   );
 }
 
+// Observación 3 — de qué se compone el total: alojamiento, cargos adicionales
+// (servicios/consumos) y cargos de la verificación de la habitación.
+const CATEGORIAS_DETALLE = ["Alojamiento", "Cargos adicionales", "Verificación de la habitación"];
+
+function DetalleCuenta({ detalle }) {
+  if (!detalle || detalle.lineas.length === 0) return null;
+  return (
+    <div className="mt-6 border-t border-borde pt-4" data-testid="detalle-comprobante">
+      <h2 className="font-heading text-[17px] font-semibold">Detalle</h2>
+      <table className="mt-2 w-full text-left">
+        <thead>
+          <tr className="border-b border-borde text-[11px] uppercase tracking-wide text-piedra">
+            <th className="px-3 py-2 font-medium">Concepto</th>
+            <th className="px-3 py-2 text-right font-medium">Cantidad</th>
+            <th className="px-3 py-2 text-right font-medium">Precio unit.</th>
+            <th className="px-3 py-2 text-right font-medium">Importe</th>
+          </tr>
+        </thead>
+        <tbody>
+          {CATEGORIAS_DETALLE.map((categoria) => {
+            const lineas = detalle.lineas.filter((l) => l.categoria === categoria);
+            if (lineas.length === 0) return null;
+            const subtotal = lineas.reduce((acc, l) => acc + centavos(l.importe), 0) / 100;
+            return [
+              <tr key={`${categoria}-t`} className="bg-hueso">
+                <td colSpan={4} className="px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-piedra">
+                  {categoria}
+                </td>
+              </tr>,
+              ...lineas.map((l, i) => (
+                <tr key={`${categoria}-${i}`} className="border-b border-borde">
+                  <td className="px-3 py-2 text-[13px]">
+                    {l.concepto}
+                    {l.habitacion && <span className="text-piedra"> · Hab. {l.habitacion}</span>}
+                    {l.descripcion && <span className="block text-[11.5px] text-piedra">{l.descripcion}</span>}
+                    {l.fecha && categoria !== "Alojamiento" && (
+                      <span className="block font-mono text-[11px] text-tinta/55">{formatearTimestamp(l.fecha)}</span>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-xs">
+                    {l.cantidad != null ? `${l.cantidad}${l.unidad ? ` ${l.unidad}` : ""}` : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-xs">
+                    {l.precioUnitario != null ? moneda(l.precioUnitario) : "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-xs">{moneda(l.importe)}</td>
+                </tr>
+              )),
+              <tr key={`${categoria}-s`}>
+                <td colSpan={3} className="px-3 py-1.5 text-right text-[12px] text-piedra">
+                  Subtotal {categoria.toLowerCase()}
+                </td>
+                <td className="px-3 py-1.5 text-right font-mono text-[12.5px] font-medium">{moneda(subtotal)}</td>
+              </tr>,
+            ];
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function ComprobanteEstadiaDetallePage() {
   const { id } = useParams();
   const { puede } = useSesion();
@@ -200,6 +262,8 @@ export function ComprobanteEstadiaDetallePage() {
             <p className="mt-0.5 text-[13.5px] text-tinta">{c.motivo}</p>
           </div>
         )}
+
+        {!esNota && <DetalleCuenta detalle={c.detalle} />}
 
         <div className="mt-6 flex flex-wrap items-end justify-between gap-6 border-t border-borde pt-4">
           <div className="flex min-w-65 flex-col gap-1.5">
