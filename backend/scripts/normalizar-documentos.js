@@ -19,7 +19,14 @@ async function main() {
   try {
     const [huespedes, ocupantes] = await Promise.all([
       prisma.huesped.findMany({
-        select: { id: true, tipoDocumento: true, paisDocumento: true, numeroDocumento: true, identidadDocumento: true },
+        select: {
+          id: true,
+          nombre: true,
+          tipoDocumento: true,
+          paisDocumento: true,
+          numeroDocumento: true,
+          identidadDocumento: true,
+        },
       }),
       prisma.ocupanteReserva.findMany({
         select: {
@@ -36,6 +43,9 @@ async function main() {
     console.log(`Fichas a corregir: ${plan.fichasACorregir.length}`);
     console.log(`Documentos duplicados a unificar: ${plan.fusiones.length}`);
     for (const f of plan.fusiones) console.log(`  ficha ${f.principalId} absorbe ${f.duplicadosIds.join(", ")}`);
+    console.log(`Mismo documento con nombres distintos (decidir a mano): ${plan.nombresDistintos.length}`);
+    for (const d of plan.nombresDistintos)
+      console.log(`  documento ${d.documento}: ${d.fichas.map((f) => `ficha ${f.id} "${f.nombre}"`).join(" | ")}`);
     console.log(`Ocupantes a corregir: ${plan.ocupantesACorregir.length}`);
     console.log(`Conflictos (revisar a mano): ${plan.conflictos.length}`);
     for (const c of plan.conflictos)
@@ -55,7 +65,11 @@ async function main() {
         for (const f of plan.fichasACorregir) {
           await tx.huesped.update({
             where: { id: f.id },
-            data: { numeroDocumento: f.numeroDocumento, identidadDocumento: f.identidadDocumento },
+            data: {
+              numeroDocumento: f.numeroDocumento,
+              identidadDocumento: f.identidadDocumento,
+              ...(f.paisDocumento ? { paisDocumento: f.paisDocumento } : {}),
+            },
           });
         }
         for (const o of plan.ocupantesACorregir) {
