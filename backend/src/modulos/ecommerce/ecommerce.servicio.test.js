@@ -7,6 +7,7 @@ jest.mock("../reservas/reservas.servicio", () => ({
   consultarDisponibilidad: jest.fn(),
   cotizarParaReserva: jest.fn(),
 }));
+const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
 const reservasServicio = require("../reservas/reservas.servicio");
 const { hoyComoFechaUTC } = require("../../lib/fechas");
@@ -137,8 +138,8 @@ describe("POST /cotizar", () => {
       noches: 2,
       planes: [
         planMotor("NRF", 74800 * 2, [
-          { habitacionId: 1, numero: "201", detalle: [], total: 74800 },
-          { habitacionId: 3, numero: "203", detalle: [], total: 74800 },
+          { habitacionId: 1, numero: "201", detalle: [{ fecha: dia(7), precioNoche: 34000 }, { fecha: dia(8), precioNoche: 40800 }], total: 74800 },
+          { habitacionId: 3, numero: "203", detalle: [{ fecha: dia(7), precioNoche: 34000 }, { fecha: dia(8), precioNoche: 40800 }], total: 74800 },
         ]),
       ],
     });
@@ -160,10 +161,15 @@ describe("POST /cotizar", () => {
       canal: "WEB",
     });
     const nrfDisponibilidad = DISPONIBILIDAD.resumenPorTipo[0].planes[1].total;
+    const noches = [{ fecha: dia(7), precio: 34000 }, { fecha: dia(8), precio: 40800 }];
     expect(body.habitaciones).toEqual([
-      { tipo: "Doble", adultos: 2, menores: 0, subtotal: nrfDisponibilidad },
-      { tipo: "Doble", adultos: 2, menores: 0, subtotal: nrfDisponibilidad },
+      { tipo: "Doble", adultos: 2, menores: 0, subtotal: nrfDisponibilidad, noches },
+      { tipo: "Doble", adultos: 2, menores: 0, subtotal: nrfDisponibilidad, noches },
     ]);
+    // La suma de las noches es exactamente el subtotal de cada línea.
+    for (const h of body.habitaciones) {
+      expect(h.noches.reduce((acc, n) => acc.plus(new Prisma.Decimal(n.precio)), new Prisma.Decimal(0)).equals(new Prisma.Decimal(h.subtotal))).toBe(true);
+    }
     expect(body.total).toBe(nrfDisponibilidad * 2);
     expect(clavesProhibidas(body)).toEqual([]);
   });

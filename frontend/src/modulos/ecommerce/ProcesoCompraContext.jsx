@@ -71,6 +71,19 @@ function soloCampos(objeto, campos) {
   return Object.fromEntries(campos.filter((c) => c in objeto).map((c) => [c, objeto[c]]));
 }
 
+// [{ fecha: "AAAA-MM-DD", precio: number }] o null. Solo esos dos campos (nada más entra al storage).
+function desgloseValido(desglose) {
+  if (!Array.isArray(desglose) || desglose.length === 0) return null;
+  const limpio = desglose.map((n) => ({ fecha: String(n?.fecha ?? ""), precio: Number(n?.precio) }));
+  return limpio.every((n) => /^\d{4}-\d{2}-\d{2}$/.test(n.fecha) && Number.isFinite(n.precio)) ? limpio : null;
+}
+
+// { desglose } solo si hay un desglose válido (sin la clave si no: la forma de antes sigue igual).
+const conDesglose = (desglose) => {
+  const valido = desgloseValido(desglose);
+  return valido ? { desglose: valido } : {};
+};
+
 export function serializarParaStorage(estado) {
   return {
     fechaDesde: estado.fechaDesde,
@@ -87,7 +100,10 @@ export function serializarParaStorage(estado) {
       "total",
       "promedioPorNoche",
     ]),
-    cotizacion: soloCampos(estado.cotizacion, ["total", "promedioPorNoche", "noches"]),
+    // `desglose`: [{ fecha, precio }] de la habitación elegida (precio final de cada noche).
+    cotizacion: estado.cotizacion
+      ? { ...soloCampos(estado.cotizacion, ["total", "promedioPorNoche", "noches"]), ...conDesglose(estado.cotizacion.desglose) }
+      : null,
     huesped: soloCampos(estado.huesped, Object.keys(HUESPED_VACIO)),
     llegada: soloCampos(estado.llegada, ["horaEstimada"]),
     solicitudesEspeciales: estado.solicitudesEspeciales,
@@ -215,7 +231,19 @@ export function ProcesoCompraProvider({ children }) {
   }, []);
 
   const actualizarCotizacion = useCallback((cotizacion) => {
-    setEstado((e) => ({ ...e, cotizacion: cotizacion ? { total: cotizacion.total, promedioPorNoche: cotizacion.promedioPorNoche, noches: cotizacion.noches } : null }));
+    // El desglose por noche sale de la primera línea de la cotización. Si la respuesta no lo trae (o la
+    // cotización se reemplaza con un total nuevo tras PRECIO_CAMBIADO), queda null y el resumen no lo muestra.
+    setEstado((e) => ({
+      ...e,
+      cotizacion: cotizacion
+        ? {
+            total: cotizacion.total,
+            promedioPorNoche: cotizacion.promedioPorNoche,
+            noches: cotizacion.noches,
+            ...conDesglose(cotizacion.desglose ?? cotizacion.habitaciones?.[0]?.noches),
+          }
+        : null,
+    }));
   }, []);
 
   const actualizarHuesped = useCallback((parcial) => {
@@ -297,6 +325,12 @@ export function ProcesoCompraProvider({ children }) {
   );
 
   return <ProcesoCompraContext.Provider value={valor}>{children}</ProcesoCompraContext.Provider>;
+}
+
+// Desglose por noche de la cotización elegida ([{ fecha, precio }]) o null. A diferencia de useProcesoCompra,
+// no falla fuera del provider (lo usa ResumenReserva, un componente de presentación).
+export function useDesgloseNoches() {
+  return useContext(ProcesoCompraContext)?.cotizacion?.desglose ?? null;
 }
 
 export function useProcesoCompra() {

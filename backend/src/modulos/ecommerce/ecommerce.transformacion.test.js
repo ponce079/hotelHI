@@ -207,8 +207,8 @@ describe("armarCotizacionWeb", () => {
       ...planMotor("NRF", 157100),
       promedioPorNoche: 78550,
       habitaciones: [
-        { habitacionId: 7, numero: "107", adultos: 2, menores: 0, detalle: [], total: 74800 },
-        { habitacionId: 18, numero: "118", adultos: 3, menores: 0, detalle: [], total: 82300 },
+        { habitacionId: 7, numero: "107", adultos: 2, menores: 0, detalle: [{ fecha: "2026-10-12", precioNoche: 37400 }, { fecha: "2026-10-13", precioNoche: 37400 }], total: 74800 },
+        { habitacionId: 18, numero: "118", adultos: 3, menores: 0, detalle: [{ fecha: "2026-10-12", precioNoche: 41100 }, { fecha: "2026-10-13", precioNoche: 41200 }], total: 82300 },
       ],
     };
     const r = armarCotizacionWeb({
@@ -226,9 +226,38 @@ describe("armarCotizacionWeb", () => {
       noches: 2,
       plan: planLimpio(plan),
       habitaciones: [
-        { tipo: "Doble", adultos: 2, menores: 0, subtotal: 74800 },
-        { tipo: "Doble", adultos: 3, menores: 0, subtotal: 82300 },
+        { tipo: "Doble", adultos: 2, menores: 0, subtotal: 74800, noches: [{ fecha: "2026-10-12", precio: 37400 }, { fecha: "2026-10-13", precio: 37400 }] },
+        { tipo: "Doble", adultos: 3, menores: 0, subtotal: 82300, noches: [{ fecha: "2026-10-12", precio: 41100 }, { fecha: "2026-10-13", precio: 41200 }] },
       ],
     });
+  });
+
+  test("noches: el precio final de cada noche, en orden; la suma (con Decimal) es exactamente el subtotal", () => {
+    const { Decimal } = require("@prisma/client").Prisma;
+    const detalle = [
+      { fecha: "2026-11-12", precioNoche: 34000 },
+      { fecha: "2026-11-13", precioNoche: 37400 },
+      { fecha: "2026-11-14", precioNoche: 37400.1 },
+      { fecha: "2026-11-15", precioNoche: 34000 },
+      { fecha: "2026-11-16", precioNoche: 34000.2 },
+    ];
+    const total = detalle.reduce((acc, n) => acc.plus(new Decimal(n.precioNoche)), new Decimal(0)).toNumber();
+    const plan = { ...planMotor("BAR", total), habitaciones: [{ habitacionId: 3, numero: "203", adultos: 2, menores: 0, detalle, total }] };
+    const r = armarCotizacionWeb({
+      cotizacion: { noches: 5, planes: [plan] },
+      lineas: [{ tipoHabitacionId: 1, adultos: 2, menores: 0 }],
+      representantes: [3],
+      nombrePorTipo: new Map([[1, "Doble"]]),
+    });
+    const [linea] = r.habitaciones;
+    expect(linea.noches.map((n) => n.fecha)).toEqual(detalle.map((n) => n.fecha));
+    expect(linea.noches.reduce((acc, n) => acc.plus(new Decimal(n.precio)), new Decimal(0)).equals(new Decimal(linea.subtotal))).toBe(true);
+    expect(Object.keys(linea.noches[0]).sort()).toEqual(["fecha", "precio"]);
+  });
+
+  test("sin detalle del motor: noches vacío (no rompe)", () => {
+    const plan = { ...planMotor("BAR", 1000), habitaciones: [{ habitacionId: 3, numero: "203", adultos: 2, menores: 0, total: 1000 }] };
+    const r = armarCotizacionWeb({ cotizacion: { noches: 1, planes: [plan] }, lineas: [{ tipoHabitacionId: 1, adultos: 2, menores: 0 }], representantes: [3], nombrePorTipo: new Map([[1, "Doble"]]) });
+    expect(r.habitaciones[0].noches).toEqual([]);
   });
 });

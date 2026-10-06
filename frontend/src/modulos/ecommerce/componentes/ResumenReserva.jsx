@@ -1,8 +1,10 @@
+import { useId, useState } from "react";
 import { Link } from "react-router-dom";
 import { Clock, Users } from "lucide-react";
 import { FotoEjemplo } from "./FotoEjemplo";
 import { HOTEL } from "../ecommerce.config";
 import { contenidoDeTipo } from "../ecommerce.contenido";
+import { useDesgloseNoches } from "../ProcesoCompraContext";
 import {
   LEYENDA_PRECIO_FINAL,
   formatearFecha,
@@ -14,6 +16,35 @@ import {
   calcularNoches,
 } from "../formato";
 
+// Con más de 4 noches se muestran las primeras 3 y el resto se despliega con un botón.
+const MAX_NOCHES_VISIBLES = 4;
+const NOCHES_AL_COLAPSAR = 3;
+
+// Precio final de cada noche ("Vie 13 nov · $ 40.000"). Sin `noches` en la cotización, no muestra nada.
+function DesgloseNoches({ noches }) {
+  const [abierto, setAbierto] = useState(false);
+  const idLista = useId();
+  if (!Array.isArray(noches) || noches.length === 0) return null;
+  const colapsable = noches.length > MAX_NOCHES_VISIBLES;
+  const visibles = colapsable && !abierto ? noches.slice(0, NOCHES_AL_COLAPSAR) : noches;
+  return (
+    <div className="ec-desglose">
+      <ul id={idLista} className="ec-desglose__lista" aria-label="Precio de cada noche">
+        {visibles.map((n) => (
+          <li key={n.fecha}>
+            {formatearFecha(n.fecha, { conAnio: false })} · {formatearPrecio(n.precio)}
+          </li>
+        ))}
+      </ul>
+      {colapsable && (
+        <button type="button" className="ec-desglose__ver" aria-expanded={abierto} aria-controls={idLista} onClick={() => setAbierto((v) => !v)}>
+          {abierto ? "Ver menos" : `Ver las ${noches.length} noches`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function sumarOcupacion(ocupacion = []) {
   return ocupacion.reduce(
     (acc, h) => ({ adultos: acc.adultos + Number(h.adultos || 0), menores: acc.menores + Number(h.menores || 0) }),
@@ -24,7 +55,9 @@ function sumarOcupacion(ocupacion = []) {
 // Panel lateral "Tu reserva": tipo, fechas, noches, ocupación, plan con sus
 // condiciones y total con la leyenda de IVA. Sin número de habitación ni
 // piso. Recibe todo por props (las páginas lo leen de useProcesoCompra()).
-export function ResumenReserva({ tipo, fechaDesde, fechaHasta, ocupacion, plan, total, enlaceModificar = "/web/resultados" }) {
+// `desglose` (opcional): [{ fecha, precio }]; si no se pasa, se lee de la cotización del proceso de compra.
+export function ResumenReserva({ tipo, fechaDesde, fechaHasta, ocupacion, plan, total, desglose, enlaceModificar = "/web/resultados" }) {
+  const desgloseDelProceso = useDesgloseNoches();
   const noches = calcularNoches(fechaDesde, fechaHasta);
   const contenido = contenidoDeTipo(tipo?.nombre);
   const totalMostrado = total ?? plan?.total;
@@ -67,6 +100,8 @@ export function ResumenReserva({ tipo, fechaDesde, fechaHasta, ocupacion, plan, 
             <Users size={18} strokeWidth={1.7} aria-hidden="true" /> {textoOcupacion(sumarOcupacion(ocupacion))}
           </span>
         </div>
+
+        <DesgloseNoches noches={desglose ?? desgloseDelProceso} />
 
         {plan && (
           <div className="ec-resumen__plan">

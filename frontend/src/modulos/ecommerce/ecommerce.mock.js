@@ -289,12 +289,16 @@ function buscarPlan(planTarifarioId) {
 function cotizacionInterna({ fechaDesde, fechaHasta, planTarifarioId, habitaciones }) {
   const noches = validarFechas(fechaDesde, fechaHasta);
   const plan = buscarPlan(planTarifarioId);
-  const lineas = validarHabitaciones(habitaciones).map(({ tipo, adultos, menores }) => ({
-    tipo: tipo.nombre,
-    adultos,
-    menores,
-    subtotal: precioPlan(tipo, plan, noches).total,
-  }));
+  const lineas = validarHabitaciones(habitaciones).map(({ tipo, adultos, menores }) => {
+    const { total, promedioPorNoche } = precioPlan(tipo, plan, noches);
+    // Desglose por noche (misma forma que /cotizar): precio final de cada noche; su suma es el subtotal.
+    const [a, m, d] = String(fechaDesde).split("-").map(Number);
+    const nochesDetalle = Array.from({ length: noches }, (_, i) => ({
+      fecha: new Date(Date.UTC(a, m - 1, d + i)).toISOString().slice(0, 10),
+      precio: promedioPorNoche,
+    }));
+    return { tipo: tipo.nombre, adultos, menores, subtotal: total, noches: nochesDetalle };
+  });
   const total = redondear(lineas.reduce((s, l) => s + l.subtotal, 0));
   return { noches, plan, lineas, total };
 }

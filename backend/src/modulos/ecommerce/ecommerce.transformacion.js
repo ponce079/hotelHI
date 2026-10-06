@@ -123,7 +123,9 @@ function elegirRepresentantes(libres, lineas) {
 // (cotizarParaReserva, ya filtrada a un solo plan) — sin ids de habitación.
 function armarCotizacionWeb({ cotizacion, lineas, representantes, nombrePorTipo }) {
   const plan = cotizacion.planes[0];
-  const totalPorHabitacion = new Map(plan.habitaciones.map((h) => [h.habitacionId, h.total]));
+  const habitacionDelPlan = new Map(plan.habitaciones.map((h) => [h.habitacionId, h]));
+  // Precio final de cada noche (IVA incluido), del mismo cálculo que el subtotal: su suma es exactamente el subtotal.
+  const nochesDe = (h) => (h?.detalle ?? []).map((n) => ({ fecha: n.fecha, precio: n.precioNoche }));
   return {
     total: plan.total,
     promedioPorNoche: plan.promedioPorNoche,
@@ -133,7 +135,8 @@ function armarCotizacionWeb({ cotizacion, lineas, representantes, nombrePorTipo 
       tipo: nombrePorTipo.get(linea.tipoHabitacionId) ?? null,
       adultos: linea.adultos,
       menores: linea.menores,
-      subtotal: totalPorHabitacion.get(representantes[i]) ?? null,
+      subtotal: habitacionDelPlan.get(representantes[i])?.total ?? null,
+      noches: nochesDe(habitacionDelPlan.get(representantes[i])),
     })),
   };
 }
