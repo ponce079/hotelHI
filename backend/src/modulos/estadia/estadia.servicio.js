@@ -12,13 +12,11 @@ function identidad(p) {
     ? require("node:crypto")
         .createHash("sha256")
         .update(
-          [p.tipoDocumento, p.paisDocumento, p.numeroDocumento]
-            .map((v) =>
-              String(v || "")
-                .trim()
-                .toUpperCase(),
-            )
-            .join("|"),
+          [
+            String(p.tipoDocumento || "").trim().toUpperCase(),
+            String(p.paisDocumento || "").trim().toUpperCase(),
+            require("../../lib/documento").normalizarNumeroDocumento(p.numeroDocumento),
+          ].join("|"),
         )
         .digest("hex")
     : null;
@@ -87,7 +85,7 @@ function normalizarPersona(d, reserva) {
     }
     r.tipoDocumento = canonico;
   }
-  if (r.numeroDocumento) r.numeroDocumento = r.numeroDocumento.toUpperCase().replace(/\s/g, "");
+  if (r.numeroDocumento) r.numeroDocumento = require("../../lib/documento").normalizarNumeroDocumento(r.numeroDocumento);
   if (r.email && !esEmail(r.email))
     throw new ErrorDeNegocio("Correo electrónico inválido.", 400, {
       email: "Ingresá un correo electrónico válido.",

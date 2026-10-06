@@ -99,15 +99,23 @@ export function TablaLlegadas({ busqueda, onBuscar, consulta, seleccionadaId, on
                   <td className="whitespace-nowrap border-b border-borde px-2.5 py-[11px]">{estadia(r)}</td>
                   <td className="border-b border-borde px-2.5 py-[11px]">{etiquetaOcupacion(adultos, menores)}</td>
                   <td className="border-b border-borde px-2.5 py-[11px]">
-                    {senia ? (
-                      <Chip variante="ok" envolver>
-                        {senia}
-                      </Chip>
-                    ) : (
-                      <Chip variante="aviso" envolver>
-                        Sin garantía · tomar al ingreso
-                      </Chip>
-                    )}
+                    <div className="flex flex-col items-start gap-1">
+                      {r.garantia && (
+                        <Chip variante="ok" envolver>
+                          Tarjeta en garantía · {r.garantia.marca} ****{r.garantia.ultimos4}
+                        </Chip>
+                      )}
+                      {senia && (
+                        <Chip variante="ok" envolver>
+                          {senia}
+                        </Chip>
+                      )}
+                      {!r.garantia && !senia && (
+                        <Chip variante="aviso" envolver>
+                          Sin garantía · tomar al ingreso
+                        </Chip>
+                      )}
+                    </div>
                   </td>
                   <td className="border-b border-borde px-2.5 py-[11px]">
                     <Chip variante="ok">Por llegar</Chip>

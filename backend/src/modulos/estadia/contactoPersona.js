@@ -1,4 +1,5 @@
 const { MAYORIA_EDAD } = require("../../lib/fechas");
+const { normalizarNumeroDocumento } = require("../../lib/documento");
 const normalizar = (v) =>
   String(v || "")
     .trim()
@@ -10,7 +11,7 @@ async function prepararContacto(tx, r, p, actual, data, { edad, ErrorDeNegocio }
     actual?.esTitular ||
     data.esTitular === true ||
     (documentoTitular &&
-      normalizar(p.numeroDocumento) === normalizar(documentoTitular) &&
+      normalizarNumeroDocumento(p.numeroDocumento) === normalizarNumeroDocumento(documentoTitular) &&
       normalizar(p.tipoDocumento) === normalizar(r.huesped.tipoDocumento));
   if (esTitular && (!p.fechaNacimiento || edad(p.fechaNacimiento, p.fechaDesde) < MAYORIA_EDAD))
     throw new ErrorDeNegocio("El titular debe tener al menos 18 años al ingresar.", 400, {

@@ -46,6 +46,22 @@ async function requiereSesion(req, res, next) {
   }
 }
 
+// Como requiereSesion pero sin rechazar: con un token válido deja req.usuarioActual; sin token (la
+// reserva web) o con uno vencido sigue como anónimo. Sirve para rutas públicas que dan más
+// permisos a quien tiene sesión (por ejemplo, que un administrador corrija un nombre).
+async function sesionOpcional(req, res, next) {
+  const datos = verificarToken(leerToken(req));
+  if (datos) {
+    try {
+      const usuario = await usuariosServicio.obtenerUsuarioParaSesion(datos.id);
+      if (usuario) req.usuarioActual = { id: usuario.id, usuario: usuario.usuario, rol: usuario.rol };
+    } catch (err) {
+      console.error("Error al validar la sesión opcional:", err);
+    }
+  }
+  return next();
+}
+
 function requiereRol(...roles) {
   return (req, res, next) => {
     if (!req.usuarioActual || !roles.includes(req.usuarioActual.rol)) {
@@ -55,4 +71,4 @@ function requiereRol(...roles) {
   };
 }
 
-module.exports = { requiereSesion, requiereRol, SESION_INVALIDA };
+module.exports = { requiereSesion, sesionOpcional, requiereRol, SESION_INVALIDA };

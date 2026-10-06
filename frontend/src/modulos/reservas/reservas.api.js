@@ -49,22 +49,11 @@ export async function cotizarReserva(payload) {
   return data;
 }
 
-// HU-36 (recepcionista, alta SIN seña — ya no la usa el wizard con seña
-// obligatoria, ver crearReservaConSena) y HU-40 (autoservicio web, que
-// nunca cobra seña) usan este mismo alta; solo cambia `origen` en el
-// payload.
+// Alta simple, SIN garantía: la usa HU-40 (autoservicio web, que nunca pide garantía y la
+// reemplaza el e-commerce) y la edición. El alta de mostrador pasa por crearReservaConGarantia;
+// solo cambia `origen` en el payload.
 export async function crearReserva(payload) {
   const { data } = await api.post("/reservas", payload);
-  return data;
-}
-
-// HU-88 (extensión) — alta de reserva CON seña en una sola operación
-// atómica: reserva y PagoEstadia se crean juntos o no se crea nada (ver
-// crearReservaConSena en reservas.servicio.js, backend). payload = los
-// mismos campos de crearReserva + `medios` ([{ tipo, importe, referencia? }]),
-// igual que le mandaría a registrarPagoEstadia.
-export async function crearReservaConSena(payload) {
-  const { data } = await api.post("/reservas/con-sena", payload);
   return data;
 }
 
@@ -97,5 +86,13 @@ export async function obtenerPenalidadReserva(id, tipo) {
 // del más reciente al más antiguo. Cada evento: { id, fecha, tipo, titulo, detalle, operador }.
 export async function obtenerHistorialReserva(id) {
   const { data } = await api.get(`/reservas/${id}/historial`);
+  return data;
+}
+
+// Alta de reserva CON garantía (tarjeta de crédito o prepago): reemplaza a
+// crearReservaConSena. El bloque `garantia.tarjeta` lleva el número y el CVV
+// una sola vez; el backend los valida y los descarta (nunca se guardan).
+export async function crearReservaConGarantia(datos) {
+  const { data } = await api.post("/reservas/con-garantia", datos);
   return data;
 }

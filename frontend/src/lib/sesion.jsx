@@ -309,6 +309,12 @@ export function SesionProvider({ children }) {
   return <SesionContext.Provider value={value}>{children}</SesionContext.Provider>;
 }
 
+// Igual que useSesion, pero devuelve null en vez de fallar fuera de <SesionProvider> (la reserva web
+// pública no tiene sesión).
+export function useSesionOpcional() {
+  return useContext(SesionContext);
+}
+
 export function useSesion() {
   const ctx = useContext(SesionContext);
   if (!ctx) throw new Error("useSesion debe usarse dentro de <SesionProvider>");

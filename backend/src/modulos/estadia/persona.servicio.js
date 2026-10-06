@@ -1,6 +1,7 @@
 const { createHash } = require("node:crypto");
 const { Prisma } = require("@prisma/client");
 const { codigoPais } = require("../../lib/paises");
+const { normalizarNumeroDocumento } = require("../../lib/documento");
 const normalizar = (v) =>
   String(v || "")
     .trim()
@@ -9,7 +10,9 @@ const normalizar = (v) =>
 function claveDocumento(p) {
   if (!p.tipoDocumento || !p.paisDocumento || !p.numeroDocumento) return null;
   return createHash("sha256")
-    .update([p.tipoDocumento, normalizarPais(p.paisDocumento), p.numeroDocumento].map(normalizar).join("|"))
+    .update(
+      [normalizar(p.tipoDocumento), normalizarPais(p.paisDocumento), normalizarNumeroDocumento(p.numeroDocumento)].join("|"),
+    )
     .digest("hex");
 }
 // Cualquier país del catálogo ISO se reduce a su código; lo que no está en el
@@ -69,7 +72,7 @@ async function vincularPersona(tx, reserva, persona, actual) {
         data: {
           tipoDocumento: persona.tipoDocumento,
           paisDocumento: normalizarPais(persona.paisDocumento),
-          numeroDocumento: normalizar(persona.numeroDocumento),
+          numeroDocumento: normalizarNumeroDocumento(persona.numeroDocumento),
           identidadDocumento,
         },
       });
@@ -80,7 +83,7 @@ async function vincularPersona(tx, reserva, persona, actual) {
     ...nombresDeFicha(persona),
     tipoDocumento: persona.tipoDocumento,
     paisDocumento: normalizarPais(persona.paisDocumento),
-    numeroDocumento: normalizar(persona.numeroDocumento),
+    numeroDocumento: normalizarNumeroDocumento(persona.numeroDocumento),
     fechaNacimiento: persona.fechaNacimiento,
     contacto: persona.email || persona.telefono || null,
   };
@@ -90,7 +93,7 @@ async function vincularPersona(tx, reserva, persona, actual) {
   if (
     titular &&
     normalizar(titular.tipoDocumento) === normalizar(persona.tipoDocumento) &&
-    normalizar(titular.numeroDocumento) === normalizar(persona.numeroDocumento) &&
+    normalizarNumeroDocumento(titular.numeroDocumento) === normalizarNumeroDocumento(persona.numeroDocumento) &&
     (!titular.paisDocumento || normalizarPais(titular.paisDocumento) === datos.paisDocumento)
   ) {
     const existente = await tx.huesped.findUnique({
@@ -133,7 +136,7 @@ function datosDeHuesped(persona) {
     ...nombresDeFicha(persona),
     tipoDocumento: persona.tipoDocumento,
     paisDocumento: normalizarPais(persona.paisDocumento),
-    numeroDocumento: normalizar(persona.numeroDocumento),
+    numeroDocumento: normalizarNumeroDocumento(persona.numeroDocumento),
     fechaNacimiento: persona.fechaNacimiento,
     contacto: persona.email || persona.telefono || null,
   };

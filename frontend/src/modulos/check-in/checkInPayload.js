@@ -51,6 +51,8 @@ export function cuerpoConfirmarReserva(estado, contexto, { operador, totalEspera
     totalEsperado: totalEsperado ?? estado.totalVigente,
     ...(necesitaMotivo(estado, contexto) ? { motivoTitularDistinto: texto(estado.motivoTitularDistinto) } : {}),
     ...estado.garantia,
+    // Un reintento tras un rechazo es otro intento: clave nueva en cada envío.
+    claveIdempotencia: crypto.randomUUID(),
   };
 }
 
@@ -64,6 +66,7 @@ export function cuerpoWalkin(estado, contexto, { operador, planTarifarioId, tota
     totalEsperado,
     personas: personasParaEnviar(estado, contexto),
     ...estado.garantia,
+    claveIdempotencia: crypto.randomUUID(),
   };
 }
 

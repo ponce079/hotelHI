@@ -16,6 +16,9 @@ const ESTADO_RESERVA = {
   EN_CURSO: "En curso",
   CERRADA: "Cerrada",
   CANCELADA: "Cancelada",
+  // El huésped no llegó (garantía con tarjeta). Libera las habitaciones igual
+  // que Cancelada: NO está en ESTADOS_QUE_OCUPAN.
+  NO_SHOW: "No-show",
 };
 
 const ESTADOS_RESERVA = [
@@ -23,6 +26,7 @@ const ESTADOS_RESERVA = [
   ESTADO_RESERVA.EN_CURSO,
   ESTADO_RESERVA.CERRADA,
   ESTADO_RESERVA.CANCELADA,
+  ESTADO_RESERVA.NO_SHOW,
 ];
 
 // Qué estados bloquean una habitación para el cálculo de disponibilidad

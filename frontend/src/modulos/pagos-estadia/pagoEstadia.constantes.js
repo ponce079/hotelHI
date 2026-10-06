@@ -12,12 +12,32 @@ export const ESTADO_PAGO_BADGE = { Pagado: "ok", Parcial: "alerta" };
 export const CONCEPTO_SENIA = "Seña";
 export const CONCEPTO_GARANTIA = "Garantía";
 export const CONCEPTO_PAGO_FINAL = "Pago final";
-export const CONCEPTOS_PAGO_ESTADIA = [CONCEPTO_SENIA, CONCEPTO_GARANTIA, CONCEPTO_PAGO_FINAL];
+// Garantía con tarjeta (feature/garantia-tarjeta): mismos strings que el backend.
+// "Seña" y "Garantía" quedan como conceptos HISTÓRICOS (ya no se crean filas
+// nuevas, pero las existentes se siguen mostrando y filtrando). La Devolución
+// se registra con importe NEGATIVO.
+export const CONCEPTO_PAGO_ANTICIPADO = "Pago anticipado";
+export const CONCEPTO_PENALIDAD_CANCELACION = "Penalidad por cancelación";
+export const CONCEPTO_PENALIDAD_NO_SHOW = "Penalidad no-show";
+export const CONCEPTO_DEVOLUCION = "Devolución";
+export const CONCEPTOS_PAGO_ESTADIA = [
+  CONCEPTO_SENIA,
+  CONCEPTO_GARANTIA,
+  CONCEPTO_PAGO_FINAL,
+  CONCEPTO_PAGO_ANTICIPADO,
+  CONCEPTO_PENALIDAD_CANCELACION,
+  CONCEPTO_PENALIDAD_NO_SHOW,
+  CONCEPTO_DEVOLUCION,
+];
 
 export const CONCEPTO_PAGO_BADGE = {
   [CONCEPTO_SENIA]: "info",
   [CONCEPTO_GARANTIA]: "alerta",
   [CONCEPTO_PAGO_FINAL]: "ok",
+  [CONCEPTO_PAGO_ANTICIPADO]: "ok",
+  [CONCEPTO_PENALIDAD_CANCELACION]: "error",
+  [CONCEPTO_PENALIDAD_NO_SHOW]: "error",
+  [CONCEPTO_DEVOLUCION]: "info",
 };
 
 // ---------------------------------------------------------------------------

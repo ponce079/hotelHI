@@ -23,8 +23,7 @@ const prisma = require("../../lib/prisma");
 const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 const reservasServicio = require("../reservas/reservas.servicio");
 const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
-const { CONCEPTO_GARANTIA } = require("../pagos-estadia/pagoEstadia.constantes");
-const { MEDIOS_GARANTIA, MEDIOS_CON_TARJETA, MONTO_GARANTIA } = require("./checkIn.constantes");
+const garantiaEstadiaServicio = require("../garantias/garantiaEstadia.servicio");
 const { contactoDeHuesped } = require("../../lib/contacto");
 
 // ErrorDeNegocio duplicada a propósito (mismo criterio documentado en
@@ -104,6 +103,9 @@ function validarReservaVigente(reserva) {
   if (reserva.estado === ESTADO_RESERVA.CANCELADA) {
     throw new ErrorDeNegocio("La reserva está cancelada — no se puede hacer el check-in.");
   }
+  if (reserva.estado === ESTADO_RESERVA.NO_SHOW) {
+    throw new ErrorDeNegocio("La reserva fue marcada como no-show — no se puede hacer el check-in.");
+  }
   if (reserva.estado === ESTADO_RESERVA.EN_CURSO) {
     throw new ErrorDeNegocio("Esta reserva ya tiene el check-in registrado.");
   }
@@ -155,59 +157,15 @@ async function buscarReservaParaCheckIn({ id, codigo } = {}) {
 }
 
 // --------------------------------------------------------------
-// HU-46 — validación de pago/garantía. Mismos 4 medios que la seña de
-// reserva (HU-88), pero NO es lo mismo que la seña ni que un pago de
-// check-out (HU-50): es un depósito de seguridad por daños/faltantes, un
-// monto FIJO (MONTO_GARANTIA, política del hotel, no un dato que mande el
-// cliente) ajeno al total de la estadía — corrección posterior 2026-09-25,
-// después de que autorizar/cobrar el total completo de la habitación
-// (como se hacía antes) rechazara apenas la reserva ya tenía una seña paga
-// o la estadía costaba menos que ese total.
-//
-// Por eso NO se registra con pagoEstadiaServicio.crearPago: esa función
-// exige que el importe no supere el saldo pendiente de la reserva, que es
-// exactamente la regla que no aplica acá (la garantía es plata aparte, no
-// un pago a cuenta del alojamiento). Sigue quedando como un PagoEstadia
-// real (concepto Garantía) para que se vea en Movimientos de Pago y
-// consolidarCargos la tenga en cuenta como ya cobrada. Qué pasa con ella en
-// el check-out (devolverla si no hubo daños, descontarla si los hubo)
-// queda pendiente como otra tarea — esto solo cubre el cobro en el check-in.
+// HU-46 — garantía del check-in. Ya NO se registra como un pago: es una
+// PREAUTORIZACIÓN con tarjeta de crédito (se retiene el monto, no se cobra) o un
+// DEPÓSITO en efectivo, en su propia tabla (garantias_estadia). Antes se
+// guardaba como un PagoEstadia "Garantía" que consolidarCargos contaba como
+// ya pagado: restaba del saldo en el check-out y nunca se liberaba ni se
+// devolvía. Qué pasa con ella en el check-out (liberar, capturar para cubrir
+// saldo, aplicar o devolver) lo resuelve el módulo de garantías.
+// Detalle: garantias/garantiaEstadia.servicio.js.
 // --------------------------------------------------------------
-
-function validarGarantia({ garantiaConfirmada, medioGarantia, referenciaGarantia }) {
-  if (garantiaConfirmada !== true) {
-    throw new ErrorDeNegocio("No se puede confirmar el check-in sin validar la garantía del huésped.");
-  }
-  if (!MEDIOS_GARANTIA.includes(medioGarantia)) {
-    throw new ErrorDeNegocio(`medioGarantia debe ser uno de: ${MEDIOS_GARANTIA.join(", ")}.`);
-  }
-  if (MEDIOS_CON_TARJETA.includes(medioGarantia) && !referenciaGarantia) {
-    throw new ErrorDeNegocio(`El pago con ${medioGarantia} necesita la autorización de la tarjeta (referencia).`);
-  }
-}
-
-// Se llama DESPUÉS de que el check-in ya quedó confirmado (reserva "En
-// curso", habitación "ocupada"): si esto fallara, el check-in en sí no
-// queda a medio hacer — el recepcionista puede reintentar el cobro de la
-// garantía aparte, desde Pagos, sin tener que repetir el check-in.
-async function registrarGarantia(reservaId, { medioGarantia, referenciaGarantia }) {
-  await prisma.pagoEstadia.create({
-    data: {
-      reservaId,
-      estado: "Pagado",
-      concepto: CONCEPTO_GARANTIA,
-      medios: {
-        create: [
-          {
-            medioPago: medioGarantia,
-            importe: MONTO_GARANTIA,
-            ...(referenciaGarantia ? { referencia: referenciaGarantia } : {}),
-          },
-        ],
-      },
-    },
-  });
-}
 
 // --------------------------------------------------------------
 // HU-47 — ocupar una habitación dentro de una transacción ya abierta
@@ -240,6 +198,18 @@ async function ocuparHabitaciones(tx, habitacionIds) {
   await tx.habitacion.updateMany({ where: { id: { in: habitacionIds } }, data: { estado: "ocupada" } });
 }
 
+// El módulo de garantías tiene su propia clase de error: sin traducirla, el
+// controlador la trataría como un error inesperado (500) en vez de devolver el
+// mensaje y el status reales (402 por tarjeta rechazada, 400 por datos inválidos).
+async function iniciarGarantiaDeCheckIn(argumentos) {
+  try {
+    return await garantiaEstadiaServicio.iniciarGarantiaDeCheckIn(argumentos);
+  } catch (err) {
+    if (err instanceof garantiaEstadiaServicio.ErrorDeNegocio) throw new ErrorDeNegocio(err.message, err.statusCode);
+    throw err;
+  }
+}
+
 // --------------------------------------------------------------
 // HU-43 + HU-46 + HU-47 — confirmar check-in de una reserva existente
 // --------------------------------------------------------------
@@ -251,7 +221,8 @@ async function confirmarCheckInConReserva({
   numeroDocumentoIngresado,
   garantiaConfirmada,
   medioGarantia,
-  referenciaGarantia,
+  garantiaTarjeta,
+  claveIdempotencia,
   habitaciones,
   personas,
   totalEsperado,
@@ -280,38 +251,48 @@ async function confirmarCheckInConReserva({
     );
   }
 
-  validarGarantia({ garantiaConfirmada, medioGarantia, referenciaGarantia });
+  // La tarjeta (guardada en la reserva, o una nueva) se preautoriza ANTES del
+  // check-in: si se rechaza, no hay check-in. Si el check-in falla después, se
+  // libera la retención. La pasarela nunca va dentro de la transacción.
+  const garantia = await iniciarGarantiaDeCheckIn({
+    pedido: { garantiaConfirmada, medioGarantia, garantiaTarjeta },
+    reservaId: id,
+    fechaHasta: new Date(reserva.fechaHasta),
+    claveIdempotencia,
+  });
 
-  if (conOcupacion) {
-    await require("./confirmacionAtomica").confirmarConOcupacion(reserva, {
-      operador,
-      habitaciones,
-      personas,
-      totalEsperado,
-      motivoTitularDistinto,
-    });
-    await registrarGarantia(id, { medioGarantia, referenciaGarantia });
-    return reservasServicio.obtenerReserva(id);
+  try {
+    if (conOcupacion) {
+      await require("./confirmacionAtomica").confirmarConOcupacion(reserva, {
+        operador,
+        habitaciones,
+        personas,
+        totalEsperado,
+        motivoTitularDistinto,
+      });
+    } else {
+      await prisma.$transaction(
+        async (tx) => {
+          await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${id} FOR UPDATE`;
+          const vigente = await tx.reserva.findUnique({ where: { id } });
+          validarReservaVigente(vigente);
+          await require("../estadia/ampliacion.servicio").ampliarSiCorresponde(tx, id, confirmacionAmpliacion);
+          await require("../estadia/ingreso").prepararIngreso(tx, id, operador);
+          await reservasServicio.marcarEnCurso(id, tx);
+          await ocuparHabitaciones(
+            tx,
+            reserva.habitaciones.map((habitacion) => habitacion.id)
+          );
+        },
+        OPCIONES_TRANSACCION
+      );
+    }
+  } catch (err) {
+    await garantia.liberar();
+    throw err;
   }
 
-  await prisma.$transaction(
-    async (tx) => {
-      await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${id} FOR UPDATE`;
-      const vigente = await tx.reserva.findUnique({ where: { id } });
-      validarReservaVigente(vigente);
-      await require("../estadia/ampliacion.servicio").ampliarSiCorresponde(tx, id, confirmacionAmpliacion);
-      await require("../estadia/ingreso").prepararIngreso(tx, id, operador);
-      await reservasServicio.marcarEnCurso(id, tx);
-      await ocuparHabitaciones(
-        tx,
-        reserva.habitaciones.map((habitacion) => habitacion.id)
-      );
-    },
-    OPCIONES_TRANSACCION
-  );
-
-  await registrarGarantia(id, { medioGarantia, referenciaGarantia });
-
+  await garantia.registrar(id);
   return reservasServicio.obtenerReserva(id);
 }
 
@@ -377,10 +358,9 @@ async function registrarCheckInWalkIn({
   huesped,
   garantiaConfirmada,
   medioGarantia,
-  referenciaGarantia,
+  garantiaTarjeta,
+  claveIdempotencia,
 }) {
-  validarGarantia({ garantiaConfirmada, medioGarantia, referenciaGarantia });
-
   // Rediseño del check-in — varias habitaciones (pueden ser de distinto tipo) con UN plan para
   // toda la reserva: si alguna habitación trae su propio plan, tiene que ser el mismo.
   const lista = Array.isArray(habitaciones) ? habitaciones : [];
@@ -448,10 +428,21 @@ async function registrarCheckInWalkIn({
     origen: "RECEPCION",
   });
 
+  // Walk-in: no hay reserva previa ni tarjeta guardada, así que la garantía es una
+  // tarjeta de crédito nueva (se preautoriza) o un depósito en efectivo. Se
+  // autoriza ANTES de crear nada: si la tarjeta se rechaza, no se crea la reserva.
+  const garantia = await iniciarGarantiaDeCheckIn({
+    pedido: { garantiaConfirmada, medioGarantia, garantiaTarjeta },
+    fechaHasta: datos.fechaHasta,
+    claveIdempotencia,
+  });
+
   // Doble envío: la segunda transacción espera el lock de las habitaciones (crearReservaEnTransaccion)
   // y después encuentra la reserva encimada (409). Si MySQL la corta por deadlock (P2034), se
   // responde el mismo 409 en vez de un 500.
-  const reservaId = await conConcurrenciaComo409(() => prisma.$transaction(
+  let reservaId;
+  try {
+    reservaId = await conConcurrenciaComo409(() => prisma.$transaction(
     async (tx) => {
       // El walk-in ya trae todos los ocupantes completos; no crear un borrador adicional.
       const reserva = await reservasServicio.crearReservaEnTransaccion(tx, datos, { incluirTitular: false });
@@ -466,8 +457,12 @@ async function registrarCheckInWalkIn({
     },
     OPCIONES_TRANSACCION
   ));
+  } catch (err) {
+    await garantia.liberar();
+    throw err;
+  }
 
-  await registrarGarantia(reservaId, { medioGarantia, referenciaGarantia });
+  await garantia.registrar(reservaId);
 
   return reservasServicio.obtenerReserva(reservaId);
 }

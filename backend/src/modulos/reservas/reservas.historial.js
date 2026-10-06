@@ -168,7 +168,16 @@ function eventoNotificacion(n) {
   };
 }
 
-const TITULO_PAGO = { Seña: "Seña registrada", Garantía: "Garantía registrada" };
+const TITULO_PAGO = {
+  // Conceptos históricos (reservas anteriores a la garantía con tarjeta).
+  Seña: "Seña registrada",
+  Garantía: "Garantía registrada",
+  // Garantía con tarjeta de crédito.
+  "Pago anticipado": "Pago anticipado registrado",
+  "Penalidad por cancelación": "Penalidad por cancelación cobrada",
+  "Penalidad no-show": "Penalidad por no-show cobrada",
+  Devolución: "Devolución registrada",
+};
 
 function eventoPago(p) {
   const importe = p.medios.reduce((acc, m) => acc + Number(m.importe), 0);

@@ -46,7 +46,7 @@ function enDias(dias) {
 const HUESPED = {
   paisDocumento: "AR",
   fechaNacimiento: haceAnios(36),
-  nombre: "Ana Pérez",
+  nombre: "Persona Prueba",
   tipoDocumento: "DNI",
   numeroDocumento: "30111222",
   contacto: "ana@mail.com",

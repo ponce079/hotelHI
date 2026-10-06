@@ -103,16 +103,15 @@ function totalDeMedios(medios, concepto) {
 // Núcleo transaccional de un pago: valida medios/concepto, recalcula el
 // saldo FRESCO contra el `tx` recibido y crea el PagoEstadia — sin abrir
 // ninguna transacción propia ni tomar ningún lock. Pública aparte de
-// `crearPago` para que un alta con seña (HU-88, `crearReservaConSena` en
-// reservas.servicio.js) pueda cobrar la seña DENTRO de la misma transacción
-// en la que se crea la Reserva, en vez de reimplementar esta lógica — mismo
-// criterio que `crearReservaEnTransaccion` para Check-in.
+// `crearPago` para que quien ya tiene una transacción abierta pueda registrar un
+// pago DENTRO de ella, en vez de reimplementar esta lógica — mismo criterio que
+// `crearReservaEnTransaccion` para Check-in.
 //
 // Quien llama es responsable de bloquear la fila si hace falta: crearPago
 // toma el lock antes de llamar a esto porque cobra sobre una reserva que ya
-// existía y podría estar siendo cobrada al mismo tiempo por otra request;
-// crearReservaConSena no lo necesita porque la reserva recién se creó
-// DENTRO de esa misma transacción — no existe todavía para nadie más.
+// existía y podría estar siendo cobrada al mismo tiempo por otra request; una
+// reserva recién creada DENTRO de la misma transacción no lo necesita — no
+// existe todavía para nadie más.
 async function crearPagoEnTransaccion(tx, { reservaId, medios, concepto = CONCEPTO_PAGO_FINAL }) {
   if (!reservaId) throw new ErrorDeNegocio('reservaId es obligatorio.');
   const totalMedios = totalDeMedios(medios, concepto);
@@ -146,9 +145,9 @@ async function crearPagoEnTransaccion(tx, { reservaId, medios, concepto = CONCEP
 
 // `concepto` (default "Pago final", HU-50 de siempre) distingue de dónde
 // salió el cobro para la pantalla de Movimientos de Pago (HU-88) — quien
-// llama desde la garantía en efectivo del check-in manda el suyo explícito
-// (ver checkIn.servicio.js). La seña de reserva (HU-88) ya no pasa por
-// acá — ver crearReservaConSena en reservas.servicio.js.
+// llama manda el suyo explícito (Pago anticipado, Penalidad…, ver
+// garantias/garantias.constantes.js). La garantía del check-in y la de la
+// reserva NO pasan por acá: no son pagos (ver garantias/).
 async function crearPago({ reservaId, medios, concepto = CONCEPTO_PAGO_FINAL }) {
   if (!reservaId) throw new ErrorDeNegocio('reservaId es obligatorio.');
 
@@ -274,10 +273,10 @@ async function listarMovimientos(filtros = {}) {
 // anularOrdenPago de Sprint 2: baja lógica, nunca se borra el registro).
 // --------------------------------------------------------------
 // `cliente` (default `prisma`) permite pasar el `tx` de una transacción ya
-// abierta por quien llama — lo usa cancelarReserva (reservas.servicio.js,
-// HU-37) para que cancelar la reserva y anular la seña sean una sola
-// operación atómica, mismo criterio que cambiarEstadoHabitacion en
-// habitaciones.servicio.js.
+// abierta por quien llama, para que anular un pago y lo que lo rodea sean una
+// sola operación atómica, mismo criterio que cambiarEstadoHabitacion en
+// habitaciones.servicio.js. (cancelarReserva ya no anula pagos: calcula una
+// penalidad y registra una devolución — ver garantias/cierreReserva.servicio.js.)
 async function anularPago(id, motivo, cliente = prisma) {
   if (!motivo || !motivo.trim()) {
     throw new ErrorDeNegocio('El motivo de anulación es obligatorio.');

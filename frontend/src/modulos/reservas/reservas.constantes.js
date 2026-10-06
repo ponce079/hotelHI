@@ -10,6 +10,9 @@ export const ESTADO_RESERVA = {
   EN_CURSO: "En curso",
   CERRADA: "Cerrada",
   CANCELADA: "Cancelada",
+  // El huésped no llegó (garantía con tarjeta): cobra la penalidad del plan y
+  // libera las habitaciones. Mismo valor que el backend.
+  NO_SHOW: "No-show",
 };
 
 export const ESTADOS_RESERVA = [
@@ -17,6 +20,7 @@ export const ESTADOS_RESERVA = [
   ESTADO_RESERVA.EN_CURSO,
   ESTADO_RESERVA.CERRADA,
   ESTADO_RESERVA.CANCELADA,
+  ESTADO_RESERVA.NO_SHOW,
 ];
 
 // Mapeo a las variantes de <Badge>: Confirmada es un estado sano (ok),
@@ -28,6 +32,8 @@ export const ESTADO_RESERVA_BADGE = {
   [ESTADO_RESERVA.EN_CURSO]: "info",
   [ESTADO_RESERVA.CERRADA]: "cerrado",
   [ESTADO_RESERVA.CANCELADA]: "error",
+  // No-show: salida del camino con consecuencia económica (alerta, no error).
+  [ESTADO_RESERVA.NO_SHOW]: "alerta",
 };
 
 // Tarjetas de estado de ReservasPage.jsx (chips clickeables, mismo patrón
@@ -41,6 +47,8 @@ export const ESTADO_RESERVA_COLOR = {
   [ESTADO_RESERVA.EN_CURSO]: { fondo: "#cfe4d8", texto: "#1f4d3a", borde: "#a9cdb7" },
   [ESTADO_RESERVA.CERRADA]: { fondo: "#ddd0b3", texto: "#5a5340", borde: "#c4b48d" },
   [ESTADO_RESERVA.CANCELADA]: { fondo: "#f2c6b9", texto: "#8f3322", borde: "#e4a08c" },
+  // Latón (mismo tono que el Badge "alerta"): distinto de Cancelada para no mezclarlos.
+  [ESTADO_RESERVA.NO_SHOW]: { fondo: "#eadfc2", texto: "#6b5420", borde: "#d4c28c" },
 };
 
 // Catálogo único de huésped y ocupantes (lib/tiposDocumento.js).
@@ -65,19 +73,8 @@ export const LIMITES_RESERVA = {
 // para que el frontend frene ANTES de mandar el pedido, con el mismo texto.
 export const MENSAJE_ESTADIA_LARGA = `Las estadías de más de ${MAX_NOCHES_ESTADIA} noches requieren una tarifa de larga estadía: consultá con gerencia.`;
 
-// HU-36/88 — seña obligatoria al confirmar una reserva nueva desde el
-// mostrador: 20% del total estimado de la estadía. Solo vive acá, en el
-// frontend — el backend NO la valida como una regla propia de crearPago (que
-// sigue aceptando cualquier importe hasta el saldo real, 100% del total):
-// ReservaWizard.jsx arma el paso de cobro con `saldo` fijado a este 20% y
-// `exigirTotal` en PagoEstadiaWizard, así que ese mismo cap (ni más ni menos)
-// es lo único que ese paso deja confirmar. Si el día de mañana hace falta
-// que el backend también la exija (ej. para blindar un POST directo a
-// /pagos-estadia sin pasar por el wizard), ese 20% tendría que vivir en
-// reservas.constantes.js (backend) y crearPago tendría que aprender a
-// distinguir "esto es una seña" de un pago de check-out común — no es el
-// caso hoy.
-export const PORCENTAJE_SENIA_RESERVA = 0.2;
+// (La seña obligatoria del 20 % de HU-36/88 se retiró: la reemplaza la garantía con tarjeta de crédito
+// — ver modulos/garantias/ — y su único valor, PORCENTAJE_SENIA_RESERVA, ya no existe.)
 
 // Ciclo de vida para <PasoAPaso> / <MiniPasos>. "Cancelada" no es un paso
 // más de la barra: es una bifurcación fuera del camino lineal, así que va
@@ -91,6 +88,7 @@ const PASOS_RESERVA = [
 
 export function construirPasosReserva(reserva) {
   const cancelada = reserva?.estado === ESTADO_RESERVA.CANCELADA;
+  const noShow = reserva?.estado === ESTADO_RESERVA.NO_SHOW;
   const indicePorEstado = {
     [ESTADO_RESERVA.CONFIRMADA]: 0,
     [ESTADO_RESERVA.EN_CURSO]: 1,
@@ -98,10 +96,11 @@ export function construirPasosReserva(reserva) {
     // Una reserva cancelada llegó a estar confirmada: el primer nodo sigue
     // siendo el punto real donde quedó, y la X aparte cuenta el resto.
     [ESTADO_RESERVA.CANCELADA]: 0,
+    [ESTADO_RESERVA.NO_SHOW]: 0,
   };
   return {
     pasos: PASOS_RESERVA,
     pasoActual: indicePorEstado[reserva?.estado] ?? 0,
-    pasoAlternativo: { label: "Cancelada", activo: cancelada },
+    pasoAlternativo: { label: noShow ? "No-show" : "Cancelada", activo: cancelada || noShow },
   };
 }
