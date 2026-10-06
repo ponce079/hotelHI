@@ -233,7 +233,7 @@ export function estadoInicialReserva(reserva, ocupantes = []) {
 }
 
 export function garantiaInicial() {
-  return { garantiaConfirmada: false, medioGarantia: MEDIOS_GARANTIA[0], referenciaGarantia: undefined };
+  return { garantiaConfirmada: false, medioGarantia: MEDIOS_GARANTIA[0], garantiaTarjeta: undefined };
 }
 
 let ultimaClaveWalkin = 0;

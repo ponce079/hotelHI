@@ -1,5 +1,14 @@
 const reservasServicio = require("./reservas.servicio");
 
+// Solo un administrador con sesión puede corregir el nombre de un huésped ya registrado: el
+// valor que mande el cliente se ignora y lo decide la sesión.
+function conPermisoDeCorreccion(req) {
+  const cuerpo = req.body;
+  if (!cuerpo || typeof cuerpo !== "object" || !cuerpo.huesped || typeof cuerpo.huesped !== "object") return cuerpo;
+  const pedido = cuerpo.huesped.corregirNombre === true;
+  return { ...cuerpo, huesped: { ...cuerpo.huesped, corregirNombre: pedido && req.usuarioActual?.rol === "admin" } };
+}
+
 function responderError(res, err, contexto, mensaje) {
   if (err instanceof reservasServicio.ErrorDeNegocio) {
     return res.status(err.statusCode).json({ error: err.message, ...(err.codigo ? { codigo: err.codigo } : {}) });
@@ -59,27 +68,26 @@ async function postCotizar(req, res) {
 
 async function postReserva(req, res) {
   try {
-    return res.status(201).json(await reservasServicio.crearReserva(req.body));
+    return res.status(201).json(await reservasServicio.crearReserva(conPermisoDeCorreccion(req)));
   } catch (err) {
     return responderError(res, err, "Error al crear la reserva:", "No se pudo crear la reserva.");
   }
 }
 
-// HU-88 (extensión) — alta de reserva CON seña en una sola operación
-// atómica (ver crearReservaConSena en reservas.servicio.js). Reemplaza,
-// para el alta asistida por mostrador (HU-36 con seña obligatoria), al par
-// de llamadas postReserva + POST /pagos-estadia que usaba antes.
-async function postReservaConSenia(req, res) {
+// Alta de reserva CON garantía (tarjeta de crédito o prepago). Reemplaza a la
+// seña. El body trae la tarjeta (se valida y NO se guarda) en
+// `garantia.tarjeta`; este controlador nunca la escribe en logs.
+async function postReservaConGarantia(req, res) {
   try {
-    return res.status(201).json(await reservasServicio.crearReservaConSena(req.body));
+    return res.status(201).json(await reservasServicio.crearReservaConGarantia(conPermisoDeCorreccion(req)));
   } catch (err) {
-    return responderError(res, err, "Error al crear la reserva con seña:", "No se pudo crear la reserva con la seña.");
+    return responderError(res, err, "Error al crear la reserva con garantía:", "No se pudo crear la reserva.");
   }
 }
 
 async function patchReserva(req, res) {
   try {
-    return res.json(await reservasServicio.modificarReserva(req.params.id, req.body));
+    return res.json(await reservasServicio.modificarReserva(req.params.id, conPermisoDeCorreccion(req)));
   } catch (err) {
     return responderError(res, err, "Error al modificar la reserva:", "No se pudo modificar la reserva.");
   }
@@ -90,6 +98,66 @@ async function postCancelar(req, res) {
     return res.json(await reservasServicio.cancelarReserva(req.params.id, req.body));
   } catch (err) {
     return responderError(res, err, "Error al cancelar la reserva:", "No se pudo cancelar la reserva.");
+  }
+}
+
+// Llegadas no presentadas y marca de no-show (garantía con tarjeta). Mueven
+// dinero (cobran la penalidad), así que las rutas exigen sesión de personal.
+async function getNoShowPendientes(_req, res) {
+  try {
+    return res.json(await reservasServicio.listarNoShowPendientes());
+  } catch (err) {
+    return responderError(res, err, "Error al listar las llegadas no presentadas:", "No se pudo listar los no-show.");
+  }
+}
+
+async function getCierrePrevio(req, res) {
+  try {
+    return res.json(await reservasServicio.previsualizarCierreReserva(req.params.id, req.query.tipo));
+  } catch (err) {
+    return responderError(res, err, "Error al calcular la vista previa:", "No se pudo calcular la vista previa.");
+  }
+}
+
+// Resumen de las garantías de la reserva (la de la reserva y la del check-in),
+// sin token ni referencias internas. Lo usan el check-in (¿hay tarjeta guardada?)
+// y el detalle de la reserva.
+async function getGarantias(req, res) {
+  try {
+    const reservaId = Number(req.params.id);
+    if (!Number.isInteger(reservaId) || reservaId <= 0) {
+      return res.status(400).json({ error: "id debe ser un entero positivo." });
+    }
+    return res.json(await require("../garantias/garantiaEstadia.servicio").obtenerResumenGarantias(reservaId));
+  } catch (err) {
+    return responderError(res, err, "Error al consultar las garantías:", "No se pudieron consultar las garantías.");
+  }
+}
+
+// Usa la garantía del check-in para cubrir el saldo en el check-out (captura la
+// preautorización hasta el saldo, o aplica el depósito en efectivo).
+async function postAplicarGarantia(req, res) {
+  try {
+    const reservaId = Number(req.params.id);
+    if (!Number.isInteger(reservaId) || reservaId <= 0) {
+      return res.status(400).json({ error: "id debe ser un entero positivo." });
+    }
+    const servicio = require("../garantias/garantiaEstadiaCheckOut.servicio");
+    return res.json(await servicio.aplicarGarantiaAlSaldo(reservaId));
+  } catch (err) {
+    // El módulo de garantías tiene su propia clase de error (mismo patrón que pagoEstadia).
+    if (err?.statusCode && err.constructor?.name === "ErrorDeNegocio") {
+      return res.status(err.statusCode).json({ error: err.message });
+    }
+    return responderError(res, err, "Error al usar la garantía:", "No se pudo usar la garantía.");
+  }
+}
+
+async function postNoShow(req, res) {
+  try {
+    return res.json(await reservasServicio.marcarNoShow(req.params.id, req.body));
+  } catch (err) {
+    return responderError(res, err, "Error al marcar el no-show:", "No se pudo marcar el no-show.");
   }
 }
 
@@ -126,9 +194,14 @@ module.exports = {
   getReservaPorId,
   postCotizar,
   postReserva,
-  postReservaConSenia,
+  postReservaConGarantia,
   patchReserva,
   postCancelar,
+  getNoShowPendientes,
+  getCierrePrevio,
+  getGarantias,
+  postAplicarGarantia,
+  postNoShow,
   postAjustePrecio,
   getPenalidad,
 };

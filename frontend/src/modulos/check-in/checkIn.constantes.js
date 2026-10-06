@@ -12,7 +12,13 @@ import { MEDIOS_PAGO_ESTADIA, MEDIOS_CON_TARJETA } from "../pagos-estadia/pagoEs
 
 // "Online" no aplica acá (igual que en la seña): la garantía se confirma en
 // el mostrador, en persona, nunca a distancia.
-export const MEDIOS_GARANTIA = MEDIOS_PAGO_ESTADIA.filter((medio) => medio !== "Online");
+//
+// GARANTÍA CON TARJETA: la garantía del check-in pasa a ser una preautorización
+// con tarjeta de crédito o un depósito en efectivo (espejo de
+// backend/src/modulos/garantias/garantias.constantes.js). Débito y transferencia
+// ya no se ofrecen: con débito el dinero sale de la cuenta del huésped y no se
+// puede "retener", y la transferencia no está entre los medios previstos.
+export const MEDIOS_GARANTIA = MEDIOS_PAGO_ESTADIA.filter((medio) => medio === "Tarjeta crédito" || medio === "Efectivo");
 export { MEDIOS_CON_TARJETA };
 
 // Corrección posterior (pedido explícito 2026-09-25): la garantía es un

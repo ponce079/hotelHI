@@ -9,6 +9,7 @@ const { conTipoPlano } = require("../../lib/tipoHabitacion");
 const reservasServicio = require("../reservas/reservas.servicio");
 const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
 const { CONCEPTO_SENIA } = require("../pagos-estadia/pagoEstadia.constantes");
+const { CONCEPTO_PAGO_ANTICIPADO, TIPO_GARANTIA } = require("../garantias/garantias.constantes");
 
 const DIA = 24 * 60 * 60 * 1000;
 const MAX_LLEGADAS = 200;
@@ -42,10 +43,14 @@ async function listarLlegadas({ q } = {}) {
             reservaNoches: { select: { precioNoche: true } },
           },
         },
+        // Lo que se pagó por adelantado: el "Pago anticipado" de la garantía con tarjeta (prepago o NRF) o,
+        // en reservas anteriores, la seña (concepto histórico).
         pagosEstadia: {
-          where: { concepto: CONCEPTO_SENIA, anulado: false },
+          where: { concepto: { in: [CONCEPTO_PAGO_ANTICIPADO, CONCEPTO_SENIA] }, anulado: false },
           include: { medios: true },
         },
+        // Tarjeta que dejó la reserva en garantía (solo marca y últimos 4: sin token ni referencias).
+        garantiaReserva: { select: { tipo: true, marca: true, ultimos4: true, estado: true } },
       },
       orderBy: [{ codigoConfirmacion: "asc" }],
       take: MAX_LLEGADAS,
@@ -67,7 +72,7 @@ async function listarLlegadas({ q } = {}) {
         menores: rh.menores,
         totalAlojamiento: rh.reservaNoches.reduce((a, n) => a + Number(n.precioNoche), 0),
       }));
-      // Seña tal como existe hoy (HU-88): importes y la referencia guardada, sin armar datos de tarjeta.
+      // Los pagos por adelantado tal cual se guardaron: importes y la referencia, sin armar datos de tarjeta.
       const medios = r.pagosEstadia.flatMap((p) => p.medios);
       return {
         id: r.id,
@@ -98,6 +103,11 @@ async function listarLlegadas({ q } = {}) {
           importe: medios.reduce((a, m) => a + Number(m.importe), 0),
           medios: medios.map((m) => ({ medioPago: m.medioPago, importe: Number(m.importe), referencia: m.referencia })),
         },
+        // Tarjeta en garantía de la reserva (null si no dejó ninguna): el check-in la preautoriza sin pedirla de nuevo.
+        garantia:
+          r.garantiaReserva?.tipo === TIPO_GARANTIA.TARJETA
+            ? { tipo: r.garantiaReserva.tipo, marca: r.garantiaReserva.marca, ultimos4: r.garantiaReserva.ultimos4 }
+            : null,
       };
     }),
   };

@@ -16,6 +16,10 @@ import { listarMovimientosPago } from "./pagoEstadia.api";
 import {
   CONCEPTO_GARANTIA,
   CONCEPTO_PAGO_FINAL,
+  CONCEPTO_DEVOLUCION,
+  CONCEPTO_PAGO_ANTICIPADO,
+  CONCEPTO_PENALIDAD_CANCELACION,
+  CONCEPTO_PENALIDAD_NO_SHOW,
   CONCEPTO_SENIA,
   CONCEPTOS_PAGO_ESTADIA,
 } from "./pagoEstadia.constantes";
@@ -83,6 +87,10 @@ function agruparPorReserva(movimientos, { concepto, desde, hasta }) {
 // deja mapeado por si el backend lo suma más adelante.
 const CONCEPTO_CHIP = {
   [CONCEPTO_SENIA]: { icono: Plus, clase: "bg-laton-100 text-laton-700" },
+  [CONCEPTO_PAGO_ANTICIPADO]: { icono: Plus, clase: "bg-pino-100 text-pino-700" },
+  [CONCEPTO_PENALIDAD_CANCELACION]: { icono: RotateCcw, clase: "bg-error-suave text-error-texto" },
+  [CONCEPTO_PENALIDAD_NO_SHOW]: { icono: RotateCcw, clase: "bg-error-suave text-error-texto" },
+  [CONCEPTO_DEVOLUCION]: { icono: RotateCcw, clase: "bg-info-suave text-info-texto" },
   [CONCEPTO_GARANTIA]: { icono: CreditCard, clase: "bg-info-suave text-info-texto" },
   [CONCEPTO_PAGO_FINAL]: { icono: Check, clase: "bg-pino-100 text-pino-700" },
   "Nota de crédito": { icono: RotateCcw, clase: "bg-error-suave text-error-texto" },
@@ -230,7 +238,7 @@ export function MovimientosPagoPage() {
       <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
         <h1 className="font-heading text-[34px] font-semibold">Movimientos de pago</h1>
         <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
-          Seña, garantía y pago final de todas las reservas, agrupados por reserva
+          Pagos anticipados, penalidades, devoluciones y pago final de todas las reservas, agrupados por reserva
         </p>
       </div>
 

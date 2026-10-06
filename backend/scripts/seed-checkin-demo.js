@@ -12,7 +12,7 @@
 // script: se informa, se sigue con el resto y el código de salida es distinto de 0.
 //
 // Solo corre contra una base LOCAL (misma guardia que db:push). Todo se crea con los servicios
-// reales (alta, seña, check-in, pago, check-out), así que precios y ReservaNoche salen del motor.
+// reales (alta, garantía, check-in, pago, check-out), así que precios y ReservaNoche salen del motor.
 //
 // Identificación de lo que es demo, sin marcas visibles en pantalla:
 //   - documento de las personas con prefijo 99…;
@@ -211,7 +211,7 @@ async function asegurarPersonasLibres(manifiesto, clave, reservaPropiaId = null)
 }
 
 const CASOS = [
-  { clave: "a", descripcion: "familia 2 adultos + 1 menor en Doble, tarifa flexible, con seña con tarjeta", plan: "BAR", noches: 3, habitaciones: [{ tipo: "Doble", adultos: 2, menores: 1 }], senia: "tarjeta" },
+  { clave: "a", descripcion: "familia 2 adultos + 1 menor en Doble, tarifa flexible, con tarjeta en garantía", plan: "BAR", noches: 3, habitaciones: [{ tipo: "Doble", adultos: 2, menores: 1 }], senia: "tarjeta" },
   { clave: "b", descripcion: "2 habitaciones: Doble con 2 adultos + Simple con 1 adulto y 1 menor", plan: "BAR", noches: 2, habitaciones: [{ tipo: "Doble", adultos: 2, menores: 0 }, { tipo: "Simple", adultos: 1, menores: 1 }], senia: "transferencia" },
   { clave: "c", descripcion: "2 adultos con tarifa no reembolsable", plan: "NRF", noches: 2, habitaciones: [{ tipo: "Doble", adultos: 2, menores: 0 }] },
   { clave: "d", descripcion: "3 adultos en Doble de capacidad 3, tarifa flexible (quitar un adulto baja el precio)", plan: "BAR", noches: 2, habitaciones: [{ tipo: "Doble", adultos: 3, menores: 0, capacidadExacta: 3 }] },
@@ -295,13 +295,15 @@ async function crearReservaCaso(manifiesto, caso, desde = enDias(0)) {
   const total = cotizacion.planes[0].total;
   const alta = { fechaDesde: desde, fechaHasta: hasta, habitaciones, planTarifarioId: plan.id, totalEsperado: total, huesped: personasDelCaso(manifiesto, caso.clave).titular, origen: "RECEPCION" };
   let reserva;
+  // La seña del 20 % se retiró: la reemplaza la garantía con tarjeta (la pasarela es simulada) o un prepago.
+  // `caso.senia` conserva su nombre por compatibilidad con la tabla de casos de más abajo.
   if (caso.senia) {
     const importe = Math.round((total * 0.2) / 100) * 100;
-    const medio =
+    const garantia =
       caso.senia === "tarjeta"
-        ? { tipo: "Tarjeta crédito", importe, referencia: "VISA ****4242 · aut. 552143" }
-        : { tipo: "Transferencia", importe };
-    reserva = await reservas.crearReservaConSena({ ...alta, medios: [medio] });
+        ? { tipo: "TARJETA", tarjeta: { titular: "TITULAR DEMO", numero: "4242424242424242", vencimientoMes: 12, vencimientoAnio: new Date().getFullYear() + 3, cvv: "123" } }
+        : { tipo: "PREPAGO", medios: [{ tipo: "Transferencia", importe }] };
+    reserva = await reservas.crearReservaConGarantia({ ...alta, garantia });
   } else {
     reserva = await reservas.crearReserva(alta);
   }

@@ -1,8 +1,8 @@
 import { PaisDocumentoReserva } from "../estadia/PaisDocumentoReserva";
 import { validarNacimientoTitular } from "../reservas/validarNacimientoTitular";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, ArrowRight, BedDouble, Check, CreditCard, Search, Users } from "lucide-react";
+import { ArrowLeft, ArrowRight, BedDouble, Check, Search, Users } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
@@ -11,19 +11,20 @@ import { Select } from "../../componentes/Select";
 import { Table } from "../../componentes/Table";
 import { formatearFechaDdMmAaaa, hoyEnHoraLocal } from "../../lib/fechas";
 import { ESTADO_HABITACION_BADGE, ESTADO_HABITACION_LABEL } from "../habitaciones/habitaciones.constantes";
-import { MEDIOS_CON_TARJETA } from "../pagos-estadia/pagoEstadia.constantes";
-import { TarjetaSimuladaPanel } from "../pagos-estadia/TarjetaSimuladaPanel";
+import { GarantiaPaso } from "../garantias/GarantiaPaso";
+import { armarGarantiaParaEnviar, GARANTIA_INICIAL, validarGarantia } from "../garantias/garantias.constantes";
 import { listarPlanesTarifarios } from "../tarifas/tarifas.api";
 import { listarTiposHabitacion } from "../tipos-habitacion/tiposHabitacion.api";
-import { consultarDisponibilidad, cotizarReserva, crearReserva, crearReservaConSena, modificarReserva } from "./reservas.api";
+import { consultarDisponibilidad, cotizarReserva, crearReserva, crearReservaConGarantia, modificarReserva } from "./reservas.api";
 import {
   CANALES_CONFIRMACION,
   LIMITES_RESERVA,
   MENSAJE_ESTADIA_LARGA,
-  PORCENTAJE_SENIA_RESERVA,
   TIPOS_DOCUMENTO,
 } from "./reservas.constantes";
 import { validarHuesped } from "./validarHuesped";
+import { useTitularPorDocumento } from "./useTitularPorDocumento";
+import { useSesionOpcional } from "../../lib/sesion";
 import { formatearNombrePropio } from "../../lib/nombres";
 import { CONTENEDOR_FICHA, FILA_FICHA, Rotulo } from "../../componentes/FilaFicha";
 
@@ -38,11 +39,12 @@ import { CONTENEDOR_FICHA, FILA_FICHA, Rotulo } from "../../componentes/FilaFich
 // tal cual. El paso nuevo "Plan" obliga a elegir un plan tarifario ANTES de
 // llegar a los datos del huésped — sin plan no hay precio que congelar.
 //
-// El paso "Seña" (HU-88) es exclusivo del alta asistida por mostrador (ver
-// `requiereSenia` más abajo): edición y autoservicio web siguen terminando
-// sin ese paso, sin tocar nada de su comportamiento.
+// El paso "Garantía" (tarjeta de crédito o prepago, reemplaza a la seña de
+// HU-88) es exclusivo del alta asistida por mostrador (ver `requiereGarantia`
+// más abajo): edición y autoservicio web siguen terminando sin ese paso, sin
+// tocar nada de su comportamiento.
 const PASOS_BASE = ["Fechas de la estadía", "Habitaciones", "Plan", "Datos del huésped"];
-const PASOS_CON_SENIA = [...PASOS_BASE, "Seña"];
+const PASOS_CON_GARANTIA = [...PASOS_BASE, "Garantía"];
 
 const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
@@ -59,20 +61,6 @@ const HUESPED_VACIO = {
 // que ya usaba el motor de forma implícita antes de esta etapa (2 adultos,
 // 0 menores).
 const OCUPACION_DEFECTO = { adultos: 2, menores: 0 };
-
-// Medios que ofrece el paso de seña: los mismos 4 que Check-in/Check-out
-// salvo "Online" (mismos strings que MEDIOS_PAGO_ESTADIA, pagoEstadia.
-// constantes.js — viajan tal cual en el `tipo` del medio de pago, sin
-// traducción de por medio). Cuáles de esos 4 necesitan pasar por la
-// terminal simulada lo sigue decidiendo MEDIOS_CON_TARJETA (mismo criterio
-// que PagoEstadiaWizard, no se reimplementa esa lista acá.
-const MEDIOS_SENIA = ["Efectivo", "Transferencia", "Tarjeta crédito", "Tarjeta débito"];
-const MEDIO_SENIA_LABEL = {
-  Efectivo: "Efectivo",
-  Transferencia: "Transferencia",
-  "Tarjeta crédito": "Tarjeta de crédito",
-  "Tarjeta débito": "Tarjeta de débito",
-};
 
 function soloFecha(valorISO) {
   return valorISO ? String(valorISO).slice(0, 10) : "";
@@ -163,14 +151,13 @@ function estadoInicial(reserva, valoresIniciales) {
 
 export function ReservaWizard({ reserva = null, valoresIniciales = null, origen = "RECEPCION", onExito, onCancelar }) {
   const esEdicion = Boolean(reserva);
-  // HU-36/88 — seña obligatoria del 20% al confirmar una reserva NUEVA desde
-  // el mostrador. No aplica a una edición (esEdicion: la reserva ya está
-  // confirmada, no hay nada nuevo que señar) ni al autoservicio web (HU-40,
-  // origen "WEB": un huésped anónimo no puede quedar frente a un cobro
-  // obligatorio ni a la terminal de tarjeta pensada para el mostrador — la
-  // seña queda acotada a HU-36, tal como se pidió).
-  const requiereSenia = !esEdicion && origen === "RECEPCION";
-  const PASOS = requiereSenia ? PASOS_CON_SENIA : PASOS_BASE;
+  // Garantía de la reserva (reemplaza a la seña del 20 % de HU-88): tarjeta
+  // de crédito o prepago, obligatoria al confirmar una reserva NUEVA desde el
+  // mostrador. No aplica a una edición (la reserva ya está confirmada) ni al
+  // autoservicio web (HU-40, origen "WEB"): esa pantalla la reemplaza el
+  // e-commerce y no se toca.
+  const requiereGarantia = !esEdicion && origen === "RECEPCION";
+  const PASOS = requiereGarantia ? PASOS_CON_GARANTIA : PASOS_BASE;
   const PASO_PLAN = 3;
   const PASO_HUESPED = 4;
   // Grilla completa (disponibles + tomadas, con motivo) solo para el
@@ -188,15 +175,49 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   const [actualizandoIntento, setActualizandoIntento] = useState(false);
   const [huespedTocado, setHuespedTocado] = useState({ nombres: false, apellido: false, numeroDocumento: false, contacto: false });
   const [intentoConfirmarHuesped, setIntentoConfirmarHuesped] = useState(false);
-  const [medioSenia, setMedioSenia] = useState("");
-  const [referenciaSenia, setReferenciaSenia] = useState(null);
-  const [panelTarjetaAbierto, setPanelTarjetaAbierto] = useState(false);
-  // Confirmación manual para los medios que no pasan por la terminal
-  // simulada (Efectivo, Transferencia) — mismo rol que `referenciaSenia`
-  // para tarjeta, pero sin autorización real de por medio.
-  const [confirmacionManualSenia, setConfirmacionManualSenia] = useState(false);
-  const esTarjetaSenia = MEDIOS_CON_TARJETA.includes(medioSenia);
+
+  // El número de tarjeta y el CVV viven SOLO acá (memoria del paso): se
+  // mandan una vez al backend y se vacían al confirmar o fallar. Nunca van a
+  // localStorage, a la URL ni a la consola.
+  const [garantia, setGarantia] = useState(GARANTIA_INICIAL);
+  const [intentoConfirmarGarantia, setIntentoConfirmarGarantia] = useState(false);
   const queryClient = useQueryClient();
+
+  // Un documento no se duplica: con tipo, país y número completos se busca al huésped; si ya existe,
+  // su nombre se completa solo y queda bloqueado. Solo el administrador puede corregirlo (el
+  // backend lo vuelve a exigir). La reserva web (sin sesión) no consulta datos de otros huéspedes.
+  const sesion = useSesionOpcional();
+  const esAdmin = sesion?.rol === "admin";
+  const [corrigiendoNombre, setCorrigiendoNombre] = useState(false);
+  const titular = useTitularPorDocumento({
+    tipoDocumento: form.huesped.tipoDocumento,
+    paisDocumento: form.huesped.paisDocumento,
+    numeroDocumento: form.huesped.numeroDocumento,
+    habilitada: origen !== "WEB" && Boolean(sesion?.rol),
+  });
+  const nombreBloqueado = titular.estado === "registrado" && !corrigiendoNombre;
+  const fichaAplicada = useRef(null);
+  useEffect(() => {
+    if (titular.estado === "registrado") {
+      if (fichaAplicada.current === titular.clave) return;
+      fichaAplicada.current = titular.clave;
+      setCorrigiendoNombre(false);
+      setForm((f) => ({
+        ...f,
+        huesped: {
+          ...f.huesped,
+          nombres: titular.nombres,
+          apellido: titular.apellido,
+          ...(titular.fechaNacimiento && !f.huesped.fechaNacimiento ? { fechaNacimiento: titular.fechaNacimiento } : {}),
+        },
+      }));
+    } else if (titular.estado !== "buscando" && fichaAplicada.current) {
+      // Cambió el documento: los nombres autocompletados del anterior no valen para el nuevo.
+      fichaAplicada.current = null;
+      setCorrigiendoNombre(false);
+      setForm((f) => ({ ...f, huesped: { ...f.huesped, nombres: "", apellido: "" } }));
+    }
+  }, [titular.estado, titular.clave, titular.nombres, titular.apellido, titular.fechaNacimiento]);
 
   // Errores en vivo, pero solo se muestran una vez que el usuario tocó el
   // campo (onBlur) o intentó confirmar con el paso incompleto — mismo
@@ -336,7 +357,12 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
 
   const planSeleccionado = planesDisponibles.find((p) => p.codigo === form.planCodigo) ?? null;
   const totalEstadia = planSeleccionado?.total ?? 0;
-  const seniaMonto = Number((totalEstadia * PORCENTAJE_SENIA_RESERVA).toFixed(2));
+  const erroresGarantia = validarGarantia(garantia, {
+    total: totalEstadia,
+    fechaHasta: form.fechaHasta,
+    reembolsable: planSeleccionado?.reembolsable === true,
+  });
+  const garantiaValida = Object.keys(erroresGarantia).length === 0;
 
   function elegirPlan(plan) {
     setErrorGeneral("");
@@ -353,6 +379,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       apellido: formatearNombrePropio(form.huesped.apellido),
       tipoDocumento: form.huesped.tipoDocumento,
       numeroDocumento: form.huesped.numeroDocumento.trim(),
+      ...(esAdmin && corrigiendoNombre ? { corregirNombre: true } : {}),
       fechaNacimiento: form.huesped.fechaNacimiento,
       paisDocumento: form.huesped.paisDocumento,
       contacto: form.huesped.contacto.trim(),
@@ -391,36 +418,34 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
         origen,
       };
 
-      // Con seña (HU-88): un único POST que crea la Reserva y cobra la seña
-      // en la misma transacción atómica — hasta que esto no resuelve bien,
-      // no se guardó nada en la base (ni la reserva). Si el cobro falla acá
-      // (tarjeta rechazada, error de validación), no queda ninguna reserva
-      // creada — el recepcionista reintenta desde el mismo paso sin haber
-      // perdido los datos anteriores, que siguen en `form`.
-      if (requiereSenia) {
-        return crearReservaConSena({
+      // Con garantía: un único POST que valida la tarjeta, crea la reserva y
+      // registra la garantía en la misma transacción. Si la tarjeta se
+      // rechaza (o, en una tarifa no reembolsable, el cobro del total),
+      // no queda ninguna reserva creada — el recepcionista corrige los
+      // datos desde el mismo paso. La clave de idempotencia es nueva en cada
+      // intento: una tarjeta rechazada no debe repetir la respuesta vieja.
+      if (requiereGarantia) {
+        return crearReservaConGarantia({
           ...datosAlta,
-          medios: [
-            {
-              tipo: medioSenia,
-              importe: seniaMonto,
-              referencia: esTarjetaSenia ? referenciaSenia : undefined,
-            },
-          ],
+          garantia: armarGarantiaParaEnviar(garantia),
+          claveIdempotencia: crypto.randomUUID(),
         });
       }
 
-      // Autoservicio web (HU-40): nunca cobra seña, alta simple de siempre.
+      // Autoservicio web (HU-40): nunca pide garantía, alta simple de siempre.
       return crearReserva(datosAlta);
     },
     onSuccess: (guardada) => {
+      setGarantia(GARANTIA_INICIAL); // descarta número y CVV de la memoria
       queryClient.invalidateQueries({ queryKey: ["reservas"] });
       onExito(guardada);
     },
     onError: (error) => {
-      if (requiereSenia && error?.response?.data?.codigo === "RESERVA_TIEMPO_AGOTADO") {
+      // El código de seguridad no se conserva después de un intento fallido.
+      setGarantia((g) => ({ ...g, tarjeta: { ...g.tarjeta, cvv: "" } }));
+      if (requiereGarantia && error?.response?.data?.codigo === "RESERVA_TIEMPO_AGOTADO") {
         setTiempoAgotado(true);
-      } else if (requiereSenia && (!error?.response || error.response.status >= 500 || error.response.status === 408)) {
+      } else if (requiereGarantia && (!error?.response || error.response.status >= 500 || error.response.status === 408)) {
         setResultadoIncierto(true);
         setErrorGeneral(
           "No pudimos confirmar el resultado. Revisá el listado de reservas y sus pagos " +
@@ -447,9 +472,6 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       const disponibles = new Set((data?.habitaciones ?? []).map((h) => h.id));
       const siguenDisponibles = form.habitaciones.every((h) => disponibles.has(h.habitacionId));
       if (siguenDisponibles) await cotizarQuery.refetch({ throwOnError: true });
-      setConfirmacionManualSenia(false);
-      setReferenciaSenia(null);
-      setPanelTarjetaAbierto(false);
       setTiempoAgotado(false);
       mutacion.reset();
       if (!siguenDisponibles) {
@@ -504,21 +526,17 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
     irA(PASO_HUESPED + 1);
   }
 
-  function elegirMedioSenia(medio) {
-    setErrorGeneral("");
-    setMedioSenia(medio);
-    setReferenciaSenia(null);
-    setPanelTarjetaAbierto(false);
-    setConfirmacionManualSenia(false);
-  }
-
   function confirmar() {
     // Paso de huésped como último paso (edición o autoservicio web, sin
-    // seña): mismo chequeo de siempre. Con seña, el huésped ya se validó al
-    // avanzar del paso de huésped al de seña (avanzarDesdeHuesped) — acá
-    // solo queda mandar.
+    // garantía): mismo chequeo de siempre. Con garantía, el huésped ya se
+    // validó al avanzar del paso de huésped al de garantía
+    // (avanzarDesdeHuesped); acá se valida la garantía.
     if (form.paso === PASO_HUESPED && !huespedValido) {
       setIntentoConfirmarHuesped(true);
+      return;
+    }
+    if (requiereGarantia && form.paso === PASOS.length && !garantiaValida) {
+      setIntentoConfirmarGarantia(true);
       return;
     }
     setErrorGeneral("");
@@ -529,14 +547,9 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   const puedeAvanzarPaso2 = form.habitaciones.length > 0 && ocupacionValida;
   const puedeAvanzarPasoPlan = Boolean(form.planTarifarioId) && !cotizarQuery.isError;
   const esUltimoPaso = form.paso === PASOS.length;
-  const puedeConfirmarSenia = !medioSenia
-    ? false
-    : esTarjetaSenia
-      ? Boolean(referenciaSenia)
-      : confirmacionManualSenia;
   const puedeConfirmarFinal =
-    form.paso === PASOS.length && requiereSenia
-      ? puedeConfirmarSenia
+    form.paso === PASOS.length && requiereGarantia
+      ? true // el clic valida y marca lo que falta (intentoConfirmarGarantia)
       : huespedValido && !(esEdicion && form.paso === PASO_HUESPED && previaQuery.isError);
 
   return (
@@ -544,8 +557,8 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       <p className="-mt-1 font-mono text-[11px] text-tinta/55">
         {esEdicion
           ? "Modificar fechas, habitaciones, plan o datos del huésped"
-          : requiereSenia
-            ? "Plan, precio del motor y seña cobrada antes de confirmar"
+          : requiereGarantia
+            ? "Plan, precio del motor y garantía con tarjeta antes de confirmar"
             : "Plan y precio del motor validados antes de confirmar"}
       </p>
 
@@ -865,6 +878,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
               <Input
                 label={<Rotulo texto="Nombres" obligatorio />}
                 value={form.huesped.nombres}
+                disabled={nombreBloqueado}
                 maxLength={LIMITES_RESERVA.nombres}
                 onChange={(e) => actualizarHuesped("nombres", e.target.value)}
                 onBlur={() => {
@@ -877,6 +891,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
               <Input
                 label={<Rotulo texto="Apellido" obligatorio />}
                 value={form.huesped.apellido}
+                disabled={nombreBloqueado}
                 maxLength={LIMITES_RESERVA.apellido}
                 onChange={(e) => actualizarHuesped("apellido", e.target.value)}
                 onBlur={() => {
@@ -924,6 +939,24 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
                 placeholder="30111222"
               />
             </div>
+            {titular.estado === "buscando" && <p className="mt-2 text-[12px] text-piedra">Buscando el documento…</p>}
+            {titular.estado === "nuevo" && (
+              <p className="mt-2 text-[12px] text-piedra">Documento nuevo: cargá los datos del huésped.</p>
+            )}
+            {titular.estado === "registrado" && (
+              <div className="mt-2 flex flex-wrap items-center gap-3 text-[12px] text-piedra" role="status">
+                <span>
+                  {corrigiendoNombre
+                    ? "Estás corrigiendo el nombre de un huésped registrado."
+                    : "Huésped registrado: se completó su nombre. Solo un administrador puede corregirlo."}
+                </span>
+                {esAdmin && (
+                  <Button type="button" variante="secundario" tamano="fila" onClick={() => setCorrigiendoNombre((v) => !v)}>
+                    {corrigiendoNombre ? "Cancelar corrección" : "Corregir nombre"}
+                  </Button>
+                )}
+              </div>
+            )}
             <div className={`${FILA_FICHA.contacto} mt-2.5`}>
               <Input
                 label={<Rotulo texto="Correo electrónico" obligatorio />}
@@ -1015,91 +1048,35 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
         </div>
       )}
 
-      {/* Paso 5 — seña (HU-88), solo alta asistida por mostrador */}
-      {form.paso === PASOS.length && requiereSenia && (
-        <div className="flex flex-col gap-4 rounded-[18.4px] bg-white px-6 py-[22px]">
-          <div className="rounded-lg border border-borde bg-hueso px-5 py-4 text-[13px]">
-            <p className="font-semibold">Resumen</p>
-            <p className="mt-1 text-piedra">
+      {/* Paso 5 — garantía (tarjeta de crédito o prepago), solo alta asistida por mostrador */}
+      {form.paso === PASOS.length && requiereGarantia && (
+        <GarantiaPaso
+          garantia={garantia}
+          onChange={(g) => {
+            setErrorGeneral("");
+            setGarantia(g);
+          }}
+          errores={erroresGarantia}
+          mostrarErrores={intentoConfirmarGarantia}
+          plan={planSeleccionado}
+          total={totalEstadia}
+          deshabilitado={mutacion.isPending}
+          resumen={
+            <>
               {elegidas.map((h) => `${h.info?.numero ?? h.habitacionId} (${h.info?.tipo ?? ""})`).join(", ") || "—"} · del{" "}
               {form.fechaDesde} al {form.fechaHasta} · {noches} noche{noches === 1 ? "" : "s"} ·{" "}
               <span className="font-semibold text-tinta">
                 {`${form.huesped.nombres} ${form.huesped.apellido}`.trim()}
               </span> · {planSeleccionado?.nombre ?? "—"} ·{" "}
               <span className="font-semibold text-tinta">{FORMATO_MONEDA.format(totalEstadia)}</span>
-            </p>
-          </div>
-
-          <div className="rounded-lg border border-pino-300 bg-pino-100 px-5 py-4">
-            <p className="text-[11px] uppercase tracking-wide text-pino-700">
-              Seña requerida ({PORCENTAJE_SENIA_RESERVA * 100}%)
-            </p>
-            <Cifra tamano={26}>{FORMATO_MONEDA.format(seniaMonto)}</Cifra>
-          </div>
-
-          <Select
-            label="Medio de pago de la seña *"
-            value={medioSenia}
-            onChange={(e) => elegirMedioSenia(e.target.value)}
-          >
-            <option value="">Elegí un medio…</option>
-            {MEDIOS_SENIA.map((medio) => (
-              <option key={medio} value={medio}>
-                {MEDIO_SENIA_LABEL[medio]}
-              </option>
-            ))}
-          </Select>
-
-          {medioSenia && !esTarjetaSenia && (
-            <label className="flex cursor-pointer items-start gap-2.5 text-[13px] text-tinta">
-              <input
-                type="checkbox"
-                checked={confirmacionManualSenia}
-                onChange={(e) => setConfirmacionManualSenia(e.target.checked)}
-                className="mt-0.5 h-4 w-4 cursor-pointer accent-pino"
-              />
-              <span>
-                {medioSenia === "Transferencia"
-                  ? `Confirmo la transferencia de ${FORMATO_MONEDA.format(seniaMonto)} recibida del huésped.`
-                  : `Confirmo que recibí ${FORMATO_MONEDA.format(seniaMonto)} en efectivo del huésped.`}
-              </span>
-            </label>
-          )}
-
-          {esTarjetaSenia &&
-            (referenciaSenia ? (
-              <div className="flex flex-wrap items-center gap-2.5 rounded-md border border-pino-300 bg-pino-100 px-4 py-2.5">
-                <Badge variante="ok">Autorizada</Badge>
-                <span className="text-[12px] text-pino-700">{referenciaSenia}</span>
-                <button
-                  type="button"
-                  onClick={() => setReferenciaSenia(null)}
-                  className="ml-auto cursor-pointer text-[11.5px] font-semibold text-piedra underline-offset-2 hover:underline"
-                >
-                  Cambiar tarjeta
-                </button>
-              </div>
-            ) : panelTarjetaAbierto ? (
-              <TarjetaSimuladaPanel
-                tipo={medioSenia}
-                importe={seniaMonto}
-                onCancelar={() => setPanelTarjetaAbierto(false)}
-                onAutorizada={(referencia) => {
-                  setReferenciaSenia(referencia);
-                  setPanelTarjetaAbierto(false);
-                }}
-              />
-            ) : (
-              <Button variante="ok" tamano="fila" icono={CreditCard} onClick={() => setPanelTarjetaAbierto(true)}>
-                Autorizar tarjeta — {FORMATO_MONEDA.format(seniaMonto)}
-              </Button>
-            ))}
-        </div>
+            </>
+          }
+        />
       )}
 
-      {requiereSenia && mutacion.isPending && (
+      {requiereGarantia && mutacion.isPending && (
         <p role="status" className="rounded-md bg-hueso px-4 py-3 text-sm">
-          Guardando reserva y seña. El guardado tiene un límite de 1 minuto; esperá la respuesta sin recargar la página.
+          Guardando reserva y garantía. El guardado tiene un límite de 1 minuto; esperá la respuesta sin recargar la página.
         </p>
       )}
       {errorGeneral && (

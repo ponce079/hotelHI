@@ -7,6 +7,7 @@ import { ReservaDetallePage } from "./ReservaDetallePage";
 import { useSesion } from "../../../lib/sesion";
 import { api } from "../../../lib/api";
 import { cancelarReserva, obtenerHistorialReserva, obtenerPenalidadReserva, obtenerReserva } from "../reservas.api";
+import { obtenerCierrePrevio } from "../../garantias/garantias.api";
 import { buscarReservaParaCheckIn } from "../../check-in/checkIn.api";
 import { obtenerCuenta } from "../../check-out/checkOut.api";
 import { listarPagosEstadia } from "../../pagos-estadia/pagoEstadia.api";
@@ -22,6 +23,7 @@ vi.mock("../reservas.api", () => ({
   obtenerHistorialReserva: vi.fn(),
   obtenerPenalidadReserva: vi.fn(),
 }));
+vi.mock("../../garantias/garantias.api", () => ({ obtenerCierrePrevio: vi.fn() }));
 vi.mock("../../check-in/checkIn.api", () => ({ buscarReservaParaCheckIn: vi.fn() }));
 vi.mock("../../check-out/checkOut.api", () => ({ obtenerCuenta: vi.fn() }));
 vi.mock("../../pagos-estadia/pagoEstadia.api", () => ({ listarPagosEstadia: vi.fn() }));
@@ -241,51 +243,101 @@ describe("ReservaDetallePage — acciones del encabezado según estado y rol", (
   });
 });
 
-// HU-37 — antes de confirmar la cancelación, el diálogo tiene que avisar qué pasa con la seña según la
-// política de 24hs (mismo umbral que cancelarReserva en el backend).
-describe("ReservaDetallePage — aviso de la seña al cancelar", () => {
-  const reservaConFechaDesde = (horas) => ({ ...RESERVA_BASE, fechaDesde: new Date(Date.now() + horas * 3600 * 1000).toISOString() });
+// HU-37 + garantía con tarjeta — antes de confirmar la cancelación, el diálogo avisa qué va a pasar con el
+// dinero. Ya NO sale de la regla fija de 24 hs: lo calcula el backend (cierre-previo, la misma liquidación
+// que hace al confirmar) y acá solo se muestra.
+describe("ReservaDetallePage — aviso de la penalidad al cancelar", () => {
+  const CIERRE = {
+    tipo: "CANCELACION",
+    regla: "SIN_CARGO",
+    monto: 0,
+    retenido: 0,
+    devuelto: 0,
+    aCobrarATarjeta: 0,
+    sinCobrar: 0,
+    tarjeta: { marca: "Visa", ultimos4: "4242" },
+    estadoCobro: "SIN_CARGO",
+  };
   async function abrirDialogoCancelar() {
     await userEvent.click(await screen.findByRole("button", { name: "Más acciones de la reserva" }));
     await userEvent.click(await screen.findByRole("button", { name: "Cancelar reserva" }));
   }
+  beforeEach(() => obtenerReserva.mockResolvedValue(RESERVA_BASE));
 
-  it("24hs o más de anticipación: avisa que la seña se devuelve", async () => {
-    obtenerReserva.mockResolvedValue(reservaConFechaDesde(48));
-    listarPagosEstadia.mockResolvedValue({ pagos: [{ ...SENIA }], saldo: 72000 });
+  it("dentro del plazo: avisa que es sin cargo (la vista previa la pide el backend)", async () => {
+    obtenerCierrePrevio.mockResolvedValue(CIERRE);
     renderDetalle();
     await abrirDialogoCancelar();
-    expect(await screen.findByText(/Se cancela con más de 24hs de anticipación — la seña de \$ ?18\.000 va a devolverse\./)).toBeInTheDocument();
+    expect(await screen.findByText("Sin cargo: no se cobra ni se devuelve nada.")).toBeInTheDocument();
+    expect(obtenerCierrePrevio).toHaveBeenCalledWith(5, "CANCELACION");
   });
 
-  it("menos de 24hs de anticipación: avisa que la seña NO se devuelve", async () => {
-    obtenerReserva.mockResolvedValue(reservaConFechaDesde(5));
-    listarPagosEstadia.mockResolvedValue({ pagos: [{ ...SENIA }], saldo: 72000 });
+  it("fuera de plazo: avisa cuánto se cobra y a qué tarjeta", async () => {
+    obtenerCierrePrevio.mockResolvedValue({ ...CIERRE, regla: "PRIMERA_NOCHE", monto: 30000, aCobrarATarjeta: 30000, estadoCobro: "COBRADO" });
     renderDetalle();
     await abrirDialogoCancelar();
-    expect(await screen.findByText(/Se cancela con menos de 24hs de anticipación — la seña de \$ ?18\.000 no se devuelve\./)).toBeInTheDocument();
+    expect(await screen.findByText(/Penalidad: \$\s?30\.000 — se cobra la primera noche\./)).toBeInTheDocument();
+    expect(screen.getByText(/Se cobran \$\s?30\.000 a Visa \*\*\*\*4242\./)).toBeInTheDocument();
   });
 
-  it("sin ninguna seña vigente, o con la seña ya anulada, no muestra ningún aviso de seña", async () => {
-    obtenerReserva.mockResolvedValue(reservaConFechaDesde(48));
-    listarPagosEstadia.mockResolvedValue({ pagos: [{ ...SENIA, anulado: true }], saldo: 90000 });
+  it("con prepago: avisa lo que se retiene y lo que se devuelve", async () => {
+    obtenerCierrePrevio.mockResolvedValue({ ...CIERRE, regla: "PRIMERA_NOCHE", monto: 30000, retenido: 30000, devuelto: 20000, estadoCobro: "RETENIDO", tarjeta: null });
     renderDetalle();
     await abrirDialogoCancelar();
-    expect(await screen.findByText("Motivo de la cancelación *")).toBeInTheDocument();
-    expect(screen.queryByText(/la seña de/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/Se retienen \$\s?30\.000 de lo ya pagado\./)).toBeInTheDocument();
+    expect(screen.getByText(/Se devuelven \$\s?20\.000 al huésped\./)).toBeInTheDocument();
   });
 
-  it("muestra la penalidad del plan (solo informativa) y cancela con el motivo", async () => {
-    obtenerReserva.mockResolvedValue(reservaConFechaDesde(5));
-    obtenerPenalidadReserva.mockResolvedValue({ aplica: true, monto: 30000, mensaje: "Cancelación fuera de plazo: se cobra la primera noche.", limiteSinCargo: "2026-09-18T17:00:00.000Z" });
-    cancelarReserva.mockResolvedValue({});
+  it("sin tarjeta en garantía: avisa que la penalidad quedaría pendiente de cobro", async () => {
+    obtenerCierrePrevio.mockResolvedValue({ ...CIERRE, regla: "PRIMERA_NOCHE", monto: 30000, sinCobrar: 30000, tarjeta: null, estadoCobro: "PENDIENTE" });
     renderDetalle();
     await abrirDialogoCancelar();
-    expect(await screen.findByText(/Según el plan tarifario: Cancelación fuera de plazo: se cobra la primera noche\. \(\$ 30\.000\)/)).toBeInTheDocument();
-    const confirmar = screen.getByRole("button", { name: "Sí, cancelar" });
+    expect(await screen.findByText(/Quedan \$\s?30\.000 pendientes de cobro/)).toBeInTheDocument();
+  });
+
+  it("cancela con el motivo y muestra el resultado del cobro que devuelve el backend", async () => {
+    obtenerCierrePrevio.mockResolvedValue({ ...CIERRE, regla: "PRIMERA_NOCHE", monto: 30000, aCobrarATarjeta: 30000, estadoCobro: "COBRADO" });
+    cancelarReserva.mockResolvedValue({ penalidad: { mensaje: "Se cobraron $ 30.000 a Visa ****4242." } });
+    renderDetalle();
+    await abrirDialogoCancelar();
+    await screen.findByText(/Penalidad:/);
     await userEvent.type(await screen.findByLabelText(/Motivo de la cancelación/), "Cambio de planes");
-    await userEvent.click(confirmar);
+    await userEvent.click(screen.getByRole("button", { name: "Sí, cancelar" }));
     await waitFor(() => expect(cancelarReserva).toHaveBeenCalledWith("5", "Cambio de planes"));
+    expect(await screen.findByText(/Reserva cancelada\. Se cobraron/)).toBeInTheDocument();
+  });
+
+  it("si no se puede calcular, muestra el motivo del backend y el motivo sigue siendo obligatorio", async () => {
+    obtenerCierrePrevio.mockRejectedValue({ response: { data: { error: "La reserva no está Confirmada." } } });
+    renderDetalle();
+    await abrirDialogoCancelar();
+    expect(await screen.findByText("La reserva no está Confirmada.")).toBeInTheDocument();
+    expect(screen.getByText("Sin motivo no se puede confirmar.")).toBeInTheDocument();
+  });
+});
+
+describe("ReservaDetallePage — reserva cancelada o no-show: qué pasó con el dinero", () => {
+  const PENALIDAD = { id: 40, concepto: "Penalidad no-show", anulado: false, medios: [{ medioPago: "Tarjeta crédito", importe: "30000.00" }] };
+  const DEVOLUCION = { id: 41, concepto: "Devolución", anulado: false, medios: [{ medioPago: "Transferencia", importe: "-20000.00" }] };
+
+  it("No-show: muestra el motivo, la penalidad cobrada y lo devuelto (el importe negativo se muestra en positivo)", async () => {
+    obtenerReserva.mockResolvedValue({ ...RESERVA_BASE, estado: "No-show", motivoCancelacion: "No-show: el huésped no se presentó." });
+    listarPagosEstadia.mockResolvedValue({ pagos: [PENALIDAD, DEVOLUCION], saldo: 0 });
+    renderDetalle();
+    expect(await screen.findByText("Motivo del no-show")).toBeInTheDocument();
+    expect(screen.getByText("No-show: el huésped no se presentó.")).toBeInTheDocument();
+    expect(await screen.findByText(/Se cobró una penalidad de \$\s?30\.000\./)).toBeInTheDocument();
+    expect(screen.getByText(/Se devolvieron \$\s?20\.000 al huésped\./)).toBeInTheDocument();
+    // Una reserva no-show no ofrece cancelar ni hacer check-in.
+    expect(screen.queryByRole("button", { name: /Iniciar check-in/ })).not.toBeInTheDocument();
+  });
+
+  it("Cancelada con una seña anterior a la garantía: sigue mostrando si se conservó", async () => {
+    obtenerReserva.mockResolvedValue({ ...RESERVA_BASE, estado: "Cancelada", motivoCancelacion: "Cambio de planes" });
+    listarPagosEstadia.mockResolvedValue({ pagos: [{ ...SENIA }], saldo: 0 });
+    renderDetalle();
+    expect(await screen.findByText("Motivo de la cancelación")).toBeInTheDocument();
+    expect(await screen.findByText(/La seña de \$\s?18\.000 se conserva: no se devolvió\./)).toBeInTheDocument();
   });
 });
 

@@ -3,7 +3,24 @@
 // del encabezado (línea de tiempo y seis datos clave).
 import { formatearDiaLargo, formatearFechaHora, hoyEnHoraLocal, nochesEntre } from "../../../lib/fechas";
 import { HORA_CHECKIN, HORA_CHECKOUT } from "../../check-in/checkInPantalla.constantes";
-import { CONCEPTO_GARANTIA, CONCEPTO_SENIA } from "../../pagos-estadia/pagoEstadia.constantes";
+import {
+  CONCEPTO_DEVOLUCION,
+  CONCEPTO_GARANTIA,
+  CONCEPTO_PAGO_ANTICIPADO,
+  CONCEPTO_PENALIDAD_CANCELACION,
+  CONCEPTO_PENALIDAD_NO_SHOW,
+  CONCEPTO_SENIA,
+} from "../../pagos-estadia/pagoEstadia.constantes";
+
+// Cómo se rotula cada concepto en la línea de tiempo de la cuenta. "Seña" es histórico (reservas
+// anteriores a la garantía con tarjeta); el resto de los conceptos se muestran con su nombre.
+const CONCEPTO_DE_PAGO = {
+  [CONCEPTO_SENIA]: "Seña",
+  [CONCEPTO_PAGO_ANTICIPADO]: "Pago anticipado",
+  [CONCEPTO_PENALIDAD_CANCELACION]: "Penalidad",
+  [CONCEPTO_PENALIDAD_NO_SHOW]: "Penalidad",
+  [CONCEPTO_DEVOLUCION]: "Devolución",
+};
 import { ESTADO_RESERVA } from "../reservas.constantes";
 
 const ZONA_ARGENTINA = "America/Argentina/Buenos_Aires";
@@ -42,7 +59,8 @@ const ORDEN_TIPO = { aloj: 1, consumo: 2, pago: 3 };
  * - Los consumos y pagos anulados se ven (tachados, con su motivo) pero no suman.
  */
 export function armarMovimientos({ reserva, consumos = [], pagos = [], verificaciones = [], hoy = hoyEnHoraLocal() }) {
-  const cancelada = reserva.estado === ESTADO_RESERVA.CANCELADA;
+  // Cancelada y No-show: la estadía no ocurrió, los cargos de alojamiento no cuentan.
+  const cancelada = reserva.estado === ESTADO_RESERVA.CANCELADA || reserva.estado === ESTADO_RESERVA.NO_SHOW;
   const variasHabitaciones = reserva.habitaciones.length > 1;
   const filas = [];
 
@@ -68,7 +86,11 @@ export function armarMovimientos({ reserva, consumos = [], pagos = [], verificac
         cargo: Number(n.precioNoche),
         previsto: previsto && !cancelada,
         anulado: cancelada,
-        motivoAnulacion: cancelada ? "Reserva cancelada" : null,
+        motivoAnulacion: cancelada
+          ? reserva.estado === ESTADO_RESERVA.NO_SHOW
+            ? "Reserva marcada como no-show"
+            : "Reserva cancelada"
+          : null,
         nocheId: n.id,
         ajustada: Boolean(n.ajustada),
         precioOriginal: n.ajustada ? Number(n.precioOriginal) : null,
@@ -121,7 +143,7 @@ export function armarMovimientos({ reserva, consumos = [], pagos = [], verificac
       tipo: "pago",
       fecha: fechaArgentina(p.fecha),
       hora: String(p.fecha ?? ""),
-      concepto: p.concepto === CONCEPTO_SENIA ? "Seña" : "Pago",
+      concepto: CONCEPTO_DE_PAGO[p.concepto] ?? "Pago",
       detalle: p.medios.map((m) => [m.medioPago, m.referencia].filter(Boolean).join(" · ")).join(" + "),
       pago: importeDe(p),
       anulado: Boolean(p.anulado),
@@ -193,6 +215,11 @@ const diaCorto = (valor) => formatearDiaLargo(valor).slice(0, 9); // "vie 02/10"
  */
 export function lineaDeTiempo(reserva, personas = []) {
   const e = reserva.estado;
+  if (e === ESTADO_RESERVA.NO_SHOW)
+    return [
+      { texto: "Confirmada", estado: "hecho", sub: "" },
+      { texto: "No-show", estado: "actual", sub: "" },
+    ];
   if (e === ESTADO_RESERVA.CANCELADA)
     return [
       { texto: "Confirmada", estado: "hecho", sub: "" },
@@ -252,7 +279,9 @@ export function datosClave(reserva, personas = [], hoy = hoyEnHoraLocal()) {
             ? "completada"
             : e === ESTADO_RESERVA.CANCELADA
               ? "cancelada"
-              : "sin iniciar",
+              : e === ESTADO_RESERVA.NO_SHOW
+                ? "no-show"
+                : "sin iniciar",
     },
     habitacion: {
       principal: h.length === 1 ? `${h[0].numero}${h[0].tipo ? ` · ${h[0].tipo}` : ""}` : `${h.length} habitaciones`,

@@ -366,9 +366,12 @@ async function main() {
     assert.equal(base._datos.habitacion.find((h) => h.id === 2).estado, "ocupada");
   });
 
-  seccion("HU-46 (corrección 2026-09-25) — la garantía es un monto FIJO (MONTO_GARANTIA), no el total de la habitación");
+  seccion("HU-46 + garantía con tarjeta — la garantía del check-in es un monto FIJO y NO es un pago");
 
-  await prueba("Efectivo registra un PagoEstadia real por el monto fijo, que se descuenta en el check-out", async () => {
+  const garantiaDe = (reservaId) => base._datos.garantiaEstadia.find((g) => g.reservaId === reservaId);
+  const TARJETA = { titular: "ANA PEREZ", numero: "4242424242424242", vencimientoMes: 12, vencimientoAnio: 2099, cvv: "123" };
+
+  await prueba("Efectivo registra un DEPÓSITO por el monto fijo, NO un pago: no resta del saldo", async () => {
     limpiar();
     await sembrarHabitacion({ numero: "101" }, 50000); // 3 noches = 150000
     const reserva = await crearReservaFixture();
@@ -380,43 +383,63 @@ async function main() {
     });
 
     const { pagos, totalPagado, saldo } = await pagoEstadiaServicio.listarPorReserva(reserva.id);
-    assert.equal(pagos.length, 1, "el depósito quedó como un PagoEstadia real, no solo una casilla tildada");
-    assert.equal(pagos[0].medios[0].medioPago, "Efectivo");
-    assert.equal(Number(pagos[0].medios[0].importe), 30000, "el monto es el fijo del hotel (MONTO_GARANTIA), no algo que mande el cliente");
-    assert.equal(pagos[0].concepto, "Garantía", "para distinguirlo de una seña o un pago final en Movimientos de Pago");
-    assert.equal(totalPagado, 30000);
-    assert.equal(saldo, 120000, "el check-out ya lo tiene que ver descontado del saldo (150000 - 30000)");
+    assert.equal(pagos.length, 0, "el depósito NO es un PagoEstadia: antes se registraba como pago y restaba del saldo");
+    assert.equal(totalPagado, 0);
+    assert.equal(saldo, 150000, "el saldo sigue completo: la garantía respalda, no se cobra");
 
-    // Y lo mismo mirado desde consolidarCargos (HU-48), que es lo que el
-    // check-out real consulta.
+    const g = garantiaDe(reserva.id);
+    assert.equal(g.tipo, "DEPOSITO_EFECTIVO");
+    assert.equal(Number(g.monto), 30000, "el monto es el fijo del hotel (MONTO_GARANTIA), no algo que mande el cliente");
+    assert.equal(g.estado, "Pendiente");
+
+    // Lo mismo mirado desde consolidarCargos (HU-48), que es lo que el check-out real consulta.
     const cuenta = await checkOutServicio.consolidarCargos(reserva.id);
-    assert.equal(cuenta.totalPagado, 30000);
-    assert.equal(cuenta.saldo, 120000);
+    assert.equal(cuenta.totalPagado, 0);
+    assert.equal(cuenta.saldo, 150000);
   });
 
-  await prueba("Tarjeta crédito/débito también registra el monto fijo como PagoEstadia real, con su referencia", async () => {
+  await prueba("Tarjeta de crédito nueva: PREAUTORIZA el monto fijo (no cobra) y nunca guarda el número ni el CVV", async () => {
     limpiar();
-    await sembrarHabitacion({ numero: "101" }, 50000); // 3 noches = 150000
+    await sembrarHabitacion({ numero: "101" }, 50000);
     const reserva = await crearReservaFixture();
     await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
       numeroDocumentoIngresado: "30111222",
       garantiaConfirmada: true,
       medioGarantia: "Tarjeta crédito",
-      referenciaGarantia: "VISA •••• 4242 - AUT123456",
+      garantiaTarjeta: TARJETA,
     });
 
-    const { pagos, totalPagado, saldo } = await pagoEstadiaServicio.listarPorReserva(reserva.id);
-    assert.equal(pagos.length, 1, "antes la tarjeta no generaba ningún PagoEstadia — ahora sí, igual que la seña");
-    assert.equal(pagos[0].medios[0].medioPago, "Tarjeta crédito");
-    assert.equal(pagos[0].medios[0].referencia, "VISA •••• 4242 - AUT123456");
-    assert.equal(Number(pagos[0].medios[0].importe), 30000);
-    assert.equal(pagos[0].concepto, "Garantía");
-    assert.equal(totalPagado, 30000);
-    assert.equal(saldo, 120000);
+    const { pagos, saldo } = await pagoEstadiaServicio.listarPorReserva(reserva.id);
+    assert.equal(pagos.length, 0, "una preautorización retiene, no cobra: no es un pago");
+    assert.equal(saldo, 150000);
+    const g = garantiaDe(reserva.id);
+    assert.equal(g.tipo, "PREAUTORIZACION");
+    assert.equal(Number(g.monto), 30000);
+    assert.equal(g.ultimos4, "4242");
+    assert.match(g.referencia, /^PRE-\d{6}$/);
+    const guardado = JSON.stringify(base._datos.garantiaEstadia);
+    assert.ok(!guardado.includes("4242424242424242") && !guardado.includes("cvv"), "ni el número completo ni el CVV se guardan");
   });
 
-  await prueba("tarjeta (crédito o débito) sin la referencia de autorización no se puede confirmar", async () => {
+  await prueba("Tarjeta de crédito sin tarjeta guardada en la reserva ni tarjeta nueva: se rechaza", async () => {
+    limpiar();
+    await sembrarHabitacion({ numero: "101" });
+    const reserva = await crearReservaFixture();
+    await esperaError(
+      () =>
+        checkInServicio.confirmarCheckInConReserva({
+          reservaId: reserva.id,
+          numeroDocumentoIngresado: "30111222",
+          garantiaConfirmada: true,
+          medioGarantia: "Tarjeta crédito",
+        }),
+      "no dejó una tarjeta en garantía"
+    );
+    assert.equal(base._datos.garantiaEstadia.length, 0, "no queda ninguna garantía a medio hacer");
+  });
+
+  await prueba("Tarjeta de débito no se preautoriza (el dinero sale de la cuenta del huésped)", async () => {
     limpiar();
     await sembrarHabitacion({ numero: "101" });
     const reserva = await crearReservaFixture();
@@ -428,18 +451,13 @@ async function main() {
           garantiaConfirmada: true,
           medioGarantia: "Tarjeta débito",
         }),
-      "autorización de la tarjeta"
+      "no se preautoriza"
     );
   });
 
-  // Este es el bug real reportado (2026-09-25): antes se autorizaba/cobraba
-  // el TOTAL de la habitación como garantía — apenas la reserva ya tenía
-  // una seña paga (HU-88), o la estadía costaba menos que ese total, crearPago
-  // rechazaba el cobro porque "superaba el saldo pendiente". La garantía es
-  // plata aparte del alojamiento, así que no tiene que competir por saldo
-  // con nada — tiene que poder cobrarse SIEMPRE, exceda o no lo que queda
-  // pendiente de la estadía.
-  await prueba("la garantía se cobra igual aunque supere el saldo pendiente (estadía más barata que el monto fijo)", async () => {
+  // Bug histórico (2026-09-25): al registrarse como pago, la garantía competía por saldo con la estadía y
+  // el cobro fallaba si la estadía costaba menos que el monto fijo. Ahora no es un pago: no compite por nada.
+  await prueba("la garantía se registra igual aunque la estadía cueste menos que el monto fijo (no compite con el saldo)", async () => {
     limpiar();
     await sembrarHabitacion({ numero: "101" }, 20000); // 1 noche = 20000 < 30000 de garantía
     const reserva = await crearReservaFixture({ fechaHasta: enDias(1) });
@@ -450,19 +468,17 @@ async function main() {
       medioGarantia: "Efectivo",
     });
 
-    const { pagos, totalPagado, saldo } = await pagoEstadiaServicio.listarPorReserva(reserva.id);
-    assert.equal(pagos.length, 1, "antes esto tiraba \"el total a pagar supera el saldo pendiente\"");
-    assert.equal(Number(pagos[0].medios[0].importe), 30000);
-    assert.equal(totalPagado, 30000);
-    assert.equal(saldo, 0, "el saldo nunca es negativo (Math.max(0, ...) en consolidarCargos)");
+    const { pagos, saldo } = await pagoEstadiaServicio.listarPorReserva(reserva.id);
+    assert.equal(pagos.length, 0);
+    assert.equal(saldo, 20000, "el saldo es la estadía completa: la garantía no lo toca");
+    assert.equal(Number(garantiaDe(reserva.id).monto), 30000);
   });
 
-  await prueba("la garantía se cobra igual con una seña ya pagada de antes (mismo bug, otro camino)", async () => {
+  await prueba("con un pago anticipado ya hecho, la garantía es independiente (un pago + una garantía)", async () => {
     limpiar();
     await sembrarHabitacion({ numero: "101" }, 20000); // 1 noche = 20000
     const reserva = await crearReservaFixture({ fechaHasta: enDias(1) });
-    // Simula la seña (HU-88) que ya se cobró al reservar: 20% de 20000 = 4000.
-    await pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo: "Efectivo", importe: 4000 }], concepto: "Seña" });
+    await pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo: "Efectivo", importe: 4000 }], concepto: "Pago anticipado" });
 
     await checkInServicio.confirmarCheckInConReserva({
       reservaId: reserva.id,
@@ -471,12 +487,14 @@ async function main() {
       medioGarantia: "Efectivo",
     });
 
-    const { pagos, totalPagado } = await pagoEstadiaServicio.listarPorReserva(reserva.id);
-    assert.equal(pagos.length, 2, "seña + garantía, dos PagoEstadia distintos");
-    assert.equal(totalPagado, 34000, "4000 de seña + 30000 de garantía");
+    const { pagos, totalPagado, saldo } = await pagoEstadiaServicio.listarPorReserva(reserva.id);
+    assert.equal(pagos.length, 1, "solo el pago anticipado: la garantía vive en su propia tabla");
+    assert.equal(totalPagado, 4000);
+    assert.equal(saldo, 16000);
+    assert.ok(garantiaDe(reserva.id));
   });
 
-  await prueba("walk-in con garantía en efectivo también registra el monto fijo como PagoEstadia real", async () => {
+  await prueba("walk-in con depósito en efectivo registra la garantía (no un pago)", async () => {
     limpiar();
     await sembrarHabitacion({ numero: "101" }, 20000);
     const walkIn = await walkInFixture({
@@ -486,8 +504,11 @@ async function main() {
     });
 
     const { pagos, totalPagado } = await pagoEstadiaServicio.listarPorReserva(walkIn.id);
-    assert.equal(pagos.length, 1);
-    assert.equal(totalPagado, 30000);
+    assert.equal(pagos.length, 0);
+    assert.equal(totalPagado, 0);
+    const g = garantiaDe(walkIn.id);
+    assert.equal(g.tipo, "DEPOSITO_EFECTIVO");
+    assert.equal(Number(g.monto), 30000);
   });
 
   await prueba("rechaza confirmar si la habitación ya no está libre (mantenimiento) y no deja nada a medio hacer", async () => {

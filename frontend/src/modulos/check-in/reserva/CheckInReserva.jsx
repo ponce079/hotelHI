@@ -39,7 +39,7 @@ function FormularioReserva({ reserva, ocupantes, senia, onExito }) {
     <div className="flex flex-col gap-4">
       <ResumenReserva estado={estado} reserva={reserva} dispatch={dispatch} />
       <SeccionHuespedes estado={estado} contexto={contexto} dispatch={dispatch} />
-      <SeccionGarantia garantia={estado.garantia} dispatch={dispatch} senia={senia} />
+      <SeccionGarantia garantia={estado.garantia} dispatch={dispatch} senia={senia} reservaId={reserva.id} fechaHasta={reserva.fechaHasta} />
       <BarraCheckIn
         resumen={resumen}
         faltantes={faltantes}

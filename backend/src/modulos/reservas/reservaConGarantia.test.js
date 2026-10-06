@@ -218,6 +218,20 @@ function crearCliente(obtenerTablas) {
         return fila;
       },
     },
+    garantiaReserva: {
+      create: async ({ data }) => {
+        const t = obtenerTablas();
+        const fila = { id: t.secuencias.garantiaReserva++, ...data };
+        t.garantiaReserva.push(fila);
+        return fila;
+      },
+      update: async ({ where, data }) => {
+        const t = obtenerTablas();
+        const fila = t.garantiaReserva.find((g) => g.reservaId === where.reservaId);
+        Object.assign(fila, data);
+        return fila;
+      },
+    },
     pagoEstadia: {
       create: async ({ data }) => {
         const t = obtenerTablas();
@@ -281,6 +295,19 @@ function crearDoblePrisma() {
         visibleWeb: true,
         activo: true,
       },
+      {
+        id: 2,
+        codigo: "NRF",
+        nombre: "No reembolsable",
+        tipo: "DERIVADO",
+        planBaseId: 1,
+        descuentoPorcentaje: 10,
+        reembolsable: false,
+        horasCancelacionSinCargo: null,
+        penalidadNoShow: "TOTAL_ESTADIA",
+        visibleWeb: true,
+        activo: true,
+      },
     ],
     tarifa: [
       {
@@ -300,6 +327,7 @@ function crearDoblePrisma() {
     notificacion: [],
     pagoEstadia: [],
     pagoEstadiaMedio: [],
+    garantiaReserva: [],
     secuencias: {
       reserva: 1,
       reservaHabitacion: 1,
@@ -308,6 +336,7 @@ function crearDoblePrisma() {
       pagoEstadia: 1,
       pagoEstadiaMedio: 1,
       reservaNoche: 1,
+      garantiaReserva: 1,
     },
   };
 
@@ -326,6 +355,7 @@ function crearDoblePrisma() {
       notificacion: t.notificacion.map((r) => ({ ...r })),
       pagoEstadia: t.pagoEstadia.map((r) => ({ ...r })),
       pagoEstadiaMedio: t.pagoEstadiaMedio.map((r) => ({ ...r })),
+      garantiaReserva: t.garantiaReserva.map((r) => ({ ...r })),
       ocupanteReserva: t.ocupanteReserva.map((r) => ({ ...r })),
       asignacionOcupanteHabitacion: t.asignacionOcupanteHabitacion.map((r) => ({ ...r })),
       eventoEstadia: t.eventoEstadia.map((r) => ({ ...r })),
@@ -418,76 +448,195 @@ function altaBase(sufijo, overrides = {}) {
   };
 }
 
-describe("crearReservaConSena (HU-88, alta + seña atómica)", () => {
+const TARJETA_OK = { titular: "Ana Pérez", numero: "4242 4242 4242 4242", vencimientoMes: 12, vencimientoAnio: 2099, cvv: "123" };
+const conTarjeta = (extra) => ({ tipo: "TARJETA", tarjeta: { ...TARJETA_OK, ...extra } });
+
+function altaConGarantia(sufijo, garantia, overrides = {}) {
+  const { medios, ...base } = altaBase(sufijo);
+  return { ...base, garantia, ...overrides };
+}
+
+describe("crearReservaConGarantia (garantía con tarjeta, alta atómica)", () => {
   let doble;
   let reservasServicio;
+  let pasarela;
+  let correo;
+
+  // Espía la pasarela real: sigue calculando de verdad, pero queda registro
+  // de cada operación (y se puede forzar un fallo puntual).
+  function instalarPasarela(forzar = () => null) {
+    jest.doMock("../garantias/pasarela.servicio", () => {
+      const real = jest.requireActual("../garantias/pasarela.servicio");
+      return { ...real, procesarTarjeta: jest.fn(async (p) => forzar(p) ?? real.procesarTarjeta(p)) };
+    });
+  }
+  function cargar() {
+    reservasServicio = require("./reservas.servicio");
+    pasarela = require("../garantias/pasarela.servicio");
+  }
+  const operaciones = () => pasarela.procesarTarjeta.mock.calls.map(([p]) => p.operacion);
 
   beforeEach(() => {
     jest.resetModules();
     doble = crearDoblePrisma();
     jest.doMock("../../lib/prisma", () => doble.prismaFalso);
     jest.doMock("../check-out/checkOut.servicio", () => checkOutFalsoFactory());
-    jest.doMock("../../lib/correo", () => ({ enviarCorreo: jest.fn().mockResolvedValue({ enviado: true, messageId: "fake-id" }) }));
-    reservasServicio = require("./reservas.servicio");
+    correo = { enviarCorreo: jest.fn().mockResolvedValue({ enviado: true, messageId: "fake-id" }) };
+    jest.doMock("../../lib/correo", () => correo);
+    instalarPasarela();
+    cargar();
   });
 
-  test("si el cobro de la seña falla, no queda ninguna Reserva creada (rollback completo)", async () => {
+  test("BAR con tarjeta: reserva y garantía Vigente, sin cobro, sin guardar número ni CVV", async () => {
+    const r = await reservasServicio.crearReservaConGarantia(altaConGarantia("1", conTarjeta()));
+
+    expect(r.garantia).toMatchObject({ tipo: "TARJETA", estado: "Vigente", marca: "Visa", ultimos4: "4242", monto: 0 });
+    const t = doble.obtenerTablas();
+    expect(t.reserva).toHaveLength(1);
+    expect(t.garantiaReserva).toHaveLength(1);
+    expect(t.garantiaReserva[0]).toMatchObject({ reservaId: t.reserva[0].id, ultimos4: "4242", vencimiento: "12/99", estado: "Vigente" });
+    expect(t.pagoEstadia).toHaveLength(0); // BAR: no se cobra nada al reservar
+    expect(operaciones()).toEqual(["GARANTIA"]);
+    // Ni el número completo ni el CVV existen en NINGUNA tabla ni en la respuesta.
+    const todo = JSON.stringify([t, r]);
+    expect(todo).not.toContain("4242424242424242");
+    expect(todo).not.toContain("4242 4242 4242 4242");
+    expect(todo).not.toContain('"cvv"');
+    expect(todo).not.toMatch(/"numero":"4242/); // (la habitación 101 también tiene un campo "numero")
+    expect(todo).not.toContain('"123"');
+    // El token es opaco y no se le devuelve al cliente.
+    expect(JSON.stringify(r)).not.toContain("tok_");
+  });
+
+  test("BAR con tarjeta rechazada (0002): 402 y no se crea nada", async () => {
     await expect(
-      reservasServicio.crearReservaConSena(altaBase("1", { medios: [{ tipo: "Efectivo", importe: -100 }] }))
-    ).rejects.toThrow(/importe mayor a cero/i);
-
+      reservasServicio.crearReservaConGarantia(altaConGarantia("2", conTarjeta({ numero: "4000000000000002" })))
+    ).rejects.toMatchObject({ statusCode: 402, message: expect.stringMatching(/Fondos insuficientes/) });
     const t = doble.obtenerTablas();
-    expect(t.reserva).toHaveLength(0);
-    expect(t.reservaHabitacion).toHaveLength(0);
-    expect(t.pagoEstadia).toHaveLength(0);
-    expect(t.huesped).toHaveLength(0);
-    expect(t.notificacion).toHaveLength(0);
-    expect(t.ocupanteReserva).toHaveLength(0);
-    expect(t.asignacionOcupanteHabitacion).toHaveLength(0);
-    expect(t.eventoEstadia).toHaveLength(0);
+    expect([t.reserva, t.garantiaReserva, t.pagoEstadia, t.huesped].map((x) => x.length)).toEqual([0, 0, 0, 0]);
   });
 
-  test("si todo sale bien, Reserva y PagoEstadia quedan creados juntos y consistentes", async () => {
-    const resultado = await reservasServicio.crearReservaConSena(altaBase("2"));
+  test("NRF con tarjeta: preautoriza → crea la reserva → captura y registra el pago por el total", async () => {
+    const r = await reservasServicio.crearReservaConGarantia(
+      altaConGarantia("3", conTarjeta(), { planTarifarioId: 2, totalEsperado: 90000 })
+    );
 
-    expect(resultado.codigoConfirmacion).toBeTruthy();
-    expect(resultado.pagoSenia).toMatchObject({ concepto: "Seña", estado: "Parcial" });
-
+    expect(operaciones()).toEqual(["PREAUTORIZACION", "CAPTURA"]);
+    expect(r.garantia).toMatchObject({ tipo: "TARJETA", estado: "Capturada", monto: 90000 });
     const t = doble.obtenerTablas();
-    expect(t.reserva).toHaveLength(1);
     expect(t.reserva[0].estado).toBe("Confirmada");
-    expect(t.ocupanteReserva).toHaveLength(1);
-    expect(t.asignacionOcupanteHabitacion).toHaveLength(1);
-    expect(t.ocupanteReserva[0].reservaId).toBe(t.reserva[0].id);
+    expect(t.garantiaReserva[0].estado).toBe("Capturada");
     expect(t.pagoEstadia).toHaveLength(1);
-    expect(t.pagoEstadia[0].reservaId).toBe(t.reserva[0].id);
-    expect(t.pagoEstadia[0].concepto).toBe("Seña");
-    expect(t.pagoEstadiaMedio).toHaveLength(1);
-    expect(Number(t.pagoEstadiaMedio[0].importe)).toBe(20000);
-    // Un huésped nuevo y una única fila de habitación asociada — nada
-    // duplicado ni huérfano.
-    expect(t.huesped).toHaveLength(1);
-    expect(t.reservaHabitacion).toHaveLength(1);
+    expect(t.pagoEstadia[0]).toMatchObject({ concepto: "Pago anticipado", estado: "Pagado" });
+    expect(Number(t.pagoEstadiaMedio[0].importe)).toBe(90000);
+    expect(t.pagoEstadiaMedio[0].medioPago).toBe("Tarjeta crédito");
+    expect(t.pagoEstadiaMedio[0].referencia).toMatch(/^Visa \*\*\*\*4242 · aut\. CAP-\d{6}$/);
   });
 
-  test("dos altas simultáneas para la misma habitación y fechas: una sola puede tener éxito", async () => {
+  test("NRF con pago rechazado: la reserva NO se crea", async () => {
+    await expect(
+      reservasServicio.crearReservaConGarantia(
+        altaConGarantia("4", conTarjeta({ numero: "4000000000000002" }), { planTarifarioId: 2, totalEsperado: 90000 })
+      )
+    ).rejects.toMatchObject({ statusCode: 402 });
+    expect(operaciones()).toEqual(["PREAUTORIZACION"]); // nunca llegó a capturar
+    const t = doble.obtenerTablas();
+    expect([t.reserva, t.garantiaReserva, t.pagoEstadia].map((x) => x.length)).toEqual([0, 0, 0]);
+  });
+
+  test("NRF: si la reserva falla después de preautorizar (precio cambió), se libera la retención", async () => {
+    await expect(
+      reservasServicio.crearReservaConGarantia(
+        altaConGarantia("5", conTarjeta(), { planTarifarioId: 2, totalEsperado: 12345 })
+      )
+    ).rejects.toMatchObject({ statusCode: 409 });
+
+    expect(operaciones()).toEqual(["PREAUTORIZACION", "LIBERACION"]);
+    const libre = pasarela.procesarTarjeta.mock.calls[1][0];
+    const pre = pasarela.procesarTarjeta.mock.results[0];
+    expect(libre.referenciaPrevia).toMatch(/^PRE-\d{6}$/);
+    expect((await pre.value).referencia).toBe(libre.referenciaPrevia);
+    const t = doble.obtenerTablas();
+    expect([t.reserva, t.garantiaReserva, t.pagoEstadia].map((x) => x.length)).toEqual([0, 0, 0]);
+  });
+
+  test("NRF: si la captura falla, la reserva queda Cancelada (nunca 'paga' sin cobro) y se libera", async () => {
+    jest.resetModules();
+    doble = crearDoblePrisma();
+    jest.doMock("../../lib/prisma", () => doble.prismaFalso);
+    jest.doMock("../check-out/checkOut.servicio", () => checkOutFalsoFactory());
+    jest.doMock("../../lib/correo", () => correo);
+    instalarPasarela((p) => (p.operacion === "CAPTURA" ? { aprobado: false, motivoRechazo: "Pasarela caída." } : null));
+    cargar();
+
+    await expect(
+      reservasServicio.crearReservaConGarantia(
+        altaConGarantia("6", conTarjeta(), { planTarifarioId: 2, totalEsperado: 90000 })
+      )
+    ).rejects.toMatchObject({ statusCode: 502 });
+
+    expect(operaciones()).toEqual(["PREAUTORIZACION", "CAPTURA", "LIBERACION"]);
+    const t = doble.obtenerTablas();
+    expect(t.reserva[0].estado).toBe("Cancelada");
+    expect(t.reserva[0].motivoCancelacion).toMatch(/no reembolsable/i);
+    expect(t.pagoEstadia).toHaveLength(0);
+  });
+
+  test("si la transacción vence (base lenta): 408 con el código que espera el wizard, nada queda creado y se libera la retención", async () => {
+    const original = doble.prismaFalso.$transaction;
+    doble.prismaFalso.$transaction = async () => {
+      const e = new Error("Transaction API error: expired transaction");
+      e.code = "P2028";
+      e.meta = { operation: "query" };
+      throw e;
+    };
+    await expect(
+      reservasServicio.crearReservaConGarantia(altaConGarantia("12", conTarjeta(), { planTarifarioId: 2, totalEsperado: 90000 }))
+    ).rejects.toMatchObject({ statusCode: 408, codigo: "RESERVA_TIEMPO_AGOTADO" });
+    doble.prismaFalso.$transaction = original;
+
+    expect(operaciones()).toEqual(["PREAUTORIZACION", "LIBERACION"]);
+    expect(doble.obtenerTablas().reserva).toHaveLength(0);
+  });
+
+  test("NRF sin tarjeta: prepago por el total (sin llamar a la pasarela)", async () => {
+    const r = await reservasServicio.crearReservaConGarantia(
+      altaConGarantia("7", { tipo: "PREPAGO", medios: [{ tipo: "Transferencia", importe: 90000 }] }, { planTarifarioId: 2, totalEsperado: 90000 })
+    );
+    expect(pasarela.procesarTarjeta).not.toHaveBeenCalled();
+    expect(r.garantia).toMatchObject({ tipo: "PREPAGO", estado: "Capturada", monto: 90000 });
+    const t = doble.obtenerTablas();
+    expect(t.pagoEstadia[0]).toMatchObject({ concepto: "Pago anticipado", estado: "Pagado" });
+  });
+
+  test("NRF con prepago parcial o sin garantía válida: se rechaza antes de tocar nada", async () => {
+    await expect(
+      reservasServicio.crearReservaConGarantia(
+        altaConGarantia("8", { tipo: "PREPAGO", medios: [{ tipo: "Transferencia", importe: 1000 }] }, { planTarifarioId: 2, totalEsperado: 90000 })
+      )
+    ).rejects.toThrow(/prepago por el total/i);
+    await expect(reservasServicio.crearReservaConGarantia(altaConGarantia("8", undefined))).rejects.toThrow(/garantia\.tipo/);
+    expect(pasarela.procesarTarjeta).not.toHaveBeenCalled();
+    expect(doble.obtenerTablas().reserva).toHaveLength(0);
+  });
+
+  test("tarjeta que vence antes de la salida: rechazada sin llamar a la pasarela", async () => {
+    await expect(
+      reservasServicio.crearReservaConGarantia(altaConGarantia("9", conTarjeta({ vencimientoMes: 1, vencimientoAnio: 2027 })))
+    ).rejects.toThrow(/vence antes de la fecha de salida/i);
+    expect(pasarela.procesarTarjeta).not.toHaveBeenCalled();
+  });
+
+  test("dos altas simultáneas para la misma habitación: una sola tiene éxito y la otra no deja garantía colgando", async () => {
     const [a, b] = await Promise.allSettled([
-      reservasServicio.crearReservaConSena(altaBase("3")),
-      reservasServicio.crearReservaConSena(altaBase("4")),
+      reservasServicio.crearReservaConGarantia(altaConGarantia("10", conTarjeta())),
+      reservasServicio.crearReservaConGarantia(altaConGarantia("11", conTarjeta())),
     ]);
-
-    const resultados = [a, b];
-    const exitosas = resultados.filter((r) => r.status === "fulfilled");
-    const fallidas = resultados.filter((r) => r.status === "rejected");
-    expect(exitosas).toHaveLength(1);
-    expect(fallidas).toHaveLength(1);
-    expect(String(fallidas[0].reason.message)).toMatch(/No hay disponibilidad/i);
-
-    // La perdedora no dejó ni reserva ni pago colgando — solo existe lo que
-    // creó la ganadora.
+    expect([a, b].filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const fallida = [a, b].find((r) => r.status === "rejected");
+    expect(String(fallida.reason.message)).toMatch(/No hay disponibilidad/i);
     const t = doble.obtenerTablas();
     expect(t.reserva).toHaveLength(1);
-    expect(t.pagoEstadia).toHaveLength(1);
-    expect(t.huesped).toHaveLength(1);
+    expect(t.garantiaReserva).toHaveLength(1);
   });
 });

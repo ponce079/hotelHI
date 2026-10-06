@@ -40,8 +40,13 @@ function Lista({ filas }) {
 // Resumen: sale del mismo cálculo del check-out (GET /check-out/:id/cuenta), así el saldo coincide con
 // el de esa pantalla. Sin permiso para verlo (gerente), solo se muestra el alojamiento reservado.
 function ResumenDeCuenta({ reserva, cuenta, garantiaVigente }) {
-  if (reserva.estado === ESTADO_RESERVA.CANCELADA)
-    return <p className="text-sm text-piedra">Reserva cancelada: no hay cargos de alojamiento.</p>;
+  if (reserva.estado === ESTADO_RESERVA.CANCELADA || reserva.estado === ESTADO_RESERVA.NO_SHOW)
+    return (
+      <p className="text-sm text-piedra">
+        {reserva.estado === ESTADO_RESERVA.NO_SHOW ? "Reserva no-show" : "Reserva cancelada"}: no hay cargos de
+        alojamiento.
+      </p>
+    );
   if (!cuenta)
     return (
       <>
@@ -148,7 +153,7 @@ export function ColumnaDerecha({ reserva, cuenta, pagos, penalidad }) {
       <Tarjeta titulo="Resumen de cuenta">
         <ResumenDeCuenta reserva={reserva} cuenta={cuenta} garantiaVigente={garantiaVigente} />
       </Tarjeta>
-      {reserva.estado !== ESTADO_RESERVA.CANCELADA && pagos && (
+      {reserva.estado !== ESTADO_RESERVA.CANCELADA && reserva.estado !== ESTADO_RESERVA.NO_SHOW && pagos && (
         <section className="rounded-lg border border-dashed border-neutro-300 bg-white/60 p-4">
           <h3 className="mb-2 font-heading text-[17px] font-semibold">Garantía para consumos</h3>
           <CajaGarantia reserva={reserva} garantias={garantias} />

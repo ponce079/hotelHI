@@ -33,6 +33,7 @@ import { listarComprobantesReserva } from "../comprobantes-estadia/comprobanteEs
 import { EmitirComprobanteModal } from "../comprobantes-estadia/EmitirComprobanteModal";
 import { anularPagoEstadia, listarPagosEstadia } from "../pagos-estadia/pagoEstadia.api";
 import { ESTADO_PAGO_BADGE } from "../pagos-estadia/pagoEstadia.constantes";
+import { GarantiaCheckOut } from "../garantias/GarantiaCheckOut";
 import { PagoEstadiaWizard } from "../pagos-estadia/PagoEstadiaWizard";
 import { CargoVerificacionCheckoutModal } from "./CargoVerificacionCheckoutModal";
 import { confirmarCheckOut, obtenerCuenta, registrarVerificacion } from "./checkOut.api";
@@ -254,6 +255,10 @@ export function CheckOutReservaPage() {
               </li>
             ))}
           </ul>
+          {resultado.garantia?.mensaje && <p className="text-[12.5px] text-pino-700">Garantía: {resultado.garantia.mensaje}</p>}
+          {resultado.devolucionSaldoAFavor > 0 && (
+            <p className="text-[12.5px] text-pino-700">Saldo a favor devuelto al huésped: {moneda(resultado.devolucionSaldoAFavor)}.</p>
+          )}
           <p className="flex items-center gap-2 text-[12.5px] text-pino-700">
             <Bell size={14} /> Housekeeping tiene {resultado.notificaciones.length} registro
             {resultado.notificaciones.length === 1 ? "" : "s"} pendiente{resultado.notificaciones.length === 1 ? "" : "s"} sobre
@@ -343,6 +348,15 @@ export function CheckOutReservaPage() {
                   {moneda(cuenta.saldo)}
                 </Cifra>
               </div>
+              {cuenta.saldoAFavor > 0 && (
+                <div>
+                  <p className="text-[11px] uppercase tracking-wide text-piedra">Saldo a favor del huésped</p>
+                  <Cifra tamano={28} className="text-pino">
+                    {moneda(cuenta.saldoAFavor)}
+                  </Cifra>
+                  <p className="mt-1 max-w-[220px] text-[11.5px] text-piedra">Se devuelve al confirmar el check-out.</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -417,6 +431,13 @@ export function CheckOutReservaPage() {
 
       <Tarjeta icono={Wallet} titulo="3. Pago" hu="HU 50 — se pueden combinar medios de pago">
         <div className="flex flex-col gap-4">
+          <GarantiaCheckOut
+            reservaId={reservaId}
+            saldo={cuenta.saldo}
+            enCurso={enCurso && cargosValidados}
+            puedeGestionar={puedeGestionar}
+            onMensaje={mostrarToast}
+          />
           <div className="flex flex-wrap items-center gap-3">
             {puedeGestionar && (
               <Button
