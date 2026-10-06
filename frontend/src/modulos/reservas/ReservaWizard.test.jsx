@@ -533,3 +533,84 @@ describe("ReservaWizard — HU-89: el filtro de tipo del paso 2 respeta el orige
     await waitFor(() => expect(listarTiposHabitacion).toHaveBeenCalledWith({ activo: "true" }));
   });
 });
+
+describe("ReservaWizard — ocupación limitada por la capacidad de la habitación", () => {
+  const SIMPLE_102 = { ...HABITACION_101, id: 2, numero: "102", tipo: "Simple", capacidad: 1 };
+  const TRIPLE_103 = { ...HABITACION_101, id: 3, numero: "103", tipo: "Triple", capacidad: 3 };
+
+  beforeEach(() => {
+    const habitaciones = [HABITACION_101, SIMPLE_102, TRIPLE_103];
+    consultarDisponibilidad.mockResolvedValue({
+      ...DISPONIBILIDAD,
+      habitaciones,
+      todas: habitaciones.map((h) => ({ ...h, disponible: true, motivo: null })),
+    });
+  });
+
+  async function elegir(numero) {
+    fireEvent.change(screen.getByLabelText("Entrada (check-in) *"), { target: { value: "2026-10-10" } });
+    fireEvent.change(screen.getByLabelText("Salida (check-out) *"), { target: { value: "2026-10-13" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: /Ver disponibilidad/ })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: /Ver disponibilidad/ }));
+    fireEvent.click(await screen.findByText(numero));
+  }
+
+  it("una Simple arranca con 1 adulto y 0 menores, muestra la capacidad y no el aviso de exceso", async () => {
+    renderWizard({ origen: "RECEPCION" });
+    await elegir("102");
+
+    const adultos = screen.getByLabelText("Adultos en habitación 102");
+    const menores = screen.getByLabelText("Menores en habitación 102");
+    expect(adultos).toHaveValue(1);
+    expect(adultos).toHaveAttribute("max", "1");
+    expect(menores).toHaveValue(0);
+    expect(menores).toHaveAttribute("max", "0");
+    expect(screen.getByText("Capacidad máx.: 1")).toBeInTheDocument();
+    expect(screen.queryByText(/Supera la capacidad/)).not.toBeInTheDocument();
+  });
+
+  it("con capacidad 1 y un adulto, los menores no se pueden subir ni los adultos pasar de 1", async () => {
+    renderWizard({ origen: "RECEPCION" });
+    await elegir("102");
+
+    fireEvent.change(screen.getByLabelText("Menores en habitación 102"), { target: { value: "1" } });
+    fireEvent.change(screen.getByLabelText("Adultos en habitación 102"), { target: { value: "3" } });
+
+    expect(screen.getByLabelText("Adultos en habitación 102")).toHaveValue(1);
+    expect(screen.getByLabelText("Menores en habitación 102")).toHaveValue(0);
+  });
+
+  it("una habitación más grande sigue arrancando en 2 adultos, y adultos + menores no supera la capacidad", async () => {
+    renderWizard({ origen: "RECEPCION" });
+    await elegir("103");
+
+    const adultos = () => screen.getByLabelText("Adultos en habitación 103");
+    const menores = () => screen.getByLabelText("Menores en habitación 103");
+    expect(adultos()).toHaveValue(2);
+    expect(screen.getByText("Capacidad máx.: 3")).toBeInTheDocument();
+
+    fireEvent.change(menores(), { target: { value: "5" } });
+    expect(menores()).toHaveValue(1);
+    expect(menores()).toHaveAttribute("max", "1");
+
+    // Subir los adultos baja los menores para no pasarse.
+    fireEvent.change(adultos(), { target: { value: "3" } });
+    expect(adultos()).toHaveValue(3);
+    expect(menores()).toHaveValue(0);
+  });
+
+  it("habitaciones que llegan ya elegidas se ajustan a su capacidad cuando se conoce", async () => {
+    renderWizard({
+      origen: "RECEPCION",
+      valoresIniciales: {
+        fechaDesde: "2026-10-10",
+        fechaHasta: "2026-10-13",
+        habitaciones: [{ habitacionId: 2, adultos: 2, menores: 1 }],
+      },
+    });
+
+    await waitFor(() => expect(screen.getByLabelText("Adultos en habitación 102")).toHaveValue(1));
+    expect(screen.getByLabelText("Menores en habitación 102")).toHaveValue(0);
+    expect(screen.queryByText(/Supera la capacidad/)).not.toBeInTheDocument();
+  });
+});

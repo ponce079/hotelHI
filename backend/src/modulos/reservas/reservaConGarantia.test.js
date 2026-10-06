@@ -639,4 +639,14 @@ describe("crearReservaConGarantia (garantía con tarjeta, alta atómica)", () =>
     expect(t.reserva).toHaveLength(1);
     expect(t.garantiaReserva).toHaveLength(1);
   });
+
+  // La capacidad la controla el motor (cotizarReserva) dentro de la misma
+  // transacción del alta: el wizard la limita, pero el backend no confía en eso.
+  test("crearReserva rechaza adultos + menores por encima de la capacidad de la habitación y no crea nada", async () => {
+    await expect(
+      reservasServicio.crearReserva(altaBase("12", { habitaciones: [{ habitacionId: 1, adultos: 2, menores: 1 }] }))
+    ).rejects.toMatchObject({ statusCode: 400, message: "La ocupación de la habitación 101 (3) supera su capacidad (2)." });
+    const t = doble.obtenerTablas();
+    expect([t.reserva, t.reservaHabitacion, t.huesped].map((x) => x.length)).toEqual([0, 0, 0]);
+  });
 });
