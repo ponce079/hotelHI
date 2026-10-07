@@ -942,7 +942,7 @@ model LoteActualizacionTarifaria {
 // simulado de "elegí una tarjeta de rol"). La tabla se crea con
 // prisma/crear-tabla-usuarios.sql, mismo criterio que los otros .sql de
 // esta carpeta — o directamente con `node scripts/crear-tabla-usuarios.js`,
-// que además crea el administrador inicial (admin / admin123).
+// que además crea el administrador inicial ("admin", con la contraseña de ADMIN_PASSWORD_INICIAL).
 // ────────────────────────────────────────────────────────────
 
 model Usuario {

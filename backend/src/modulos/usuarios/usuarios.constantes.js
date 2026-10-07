@@ -36,6 +36,10 @@ const LIMITES_USUARIO = {
   apellido: 60,
   email: 120,
   contrasenaMin: 6,
+  // La contraseña que el administrador escribe al DAR DE ALTA a un usuario o al RESTABLECERLE la suya: no hay
+  // contraseñas por defecto en ninguna parte, así que esa inicial tiene que ser más larga. (Cambiarla uno mismo
+  // desde Mi perfil y entrar con la de siempre siguen con su regla de antes.)
+  contrasenaInicialMin: 10,
   // scrypt no tiene tope real, pero una contraseña gigante solo sirve para
   // gastar CPU del servidor a propósito.
   contrasenaMax: 72,
@@ -54,10 +58,10 @@ const REGEX_FOTO = /^data:image\/(jpeg|png);base64,[A-Za-z0-9+/]+=*$/;
 
 // Usuario que se crea solo la primera vez (ver asegurarAdminInicial en
 // usuarios.servicio.js y scripts/crear-tabla-usuarios.js). Es el único que
-// existe "de fábrica": el resto lo da de alta este administrador.
+// existe "de fábrica": el resto lo da de alta este administrador. La contraseña NO está acá: quien corre
+// scripts/crear-tabla-usuarios.js la define en la variable de entorno ADMIN_PASSWORD_INICIAL (mínimo 10 caracteres).
 const ADMIN_INICIAL = {
   usuario: "admin",
-  contrasena: "admin123",
   nombre: "Administrador",
   apellido: "General",
   dni: "00000000",

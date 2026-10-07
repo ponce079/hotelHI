@@ -105,7 +105,7 @@ describe("LoginPage — mismo login de siempre, ahora validado de verdad", () =>
 
     await usuario.click(screen.getByRole("button", { name: /Administrador/ }));
     await usuario.type(campoUsuario(), "admin");
-    await usuario.type(campoContrasena(), "admin123");
+    await usuario.type(campoContrasena(), "clave-de-prueba-123");
     await usuario.click(screen.getByRole("button", { name: "Ingresar" }));
 
     expect(await screen.findByText(/No se pudo conectar con el servidor/)).toBeInTheDocument();
