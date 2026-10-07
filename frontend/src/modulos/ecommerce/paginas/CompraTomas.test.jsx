@@ -293,7 +293,9 @@ describe("/web/pago (HU-102)", () => {
     fireEvent.click(botonPrincipal(/confirmar reserva/i));
     await waitFor(() => expect(screen.getByTestId("ruta")).toHaveTextContent("/web/datos"));
     expect(screen.getByText("Ingresá un email válido.")).toBeInTheDocument();
-    expect(screen.getByLabelText(/^email/i)).toHaveFocus();
+    // El foco se pone en un efecto de la pantalla de datos, que React corre después de que la ruta ya cambió: se
+    // espera (antes se afirmaba en el acto y fallaba de vez en cuando bajo carga).
+    await waitFor(() => expect(screen.getByLabelText(/^email/i)).toHaveFocus());
   });
 });
 

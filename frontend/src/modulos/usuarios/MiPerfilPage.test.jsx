@@ -150,7 +150,7 @@ describe("MiPerfilPage — 'Mi perfil' como página (no modal)", () => {
       email: "",
       foto: null,
     });
-    expect(await screen.findByText("Foto eliminada")).toBeInTheDocument();
+    expect(await screen.findByRole("status")).toHaveTextContent("Foto eliminada");
   });
 
   it("los requisitos de la contraseña se marcan en vivo", async () => {

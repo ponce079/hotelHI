@@ -76,7 +76,7 @@ describe("desglose por noche en el resumen", () => {
       const { unmount } = renderRuta(ruta);
       const filas = within(lista()).getAllByRole("listitem");
       expect(filas.map((f) => f.textContent)).toEqual(desglose.map(filaNoche));
-      expect(filas[0].textContent).toMatch(/^[A-Z][a-zé]{2} \d{1,2} [a-z]{3} · \$ 40\.000$/);
+      expect(filas[0].textContent).toMatch(/^[A-Z][a-zñáéíóú]{2} \d{1,2} [a-z]{3} · \$ 40\.000$/);
       unmount();
     }
   });

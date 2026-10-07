@@ -87,10 +87,13 @@ function FilaCuenta({ etiqueta, children }) {
 // era un modal). Cada usuario edita acá sus datos personales, su foto y su
 // contraseña. El nombre de usuario y el rol se muestran pero no se editan:
 // eso es solo del administrador (pantalla Usuarios).
+// Los avisos de la foto se leen con calma (y con lector de pantalla): 5 s, no los 3 s de siempre.
+const AVISO_MS = 5000;
+
 export function MiPerfilPage() {
   const { perfil, usuario, rolInfo, actualizarPerfil } = useSesion();
   const queryClient = useQueryClient();
-  const { toast, mostrarToast } = useToast();
+  const { toast, mostrarToast } = useToast(AVISO_MS);
 
   // Los datos frescos del backend (alta en el sistema, último acceso…). Si
   // todavía no llegaron, se usa lo que quedó guardado en la sesión.

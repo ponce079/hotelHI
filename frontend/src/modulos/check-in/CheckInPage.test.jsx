@@ -149,7 +149,7 @@ describe("Llegadas de hoy", () => {
     expect(await screen.findByText("VISA ****4242 · aut. 5521")).toBeInTheDocument();
     expect(screen.getByText("Hay 2 reservas de días anteriores sin ingreso (posible no-show). Se gestiona desde Reservas.")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /Llegadas de hoy/ })).toHaveTextContent("1");
-    expect(screen.getByText(/→ .* · 3 noches/)).toHaveTextContent(/^[a-zé]{3} \d{2}\/\d{2} → [a-zé]{3} \d{2}\/\d{2} · 3 noches$/);
+    expect(screen.getByText(/→ .* · 3 noches/)).toHaveTextContent(/^[a-zñáéíóú]{3} \d{2}\/\d{2} → [a-zñáéíóú]{3} \d{2}\/\d{2} · 3 noches$/);
     expect(document.body.textContent).not.toMatch(/\bHU\b|HU-\d|\d{4}-\d{2}-\d{2}/);
   });
 
