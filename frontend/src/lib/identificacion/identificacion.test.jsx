@@ -47,6 +47,15 @@ describe("ficha: funciones puras", () => {
     expect(camposCambiados(valores, null)).toEqual([]);
   });
 
+  it("contacto: un correo nuevo sobre una ficha que solo tenía teléfono se marca como cambio (no se descarta en silencio)", () => {
+    const soloTelefono = fichaDesdeRespuesta({ ...RESPUESTA, email: null });
+    expect(camposCambiados({ ...valoresDeLaFicha(soloTelefono), email: "nuevo@correo.com" }, soloTelefono)).toEqual(["contacto"]);
+    // Mismo contacto que la ficha: no es un cambio.
+    expect(camposCambiados(valoresDeLaFicha(ficha), ficha)).toEqual([]);
+    // Si ya se marcó el teléfono o el correo, no se duplica con "contacto".
+    expect(camposCambiados({ ...valoresDeLaFicha(ficha), telefono: "3875559999" }, ficha)).toEqual(["telefono"]);
+  });
+
   it("textos: registrada con la última estadía, y otros documentos con las iniciales", () => {
     expect(textoRegistrada(ficha)).toBe("Huésped registrado · última estadía: 20/09/2026");
     expect(textoRegistrada({ ...ficha, fechaUltimaEstadia: null })).toBe("Huésped registrado");

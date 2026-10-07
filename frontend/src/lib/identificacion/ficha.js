@@ -81,6 +81,13 @@ export function camposCambiados(valores, ficha) {
     if (vacio(enFicha) || vacio(escrito)) continue;
     if (norm(enFicha) !== norm(escrito)) cambiados.push(campo);
   }
+  // La ficha guarda UN solo contacto (correo, o teléfono si no tiene correo) y el correo manda. Un correo nuevo cuando la
+  // ficha solo tenía teléfono (o al revés) no se pisa en silencio: se marca como "contacto" para ofrecer la casilla.
+  if (!cambiados.includes("email") && !cambiados.includes("telefono")) {
+    const enFicha = ficha.email || ficha.telefono;
+    const escrito = valores.email || valores.telefono;
+    if (!vacio(enFicha) && !vacio(escrito) && norm(enFicha) !== norm(escrito)) cambiados.push("contacto");
+  }
   return cambiados;
 }
 
@@ -92,6 +99,7 @@ export const ETIQUETA_CAMPO = {
   domicilio: "domicilio",
   telefono: "teléfono",
   email: "correo",
+  contacto: "contacto",
 };
 
 export const TEXTO_ACTUALIZAR_FICHA = "Actualizar la ficha del huésped con estos datos";

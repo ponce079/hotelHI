@@ -273,7 +273,8 @@ describe("Check-in con reserva", () => {
     const adulto2 = filas()[1];
     cambiar(adulto2, "Número", "317");
     await new Promise((r) => setTimeout(r, 600));
-    expect(api.buscarHuespedPorDocumento).not.toHaveBeenCalled();
+    // (El titular precargado también se consulta, solo como referencia para comparar lo que cambie; acá importa el número parcial.)
+    expect(api.buscarHuespedPorDocumento).not.toHaveBeenCalledWith(expect.objectContaining({ numero: "317" }));
     cambiar(adulto2, "Número", "31784205");
     expect(await within(adulto2).findByText("Huésped registrado · última estadía: 12/07/2025", {}, { timeout: 2000 })).toBeInTheDocument();
     expect(within(adulto2).getByText(/Ficha de/)).toHaveTextContent("Ficha de Carolina Paz: se completaron todos sus datos");
@@ -294,7 +295,7 @@ describe("Check-in con reserva", () => {
     const adulto2 = filas()[1];
     cambiar(adulto2, "Número", "31784205");
     fireEvent.click(within(adulto2).getByRole("button", { name: "Buscar" }));
-    await waitFor(() => expect(api.buscarHuespedPorDocumento).toHaveBeenCalledTimes(1), { timeout: 300 });
+    await waitFor(() => expect(api.buscarHuespedPorDocumento.mock.calls.filter(([q]) => q.numero === "31784205")).toHaveLength(1), { timeout: 300 });
     expect(await within(adulto2).findByText("No hay un huésped registrado con ese documento")).toBeInTheDocument();
     expect(within(adulto2).getByText(/mismo número y otro tipo\/país de documento: Pasaporte, BR, C\. P\./)).toBeInTheDocument();
     // El formulario sigue vacío y editable.
@@ -320,6 +321,49 @@ describe("Check-in con reserva", () => {
     const casilla = await within(adulto2).findByRole("checkbox", { name: "Actualizar la ficha del huésped con estos datos" });
     expect(casilla).not.toBeChecked();
     expect(within(adulto2).getByText(/Cambiaste datos respecto de la ficha del huésped: teléfono\./)).toBeInTheDocument();
+  });
+
+  // Regla 2.2: la ficha ya tiene un teléfono y la recepción carga OTRO. Se muestra la diferencia y la ficha solo se actualiza
+  // si se tilda la casilla; el envío lleva el dato nuevo para esta estadía en cualquier caso.
+  async function checkInConTelefonoCambiado(tildar) {
+    prepararReserva(reservaDe({ habitaciones: [HAB_270] }), [fichaTitular()]);
+    api.buscarHuespedPorDocumento.mockResolvedValue({
+      tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "31784205", nombre: "Carolina", apellido: "Paz",
+      fechaNacimiento: haceAnios(39).iso, nacionalidad: "AR", paisResidencia: "AR", localidad: "Salta", telefono: "3875550100",
+      fechaUltimaEstadia: "2025-07-12", alojadaAhora: false,
+    });
+    api.confirmarCheckInConReserva.mockImplementation(() => new Promise(() => {}));
+    renderizar("/check-in?codigo=C43B1F20");
+    await waitFor(() => expect(filas()).toHaveLength(3));
+    const [titular, adulto2, menor] = filas();
+    cambiar(titular, "Nombres", "Martín");
+    cambiar(titular, "Apellido", "Gutiérrez");
+    cambiar(adulto2, "Número", "31784205");
+    await within(adulto2).findByText(/Ficha de/, {}, { timeout: 2000 });
+    fireEvent.click(within(adulto2).getByRole("button", { name: "Más datos" }));
+    cambiar(adulto2, "Teléfono", "3875559999");
+    const casilla = await within(adulto2).findByRole("checkbox", { name: "Actualizar la ficha del huésped con estos datos" });
+    expect(within(adulto2).getByText(/Cambiaste datos respecto de la ficha del huésped: teléfono\./)).toBeInTheDocument();
+    if (tildar) fireEvent.click(casilla);
+    cambiar(menor, "Nombres", "Tomás");
+    cambiar(menor, "Apellido", "Gutiérrez");
+    cambiar(menor, "Nacimiento", haceAnios(8).texto.replace(/\//g, ""));
+    cambiar(menor, "Vínculo", "Padre o madre");
+    fireEvent.click(await screen.findByLabelText(/Confirmo que recibí/));
+    await waitFor(() => expect(botonConfirmar()).toBeEnabled());
+    fireEvent.click(botonConfirmar());
+    await waitFor(() => expect(api.confirmarCheckInConReserva).toHaveBeenCalledTimes(1));
+    return api.confirmarCheckInConReserva.mock.calls[0][1].personas;
+  }
+
+  it("regla 2.2: con un teléfono distinto del de la ficha y SIN tildar la casilla, no se pide actualizar la ficha", async () => {
+    const personas = await checkInConTelefonoCambiado(false);
+    expect(personas[1]).toMatchObject({ telefono: "3875559999", actualizarFicha: false });
+  });
+
+  it("regla 2.2: con la casilla tildada se pide actualizar la ficha con el teléfono nuevo", async () => {
+    const personas = await checkInConTelefonoCambiado(true);
+    expect(personas[1]).toMatchObject({ telefono: "3875559999", actualizarFicha: true });
   });
 
   it("quitar muestra la diferencia de la vista previa; cancelar deja todo como estaba; confirmar recotiza", async () => {

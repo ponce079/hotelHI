@@ -38,6 +38,9 @@ export function NoShowPage() {
   const mutacion = useMutacionUnica({
     mutationFn: ({ id, motivo }) => marcarNoShow(id, motivo),
     onSuccess: (reserva) => {
+      // La reserva ya no está Confirmada: se descartan la penalidad y la vista previa para que no se vuelvan a pedir (400).
+      queryClient.removeQueries({ queryKey: ["reservas", "penalidad"] });
+      queryClient.removeQueries({ queryKey: ["reservas", "cierre-previo"] });
       queryClient.invalidateQueries({ queryKey: ["reservas"] });
       mostrarToast(`Reserva ${reserva.codigoConfirmacion} marcada como no-show. ${reserva.penalidad?.mensaje ?? ""}`.trim());
       setSeleccionada(null);

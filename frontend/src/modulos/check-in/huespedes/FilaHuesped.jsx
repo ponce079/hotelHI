@@ -56,11 +56,14 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
     tipoDocumento: fila.campos.tipoDocumento,
     paisDocumento: fila.campos.paisDocumento,
     numeroDocumento: fila.campos.numeroDocumento,
-    habilitada: (fila.tipo === "adulto" || fila.conDocumento) && (!fila.precargada || Boolean(fila.documentoEditado)),
+    habilitada: fila.tipo === "adulto" || fila.conDocumento,
   });
   useEffect(() => {
     if (identificacion.estado === "registrada" && fila.ficha?.clave !== identificacion.clave) {
-      dispatch({ tipo: "completarDesdeFicha", filaId: fila.id, ficha: identificacion.ficha, clave: identificacion.clave });
+      // Fila precargada de la reserva (documento sin tocar): solo se guarda la ficha como referencia para comparar lo que cambie
+      // la recepción (por ejemplo el teléfono del titular) y ofrecer la casilla; no se pisa lo que ya está cargado.
+      const soloReferencia = fila.precargada && !fila.documentoEditado;
+      dispatch({ tipo: soloReferencia ? "fijarFicha" : "completarDesdeFicha", filaId: fila.id, ficha: identificacion.ficha, clave: identificacion.clave });
     }
   }, [identificacion.estado, identificacion.clave, identificacion.ficha, fila.ficha?.clave, fila.id, dispatch]);
   const cambiados = fila.ficha?.original ? camposCambiados(fila.campos, fila.ficha.original) : [];
@@ -196,7 +199,7 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
 
       {fila.ficha && (
         <p className="mb-1 text-[13.5px] text-pino-700">
-          Ficha de <b>{fila.ficha.nombre}</b>: se completaron todos sus datos. El nombre es de la ficha; solo un administrador lo corrige, desde la ficha del huésped.
+          {fila.ficha.soloReferencia ? <>Ficha de <b>{fila.ficha.nombre}</b>: lo que cambies se compara con sus datos guardados. El nombre es de la ficha; solo un administrador lo corrige, desde la ficha del huésped.</> : <>Ficha de <b>{fila.ficha.nombre}</b>: se completaron todos sus datos. El nombre es de la ficha; solo un administrador lo corrige, desde la ficha del huésped.</>}
         </p>
       )}
       <EstadoIdentificacion identificacion={identificacion} className="mb-2.5" />

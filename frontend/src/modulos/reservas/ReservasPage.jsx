@@ -93,6 +93,10 @@ export function ReservasPage() {
   const mutacionCancelar = useMutacionUnica({
     mutationFn: ({ id, motivoCancelacion }) => cancelarReserva(id, motivoCancelacion),
     onSuccess: (reserva) => {
+      // La reserva ya no está Confirmada: la penalidad y la vista previa del cierre dejan de tener sentido (el servidor las
+      // rechaza con 400). Se descartan antes de refrescar para que la pantalla no las vuelva a pedir.
+      queryClient.removeQueries({ queryKey: ["reservas", "penalidad"] });
+      queryClient.removeQueries({ queryKey: ["reservas", "cierre-previo"] });
       queryClient.invalidateQueries({ queryKey: ["reservas"] });
       mostrarToast(`Reserva ${reserva.codigoConfirmacion} cancelada. ${reserva.penalidad?.mensaje ?? ""}`.trim());
       setACancelar(null);

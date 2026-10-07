@@ -24,3 +24,20 @@ test("sin datos para completar no ejecuta nada", async () => {
   await actualizarFichasEnLote(tx, [{ huespedId: 7, datos: {} }]);
   expect(tx.$executeRaw).not.toHaveBeenCalled();
 });
+
+describe("regla 2.2: un dato distinto del que ya tiene la ficha", () => {
+  const trozo = (sql, campo) => (sql.sql ?? "").split(`${campo} = CASE`)[1].split(" END")[0];
+
+  test("sin la casilla (sobrescribir=false) el domicilio guardado se conserva: solo se completa si estaba vacío", async () => {
+    const sql = await ejecutar([{ huespedId: 7, sobrescribir: false, datos: { domicilio: "Calle Nueva 456" } }]);
+    // COALESCE(NULLIF(domicilio,''), nuevo, domicilio): primero lo que ya hay.
+    expect(trozo(sql, "domicilio")).toMatch(/COALESCE\(NULLIF\(\s*domicilio\s*,\s*''\s*\)\s*,\s*\?\s*,\s*domicilio\s*\)/);
+  });
+
+  test("con la casilla (sobrescribir=true) el dato nuevo reemplaza al guardado", async () => {
+    const sql = await ejecutar([{ huespedId: 7, sobrescribir: true, datos: { domicilio: "Calle Nueva 456" } }]);
+    // COALESCE(nuevo, domicilio): primero lo nuevo.
+    expect(trozo(sql, "domicilio")).toMatch(/COALESCE\(\s*\?\s*,\s*domicilio\s*\)/);
+    expect(sql.values).toContain("Calle Nueva 456");
+  });
+});

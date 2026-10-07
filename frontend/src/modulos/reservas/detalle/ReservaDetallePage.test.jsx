@@ -127,10 +127,12 @@ describe("ReservaDetallePage — botón Iniciar check-in", () => {
 
     renderDetalle();
 
-    const boton = await screen.findByRole("button", { name: /Iniciar check-in/ });
-    await waitFor(() => expect(boton).toBeEnabled());
+    // La pantalla hace varias consultas y con la máquina cargada (suite completa en paralelo) 1 s de espera por defecto no
+    // alcanza para que aparezca el botón: la causa de la falla intermitente era el plazo, no la lógica.
+    const boton = await screen.findByRole("button", { name: /Iniciar check-in/ }, { timeout: 5000 });
+    await waitFor(() => expect(boton).toBeEnabled(), { timeout: 5000 });
     await userEvent.setup().click(boton);
-    expect(await screen.findByText(`Check-in codigo=${RESERVA_BASE.codigoConfirmacion}`)).toBeInTheDocument();
+    expect(await screen.findByText(`Check-in codigo=${RESERVA_BASE.codigoConfirmacion}`, {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
   it("Confirmada con fecha de ingreso futura: botón deshabilitado con el motivo real del backend", async () => {

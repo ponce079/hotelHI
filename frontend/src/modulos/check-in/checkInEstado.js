@@ -347,6 +347,14 @@ export function reducer(estado, accion) {
         };
       });
     }
+    case "fijarFicha": {
+      const { filaId, ficha, clave } = accion;
+      return actualizarFila(estado, filaId, (f) => ({
+        ficha: { clave, nombre: ficha.nombreCompleto, ultimaEstadia: ficha.fechaUltimaEstadia, original: ficha, soloReferencia: true },
+        actualizarFicha: f.actualizarFicha === true,
+        alojadaEnOtra: Boolean(ficha.alojadaAhora),
+      }));
+    }
     case "actualizarFicha":
       return actualizarFila(estado, accion.filaId, () => ({ actualizarFicha: accion.valor === true }));
     case "abrirAccion":

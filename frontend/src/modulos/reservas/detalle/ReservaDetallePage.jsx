@@ -177,10 +177,12 @@ function DetalleReserva({ reserva }) {
   });
   // Informativa, para la columna derecha: lo que dice el plan sobre la penalidad. El detalle de lo que
   // realmente se cobra, retiene y devuelve al cancelar lo muestra el diálogo (CierrePrevio).
+  const [cancelacionHecha, setCancelacionHecha] = useState(false);
   const penalidadQuery = useQuery({
     queryKey: ["reservas", "penalidad", id],
     queryFn: () => obtenerPenalidadReserva(id, "CANCELACION"),
-    enabled: confirmada && puede("gestionarReservas"),
+    // Tras cancelar, la reserva deja de estar Confirmada aunque la pantalla todavía no lo sepa: no se vuelve a pedir (el servidor responde 400).
+    enabled: confirmada && !cancelacionHecha && puede("gestionarReservas"),
     retry: false,
   });
   const comprobantesQuery = useQuery({
@@ -192,6 +194,11 @@ function DetalleReserva({ reserva }) {
   const mutacionCancelar = useMutacionUnica({
     mutationFn: () => cancelarReserva(id, motivo.trim()),
     onSuccess: (cancelada) => {
+      setCancelacionHecha(true);
+      // La reserva ya no está Confirmada: la penalidad y la vista previa del cierre dejan de tener sentido (el servidor las
+      // rechaza con 400). Se descartan antes de refrescar para que la pantalla no las vuelva a pedir.
+      queryClient.removeQueries({ queryKey: ["reservas", "penalidad"] });
+      queryClient.removeQueries({ queryKey: ["reservas", "cierre-previo"] });
       queryClient.invalidateQueries({ queryKey: ["reservas"] });
       queryClient.invalidateQueries({ queryKey: ["pagos-estadia"] });
       queryClient.invalidateQueries({ queryKey: ["reserva-historial"] });
