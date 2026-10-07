@@ -130,6 +130,32 @@ describe("validarOcupacionIngreso", () => {
     expect(validar(familia(), [DOBLE], { huespedReserva: reservo, motivoTitularDistinto: "Reservó la empresa" }).faltaMotivo).toBe(false);
   });
 
+  test("el titular se reconoce aunque el documento se tipee con puntos o guiones (la reserva lo guarda normalizado)", () => {
+    const personas = [persona(1, 1, 40, { esTitular: true, numeroDocumento: "45.112.902" }), persona(2, 1, 38), persona(3, 1, 11, { responsableId: 1, vinculoResponsable: "Padre o madre" })];
+    const reservo = { tipoDocumento: "DNI", numeroDocumento: "45112902", paisDocumento: "AR" };
+    const r = validar(personas, [DOBLE], { huespedReserva: reservo });
+    expect(r.titularDistinto).toBe(false);
+    expect(r.faltaMotivo).toBe(false);
+    // Y al revés: la reserva con otro formato guardado.
+    const r2 = validar(
+      [persona(1, 1, 40, { esTitular: true, numeroDocumento: "AB-123" }), persona(2, 1, 38), persona(3, 1, 11, { responsableId: 1, vinculoResponsable: "Padre o madre" })],
+      [DOBLE],
+      { huespedReserva: { tipoDocumento: "Pasaporte", numeroDocumento: "AB123", paisDocumento: "AR" } }
+    );
+    expect(r2.titularDistinto).toBe(true); // distinto tipo de documento: sigue siendo otra persona
+    const r3 = validar(
+      [persona(1, 1, 40, { esTitular: true, tipoDocumento: "Pasaporte", numeroDocumento: "AB-123" }), persona(2, 1, 38), persona(3, 1, 11, { responsableId: 1, vinculoResponsable: "Padre o madre" })],
+      [DOBLE],
+      { huespedReserva: { tipoDocumento: "Pasaporte", numeroDocumento: "AB123", paisDocumento: "AR" } }
+    );
+    expect(r3.titularDistinto).toBe(false);
+  });
+
+  test("la misma persona cargada dos veces con otro formato de documento se detecta", () => {
+    const personas = [persona(1, 1, 40, { esTitular: true, numeroDocumento: "45.112.902" }), persona(2, 1, 38, { numeroDocumento: "45112902" }), persona(3, 1, 11, { responsableId: 1, vinculoResponsable: "Padre o madre" })];
+    expect(validar(personas).errores.generales.join(" ")).toMatch(/tienen el mismo documento/);
+  });
+
   test("teléfono con letras no es válido", () => {
     const personas = familia();
     personas[0].telefono = "llamar a la tarde";
