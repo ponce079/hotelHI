@@ -3,6 +3,7 @@ import { Badge } from "../../../componentes/Badge";
 import { formatearFechaHora } from "../../../lib/fechas";
 import { formatearPrecio } from "../../../lib/moneda";
 import { CONCEPTO_GARANTIA } from "../../pagos-estadia/pagoEstadia.constantes";
+import { obtenerGarantiasReserva } from "../../garantias/garantias.api";
 import { ESTADO_RESERVA } from "../reservas.constantes";
 import { esDatoWebValido, obtenerDatosReservaWeb, textoHoraLlegada } from "./reservaWeb.api";
 
@@ -141,6 +142,44 @@ function condiciones(plan, penalidad) {
   return partes.join(" ");
 }
 
+// Qué significa cada estado de la garantía de la reserva (GarantiaReserva), en palabras de recepción.
+const TEXTO_ESTADO_GARANTIA = {
+  Vigente: "tarjeta guardada, sin cobro",
+  Preautorizada: "monto retenido, sin cobrar",
+  Capturada: "cobrada",
+  Liberada: "liberada",
+  "Cobro pendiente": "cobro pendiente",
+  "Cobro rechazado": "cobro rechazado",
+};
+
+// La garantía de la reserva (tarjeta o pago anticipado), la MISMA para el mostrador y la web: sale de
+// GarantiaReserva (GET /api/reservas/:id/garantia, sin token). Es el único lugar del detalle donde se muestra;
+// la tarjeta "Reserva web" ya no la repite. Sin garantía registrada (reservas anteriores) o sin permiso, no se muestra.
+function GarantiaDeLaReserva({ reservaId }) {
+  const consulta = useQuery({
+    queryKey: ["garantias", reservaId],
+    queryFn: () => obtenerGarantiasReserva(reservaId),
+    retry: false,
+    enabled: Boolean(reservaId),
+  });
+  const garantia = consulta.data?.reserva;
+  if (!garantia) return null;
+  const medio =
+    garantia.tipo === "TARJETA" ? `Tarjeta ${garantia.marca ?? ""} ••${garantia.ultimos4 ?? "----"}`.replace("  ", " ") : "Pago anticipado";
+  const estado = TEXTO_ESTADO_GARANTIA[garantia.estado] ?? garantia.estado;
+  return (
+    <Tarjeta titulo="Garantía de la reserva">
+      <Lista
+        filas={[
+          ["Medio", medio],
+          ["Estado", `${garantia.estado} · ${estado}`],
+          ...(Number(garantia.monto) > 0 ? [["Monto", formatearPrecio(garantia.monto)]] : []),
+        ]}
+      />
+    </Tarjeta>
+  );
+}
+
 // Reserva hecha desde el e-commerce: contacto, llegada, solicitudes, titular de
 // la tarjeta y consentimiento (la garantía misma se muestra una sola vez, arriba) (GET /api/reservas-web/:id, con sesión). En una reserva del
 // mostrador (404) o si la consulta falla, no se muestra nada.
@@ -204,6 +243,7 @@ export function ColumnaDerecha({ reserva, cuenta, pagos, penalidad }) {
           />
         </Tarjeta>
       )}
+      <GarantiaDeLaReserva reservaId={reserva.id} />
       <Tarjeta titulo="Quién reservó">
         <Lista
           filas={[

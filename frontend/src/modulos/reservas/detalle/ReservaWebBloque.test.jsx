@@ -5,7 +5,9 @@ import { render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ColumnaDerecha } from "./ColumnaDerecha";
 import { obtenerDatosReservaWeb, textoHoraLlegada } from "./reservaWeb.api";
+import { obtenerGarantiasReserva } from "../../garantias/garantias.api";
 
+vi.mock("../../garantias/garantias.api", () => ({ obtenerGarantiasReserva: vi.fn() }));
 vi.mock("./reservaWeb.api", async (importOriginal) => {
   const original = await importOriginal();
   return { ...original, obtenerDatosReservaWeb: vi.fn() };
@@ -45,6 +47,8 @@ const titulos = () => screen.getAllByRole("heading", { level: 3 }).map((h) => h.
 
 beforeEach(() => {
   obtenerDatosReservaWeb.mockReset();
+  obtenerGarantiasReserva.mockReset();
+  obtenerGarantiasReserva.mockResolvedValue({ reserva: null, estadia: null });
 });
 
 describe("tarjeta 'Reserva web'", () => {
@@ -81,6 +85,48 @@ describe("tarjeta 'Reserva web'", () => {
     renderColumna();
     await waitFor(() => expect(queryClient.getQueryState(["reservas-web", 169])?.status).toBe("error"));
     expect(screen.queryByRole("heading", { name: "Reserva web" })).not.toBeInTheDocument();
+    expect(titulos()).toContain("Quién reservó");
+  });
+});
+
+describe("garantía de la reserva: una sola vez, la de GarantiaReserva", () => {
+  it("se muestra en su propia tarjeta (medio y estado) y NO se repite en 'Reserva web'", async () => {
+    obtenerDatosReservaWeb.mockResolvedValue(DATOS_WEB);
+    obtenerGarantiasReserva.mockResolvedValue({
+      reserva: { tipo: "TARJETA", estado: "Vigente", marca: "Visa", ultimos4: "4242", monto: 0, tieneTarjeta: true },
+      estadia: null,
+    });
+    renderColumna();
+    const tarjetaGarantia = await screen.findByRole("heading", { level: 3, name: "Garantía de la reserva" });
+    expect(obtenerGarantiasReserva).toHaveBeenCalledWith(169);
+    const g = within(tarjetaGarantia.closest("section"));
+    expect(g.getByText("Tarjeta Visa ••4242")).toBeInTheDocument();
+    expect(g.getByText("Vigente · tarjeta guardada, sin cobro")).toBeInTheDocument();
+    // Una sola vez: en total aparece un único "••4242" en toda la columna.
+    expect(screen.getAllByText(/••4242/)).toHaveLength(1);
+    const web = within((await screen.findByRole("heading", { level: 3, name: "Reserva web" })).closest("section"));
+    expect(web.queryByText(/Visa|••4242|Garantizada|Prepagada/)).not.toBeInTheDocument();
+  });
+
+  it("una reserva paga por adelantado (NRF) muestra el monto y que está cobrada", async () => {
+    obtenerDatosReservaWeb.mockResolvedValue(DATOS_WEB);
+    obtenerGarantiasReserva.mockResolvedValue({
+      reserva: { tipo: "TARJETA", estado: "Capturada", marca: "Visa", ultimos4: "4242", monto: 68000, tieneTarjeta: true },
+      estadia: null,
+    });
+    renderColumna();
+    const tarjetaGarantia = await screen.findByRole("heading", { level: 3, name: "Garantía de la reserva" });
+    const g = within(tarjetaGarantia.closest("section"));
+    expect(g.getByText("Capturada · cobrada")).toBeInTheDocument();
+    expect(g.getByText(/68\.000/)).toBeInTheDocument();
+  });
+
+  it("sin garantía registrada (reserva anterior) o sin permiso: no aparece la tarjeta ni rompe el detalle", async () => {
+    obtenerDatosReservaWeb.mockResolvedValue(null);
+    obtenerGarantiasReserva.mockRejectedValue({ response: { status: 403 } });
+    renderColumna();
+    await waitFor(() => expect(obtenerGarantiasReserva).toHaveBeenCalled());
+    expect(screen.queryByRole("heading", { name: "Garantía de la reserva" })).not.toBeInTheDocument();
     expect(titulos()).toContain("Quién reservó");
   });
 });
