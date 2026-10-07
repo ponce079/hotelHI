@@ -483,7 +483,10 @@ describe("crearReservaConGarantia (garantía con tarjeta, alta atómica)", () =>
     doble = crearDoblePrisma();
     jest.doMock("../../lib/prisma", () => doble.prismaFalso);
     jest.doMock("../check-out/checkOut.servicio", () => checkOutFalsoFactory());
-    correo = { enviarCorreo: jest.fn().mockResolvedValue({ enviado: true, messageId: "fake-id" }) };
+    correo = {
+      enviarCorreo: jest.fn().mockResolvedValue({ enviado: true, messageId: "fake-id" }),
+      conEsperaMaxima: jest.requireActual("../../lib/correo").conEsperaMaxima,
+    };
     jest.doMock("../../lib/correo", () => correo);
     instalarPasarela();
     cargar();

@@ -77,6 +77,11 @@ export function ConfirmacionPage() {
             Enviamos el comprobante a {huesped.email ? <strong>{huesped.email}</strong> : "tu email"}.
           </p>
         )}
+        {resultado.email?.enCamino && (
+          <p className="ec-texto-2">
+            Te estamos enviando el comprobante a {huesped.email ? <strong>{huesped.email}</strong> : "tu email"}.
+          </p>
+        )}
         {enviado === false && (
           <div className="ec-alerta ec-alerta--aviso" role="status">
             <TriangleAlert size={20} strokeWidth={1.7} aria-hidden="true" />

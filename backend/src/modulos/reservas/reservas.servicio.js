@@ -24,7 +24,7 @@
 const crypto = require("crypto");
 const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
-const { enviarCorreo } = require("../../lib/correo");
+const { enviarCorreo, conEsperaMaxima } = require("../../lib/correo");
 const {
   ESTADO_RESERVA,
   ESTADOS_RESERVA,
@@ -1248,7 +1248,10 @@ async function crearReservaConGarantia(data) {
 
   // Relectura con include fuera del commit (ver OPCIONES_TRANSACCION).
   const reservaCompleta = await prisma.reserva.findUnique({ where: { id: creada.id }, include: INCLUDE_RESERVA });
-  const confirmacionEmail = await enviarConfirmacionPorEmail(reservaCompleta);
+  // El email no está en el camino crítico del alta: se espera como máximo 1,5 s; si no llegó, sigue en segundo plano.
+  const confirmacionEmail = await conEsperaMaxima(enviarConfirmacionPorEmail(reservaCompleta), {
+    etiqueta: `confirmación ${reservaCompleta.codigoConfirmacion}`,
+  });
   const estadoFinal = autorizada.preautorizacion ? "Capturada" : autorizada.estado ?? "Capturada";
   return {
     ...formatearReserva(reservaCompleta),

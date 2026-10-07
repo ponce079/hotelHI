@@ -295,6 +295,8 @@ export function ReservasPage() {
               mostrarToast(
                 reserva.confirmacionEmail?.enviado
                   ? `Reserva ${reserva.codigoConfirmacion} confirmada y enviada por correo.`
+                  : reserva.confirmacionEmail?.enCamino
+                  ? `Reserva ${reserva.codigoConfirmacion} confirmada. Te estamos enviando la confirmación.`
                   : `Reserva ${reserva.codigoConfirmacion} confirmada. El correo no pudo enviarse; revisá la configuración SMTP.`
               );
               navigate(`/reservas/${reserva.id}`);

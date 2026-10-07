@@ -5,6 +5,7 @@
 // (por ejemplo, una seña del mostrador) no se cancela online.
 const prisma = require("../../lib/prisma");
 const reservasServicio = require("../reservas/reservas.servicio");
+const { conEsperaMaxima } = require("../../lib/correo");
 const { ErrorWeb, CODIGO } = require("./ecommerce.errores");
 const emailWeb = require("./emailWeb.servicio");
 const { armarRespuestaMiReserva } = require("./miReserva");
@@ -42,7 +43,9 @@ function cancelarMiReserva(cuerpo) {
     }
 
     const datos = armarRespuestaMiReserva({ ...reserva, estado: "Cancelada" }, null);
-    const email = await emailWeb.enviarCancelacion(datos, emailReserva);
+    const email = await conEsperaMaxima(emailWeb.enviarCancelacion(datos, emailReserva), {
+      etiqueta: `cancelación ${reserva.codigoConfirmacion}`,
+    });
     return { estado: "Cancelada", penalidadCobrada: 0, email };
   });
 }

@@ -8,7 +8,7 @@ import { CODIGO_ERROR } from "./ecommerce.constantes";
 
 // Tope de espera para crear la reserva (incluye la pasarela). Si se corta,
 // el error es ERROR_RED y se reintenta con la MISMA clave de idempotencia.
-const TIMEOUT_RESERVA_MS = 45000;
+const TIMEOUT_RESERVA_MS = 60000;
 
 // `env` es parámetro solo para poder testear el caso de producción
 // (DEV en false); en la app siempre es import.meta.env.

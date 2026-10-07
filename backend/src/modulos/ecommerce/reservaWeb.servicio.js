@@ -33,6 +33,7 @@ const crypto = require("node:crypto");
 const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
 const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
+const { conEsperaMaxima } = require("../../lib/correo");
 const reservasServicio = require("../reservas/reservas.servicio");
 const { MAX_INTENTOS_CODIGO } = require("../reservas/reservas.constantes");
 const { claveDocumento } = require("../estadia/persona.servicio");
@@ -295,12 +296,16 @@ async function crearReservaWeb(cuerpo, tarjeta) {
   // 7. Relectura, email y respuesta.
   const reserva = await prisma.reserva.findUnique({ where: { id: reservaId }, include: { ...INCLUDE_RESPUESTA, datosWeb: true } });
   const respuesta = armarRespuestaAlta(reserva, { enviado: false });
-  respuesta.email = await emailWeb.enviarConfirmacion(respuesta, reserva.datosWeb.emailContacto, {
-    nombre: datos.huesped.nombres,
-    horaEstimadaLlegada: reserva.datosWeb.horaEstimadaLlegada,
-    solicitudesEspeciales: reserva.datosWeb.solicitudesEspeciales,
-    penalidadNoShow: reserva.planTarifario?.penalidadNoShow,
-  });
+  // El email no está en el camino crítico: se espera como máximo 1,5 s y, si no llegó, sigue en segundo plano.
+  respuesta.email = await conEsperaMaxima(
+    emailWeb.enviarConfirmacion(respuesta, reserva.datosWeb.emailContacto, {
+      nombre: datos.huesped.nombres,
+      horaEstimadaLlegada: reserva.datosWeb.horaEstimadaLlegada,
+      solicitudesEspeciales: reserva.datosWeb.solicitudesEspeciales,
+      penalidadNoShow: reserva.planTarifario?.penalidadNoShow,
+    }),
+    { etiqueta: `confirmación web ${respuesta.codigoConfirmacion}` }
+  );
   return { status: 201, cuerpo: respuesta };
 }
 
