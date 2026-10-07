@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutacionUnica } from "../../lib/useMutacionUnica";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Plus, Search, Ban, Eye, UserX } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
@@ -33,6 +34,8 @@ import {
   LIMITES_RESERVA,
 } from "./reservas.constantes";
 
+const TAMANO_PAGINA = 50;
+
 export function ReservasPage() {
   const { puede } = useSesion();
   const puedeVer = puede("verReservas");
@@ -51,11 +54,16 @@ export function ReservasPage() {
   const desde = searchParams.get("desde") ?? "";
   const hasta = searchParams.get("hasta") ?? "";
 
+  const pagina = Math.max(1, Number.parseInt(searchParams.get("pagina") ?? "1", 10) || 1);
+
+  // Pagina de a 50 en el servidor (con los mismos filtros): ya no se trae la lista entera.
   const filtros = {
     q: q || undefined,
     estado: estado || undefined,
     desde: desde || undefined,
     hasta: hasta || undefined,
+    pagina,
+    limite: TAMANO_PAGINA,
   };
   // Las habitaciones ya elegidas (tarjetas seleccionables de Disponibilidad
   // interna) viajan por `location.state`, no por la URL — son un dato de
@@ -79,16 +87,10 @@ export function ReservasPage() {
     queryKey: ["reservas", "lista", filtros],
     queryFn: () => listarReservas(filtros),
     enabled: puedeVer,
-  });
-  // Resumen sobre el total, no sobre lo filtrado: si contara solo lo que se
-  // ve, tocar una tarjeta de estado dejaría todas las demás en cero.
-  const resumenQuery = useQuery({
-    queryKey: ["reservas", "resumen"],
-    queryFn: () => listarReservas({}),
-    enabled: puedeVer,
+    placeholderData: keepPreviousData,
   });
 
-  const mutacionCancelar = useMutation({
+  const mutacionCancelar = useMutacionUnica({
     mutationFn: ({ id, motivoCancelacion }) => cancelarReserva(id, motivoCancelacion),
     onSuccess: (reserva) => {
       queryClient.invalidateQueries({ queryKey: ["reservas"] });
@@ -105,20 +107,20 @@ export function ReservasPage() {
     const params = new URLSearchParams(searchParams);
     if (valor) params.set(clave, valor);
     else params.delete(clave);
+    // Cambiar un filtro vuelve a la primera página.
+    if (clave !== "pagina") params.delete("pagina");
     setSearchParams(params);
   }
 
   if (!puedeVer) return <SinPermiso />;
 
-  // El backend ordena por fecha de entrada (fechaDesde desc) — acá se
-  // reordena por orden de creación (id desc, la última cargada primero):
-  // `id` es autoincremental y nunca se reutiliza, así que sirve como
-  // proxy exacto sin necesitar una columna de timestamp propia. Solo se
-  // reordena esta pantalla, no el resto de las que comparten
-  // listarReservas (Check-out, dashboard, etc.), que siguen con el orden
-  // de siempre.
-  const reservas = [...(reservasQuery.data ?? [])].sort((a, b) => b.id - a.id);
-  const resumen = resumenQuery.data ?? [];
+  // La página ya viene del servidor en orden de creación (id desc, la última cargada primero). Las tarjetas de
+  // resumen cuentan TODAS las reservas (no solo las filtradas): si no, tocar una tarjeta de estado dejaría las demás
+  // en cero; el servidor las cuenta con una sola consulta agrupada.
+  const reservas = reservasQuery.data?.reservas ?? [];
+  const conteoPorEstado = reservasQuery.data?.conteoPorEstado ?? {};
+  const totalFiltradas = reservasQuery.data?.total ?? 0;
+  const paginas = reservasQuery.data?.paginas ?? 1;
   const hayFiltros = Boolean(q || estado || desde || hasta);
 
   return (
@@ -132,7 +134,7 @@ export function ReservasPage() {
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {ESTADOS_RESERVA.map((valor) => {
-          const cantidad = resumen.filter((r) => r.estado === valor).length;
+          const cantidad = conteoPorEstado[valor] ?? 0;
           const color = ESTADO_RESERVA_COLOR[valor];
           const activo = estado === valor;
           return (
@@ -282,6 +284,21 @@ export function ReservasPage() {
               );
             }}
           />
+          {paginas > 1 && (
+            <nav aria-label="Paginación de reservas" className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[13px] text-piedra">
+              <span>
+                {totalFiltradas} {totalFiltradas === 1 ? "reserva" : "reservas"} · página {pagina} de {paginas}
+              </span>
+              <div className="flex gap-2">
+                <Button variante="secundario" tamano="fila" disabled={pagina <= 1} onClick={() => actualizarFiltro("pagina", String(pagina - 1))}>
+                  Anterior
+                </Button>
+                <Button variante="secundario" tamano="fila" disabled={pagina >= paginas} onClick={() => actualizarFiltro("pagina", String(pagina + 1))}>
+                  Siguiente
+                </Button>
+              </div>
+            </nav>
+          )}
         </div>
       )}
 
