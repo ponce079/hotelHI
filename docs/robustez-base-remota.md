@@ -10,7 +10,7 @@ agrega demora (nunca contra la compartida).
 | Variable | Obligatoria | Qué hace |
 |---|---|---|
 | `DATABASE_CONNECTION_LIMIT` | no (por defecto 2) | Conexiones del pool. La base compartida limita `max_user_connections` por usuario y lo comparten todos los integrantes: el verificador (`scripts/verificar-previo-ecommerce.js`) lo lee y recomienda un valor. |
-| `DATABASE_IDLE_TIMEOUT_MS` | no (por defecto 30000) | Cierra las conexiones ociosas **antes** que `wait_timeout` del servidor. Sin esto, una conexión cortada por el servidor hace fallar el primer pedido después de un rato de calma. |
+| `DATABASE_IDLE_TIMEOUT_MS` | no (por defecto 30000) | Cierra las conexiones ociosas del pool **antes** que `wait_timeout` del servidor. Es una defensa extra: al reproducir el corte con un proxy (también como "agujero negro" sin cierre), el driver se recuperó solo con o sin este valor (~0,3-0,5 s para reabrir); el valor anterior estaba fijo en 60 s. |
 | `TAREAS_AUTOMATICAS` | no (activas por defecto) | `off` apaga las tareas de fondo (alertas de stock mínimo). Quien desarrolla contra la base compartida debería arrancar con `off` para no competir por las conexiones; las corridas no se superponen y no dejan promesas sin atrapar. |
 | `AUTH_SECRET` | **sí en producción** (≥ 32 caracteres) | Firma las sesiones. En desarrollo, si falta, se deriva de `DATABASE_URL` y se avisa **una sola vez** por consola. En producción el backend no arranca sin él. Generalo con `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. Cambiarlo cierra todas las sesiones. |
 
@@ -25,12 +25,12 @@ Agregar `AUTH_SECRET` al despliegue es parte del runbook (`docs/despliegue-estad
   transacción.
 - **"Persona ya alojada en otra estadía"**: la garantiza la base con el índice único `identidadActiva`; un `P2002` se
   traduce a 409.
-- **Fichas creadas en paralelo**: ante `P2002` se relee la ficha y no se pisa.
+- **Fichas creadas en paralelo**: ante `P2002` (o al saltear el duplicado con `skipDuplicates`) se relee la ficha con una lectura *actual* (`FOR UPDATE`, porque la lectura normal de la transacción es anterior al commit de la otra) y no se pisa. Dos altas que chocan en un deadlock (`P2034`) se rehacen una vez y, si vuelve a fallar, responden 409 "volvé a intentarlo" (sin guardar nada).
 - **Cantidad de consultas constante**: la transacción no crece con la cantidad de personas ni de habitaciones (ver
   mediciones).
 - **Reintentos idempotentes**: un check-in que ya está En curso con las mismas habitaciones y personas devuelve 200 con lo
   existente; un walk-in con el mismo titular, habitación y fechas en menos de 5 minutos devuelve la misma reserva (sin
-  "habitación ocupada"). Una habitación realmente ocupada por otra estadía sigue siendo 409.
+  "habitación ocupada"; el endpoint responde 201 como siempre). Una habitación realmente ocupada por otra estadía sigue siendo 409.
 - **`OPCIONES_TRANSACCION_LARGA`** (45 s / 15 s): red de seguridad **solo** para check-in, walk-in y check-out. El tiempo
   general (`OPCIONES_TRANSACCION`) no se tocó.
 
