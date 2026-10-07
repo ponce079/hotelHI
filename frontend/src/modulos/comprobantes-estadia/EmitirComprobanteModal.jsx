@@ -74,7 +74,7 @@ export function EmitirComprobanteModal({ reservaId, total, huesped, onClose, onE
   return (
     <Modal
       titulo="Emitir comprobante"
-      subtitulo="HU 53 y 55 — comprobante de la estadía, opcionalmente a nombre de un tercero"
+      subtitulo="Comprobante de la estadía, opcionalmente a nombre de un tercero"
       onClose={mutacion.isPending ? () => {} : onClose}
     >
       <div className="flex flex-col gap-5 px-6 py-5">

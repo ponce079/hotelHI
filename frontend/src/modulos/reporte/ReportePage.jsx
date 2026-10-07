@@ -72,7 +72,7 @@ export function ReportePage() {
         <h1 className="flex items-center gap-2 font-heading text-[34px] font-semibold">
           <BarChart3 size={22} className="text-pino" /> Reporte de Consumo
         </h1>
-        <p className="mt-1.5 font-mono text-[11px] text-tinta/55">HU 9 — consumo por área y período</p>
+        <p className="mt-1.5 font-mono text-[11px] text-tinta/55">Consumo por área y período</p>
       </div>
 
       <div className="flex flex-wrap items-end gap-3">

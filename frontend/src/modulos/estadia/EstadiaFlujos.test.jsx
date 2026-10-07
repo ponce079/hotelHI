@@ -3,6 +3,11 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { vi, it, expect, beforeEach } from "vitest";
 import { PersonaFormulario } from "./PersonaFormulario";
+
+// La identificación por documento (consulta a la API) tiene sus propias pruebas; acá no se consulta nada.
+vi.mock("../../lib/identificacion/useIdentificarPersona", () => ({
+  useIdentificarPersona: () => ({ estado: "inactivo", clave: "", ficha: null, otrosDocumentos: [], buscarAhora: () => {}, puedeBuscar: false }),
+}));
 import { MoverHabitacion } from "./MoverHabitacion";
 import { PersonaAdicionalPrevia } from "./PersonaAdicionalPrevia";
 import { EstadiaModales } from "./EstadiaModales";

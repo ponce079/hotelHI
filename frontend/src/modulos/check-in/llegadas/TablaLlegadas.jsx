@@ -4,6 +4,9 @@ import { formatearPrecio } from "../../../lib/moneda";
 import { etiquetaOcupacion } from "../checkInReglas";
 import { Chip, Tarjeta } from "../ui";
 
+// Reserva web con el documento de una ficha existente pero otro nombre declarado (regla 2.6).
+export const TEXTO_NOMBRE_WEB_DISTINTO = "El nombre declarado en la web no coincide con la ficha: verificar el documento en el check-in";
+
 export function textoSenia(senia) {
   const medios = senia?.medios ?? [];
   if (!senia?.registrada || medios.length === 0) return null;
@@ -94,7 +97,16 @@ export function TablaLlegadas({ busqueda, onBuscar, consulta, seleccionadaId, on
                   className={`cursor-pointer align-top focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-pino ${seleccionada ? "bg-pino-100" : "hover:bg-hueso"}`}
                 >
                   <td className="whitespace-nowrap border-b border-borde px-2.5 py-[11px] font-mono font-semibold">{r.codigoConfirmacion}</td>
-                  <td className="border-b border-borde px-2.5 py-[11px]">{r.titular?.nombre}</td>
+                  <td className="border-b border-borde px-2.5 py-[11px]">
+                    {r.titular?.nombre}
+                    {r.nombreWebDistinto && (
+                      <div className="mt-1">
+                        <Chip variante="aviso" envolver>
+                          {TEXTO_NOMBRE_WEB_DISTINTO}
+                        </Chip>
+                      </div>
+                    )}
+                  </td>
                   <td className="border-b border-borde px-2.5 py-[11px]">{r.habitaciones.map((h) => `${h.numero} ${h.tipo}`).join(" + ")}</td>
                   <td className="whitespace-nowrap border-b border-borde px-2.5 py-[11px]">{estadia(r)}</td>
                   <td className="border-b border-borde px-2.5 py-[11px]">{etiquetaOcupacion(adultos, menores)}</td>

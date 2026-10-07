@@ -1,4 +1,5 @@
 import { api } from "../../lib/api";
+import { TIMEOUT_OPERACION_MS } from "../../lib/tiempos";
 import { hoyEnHoraLocal } from "../../lib/fechas";
 import { ESTADO_RESERVA } from "./reservas.constantes";
 
@@ -86,6 +87,6 @@ export async function obtenerHistorialReserva(id) {
 // crearReservaConSena. El bloque `garantia.tarjeta` lleva el número y el CVV
 // una sola vez; el backend los valida y los descarta (nunca se guardan).
 export async function crearReservaConGarantia(datos) {
-  const { data } = await api.post("/reservas/con-garantia", datos);
+  const { data } = await api.post("/reservas/con-garantia", datos, { timeout: TIMEOUT_OPERACION_MS });
   return data;
 }

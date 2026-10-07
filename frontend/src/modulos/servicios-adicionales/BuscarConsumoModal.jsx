@@ -43,7 +43,7 @@ function ReservasEnCurso({ reservas, cargando, onSeleccionar }) {
             >
               <div>
                 <p className="font-heading text-lg font-bold">
-                  Habitación{r.habitaciones.length > 1 ? "es" : ""} {r.habitaciones.map((h) => h.numero).join(", ")}
+                  {r.habitaciones.length > 1 ? "Habitaciones" : "Habitación"} {r.habitaciones.map((h) => h.numero).join(", ")}
                 </p>
                 <p className="text-xs text-piedra">Titular: {r.huesped?.nombre || "Sin titular informado"}</p>
               </div>
@@ -196,7 +196,7 @@ export function BuscarConsumoModal({ onClose, onEncontrada }) {
             <div>
               <div>
                 <p className="font-heading text-lg font-bold">
-                  Habitación{resultado.habitaciones.length > 1 ? "es" : ""}{" "}
+                  {resultado.habitaciones.length > 1 ? "Habitaciones" : "Habitación"}{" "}
                   {resultado.habitaciones.map((h) => h.numero).join(", ")}
                 </p>
                 <p className="text-xs text-piedra">Titular: {resultado.huesped?.nombre || "Sin titular informado"}</p>

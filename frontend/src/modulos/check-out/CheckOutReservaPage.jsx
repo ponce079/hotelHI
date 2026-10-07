@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutacionUnica } from "../../lib/useMutacionUnica";
 import { useNavigate, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -148,7 +149,7 @@ export function CheckOutReservaPage() {
     },
   });
 
-  const mutacionCierre = useMutation({
+  const mutacionCierre = useMutacionUnica({
     mutationFn: () => confirmarCheckOut(reservaId, { cargosValidados: true }),
     onSuccess: (res) => {
       setResultado(res);
@@ -272,7 +273,7 @@ export function CheckOutReservaPage() {
         </div>
       )}
 
-      <Tarjeta icono={BedDouble} titulo="Cuenta consolidada" hu="HU 48 — alojamiento + servicios adicionales + verificación">
+      <Tarjeta icono={BedDouble} titulo="Cuenta consolidada" hu="Alojamiento + servicios adicionales + verificación">
         <div className="flex flex-col gap-6">
           <Table
             columnas={["Habitación", "Tipo", "Noches", "Por noche", "Subtotal"]}
@@ -365,7 +366,7 @@ export function CheckOutReservaPage() {
       <Tarjeta
         icono={ClipboardCheck}
         titulo="1. Verificación de la habitación"
-        hu="HU 87 — revisá la habitación y cargá daños, faltantes o minibar sin registrar"
+        hu="Revisá la habitación y cargá daños, faltantes o minibar sin registrar"
       >
         <div className="flex flex-col gap-3">
           <div className="flex flex-wrap items-center gap-3">
@@ -403,7 +404,7 @@ export function CheckOutReservaPage() {
       <Tarjeta
         icono={CheckCircle2}
         titulo="2. Confirmación de cargos con el huésped"
-        hu="HU 49 — el huésped revisa el detalle antes de pagar"
+        hu="El huésped revisa el detalle antes de pagar"
       >
         <label
           className={`flex items-start gap-3 text-[13.5px] ${
@@ -429,7 +430,7 @@ export function CheckOutReservaPage() {
         )}
       </Tarjeta>
 
-      <Tarjeta icono={Wallet} titulo="3. Pago" hu="HU 50 — se pueden combinar medios de pago">
+      <Tarjeta icono={Wallet} titulo="3. Pago" hu="Se pueden combinar medios de pago">
         <div className="flex flex-col gap-4">
           <GarantiaCheckOut
             reservaId={reservaId}
@@ -503,7 +504,7 @@ export function CheckOutReservaPage() {
         </div>
       </Tarjeta>
 
-      <Tarjeta icono={DoorClosed} titulo="4. Cierre del check-out" hu="HU 51 y 52 — reserva cerrada, habitaciones a limpieza y aviso a Housekeeping">
+      <Tarjeta icono={DoorClosed} titulo="4. Cierre del check-out" hu="Reserva cerrada, habitaciones a limpieza y aviso a Housekeeping">
         <div className="flex flex-col gap-3">
           <p className="text-[13px] text-piedra">
             Al confirmar, la reserva pasa a <strong className="text-tinta">Cerrada</strong>, cada habitación queda{" "}
@@ -533,7 +534,7 @@ export function CheckOutReservaPage() {
       </Tarjeta>
 
       {cerrada && (
-        <Tarjeta icono={Receipt} titulo="5. Comprobante" hu="HU 53 y 55 — comprobante de la estadía">
+        <Tarjeta icono={Receipt} titulo="5. Comprobante" hu="Comprobante de la estadía">
           {comprobantesQuery.isLoading ? (
             <p className="text-sm text-piedra">Buscando comprobantes…</p>
           ) : comprobanteVigente ? (

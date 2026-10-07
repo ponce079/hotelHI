@@ -54,7 +54,7 @@ export function PlanesPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-semibold">Planes tarifarios</h1>
-          <p className="text-sm text-piedra">Condiciones de venta — BAR (base) y derivados (HU-91).</p>
+          <p className="text-sm text-piedra">Condiciones de venta — BAR (base) y derivados.</p>
         </div>
         {puedeGestionar && (
           <Button icono={Plus} onClick={() => setModal({ tipo: "crear" })}>

@@ -483,7 +483,7 @@ function RequerimientoFormulario({ requerimiento, prefill, onClose, onExito }) {
       <form onSubmit={handleSubmit}>
         <div className="flex flex-col gap-4 px-6 py-5">
           <p className="-mt-1 font-mono text-[11px] text-tinta/55">
-            {editando ? `REQ-${String(requerimiento.id).padStart(4, "0")}` : "HU-81 — pedido de reposición por depósito"}
+            {editando ? `REQ-${String(requerimiento.id).padStart(4, "0")}` : "Pedido de reposición por depósito"}
           </p>
 
           {origen === ORIGENES_REQUERIMIENTO.ALERTA && (

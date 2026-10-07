@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutacionUnica } from "../../../lib/useMutacionUnica";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Ban, Plus, Wallet } from "lucide-react";
 import { Button } from "../../../componentes/Button";
@@ -188,7 +189,7 @@ function DetalleReserva({ reserva }) {
     enabled: cerrada && puede("verComprobantesEstadia"),
   });
 
-  const mutacionCancelar = useMutation({
+  const mutacionCancelar = useMutacionUnica({
     mutationFn: () => cancelarReserva(id, motivo.trim()),
     onSuccess: (cancelada) => {
       queryClient.invalidateQueries({ queryKey: ["reservas"] });
@@ -269,6 +270,12 @@ function DetalleReserva({ reserva }) {
         }}
         datos={datosClave(reserva, estadia.todas)}
       />
+
+      {reserva.nombreWebDistinto && (
+        <p role="note" className="rounded-md border border-laton-300 bg-laton-100 px-4 py-2 text-[13.5px] text-laton-700">
+          El nombre declarado en la web no coincide con la ficha: verificar el documento en el check-in. La reserva quedó asociada a la ficha del documento.
+        </p>
+      )}
 
       {cancelada && <ResumenCancelacion reserva={reserva} pagos={pagosQuery.data} />}
 

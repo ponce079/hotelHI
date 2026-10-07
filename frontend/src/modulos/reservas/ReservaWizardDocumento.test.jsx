@@ -159,8 +159,22 @@ describe("ReservaWizard — documento único: el nombre sale de la ficha", () =>
     await irAlPasoHuesped();
     cargarDocumento("45112902");
 
-    expect(await screen.findByText(/Documento nuevo/)).toBeInTheDocument();
+    expect(await screen.findByText(/No hay un huésped registrado con ese documento/)).toBeInTheDocument();
     expect(screen.getByLabelText("Nombres*")).toBeEnabled();
+  });
+
+  it("dato cambiado respecto de la ficha: aviso y casilla sin tildar; se manda actualizarFicha solo si se tilda", async () => {
+    buscarHuespedPorDocumento.mockResolvedValue({ ...FICHA, email: "juan@correo.com", fechaUltimaEstadia: "2026-09-20" });
+    renderWizard({ origen: "RECEPCION" });
+    await irAlPasoHuesped();
+    cargarDocumento("45112902");
+    await waitFor(() => expect(screen.getByLabelText("Nombres*")).toHaveValue("Juan"));
+    expect(screen.getByText(/Huésped registrado · última estadía: 20\/09\/2026/)).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Actualizar la ficha del huésped con estos datos" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/Correo/), { target: { value: "otro@correo.com" } });
+    const casilla = await screen.findByRole("checkbox", { name: "Actualizar la ficha del huésped con estos datos" });
+    expect(casilla).not.toBeChecked();
   });
 
   it("si cambia el documento, el nombre autocompletado del anterior se limpia", async () => {

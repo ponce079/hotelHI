@@ -6,7 +6,12 @@ import { formatearFechaDdMmAaaa, mascaraFecha } from "../../../lib/fechas";
 import { PAISES_SELECTOR } from "../../estadia/ocupantesUbicacion";
 import { Chip } from "../ui";
 import { MAYORIA_EDAD } from "../checkInPantalla.constantes";
-import { usePersonaQueVuelve } from "../usePersonaQueVuelve";
+import { useEffect } from "react";
+import { Button } from "../../../componentes/Button";
+import { useIdentificarPersona } from "../../../lib/identificacion/useIdentificarPersona";
+import { EstadoIdentificacion } from "../../../lib/identificacion/EstadoIdentificacion";
+import { ActualizarFicha } from "../../../lib/identificacion/ActualizarFicha";
+import { camposCambiados } from "../../../lib/identificacion/ficha";
 import { formatearNombrePropio } from "../../../lib/nombres";
 import { VINCULOS_RESPONSABLE, requiereAutorizacion } from "../../../lib/vinculos";
 import { CONTENEDOR_FICHA, FILA_FICHA, Rotulo } from "../../../componentes/FilaFicha";
@@ -45,7 +50,20 @@ const { documento: FILA_DOCUMENTO, identidad: FILA_IDENTIDAD, residencia: FILA_R
 
 export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
   // Persona que vuelve: en filas cargadas a mano; en las precargadas, solo si se cambia el documento.
-  usePersonaQueVuelve(fila, dispatch, (fila.tipo === "adulto" || fila.conDocumento) && (!fila.precargada || Boolean(fila.documentoEditado)));
+  // Identificación por documento (hook único): tipo + país emisor + número, a los 400 ms o con el botón "Buscar". En las
+  // filas precargadas de la reserva, solo si se cambia el documento.
+  const identificacion = useIdentificarPersona({
+    tipoDocumento: fila.campos.tipoDocumento,
+    paisDocumento: fila.campos.paisDocumento,
+    numeroDocumento: fila.campos.numeroDocumento,
+    habilitada: (fila.tipo === "adulto" || fila.conDocumento) && (!fila.precargada || Boolean(fila.documentoEditado)),
+  });
+  useEffect(() => {
+    if (identificacion.estado === "registrada" && fila.ficha?.clave !== identificacion.clave) {
+      dispatch({ tipo: "completarDesdeFicha", filaId: fila.id, ficha: identificacion.ficha, clave: identificacion.clave });
+    }
+  }, [identificacion.estado, identificacion.clave, identificacion.ficha, fila.ficha?.clave, fila.id, dispatch]);
+  const cambiados = fila.ficha?.original ? camposCambiados(fila.campos, fila.ficha.original) : [];
   const revision = revisarFila(estado, fila, contexto);
   const { heredados } = resolverCampos(estado, fila);
   // El aviso de separar nombre y apellido va debajo de esos campos; los demás, al final de la fila.
@@ -177,18 +195,32 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
       </div>
 
       {fila.ficha && (
-        <p role="status" className="mb-2.5 rounded-md bg-pino-100 px-2.5 py-1.5 text-[13.5px] text-pino-700">
-          ✓ Ficha encontrada: <b>{fila.ficha.nombre}</b> — datos completados
-          {fila.ficha.ultimaEstadia ? ` · última estadía ${formatearFechaDdMmAaaa(fila.ficha.ultimaEstadia)}` : ""}
+        <p className="mb-1 text-[13.5px] text-pino-700">
+          Ficha de <b>{fila.ficha.nombre}</b>: se completaron todos sus datos. El nombre es de la ficha; solo un administrador lo corrige, desde la ficha del huésped.
         </p>
       )}
+      <EstadoIdentificacion identificacion={identificacion} className="mb-2.5" />
+      <ActualizarFicha
+        id={idCampo(fila.id, "actualizarFicha")}
+        cambiados={cambiados}
+        marcada={fila.actualizarFicha}
+        onCambiar={(valor) => dispatch({ tipo: "actualizarFicha", filaId: fila.id, valor })}
+        className="mb-2.5"
+      />
 
       {fila.tipo === "adulto" ? (
         <div className={CONTENEDOR_FICHA}>
           <div className={FILA_DOCUMENTO}>{documento}</div>
+          {identificacion.puedeBuscar && (
+            <div className="mt-1.5">
+              <Button variante="secundario" tamano="fila" type="button" onClick={identificacion.buscarAhora}>
+                Buscar
+              </Button>
+            </div>
+          )}
           <div className={`${FILA_IDENTIDAD} mt-2.5`}>
-            {campo("nombre", "Nombres")}
-            {campo("apellido", "Apellido")}
+            {campo("nombre", "Nombres", { disabled: Boolean(fila.ficha) })}
+            {campo("apellido", "Apellido", { disabled: Boolean(fila.ficha) })}
             {campo("fechaNacimiento", "Nacimiento", { placeholder: "dd/mm/aaaa", inputMode: "numeric" })}
             <SelectorPais id={idCampo(fila.id, "nacionalidad")} label={rotulo("nacionalidad", "Nacionalidad")} valor={fila.campos.nacionalidad} onCambiar={cambiar("nacionalidad")} />
           </div>
@@ -221,14 +253,15 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
       ) : (
         <div className={CONTENEDOR_FICHA}>
           <div className={FILA_MENOR}>
-            {campo("nombre", "Nombres")}
-            {campo("apellido", "Apellido")}
+            {campo("nombre", "Nombres", { disabled: Boolean(fila.ficha) })}
+            {campo("apellido", "Apellido", { disabled: Boolean(fila.ficha) })}
             {campo("fechaNacimiento", "Nacimiento", { placeholder: "dd/mm/aaaa", inputMode: "numeric" })}
             {selectResponsable}
             {selectVinculo}
           </div>
           {avisoSepararNombre}
           {bloqueAutorizacion}
+          {!fila.conDocumento && <p className="mt-1 text-[12.5px] text-piedra">Si el menor tiene DNI, cargalo: así se lo reconoce en la próxima estadía.</p>}
           {fila.conDocumento ? (
             <div className={`${FILA_DOCUMENTO} mt-2.5`}>{documento}</div>
           ) : (

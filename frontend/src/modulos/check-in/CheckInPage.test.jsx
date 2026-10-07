@@ -108,7 +108,7 @@ const filas = () => [...document.querySelectorAll('[id^="ci-fila-"]')];
 const rotulo = (texto) => new RegExp(`^${texto.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(\\*| \\(opcional\\))?$`);
 const cambiar = (fila, etiqueta, valor) =>
   fireEvent.change(within(fila).getByLabelText(typeof etiqueta === "string" ? rotulo(etiqueta) : etiqueta), { target: { value: valor } });
-const botonConfirmar = () => screen.getByRole("button", { name: /Confirmar check-in|Confirmando/ });
+const botonConfirmar = () => screen.getByRole("button", { name: /Confirmar check-in|Procesando/ });
 
 async function abrirReserva(codigo = "C43B1F20") {
   const fila = await screen.findByText(codigo);
@@ -240,7 +240,7 @@ describe("Check-in con reserva", () => {
     fireEvent.click(botonConfirmar());
     fireEvent.click(botonConfirmar());
     await waitFor(() => expect(botonConfirmar()).toBeDisabled());
-    expect(screen.getByText("Confirmando…")).toBeInTheDocument();
+    expect(screen.getByText("Procesando…")).toBeInTheDocument();
     expect(api.confirmarCheckInConReserva).toHaveBeenCalledTimes(1);
     const [id, cuerpo] = api.confirmarCheckInConReserva.mock.calls[0];
     expect(id).toBe(10);
@@ -275,12 +275,51 @@ describe("Check-in con reserva", () => {
     await new Promise((r) => setTimeout(r, 600));
     expect(api.buscarHuespedPorDocumento).not.toHaveBeenCalled();
     cambiar(adulto2, "Número", "31784205");
-    expect(await within(adulto2).findByText(/Ficha encontrada:/, {}, { timeout: 2000 })).toHaveTextContent(
-      "✓ Ficha encontrada: Carolina Paz — datos completados · última estadía 12/07/2025",
-    );
+    expect(await within(adulto2).findByText("Huésped registrado · última estadía: 12/07/2025", {}, { timeout: 2000 })).toBeInTheDocument();
+    expect(within(adulto2).getByText(/Ficha de/)).toHaveTextContent("Ficha de Carolina Paz: se completaron todos sus datos");
     expect(api.buscarHuespedPorDocumento).toHaveBeenCalledWith({ tipo: "DNI", pais: "AR", numero: "31784205" });
     expect(within(adulto2).getByLabelText(rotulo("Apellido"))).toHaveValue("Paz");
+    // El nombre de una ficha existente no se cambia desde el check-in.
+    expect(within(adulto2).getByLabelText(rotulo("Apellido"))).toBeDisabled();
+    expect(within(adulto2).getByLabelText(rotulo("Nombres"))).toBeDisabled();
     expect(within(adulto2).getByText("Esta persona figura alojada en otra estadía.")).toBeInTheDocument();
+    expect(within(adulto2).getByText("Esta persona figura alojada ahora en otra estadía.")).toBeInTheDocument();
+  });
+
+  it("persona que vuelve: el botón Buscar consulta al instante, sin esperar; y sin ficha avisa que no hay un huésped registrado", async () => {
+    prepararReserva(reservaDe({ habitaciones: [HAB_270] }), [fichaTitular()]);
+    api.buscarHuespedPorDocumento.mockRejectedValue({ response: { status: 404, data: { error: "No hay", otrosDocumentos: [{ tipoDocumento: "Pasaporte", paisDocumento: "BR", iniciales: "C. P." }] } } });
+    renderizar("/check-in?codigo=C43B1F20");
+    await waitFor(() => expect(filas()).toHaveLength(3));
+    const adulto2 = filas()[1];
+    cambiar(adulto2, "Número", "31784205");
+    fireEvent.click(within(adulto2).getByRole("button", { name: "Buscar" }));
+    await waitFor(() => expect(api.buscarHuespedPorDocumento).toHaveBeenCalledTimes(1), { timeout: 300 });
+    expect(await within(adulto2).findByText("No hay un huésped registrado con ese documento")).toBeInTheDocument();
+    expect(within(adulto2).getByText(/mismo número y otro tipo\/país de documento: Pasaporte, BR, C\. P\./)).toBeInTheDocument();
+    // El formulario sigue vacío y editable.
+    expect(within(adulto2).getByLabelText(rotulo("Apellido"))).toHaveValue("");
+    expect(within(adulto2).getByLabelText(rotulo("Apellido"))).not.toBeDisabled();
+  });
+
+  it("persona que vuelve: un dato cambiado respecto de la ficha se marca y la casilla 'Actualizar la ficha' empieza sin tildar", async () => {
+    prepararReserva(reservaDe({ habitaciones: [HAB_270] }), [fichaTitular()]);
+    api.buscarHuespedPorDocumento.mockResolvedValue({
+      tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "31784205", nombre: "Carolina", apellido: "Paz",
+      fechaNacimiento: haceAnios(39).iso, nacionalidad: "AR", paisResidencia: "AR", localidad: "Salta", telefono: "3875550100",
+      fechaUltimaEstadia: "2025-07-12", alojadaAhora: false,
+    });
+    renderizar("/check-in?codigo=C43B1F20");
+    await waitFor(() => expect(filas()).toHaveLength(3));
+    const adulto2 = filas()[1];
+    cambiar(adulto2, "Número", "31784205");
+    await within(adulto2).findByText(/Ficha de/, {}, { timeout: 2000 });
+    expect(within(adulto2).queryByRole("checkbox", { name: "Actualizar la ficha del huésped con estos datos" })).not.toBeInTheDocument();
+    fireEvent.click(within(adulto2).getByRole("button", { name: "Más datos" }));
+    cambiar(adulto2, "Teléfono", "3875559999");
+    const casilla = await within(adulto2).findByRole("checkbox", { name: "Actualizar la ficha del huésped con estos datos" });
+    expect(casilla).not.toBeChecked();
+    expect(within(adulto2).getByText(/Cambiaste datos respecto de la ficha del huésped: teléfono\./)).toBeInTheDocument();
   });
 
   it("quitar muestra la diferencia de la vista previa; cancelar deja todo como estaba; confirmar recotiza", async () => {

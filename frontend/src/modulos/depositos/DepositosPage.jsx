@@ -24,7 +24,7 @@ export function DepositosPage() {
       <div>
         <h1 className="font-heading text-[34px] font-semibold">Depósitos y Stock</h1>
         <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-          HU 3, 4, 5 y 6 — depósitos con sus artículos habilitados y su stock
+          Depósitos con sus artículos habilitados y su stock
         </p>
       </div>
 

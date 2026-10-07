@@ -3,6 +3,7 @@
 //
 // Invariante: las filas de cada habitación son exactamente su ocupación (adultos primero,
 // después menores). Agregar o quitar a alguien cambia la ocupación y las filas a la vez.
+import { valoresDeLaFicha } from "../../lib/identificacion/ficha";
 import { codigoPais } from "../../lib/paises";
 import { normalizarTipoDocumento } from "../../lib/tiposDocumento";
 import { edadEnFecha, formatearFechaDdMmAaaa, ddMmAaaaAISO } from "../../lib/fechas";
@@ -325,39 +326,29 @@ export function reducer(estado, accion) {
       };
     }
     case "completarDesdeFicha": {
-      // Persona que vuelve: completa los campos vacíos con su ficha.
-      const { filaId, ficha } = accion;
+      // Persona que vuelve: se trae su ficha COMPLETA (nombre y apellido de la ficha, nacimiento, nacionalidad, residencia,
+      // localidad, domicilio, teléfono y correo). Lo que cambie después el recepcionista se marca contra esta ficha y solo
+      // se guarda en ella con la casilla "Actualizar la ficha del huésped con estos datos" (sin tildar al empezar).
+      const { filaId, ficha, clave } = accion;
       return actualizarFila(estado, filaId, (f) => {
-        const datos = {
-          nombre: ficha.nombre,
-          apellido: ficha.apellido,
-          fechaNacimiento: isoAFecha(ficha.fechaNacimiento),
-          nacionalidad: ficha.nacionalidad,
-          paisResidencia: ficha.paisResidencia,
-          localidad: ficha.localidad,
-          domicilio: ficha.domicilio,
-          telefono: ficha.telefono,
-          email: ficha.email,
-        };
-        const campos = { ...f.campos };
-        const completados = [];
-        for (const [k, v] of Object.entries(datos)) {
-          if (!v) continue;
-          const vacio = !String(f.campos[k] ?? "").trim() || (k === "nacionalidad" && !f.precargada && f.campos[k] === "AR");
-          if (vacio) {
-            campos[k] = v;
-            completados.push(k);
-          }
+        const campos = { ...f.campos, nombre: ficha.nombres || f.campos.nombre, apellido: ficha.apellido || f.campos.apellido };
+        const traidos = [];
+        for (const [k, v] of Object.entries(valoresDeLaFicha(ficha))) {
+          campos[k] = v;
+          traidos.push(k);
         }
         return {
           campos,
           // Lo que vino de su ficha cuenta como dato propio (no se pisa con lo heredado).
-          corregidos: [...new Set([...f.corregidos, ...completados.filter((k) => ["nacionalidad", "paisResidencia"].includes(k))])],
-          ficha: { nombre: `${ficha.nombre ?? ""} ${ficha.apellido ?? ""}`.trim(), ultimaEstadia: ficha.fechaUltimaEstadia },
+          corregidos: [...new Set([...f.corregidos, ...traidos.filter((k) => ["nacionalidad", "paisResidencia"].includes(k))])],
+          ficha: { clave, nombre: ficha.nombreCompleto, ultimaEstadia: ficha.fechaUltimaEstadia, original: ficha },
+          actualizarFicha: false,
           alojadaEnOtra: Boolean(ficha.alojadaAhora),
         };
       });
     }
+    case "actualizarFicha":
+      return actualizarFila(estado, accion.filaId, () => ({ actualizarFicha: accion.valor === true }));
     case "abrirAccion":
       return { ...estado, accion: accion.accion };
     case "cancelarAccion":

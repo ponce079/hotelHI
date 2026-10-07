@@ -18,6 +18,7 @@ import { useVolver } from "../../lib/useVolver";
 import { anularComprobante, obtenerComprobante } from "./comprobanteEstadia.api";
 import { TIPO_COMPROBANTE_BADGE } from "./comprobanteEstadia.constantes";
 import { NotaCreditoModal } from "./NotaCreditoModal";
+import { HOTEL } from "../ecommerce/ecommerce.config";
 
 const moneda = (n) => `$ ${formatearMonto(n)}`;
 const centavos = (n) => Math.round(Number(n || 0) * 100);
@@ -93,6 +94,10 @@ function DetalleCuenta({ detalle }) {
   );
 }
 
+// Proyecto académico: el hotel no tiene razón social ni CUIT reales; nunca se inventa uno.
+const RAZON_SOCIAL_DEMOSTRACION = "Hotel de demostración";
+const CUIT_NO_APLICA = "CUIT: no aplica — proyecto académico";
+
 export function ComprobanteEstadiaDetallePage() {
   const { id } = useParams();
   const { puede } = useSesion();
@@ -150,6 +155,9 @@ export function ComprobanteEstadiaDetallePage() {
   const acreditado = notasVigentes.reduce((acc, n) => acc + Number(n.importeTotal), 0);
   const disponible = (centavos(c.importeTotal) - centavos(acreditado)) / 100;
   const huesped = c.reserva?.huesped;
+  // Antes del check-out la estadía todavía puede cambiar: el comprobante es provisorio.
+  const provisorio = !esNota && c.reserva?.estado && c.reserva.estado !== "Cerrada";
+  const medios = c.mediosDePago ?? [];
 
   const puedeEmitirNota = puedeGestionar && !esNota && !c.anulado && centavos(disponible) > 0;
   // Regla del backend: un comprobante con notas de crédito vigentes no se anula.
@@ -163,14 +171,18 @@ export function ComprobanteEstadiaDetallePage() {
       <div className="hidden print:block">
         <div className="mb-2 flex items-start justify-between border-b-2 border-tinta pb-4">
           <div>
-            <p className="font-heading text-xl font-semibold">Holiday Inn</p>
-            <p className="text-xs text-piedra">SGH · Gestión Hotelera</p>
+            <p className="font-heading text-xl font-semibold">{HOTEL.nombre}</p>
+            <p className="text-xs">{RAZON_SOCIAL_DEMOSTRACION}</p>
+            <p className="text-xs text-piedra">{CUIT_NO_APLICA}</p>
+            <p className="text-xs text-piedra">{HOTEL.direccion}</p>
+            <p className="text-xs text-piedra">Tel. {HOTEL.telefono}</p>
           </div>
           <div className="text-right">
             <p className="font-heading text-lg font-semibold">{esNota ? "Nota de crédito" : "Comprobante"}</p>
             <p className="font-mono text-sm">{c.numero}</p>
             <p className="text-xs text-piedra">Emitido el {formatearTimestamp(c.fecha)}</p>
             {c.anulado && <p className="mt-1 text-xs font-semibold uppercase text-error-texto">Anulado</p>}
+            {provisorio && <p className="mt-1 text-xs font-semibold uppercase">Comprobante provisorio</p>}
           </div>
         </div>
       </div>
@@ -265,6 +277,23 @@ export function ComprobanteEstadiaDetallePage() {
 
         {!esNota && <DetalleCuenta detalle={c.detalle} />}
 
+        {!esNota && medios.length > 0 && (
+          <div className="mt-5">
+            <p className="text-[11px] uppercase tracking-wide text-piedra">Medios de pago</p>
+            <ul className="mt-1 text-[13px]">
+              {medios.map((m, i) => (
+                <li key={i} className="flex justify-between gap-4 border-b border-borde py-1 last:border-0">
+                  <span>
+                    {m.medioPago}
+                    <span className="text-piedra"> · {m.concepto}{m.referencia ? ` · ${m.referencia}` : ""}</span>
+                  </span>
+                  <span className="font-mono">{moneda(m.importe)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         <div className="mt-6 flex flex-wrap items-end justify-between gap-6 border-t border-borde pt-4">
           <div className="flex min-w-65 flex-col gap-1.5">
             <div className="flex items-baseline justify-between gap-6 text-[12.5px] text-piedra">
@@ -290,7 +319,7 @@ export function ComprobanteEstadiaDetallePage() {
         <div className="rounded-lg border border-borde bg-white p-5 print:hidden">
           <h2 className="font-heading text-[19px] font-semibold">Notas de crédito</h2>
           <p className="mb-4 mt-0.5 font-mono text-[11px] text-tinta/55">
-            HU 56 — acreditado {moneda(acreditado)} · todavía acreditable {moneda(disponible)}
+            Acreditado {moneda(acreditado)} · todavía acreditable {moneda(disponible)}
           </p>
           <Table
             columnas={["Número", "Emitida", "Motivo", "Total", "Estado"]}
@@ -314,8 +343,8 @@ export function ComprobanteEstadiaDetallePage() {
         </div>
       )}
 
-      <p className="hidden border-t border-dashed border-borde pt-3 text-xs text-piedra print:block">
-        Comprobante interno del sistema de gestión hotelera — sin validez fiscal.
+      <p className="border-t border-dashed border-borde pt-3 text-xs text-piedra">
+        {provisorio ? "Comprobante provisorio. " : ""}Comprobante interno. No válido como factura.
       </p>
 
       {modalNota && (

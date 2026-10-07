@@ -151,7 +151,7 @@ export function ComprobantesPage() {
         <div>
           <h1 className="font-heading text-[34px] font-semibold">Comprobantes de Proveedores</h1>
           <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-            HU 72-75 — Facturas, notas de débito y crédito, matching de 3 vías
+            Facturas, notas de débito y crédito, matching de 3 vías
           </p>
           <p className="mt-1 text-[12.5px] text-piedra">
             "Comprobantes" incluye Facturas, Notas de Crédito y Notas de Débito de proveedores — no solo facturas.

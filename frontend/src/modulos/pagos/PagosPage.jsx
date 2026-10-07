@@ -97,7 +97,7 @@ export function PagosPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="font-heading text-[34px] font-semibold">Pagos a Proveedores</h1>
-          <p className="mt-1.5 font-mono text-[11px] text-tinta/55">HU 76 a 79, 86 — órdenes de pago y su desglose por medio</p>
+          <p className="mt-1.5 font-mono text-[11px] text-tinta/55">Órdenes de pago y su desglose por medio</p>
         </div>
         {puedeRegistrar && (
           <Button variante="ok" onClick={() => setMostrarWizard(true)} icono={Plus}>

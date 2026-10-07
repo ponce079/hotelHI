@@ -57,7 +57,7 @@ export function TemporadasPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-semibold">Temporadas</h1>
-          <p className="text-sm text-piedra">Rangos de fecha con su nivel de demanda (HU-90).</p>
+          <p className="text-sm text-piedra">Rangos de fecha con su nivel de demanda.</p>
         </div>
         {puedeGestionar && (
           <Button icono={Plus} onClick={() => setModal({ tipo: "crear" })}>
