@@ -36,6 +36,7 @@ const {
   LIMITES_RESERVA,
   MAX_INTENTOS_CODIGO,
   LONGITUD_CODIGO_BYTES,
+  ACCION_NOMBRE_WEB_DISTINTO,
 } = require("./reservas.constantes");
 // HU-89: hoyComoFechaUTC vive en lib/ (no acá) porque habitaciones.servicio.js
 // también la necesita, y ese import directo desde acá cerraría un ciclo de
@@ -290,6 +291,8 @@ function normalizarHuesped(data, fechaIngreso = hoyComoFechaUTC()) {
     contacto,
     // Solo lo fija el controlador, y únicamente para un administrador con sesión.
     corregirNombre: data.corregirNombre === true,
+    // Casilla "Actualizar la ficha del huésped con estos datos": sin ella, una ficha existente nunca se pisa en silencio.
+    actualizarFicha: data.actualizarFicha === true,
     preferencias: textoOpcional(data.preferencias, "Las preferencias del huésped", LIMITES_RESERVA.preferencias),
   };
 }
@@ -799,16 +802,40 @@ function exigirMismoNombre(existente, datos, corregirNombre) {
 }
 
 async function resolverHuesped(tx, datosConPermiso) {
-  const { corregirNombre = false, ...datos } = datosConPermiso;
+  const { corregirNombre = false, actualizarFicha = false, ...datos } = datosConPermiso;
   const identidadDocumento = require("../estadia/persona.servicio").claveDocumento(datos);
   if (identidadDocumento) {
     // Persona que vuelve: se reutiliza su ficha y se actualiza. El correo manda: un correo ya
     // guardado no se reemplaza por un teléfono (por ejemplo, un walk-in que solo dejó teléfono).
-    const existente = await tx.huesped.findUnique({ where: { identidadDocumento } });
-    if (!existente) return tx.huesped.create({ data: { ...datos, identidadDocumento } });
+    let existente = await tx.huesped.findUnique({ where: { identidadDocumento } });
+    if (!existente) {
+      try {
+        return await tx.huesped.create({ data: { ...datos, identidadDocumento } });
+      } catch (err) {
+        if (err?.code !== "P2002") throw err;
+        // Otra alta creó la MISMA ficha un instante antes (dos altas a la vez con un documento nuevo): el índice único
+        // lo impidió. Se la relee con una lectura "actual" (FOR UPDATE; la lectura normal de esta transacción es de antes
+        // del commit de la otra y no la vería) y se sigue como persona que vuelve: sin duplicar y sin pisar nada.
+        const filas = await tx.$queryRaw`SELECT * FROM huespedes WHERE identidadDocumento = ${identidadDocumento} FOR UPDATE`;
+        if (!filas.length) throw err;
+        existente = filas[0];
+      }
+    }
     exigirMismoNombre(existente, datos, corregirNombre);
     const { nombre, nombres, apellido, ...resto } = datos;
     const nombreNuevo = corregirNombre ? { nombre, nombres: nombres ?? null, apellido: apellido ?? null } : {};
+    if (!actualizarFicha) {
+      // Persona que vuelve, sin pedir actualizar su ficha: nada de lo que ya tiene se pisa; solo se completa lo vacío
+      // (el nombre solo lo corrige un administrador). Sin escrituras si no hay nada para completar.
+      const vacio = (v) => v === null || v === undefined || String(v).trim() === "";
+      const completar = {
+        ...nombreNuevo,
+        ...(vacio(existente.fechaNacimiento) && datos.fechaNacimiento ? { fechaNacimiento: datos.fechaNacimiento } : {}),
+        ...(vacio(existente.contacto) && datos.contacto ? { contacto: datos.contacto } : {}),
+        ...(vacio(existente.preferencias) && datos.preferencias ? { preferencias: datos.preferencias } : {}),
+      };
+      return Object.keys(completar).length ? tx.huesped.update({ where: { id: existente.id }, data: completar }) : existente;
+    }
     const contacto = esEmail(datos.contacto) || !esEmail(existente.contacto) ? datos.contacto : existente.contacto;
     return tx.huesped.update({ where: { id: existente.id }, data: { ...resto, ...nombreNuevo, contacto } });
   }
@@ -820,15 +847,17 @@ async function resolverHuesped(tx, datosConPermiso) {
 
   // Solo se pisan los campos con valor nuevo: un alta que no repite el
   // contacto no tiene que borrar el que ya estaba cargado.
+  const vacioLegacy = (v) => v === null || v === undefined || String(v).trim() === "";
   return tx.huesped.update({
     where: { id: existente.id },
     data: {
       ...(corregirNombre
         ? { nombre: datos.nombre, ...(datos.nombres ? { nombres: datos.nombres, apellido: datos.apellido } : {}) }
         : {}),
-      ...(datos.fechaNacimiento ? { fechaNacimiento: datos.fechaNacimiento } : {}),
-      contacto: datos.contacto ?? existente.contacto,
-      preferencias: datos.preferencias ?? existente.preferencias,
+      // Igual que arriba: sin la casilla de actualizar la ficha, solo se completa lo vacío.
+      ...(datos.fechaNacimiento && (actualizarFicha || vacioLegacy(existente.fechaNacimiento)) ? { fechaNacimiento: datos.fechaNacimiento } : {}),
+      contacto: actualizarFicha ? datos.contacto ?? existente.contacto : vacioLegacy(existente.contacto) ? datos.contacto ?? existente.contacto : existente.contacto,
+      preferencias: actualizarFicha ? datos.preferencias ?? existente.preferencias : vacioLegacy(existente.preferencias) ? datos.preferencias ?? existente.preferencias : existente.preferencias,
     },
   });
 }
@@ -1142,14 +1171,20 @@ async function crearReserva(data) {
   // alcanza con generar otro código adentro — hay que rehacerla entera.
   // En la práctica no debería entrar nunca al segundo intento.
   let ultimoError;
+  let reintentadoPorChoque = false;
   for (let intento = 0; intento < MAX_INTENTOS_CODIGO; intento += 1) {
     try {
-      const creada = await prisma.$transaction((tx) => crearReservaEnTransaccion(tx, datos), OPCIONES_TRANSACCION);
+      const creada = await prisma.$transaction((tx) => crearReservaEnTransaccion(tx, datos), OPCIONES_TRANSACCION).catch(etiquetarTransaccionVencida);
       // Relectura con include fuera del commit (ver OPCIONES_TRANSACCION).
       const reserva = await prisma.reserva.findUnique({ where: { id: creada.id }, include: INCLUDE_RESERVA });
       const confirmacionEmail = await enviarConfirmacionPorEmail(reserva);
       return { ...formatearReserva(reserva), confirmacionEmail };
     } catch (err) {
+      // Choque de escritura con otra alta (la base descartó esta transacción entera, sin guardar nada): se rehace UNA vez.
+      if (err?.codigo === "OPERACION_CONCURRENTE" && !reintentadoPorChoque) {
+        reintentadoPorChoque = true;
+        continue;
+      }
       const esCodigoDuplicado =
         err instanceof Prisma.PrismaClientKnownRequestError &&
         err.code === "P2002" &&
@@ -1211,6 +1246,7 @@ async function crearReservaConGarantia(data) {
   let creada;
   try {
     let ultimoError;
+    let reintentadoPorChoque = false;
     for (let intento = 0; intento < MAX_INTENTOS_CODIGO && !creada; intento += 1) {
       try {
         creada = await prisma.$transaction(async (tx) => {
@@ -1223,6 +1259,11 @@ async function crearReservaConGarantia(data) {
           return reservaCreada;
         }, OPCIONES_TRANSACCION).catch(etiquetarTransaccionVencida);
       } catch (err) {
+        // Choque de escritura con otra alta (la base descartó esta transacción entera, sin guardar nada): se rehace UNA vez.
+        if (err?.codigo === "OPERACION_CONCURRENTE" && !reintentadoPorChoque) {
+          reintentadoPorChoque = true;
+          continue;
+        }
         const esCodigoDuplicado =
           err instanceof Prisma.PrismaClientKnownRequestError &&
           err.code === "P2002" &&
@@ -1249,7 +1290,10 @@ async function crearReservaConGarantia(data) {
   // Relectura con include fuera del commit (ver OPCIONES_TRANSACCION).
   const reservaCompleta = await prisma.reserva.findUnique({ where: { id: creada.id }, include: INCLUDE_RESERVA });
   // El email no está en el camino crítico del alta: se espera como máximo 1,5 s; si no llegó, sigue en segundo plano.
-  const confirmacionEmail = await conEsperaMaxima(enviarConfirmacionPorEmail(reservaCompleta), {
+  // La confirmación va al contacto que se declaró al reservar, aunque la ficha existente conserve el suyo (no se la
+  // actualiza sin la casilla "Actualizar la ficha del huésped con estos datos").
+  const paraElEmail = { ...reservaCompleta, huesped: { ...reservaCompleta.huesped, contacto: datos.huesped?.contacto || reservaCompleta.huesped?.contacto } };
+  const confirmacionEmail = await conEsperaMaxima(enviarConfirmacionPorEmail(paraElEmail), {
     etiqueta: `confirmación ${reservaCompleta.codigoConfirmacion}`,
   });
   const estadoFinal = autorizada.preautorizacion ? "Capturada" : autorizada.estado ?? "Capturada";
@@ -1265,6 +1309,13 @@ async function crearReservaConGarantia(data) {
 // ejemplo durante el commit, NO se etiquetan como seguros para reintentar).
 // El wizard reconoce `codigo` y ofrece actualizar la disponibilidad y reintentar.
 function etiquetarTransaccionVencida(err) {
+  // Dos altas a la vez que crean la misma ficha (o toman las mismas filas) pueden chocar en un deadlock de la base: la
+  // base descarta UNA transacción entera (P2034) y no quedó nada guardado. Es un 409 para reintentar, no un error 500.
+  if (err.code === "P2034") {
+    const choque = new ErrorDeNegocio("Otra operación estaba registrando lo mismo al mismo tiempo. No se guardó nada: volvé a intentarlo.", 409);
+    choque.codigo = "OPERACION_CONCURRENTE";
+    throw choque;
+  }
   if (err.code === "P2028" && err.meta?.operation === "query" && /expired transaction/i.test(err.message)) {
     const vencido = new ErrorDeNegocio(
       "Se terminó el tiempo de guardado (1 minuto). La reserva y la garantía no se guardaron " +
@@ -1283,6 +1334,10 @@ function etiquetarTransaccionVencida(err) {
 // tarjeta rechazada, 400 por datos inválidos).
 function traducirErrorGarantias(err) {
   if (err instanceof garantiasServicio.ErrorDeNegocio) return new ErrorDeNegocio(err.message, err.statusCode);
+  // El cierre por cancelación/no-show tiene su propia clase (cierreReserva.servicio.js): sin traducirla, pedir la vista
+  // previa de una reserva Cancelada, No-show, En curso o Cerrada daba 500 en vez del 400 real ("solo se calcula para
+  // reservas confirmadas").
+  if (err instanceof cierreReservaServicio.ErrorDeNegocio) return new ErrorDeNegocio(err.message, err.statusCode);
   return err;
 }
 function envolverErrorGarantias(fn) {
@@ -1306,9 +1361,13 @@ async function envolverErrorGarantiasAsync(fn) {
 
 async function obtenerReserva(id) {
   const reservaId = enteroPositivo(id, "id");
-  const reserva = await prisma.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
+  // En paralelo (sin sumar demora): la marca de la reserva web cuyo nombre declarado no coincide con la ficha (regla 2.6).
+  const [reserva, nombresWebDistintos] = await Promise.all([
+    prisma.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA }),
+    prisma.eventoEstadia.count({ where: { reservaId, accion: ACCION_NOMBRE_WEB_DISTINTO } }),
+  ]);
   if (!reserva) throw new ErrorDeNegocio("La reserva no existe.", 404);
-  return formatearReserva(reserva);
+  return { ...formatearReserva(reserva), nombreWebDistinto: nombresWebDistintos > 0 };
 }
 
 // Check-in (HU-43) busca por el código que trae el huésped, no por id.
@@ -1367,7 +1426,13 @@ async function obtenerPorCodigoODocumento(termino) {
   return formatearReserva(vigente ?? candidatas[0]);
 }
 
-async function listarReservas({ q, estado, desde, hasta, habitacionId } = {}) {
+// Sin `pagina` ni `limite` devuelve el arreglo completo de siempre (lo usan Check-out, los tableros y otras pantallas).
+// Con alguno de los dos devuelve una página: { reservas, total, pagina, limite, paginas, conteoPorEstado } (más nuevas
+// primero), con los mismos filtros. `conteoPorEstado` cuenta TODAS las reservas (no solo las filtradas) con una sola
+// consulta agrupada, para las tarjetas de resumen sin traer la lista entera.
+const LIMITE_PAGINA_DEFECTO = 50;
+const LIMITE_PAGINA_MAXIMO = 200;
+async function listarReservas({ q, estado, desde, hasta, habitacionId, pagina, limite } = {}) {
   if (estado && !ESTADOS_RESERVA.includes(estado)) {
     throw new ErrorDeNegocio(`estado debe ser uno de: ${ESTADOS_RESERVA.join(", ")}.`);
   }
@@ -1378,33 +1443,59 @@ async function listarReservas({ q, estado, desde, hasta, habitacionId } = {}) {
   const fechaDesdeFiltro = desde ? parsearFechaSinHora(desde, "El filtro de fecha desde") : null;
   const fechaHastaFiltro = hasta ? parsearFechaSinHora(hasta, "El filtro de fecha hasta") : null;
 
-  const reservas = await prisma.reserva.findMany({
-    where: {
-      ...(estado ? { estado } : {}),
-      ...(fechaHastaFiltro ? { fechaDesde: { lte: fechaHastaFiltro } } : {}),
-      ...(fechaDesdeFiltro ? { fechaHasta: { gte: fechaDesdeFiltro } } : {}),
-      ...(habitacionId
-        ? { reservaHabitaciones: { some: { habitacionId: enteroPositivo(habitacionId, "habitacionId") } } }
-        : {}),
-      ...(texto
-        ? {
-            OR: [
-              { codigoConfirmacion: { contains: texto } },
-              { huesped: { nombre: { contains: texto } } },
-              { huesped: { numeroDocumento: { contains: texto } } },
-              ...(normalizarNumeroDocumento(texto) && normalizarNumeroDocumento(texto) !== texto
-                ? [{ huesped: { numeroDocumento: { contains: normalizarNumeroDocumento(texto) } } }]
-                : []),
-              { reservaHabitaciones: { some: { habitacion: { numero: { contains: texto } } } } },
-            ],
-          }
-        : {}),
-    },
-    include: INCLUDE_RESERVA,
-    orderBy: [{ fechaDesde: "desc" }, { id: "desc" }],
-  });
+  const where = {
+    ...(estado ? { estado } : {}),
+    ...(fechaHastaFiltro ? { fechaDesde: { lte: fechaHastaFiltro } } : {}),
+    ...(fechaDesdeFiltro ? { fechaHasta: { gte: fechaDesdeFiltro } } : {}),
+    ...(habitacionId
+      ? { reservaHabitaciones: { some: { habitacionId: enteroPositivo(habitacionId, "habitacionId") } } }
+      : {}),
+    ...(texto
+      ? {
+          OR: [
+            { codigoConfirmacion: { contains: texto } },
+            { huesped: { nombre: { contains: texto } } },
+            { huesped: { numeroDocumento: { contains: texto } } },
+            ...(normalizarNumeroDocumento(texto) && normalizarNumeroDocumento(texto) !== texto
+              ? [{ huesped: { numeroDocumento: { contains: normalizarNumeroDocumento(texto) } } }]
+              : []),
+            { reservaHabitaciones: { some: { habitacion: { numero: { contains: texto } } } } },
+          ],
+        }
+      : {}),
+  };
 
-  return reservas.map(formatearReserva);
+  if (pagina === undefined && limite === undefined) {
+    const reservas = await prisma.reserva.findMany({
+      where,
+      include: INCLUDE_RESERVA,
+      orderBy: [{ fechaDesde: "desc" }, { id: "desc" }],
+    });
+    return reservas.map(formatearReserva);
+  }
+
+  const paginaActual = Math.max(1, Number.parseInt(pagina, 10) || 1);
+  const tamano = Math.min(LIMITE_PAGINA_MAXIMO, Math.max(1, Number.parseInt(limite, 10) || LIMITE_PAGINA_DEFECTO));
+  const [filas, total, porEstado] = await Promise.all([
+    prisma.reserva.findMany({
+      where,
+      include: INCLUDE_RESERVA,
+      // La más recién cargada primero (id autoincremental): el mismo orden que ya muestra la pantalla de Reservas.
+      orderBy: [{ id: "desc" }],
+      skip: (paginaActual - 1) * tamano,
+      take: tamano,
+    }),
+    prisma.reserva.count({ where }),
+    prisma.reserva.groupBy({ by: ["estado"], _count: { _all: true } }),
+  ]);
+  return {
+    reservas: filas.map(formatearReserva),
+    total,
+    pagina: paginaActual,
+    limite: tamano,
+    paginas: Math.max(1, Math.ceil(total / tamano)),
+    conteoPorEstado: Object.fromEntries(porEstado.map((g) => [g.estado, g._count._all])),
+  };
 }
 
 // --------------------------------------------------------------
@@ -2070,6 +2161,12 @@ module.exports = {
   esLibreAhora,
   buscarConflictos,
   conIdsDePlan,
+  // Piezas del alta que el walk-in reutiliza para armar su transacción corta (check-in/ingresoRapido.js)
+  errorPorConflictos,
+  cotizarReservaEnvuelto,
+  reservarCodigoLibre,
+  armarNotificacionConfirmacion,
+  exigirMismoNombre,
   // Transiciones para Check-in / Check-out
   marcarEnCurso,
   marcarCerrada,

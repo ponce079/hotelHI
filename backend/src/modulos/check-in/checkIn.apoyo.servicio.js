@@ -8,7 +8,7 @@ const { hoyComoFechaUTC } = require("../../lib/fechas");
 const { conTipoPlano } = require("../../lib/tipoHabitacion");
 const { normalizarNumeroDocumento } = require("../../lib/documento");
 const reservasServicio = require("../reservas/reservas.servicio");
-const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
+const { ESTADO_RESERVA, ACCION_NOMBRE_WEB_DISTINTO } = require("../reservas/reservas.constantes");
 const { CONCEPTO_SENIA } = require("../pagos-estadia/pagoEstadia.constantes");
 const { CONCEPTO_PAGO_ANTICIPADO, TIPO_GARANTIA } = require("../garantias/garantias.constantes");
 
@@ -57,6 +57,8 @@ async function listarLlegadas({ q } = {}) {
         },
         // Tarjeta que dejó la reserva en garantía (solo marca y últimos 4: sin token ni referencias).
         garantiaReserva: { select: { tipo: true, marca: true, ultimos4: true, estado: true } },
+        // Marca de la reserva web cuyo nombre declarado no coincide con la ficha del documento (regla 2.6).
+        historialEstadia: { where: { accion: ACCION_NOMBRE_WEB_DISTINTO }, select: { id: true }, take: 1 },
       },
       orderBy: [{ codigoConfirmacion: "asc" }],
       take: MAX_LLEGADAS,
@@ -94,6 +96,7 @@ async function listarLlegadas({ q } = {}) {
           numeroDocumento: r.huesped?.numeroDocumento ?? null,
           paisDocumento: r.huesped?.paisDocumento ?? null,
         },
+        nombreWebDistinto: (r.historialEstadia?.length ?? 0) > 0,
         habitaciones,
         plan: r.planTarifario
           ? {

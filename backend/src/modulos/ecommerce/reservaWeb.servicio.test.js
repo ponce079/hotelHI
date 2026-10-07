@@ -8,6 +8,7 @@ const tx = {
   datosReservaWeb: { create: jest.fn() },
   garantiaReserva: { create: jest.fn(), update: jest.fn() },
   pagoEstadia: { create: jest.fn() },
+  eventoEstadia: { create: jest.fn() },
 };
 jest.mock("../../lib/prisma", () => ({
   habitacion: { findMany: jest.fn() },
@@ -448,4 +449,35 @@ test("ficha existente: la web no la pisa y solo completa la residencia vacía", 
   });
   expect(tx.huesped.update).toHaveBeenCalledWith({ where: { id: 77 }, data: { paisResidencia: "AR" } });
   expect(tx.datosReservaWeb.create.mock.calls[0][0].data.emailContacto).toBe("maria@correo.com");
+});
+
+describe("el nombre declarado en la web no coincide con el de la ficha (regla 2.6, sin cambiar el esquema)", () => {
+  const ficha = (nombre) => ({
+    id: 77, nombre, nombres: nombre.split(" ")[0], apellido: nombre.split(" ").slice(1).join(" "), tipoDocumento: "DNI", paisDocumento: "AR",
+    numeroDocumento: "30111222", fechaNacimiento: new Date("1991-10-01T00:00:00Z"), contacto: "lucia@correo.com", preferencias: null,
+    nacionalidad: "AR", paisResidencia: "AR",
+  });
+
+  test("la reserva se asocia a la ficha y queda un evento en el historial con el nombre declarado y el de la ficha", async () => {
+    tx.huesped.findUnique.mockResolvedValue(ficha("Lucía Fernández"));
+    const { status } = await llamar(cuerpo());
+    expect(status).toBe(201);
+    expect(tx.eventoEstadia.create).toHaveBeenCalledTimes(1);
+    const { data } = tx.eventoEstadia.create.mock.calls[0][0];
+    expect(data).toMatchObject({ reservaId: 500, accion: "Nombre declarado en la web distinto del de la ficha", operador: "Sistema: reserva web" });
+    expect(JSON.parse(data.detalle)).toMatchObject({ nombreDeLaFicha: "Lucía Fernández", huespedId: 77 });
+    expect(JSON.parse(data.detalle).nombreDeclarado).toMatch(/María/);
+  });
+
+  test("si el nombre coincide (aunque cambien tildes o mayúsculas) no se registra nada", async () => {
+    tx.huesped.findUnique.mockResolvedValue(ficha("MARIA GONZALEZ"));
+    await llamar(cuerpo());
+    expect(tx.eventoEstadia.create).not.toHaveBeenCalled();
+  });
+
+  test("sin ficha previa tampoco hay marca", async () => {
+    tx.huesped.findUnique.mockResolvedValue(null);
+    await llamar(cuerpo());
+    expect(tx.eventoEstadia.create).not.toHaveBeenCalled();
+  });
 });

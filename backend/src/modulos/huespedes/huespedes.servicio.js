@@ -19,6 +19,17 @@ class ErrorDeNegocio extends Error {
 const texto = (v) => String(v ?? "").trim();
 const soloFecha = (d) => (d ? new Date(d).toISOString().slice(0, 10) : null);
 
+// "María José González" → "M. J. G." (solo iniciales: la búsqueda por documento no revela nombres de otras fichas).
+function iniciales(h) {
+  const partes = `${h.nombres ?? ""} ${h.apellido ?? ""}`.trim() ? [h.nombres, h.apellido] : [h.nombre];
+  return partes
+    .join(" ")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => `${p[0].toUpperCase()}.`)
+    .join(" ");
+}
+
 async function buscarPorDocumento({ tipo, pais, numero } = {}) {
   if (!texto(tipo) || !texto(pais) || !texto(numero))
     throw new ErrorDeNegocio("Indicá el tipo de documento, el país emisor y el número.");
@@ -28,7 +39,25 @@ async function buscarPorDocumento({ tipo, pais, numero } = {}) {
     throw new ErrorDeNegocio("El número de documento tiene que tener letras o números.");
   const identidad = claveDocumento({ tipoDocumento, paisDocumento: texto(pais), numeroDocumento: texto(numero) });
   const huesped = identidad ? await prisma.huesped.findUnique({ where: { identidadDocumento: identidad } }) : null;
-  if (!huesped) throw new ErrorDeNegocio("No hay ningún huésped registrado con ese documento.", 404);
+  if (!huesped) {
+    // ¿Hay alguien con el mismo número bajo OTRO tipo o país de documento? Se avisa (con las iniciales, nunca el nombre
+    // completo) para que recepción confirme: las fichas NO se fusionan automáticamente.
+    const numeroNormalizado = require("../../lib/documento").normalizarNumeroDocumento(texto(numero));
+    const parecidos = numeroNormalizado
+      ? await prisma.huesped.findMany({
+          where: { numeroDocumento: numeroNormalizado, NOT: { identidadDocumento: identidad ?? "" } },
+          select: { tipoDocumento: true, paisDocumento: true, nombres: true, apellido: true, nombre: true },
+          take: 3,
+        })
+      : [];
+    const error = new ErrorDeNegocio("No hay ningún huésped registrado con ese documento.", 404);
+    if (parecidos.length) {
+      error.extra = {
+        otrosDocumentos: parecidos.map((h) => ({ tipoDocumento: h.tipoDocumento, paisDocumento: h.paisDocumento, iniciales: iniciales(h) })),
+      };
+    }
+    throw error;
+  }
 
   // Última ficha de ocupante (nombre y apellido separados, teléfono y correo declarados),
   // última estadía real y si está alojada ahora: tres lecturas, sin importar el historial.

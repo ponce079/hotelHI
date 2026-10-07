@@ -20,7 +20,7 @@
 // checkOut.servicio.js para sus propias transiciones de negocio.
 
 const prisma = require("../../lib/prisma");
-const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
+const { OPCIONES_TRANSACCION, OPCIONES_TRANSACCION_LARGA } = require("../../lib/constantes");
 const reservasServicio = require("../reservas/reservas.servicio");
 const { ESTADO_RESERVA } = require("../reservas/reservas.constantes");
 const garantiaEstadiaServicio = require("../garantias/garantiaEstadia.servicio");
@@ -52,9 +52,38 @@ function formatearFechaCorta(fechaISO) {
   return new Date(fechaISO).toLocaleDateString("es-AR", { timeZone: "UTC" });
 }
 
+// Error interno: el updateMany condicional de ocuparHabitaciones no alcanzó a todas las habitaciones. El motivo
+// exacto (no existe / ya ocupada por otra estadía / en limpieza…) se lee DESPUÉS de revertir la transacción, con la
+// instancia global y fuera de ella (adentro no se usa nunca la instancia global de prisma).
+class HabitacionesNoLibres extends Error {
+  constructor(habitacionIds) {
+    super("Alguna de las habitaciones ya no está libre.");
+    this.habitacionIds = habitacionIds;
+  }
+}
+
+async function explicarHabitacionesNoLibres(habitacionIds) {
+  const habitaciones = await prisma.habitacion.findMany({ where: { id: { in: habitacionIds } } });
+  const porId = new Map(habitaciones.map((h) => [h.id, h]));
+  for (const habitacionId of habitacionIds) {
+    const habitacion = porId.get(habitacionId);
+    if (!habitacion) return new ErrorDeNegocio("La habitación indicada no existe.", 404);
+    if (habitacion.estado === "ocupada")
+      return new ErrorDeNegocio(`La habitación ${habitacion.numero} ya está ocupada por otra estadía.`, 409);
+    if (habitacion.estado !== "libre")
+      return new ErrorDeNegocio(
+        `La habitación ${habitacion.numero} no está libre (estado actual: "${habitacion.estado}") — no se puede completar el check-in.`,
+        409
+      );
+  }
+  // Las dos operaciones se cruzaron: cuando se la lee, ya volvió a estar libre. Mismo caso que un P2034.
+  return new ErrorDeNegocio("Otra operación tomó la misma habitación al mismo tiempo. Actualizá la pantalla y volvé a intentar.", 409);
+}
+
 // Dos operaciones simultáneas sobre las mismas habitaciones (por ejemplo, un doble envío): si
 // MySQL corta una por deadlock o conflicto de escritura (P2034), es el mismo caso que una
-// habitación tomada por otra reserva: 409 con un mensaje para recepción.
+// habitación tomada por otra reserva: 409 con un mensaje para recepción. Lo mismo si la habitación ya
+// no estaba libre al ocuparla (updateMany condicional) o si la misma persona ya figura alojada (índice único).
 async function conConcurrenciaComo409(fn) {
   try {
     return await fn();
@@ -64,6 +93,7 @@ async function conConcurrenciaComo409(fn) {
         "Otra operación tomó la misma habitación al mismo tiempo. Actualizá la pantalla y volvé a intentar.",
         409
       );
+    if (err instanceof HabitacionesNoLibres) throw await explicarHabitacionesNoLibres(err.habitacionIds);
     throw err;
   }
 }
@@ -181,21 +211,11 @@ async function buscarReservaParaCheckIn({ id, codigo } = {}) {
 // (antes: ocuparHabitacion, un findUnique y un update por habitación), para que
 // las consultas no crezcan con la cantidad de habitaciones.
 async function ocuparHabitaciones(tx, habitacionIds) {
-  const habitaciones = await tx.habitacion.findMany({ where: { id: { in: habitacionIds } } });
-  const porId = new Map(habitaciones.map((h) => [h.id, h]));
-  for (const habitacionId of habitacionIds) {
-    const habitacion = porId.get(habitacionId);
-    if (!habitacion) throw new ErrorDeNegocio("La habitación indicada no existe.", 404);
-    if (habitacion.estado !== "libre") {
-      throw new ErrorDeNegocio(
-        `La habitación ${habitacion.numero} no está libre (estado actual: "${habitacion.estado}") — ` +
-          "no se puede completar el check-in."
-      );
-    }
-  }
-  // Update directo, no `cambiarEstadoHabitacion` — ver el comentario del
-  // encabezado de este archivo.
-  await tx.habitacion.updateMany({ where: { id: { in: habitacionIds } }, data: { estado: "ocupada" } });
+  const ids = [...new Set(habitacionIds)];
+  // Una sola sentencia con la condición de estado: protege el estado físico de la habitación. No protege las
+  // reservas futuras de esas fechas (eso lo hace el bloqueo + buscarConflictos de quien llama).
+  const { count } = await tx.habitacion.updateMany({ where: { id: { in: ids }, estado: "libre" }, data: { estado: "ocupada" } });
+  if (count !== ids.length) throw new HabitacionesNoLibres(ids);
 }
 
 // El módulo de garantías tiene su propia clase de error: sin traducirla, el
@@ -214,6 +234,27 @@ async function iniciarGarantiaDeCheckIn(argumentos) {
 // HU-43 + HU-46 + HU-47 — confirmar check-in de una reserva existente
 // --------------------------------------------------------------
 
+// ¿La reserva ya está "En curso" con las mismas habitaciones y las mismas personas que trae este pedido?
+async function esCheckInYaConfirmado(reserva, habitaciones, personas) {
+  if (reserva?.estado !== ESTADO_RESERVA.EN_CURSO || !Array.isArray(personas) || !Array.isArray(habitaciones)) return false;
+  const actuales = new Set((reserva.habitaciones ?? []).map((h) => h.id));
+  const pedidas = habitaciones.map((h) => Number(h?.habitacionId ?? h?.habitacionIdAnterior));
+  if (pedidas.length !== actuales.size || pedidas.some((habitacionId) => !actuales.has(habitacionId))) return false;
+  const { claveDeDocumento } = require("../estadia/cargaMasiva");
+  const alojados = await prisma.ocupanteReserva.findMany({
+    where: { reservaId: reserva.id, estado: "Alojado" },
+    select: { nombre: true, apellido: true, tipoDocumento: true, paisDocumento: true, numeroDocumento: true, fechaNacimiento: true },
+  });
+  if (alojados.length !== personas.length) return false;
+  const norm = (v) => String(v ?? "").trim().toUpperCase();
+  const claveDe = (p) =>
+    p.numeroDocumento
+      ? claveDeDocumento(p)
+      : `SIN|${norm(p.nombre)}|${norm(p.apellido)}|${p.fechaNacimiento instanceof Date ? p.fechaNacimiento.toISOString().slice(0, 10) : String(p.fechaNacimiento ?? "").slice(0, 10)}`;
+  const registradas = new Set(alojados.map(claveDe));
+  return personas.every((p) => registradas.has(claveDe(p)));
+}
+
 async function confirmarCheckInConReserva({
   confirmacionAmpliacion,
   operador,
@@ -227,6 +268,7 @@ async function confirmarCheckInConReserva({
   personas,
   totalEsperado,
   motivoTitularDistinto,
+  corregirNombre,
 }) {
   const id = enteroPositivo(reservaId, "reservaId");
   let reserva;
@@ -235,12 +277,20 @@ async function confirmarCheckInConReserva({
   } catch (err) {
     throw envolverErrorReservas(err);
   }
-  validarReservaVigente(reserva);
-
   // Rediseño del check-in: con `personas` en el body la identidad se toma de las personas que
   // ingresan (no hay un "documento presentado" aparte) y la confirmación es atómica con la
   // ocupación final (confirmacionAtomica.js). Sin `personas`, el flujo de siempre.
   const conOcupacion = Array.isArray(personas);
+
+  // Reintento de un check-in que ya se confirmó (por ejemplo, el cliente venció la espera y volvió a enviar): si la
+  // reserva ya está "En curso" con las mismas habitaciones y las mismas personas, se responde con el resultado
+  // existente en vez de un 409 "ya tiene el check-in registrado" o "habitación ocupada".
+  try {
+    validarReservaVigente(reserva);
+  } catch (err) {
+    if (conOcupacion && (await esCheckInYaConfirmado(reserva, habitaciones, personas))) return reserva;
+    throw err;
+  }
 
   // HU-43 — "verificación del documento de identidad contra los datos de
   // Huesped": comparación real contra lo que ya quedó cargado en la
@@ -254,46 +304,78 @@ async function confirmarCheckInConReserva({
   // La tarjeta (guardada en la reserva, o una nueva) se preautoriza ANTES del
   // check-in: si se rechaza, no hay check-in. Si el check-in falla después, se
   // libera la retención. La pasarela nunca va dentro de la transacción.
-  const garantia = await iniciarGarantiaDeCheckIn({
-    pedido: { garantiaConfirmada, medioGarantia, garantiaTarjeta },
-    reservaId: id,
-    fechaHasta: new Date(reserva.fechaHasta),
-    claveIdempotencia,
-  });
-
-  try {
-    if (conOcupacion) {
-      await require("./confirmacionAtomica").confirmarConOcupacion(reserva, {
+  const pedirGarantia = () =>
+    iniciarGarantiaDeCheckIn({
+      pedido: { garantiaConfirmada, medioGarantia, garantiaTarjeta },
+      reservaId: id,
+      fechaHasta: new Date(reserva.fechaHasta),
+      claveIdempotencia,
+    });
+  let garantia;
+  let ejecutarConfirmacion = null;
+  if (conOcupacion) {
+    // La preautorización (pasarela) y las lecturas y validaciones de la confirmación no dependen entre sí: van en
+    // paralelo. Si las validaciones fallan, se libera la retención recién tomada.
+    const [resGarantia, resPreparacion] = await Promise.allSettled([
+      pedirGarantia(),
+      require("./confirmacionAtomica").prepararConfirmacion(reserva, {
         operador,
         habitaciones,
         personas,
         totalEsperado,
         motivoTitularDistinto,
-      });
+        corregirNombre,
+      }),
+    ]);
+    if (resPreparacion.status === "rejected") {
+      if (resGarantia.status === "fulfilled") await resGarantia.value.liberar();
+      throw resPreparacion.reason;
+    }
+    if (resGarantia.status === "rejected") throw resGarantia.reason;
+    garantia = resGarantia.value;
+    ejecutarConfirmacion = resPreparacion.value;
+  } else {
+    garantia = await pedirGarantia();
+  }
+
+  try {
+    if (conOcupacion) {
+      await ejecutarConfirmacion();
     } else {
-      await prisma.$transaction(
-        async (tx) => {
-          await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${id} FOR UPDATE`;
-          const vigente = await tx.reserva.findUnique({ where: { id } });
-          validarReservaVigente(vigente);
-          await require("../estadia/ampliacion.servicio").ampliarSiCorresponde(tx, id, confirmacionAmpliacion);
-          await require("../estadia/ingreso").prepararIngreso(tx, id, operador);
-          await reservasServicio.marcarEnCurso(id, tx);
-          await ocuparHabitaciones(
-            tx,
-            reserva.habitaciones.map((habitacion) => habitacion.id)
-          );
-        },
-        OPCIONES_TRANSACCION
+      await conConcurrenciaComo409(() =>
+        prisma.$transaction(
+          async (tx) => {
+            await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${id} FOR UPDATE`;
+            const vigente = await tx.reserva.findUnique({ where: { id } });
+            validarReservaVigente(vigente);
+            await require("../estadia/ampliacion.servicio").ampliarSiCorresponde(tx, id, confirmacionAmpliacion);
+            await require("../estadia/ingreso").prepararIngreso(tx, id, operador);
+            await reservasServicio.marcarEnCurso(id, tx);
+            await ocuparHabitaciones(
+              tx,
+              reserva.habitaciones.map((habitacion) => habitacion.id)
+            );
+          },
+          OPCIONES_TRANSACCION
+        )
       );
     }
   } catch (err) {
     await garantia.liberar();
+    // Dos envíos del mismo check-in a la vez: el que perdió la carrera encuentra la reserva ya en curso. Si es el
+    // mismo check-in, se responde con el resultado existente.
+    if (conOcupacion && err instanceof require("./confirmacionAtomica").ReservaYaNoConfirmada) {
+      const actual = await reservasServicio.obtenerReserva(id);
+      if (await esCheckInYaConfirmado(actual, habitaciones, personas)) return actual;
+      validarReservaVigente(actual);
+      throw new ErrorDeNegocio("La reserva cambió de estado mientras se confirmaba. Actualizá la pantalla.", 409);
+    }
     throw err;
   }
 
-  await garantia.registrar(id);
-  return reservasServicio.obtenerReserva(id);
+  // Registrar la garantía y releer la reserva para la respuesta no dependen entre sí: en paralelo.
+  const [, resultado] = await Promise.all([garantia.registrar(id), reservasServicio.obtenerReserva(id)]);
+  return resultado;
 }
 
 // --------------------------------------------------------------
@@ -360,6 +442,7 @@ async function registrarCheckInWalkIn({
   medioGarantia,
   garantiaTarjeta,
   claveIdempotencia,
+  corregirNombre,
 }) {
   // Rediseño del check-in — varias habitaciones (pueden ser de distinto tipo) con UN plan para
   // toda la reserva: si alguna habitación trae su propio plan, tiene que ser el mismo.
@@ -428,6 +511,80 @@ async function registrarCheckInWalkIn({
     origen: "RECEPCION",
   });
 
+  // Todo lo que no necesita bloqueo se resuelve FUERA de la transacción y EN PARALELO (con la base remota, el
+  // tiempo es lo que cuesta cada ida y vuelta): reintento de un walk-in ya confirmado, disponibilidad previa,
+  // cotización del motor, código de confirmación, y la validación de cada persona con las fichas que ya existen
+  // por documento (ver ingresoRapido.js).
+  const idsHabitaciones = datos.habitaciones.map((h) => h.habitacionId);
+  if (fisicas.length !== idsHabitaciones.length) throw new ErrorDeNegocio("Alguna de las habitaciones elegidas no existe.", 404);
+  const dadasDeBaja = fisicas.filter((h) => !h.activo);
+  if (dadasDeBaja.length) throw new ErrorDeNegocio(`No se puede reservar una habitación dada de baja: ${dadasDeBaja.map((h) => h.numero).join(", ")}.`);
+
+  const { prepararLote, resolverFichas, escribirOcupantes, esDuplicadoDeIdentidadActiva, MENSAJE_YA_ALOJADA } = require("./ingresoRapido");
+  const { rechazarYaAlojadas } = require("../estadia/cargaMasiva");
+  const personasServicio = require("../estadia/persona.servicio");
+  const reservaEnMemoria = {
+    id: null,
+    fechaDesde: datos.fechaDesde,
+    fechaHasta: datos.fechaHasta,
+    huesped: huespedDeLaReserva,
+    reservaHabitaciones: datos.habitaciones.map((h) => ({
+      habitacionId: h.habitacionId,
+      adultos: h.adultos,
+      menores: h.menores,
+      habitacion: fisicas.find((f) => f.id === h.habitacionId),
+    })),
+  };
+  const [reintento, conflictosPrevios, cotizacion, codigoConfirmacion, resultadoLote] = await Promise.all([
+    // Reintento de un walk-in que ya se confirmó (el cliente venció la espera y volvió a enviar): si hace menos de
+    // 5 minutos se registró un ingreso del mismo titular, en la misma habitación y con las mismas fechas, se
+    // responde con esa reserva. Se resuelve ANTES de preautorizar la garantía, así un reintento no deja otra retención.
+    buscarWalkInReciente({ titular, datos }),
+    reservasServicio.buscarConflictos(prisma, { habitacionIds: idsHabitaciones, fechaDesde: datos.fechaDesde, fechaHasta: datos.fechaHasta }),
+    reservasServicio.cotizarReservaEnvuelto(
+      {
+        fechaDesde: datos.fechaDesde,
+        fechaHasta: datos.fechaHasta,
+        planTarifarioId: datos.planTarifarioId,
+        habitaciones: datos.habitaciones,
+        canal: "RECEPCION",
+        fechaVenta: hoyComoFechaUTC(),
+      },
+      prisma
+    ),
+    reservasServicio.reservarCodigoLibre(prisma),
+    // Si la persona ya figura alojada, prepararLote rechaza: pero cuando es el REINTENTO de un walk-in que ya se registró,
+    // la respuesta correcta es la reserva existente, no ese rechazo. Por eso el error se guarda y se decide después.
+    prepararLote(prisma, reservaEnMemoria, personas, { permisoNombre: { esAdmin: corregirNombre === true, usuario: operador } }).then(
+      (valor) => ({ valor }),
+      (error) => ({ error })
+    ),
+  ]);
+  if (reintento) return reservasServicio.obtenerReserva(reintento.id);
+  if (resultadoLote.error) throw resultadoLote.error;
+  const lote = resultadoLote.valor;
+  if (conflictosPrevios.length) throw reservasServicio.errorPorConflictos(conflictosPrevios);
+  const plan = cotizacion.planes[0];
+  if (!plan) throw new ErrorDeNegocio("El plan tarifario elegido no está disponible para este canal.");
+  if (Math.round(plan.total * 100) !== Math.round(Number(datos.totalEsperado) * 100)) {
+    const e = new ErrorDeNegocio(`El precio cambió desde la cotización: antes $${datos.totalEsperado}, ahora $${plan.total}. Volvé a cotizar.`, 409);
+    e.codigo = "PRECIO_CAMBIO";
+    e.detalle = {
+      totalAnterior: Number(datos.totalEsperado),
+      totalNuevo: plan.total,
+      diferencia: Number((plan.total - Number(datos.totalEsperado)).toFixed(2)),
+      mensajeNoReembolsable: null,
+    };
+    throw e;
+  }
+  // El nombre de una ficha existente está protegido (regla 2.3): prepararLote ya lo comprobó para todas las personas.
+  const identidadTitular = personasServicio.claveDocumento({
+    tipoDocumento: huespedDeLaReserva.tipoDocumento,
+    paisDocumento: huespedDeLaReserva.paisDocumento,
+    numeroDocumento: huespedDeLaReserva.numeroDocumento,
+  });
+  const fichaDelTitular = lote.fichas.find((f) => lote.identidades.get(f.id) === identidadTitular) ?? lote.fichas[0];
+
   // Walk-in: no hay reserva previa ni tarjeta guardada, así que la garantía es una
   // tarjeta de crédito nueva (se preautoriza) o un depósito en efectivo. Se
   // autoriza ANTES de crear nada: si la tarjeta se rechaza, no se crea la reserva.
@@ -437,34 +594,128 @@ async function registrarCheckInWalkIn({
     claveIdempotencia,
   });
 
-  // Doble envío: la segunda transacción espera el lock de las habitaciones (crearReservaEnTransaccion)
-  // y después encuentra la reserva encimada (409). Si MySQL la corta por deadlock (P2034), se
-  // responde el mismo 409 en vez de un 500.
+  // DENTRO de la transacción: bloqueo y chequeo de conflictos por fechas (como en el alta: dos operaciones
+  // simultáneas sobre la misma habitación y fechas, una gana y la otra recibe 409), ocupar las habitaciones con un
+  // updateMany condicional y escrituras agrupadas. Si MySQL corta una por deadlock (P2034), se responde el mismo 409.
+  const { Prisma } = require("@prisma/client");
   let reservaId;
   try {
-    reservaId = await conConcurrenciaComo409(() => prisma.$transaction(
-    async (tx) => {
-      // El walk-in ya trae todos los ocupantes completos; no crear un borrador adicional.
-      const reserva = await reservasServicio.crearReservaEnTransaccion(tx, datos, { incluirTitular: false });
-      await require("../estadia/ingreso").cargarWalkIn(tx, reserva.id, personas, operador);
-      await require("../estadia/ingreso").prepararIngreso(tx, reserva.id, operador);
-      await reservasServicio.marcarEnCurso(reserva.id, tx);
-      await ocuparHabitaciones(
-        tx,
-        datos.habitaciones.map((habitacion) => habitacion.habitacionId)
-      );
-      return reserva.id;
-    },
-    OPCIONES_TRANSACCION
-  ));
+    reservaId = await conConcurrenciaComo409(() =>
+      prisma.$transaction(
+        async (tx) => {
+          await tx.$queryRaw(
+            Prisma.sql`SELECT id FROM reservas_habitaciones WHERE habitacionId IN (${Prisma.join(idsHabitaciones)}) FOR UPDATE`
+          );
+          const conflictos = await reservasServicio.buscarConflictos(tx, {
+            habitacionIds: idsHabitaciones,
+            fechaDesde: datos.fechaDesde,
+            fechaHasta: datos.fechaHasta,
+          });
+          if (conflictos.length) throw reservasServicio.errorPorConflictos(conflictos);
+          await ocuparHabitaciones(tx, idsHabitaciones);
+
+          const huespedes = await resolverFichas(tx, {
+            reserva: reservaEnMemoria,
+            reservaId: null,
+            fichas: lote.fichas,
+            identidades: lote.identidades,
+            huespedesExistentes: lote.huespedesExistentes,
+            extras: lote.extras,
+            renombres: lote.renombres,
+            menoresReutilizados: lote.menoresReutilizados,
+            permisoNombre: { esAdmin: corregirNombre === true, usuario: operador },
+          });
+          const huespedId = huespedes.get(fichaDelTitular.id);
+
+          const reserva = await tx.reserva.create({
+            data: {
+              huespedId,
+              fechaDesde: datos.fechaDesde,
+              fechaHasta: datos.fechaHasta,
+              estado: ESTADO_RESERVA.EN_CURSO,
+              codigoConfirmacion,
+              planTarifarioId: datos.planTarifarioId,
+              reservaHabitaciones: {
+                create: datos.habitaciones.map((h) => ({ habitacionId: h.habitacionId, adultos: h.adultos, menores: h.menores })),
+              },
+            },
+            include: { reservaHabitaciones: true },
+          });
+          const rhPorHabitacion = new Map(reserva.reservaHabitaciones.map((rh) => [rh.habitacionId, rh.id]));
+          await tx.reservaNoche.createMany({
+            data: plan.habitaciones.flatMap((habitacionPlan) =>
+              habitacionPlan.detalle.map((noche) => ({
+                reservaHabitacionId: rhPorHabitacion.get(habitacionPlan.habitacionId),
+                fecha: new Date(`${String(noche.fecha).slice(0, 10)}T00:00:00.000Z`),
+                temporadaId: noche.temporadaId,
+                tarifaId: noche.tarifaId,
+                planTarifarioId: datos.planTarifarioId,
+                precioNoche: noche.precioNoche,
+                origen: "MOTOR",
+              }))
+            ),
+          });
+          const notificacion = reservasServicio.armarNotificacionConfirmacion({
+            reserva,
+            huesped: personasServicio.datosDeHuesped(fichaDelTitular),
+            habitaciones: fisicas,
+            origen: "RECEPCION",
+          });
+          await tx.notificacion.createMany({ data: [notificacion] });
+
+          await escribirOcupantes(tx, { reservaId: reserva.id, fichas: lote.fichas, huespedes, operador: String(operador ?? "").trim() || "Recepción" });
+          return reserva.id;
+        },
+        OPCIONES_TRANSACCION_LARGA
+      )
+    );
   } catch (err) {
     await garantia.liberar();
+    if (esDuplicadoDeIdentidadActiva(err)) {
+      await rechazarYaAlojadas(prisma, lote.fichas);
+      throw new ErrorDeNegocio(MENSAJE_YA_ALOJADA, 409);
+    }
     throw err;
   }
 
-  await garantia.registrar(reservaId);
+  const [, resultado] = await Promise.all([garantia.registrar(reservaId), reservasServicio.obtenerReserva(reservaId)]);
+  return resultado;
+}
 
-  return reservasServicio.obtenerReserva(reservaId);
+// Reintento de un walk-in: ¿ya hay una reserva "En curso" del mismo titular (identidad por documento), en la misma
+// habitación y con las mismas fechas, con el ingreso registrado hace menos de 5 minutos? Sin tocar el esquema: el
+// momento del ingreso es el del evento "Check-in: ocupantes registrados" de la propia reserva.
+const VENTANA_REINTENTO_WALKIN_MS = 5 * 60 * 1000;
+async function buscarWalkInReciente({ titular, datos }) {
+  if (!titular?.numeroDocumento) return null;
+  const personasServicio = require("../estadia/persona.servicio");
+  const identidad = personasServicio.claveDocumento({
+    tipoDocumento: titular.tipoDocumento,
+    paisDocumento: titular.paisDocumento,
+    numeroDocumento: titular.numeroDocumento,
+  });
+  if (!identidad) return null;
+  const ficha = await prisma.huesped.findUnique({ where: { identidadDocumento: identidad }, select: { id: true } });
+  if (!ficha) return null;
+  const idsHabitaciones = datos.habitaciones.map((h) => h.habitacionId);
+  const candidata = await prisma.reserva.findFirst({
+    where: {
+      estado: ESTADO_RESERVA.EN_CURSO,
+      huespedId: ficha.id,
+      fechaDesde: datos.fechaDesde,
+      fechaHasta: datos.fechaHasta,
+      reservaHabitaciones: { some: { habitacionId: { in: idsHabitaciones } } },
+      historialEstadia: {
+        some: { accion: "Check-in: ocupantes registrados", fecha: { gte: new Date(Date.now() - VENTANA_REINTENTO_WALKIN_MS) } },
+      },
+    },
+    include: { reservaHabitaciones: { select: { habitacionId: true } } },
+    orderBy: { id: "desc" },
+  });
+  if (!candidata) return null;
+  const actuales = new Set(candidata.reservaHabitaciones.map((rh) => rh.habitacionId));
+  const mismas = actuales.size === idsHabitaciones.length && idsHabitaciones.every((id) => actuales.has(id));
+  return mismas ? candidata : null;
 }
 
 module.exports = {
@@ -475,5 +726,8 @@ module.exports = {
   validarReservaVigente,
   ocuparHabitaciones,
   conConcurrenciaComo409,
+  HabitacionesNoLibres,
+  esCheckInYaConfirmado,
+  buscarWalkInReciente,
   ErrorDeNegocio,
 };

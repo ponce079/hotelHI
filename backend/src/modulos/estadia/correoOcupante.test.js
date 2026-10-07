@@ -21,7 +21,12 @@ const datos = {
 };
 function cliente(correos = []) {
   return {
-    huesped: { create: jest.fn().mockResolvedValue({ id: 8 }), update: jest.fn().mockResolvedValue({ id: 8 }) },
+    huesped: {
+      create: jest.fn().mockResolvedValue({ id: 8 }),
+      update: jest.fn().mockResolvedValue({ id: 8 }),
+      // La ficha ya tiene el mismo nombre que se está cargando: no hay cambio de nombre (regla 2.3).
+      findUnique: jest.fn().mockResolvedValue({ id: 8, nombre: "Ana Prueba" }),
+    },
     $queryRaw: jest.fn().mockResolvedValue([]),
     reserva: { findUnique: jest.fn().mockResolvedValue(reserva) },
     ocupanteReserva: {

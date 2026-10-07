@@ -1,7 +1,7 @@
 const { createHash } = require("node:crypto");
 const { Prisma } = require("@prisma/client");
 const { codigoPais } = require("../../lib/paises");
-const { normalizarNumeroDocumento } = require("../../lib/documento");
+const { normalizarNumeroDocumento, claveNombre } = require("../../lib/documento");
 const normalizar = (v) =>
   String(v || "")
     .trim()
@@ -15,6 +15,53 @@ class ErrorDocumento extends Error {
     this.campos = { numeroDocumento: mensaje };
   }
 }
+// Regla 2.3 — el nombre y el apellido de una ficha EXISTENTE no se cambian desde los formularios de personas
+// (asistente de reserva, detalle, check-in, walk-in, ficha). Solo un administrador, con un motivo. Se aplica acá, en el
+// servidor: la pantalla solo lo avisa. El cambio queda en el log del servidor (usuario, ficha, nombre anterior, nombre
+// nuevo y motivo) y, si hay una reserva de contexto, también en su historial.
+class ErrorNombreDistinto extends Error {
+  constructor(mensaje, statusCode = 409, codigo = "NOMBRE_DISTINTO") {
+    super(mensaje);
+    this.statusCode = statusCode;
+    this.codigo = codigo;
+  }
+}
+const MENSAJE_NOMBRE_DISTINTO =
+  "Ese documento ya está registrado con otro nombre. Verificá el número o pedile a un administrador que corrija el nombre.";
+
+// Devuelve true si hay un cambio de nombre AUTORIZADO que aplicar, false si el nombre coincide; lanza si no se puede.
+// `permiso`: { esAdmin, motivo, usuario, reservaId }.
+function autorizarCambioDeNombre(ficha, persona, permiso = {}) {
+  if (claveNombre(ficha.nombre) === claveNombre(nombresDeFicha(persona).nombre)) return false;
+  if (permiso.esAdmin !== true) throw new ErrorNombreDistinto(MENSAJE_NOMBRE_DISTINTO);
+  const motivo = String(permiso.motivo ?? "").trim();
+  if (!motivo) {
+    const e = new ErrorNombreDistinto("Indicá el motivo del cambio de nombre de la ficha.", 400, "MOTIVO_CAMBIO_NOMBRE");
+    e.campos = { motivoCambioNombre: "Indicá el motivo del cambio de nombre de la ficha." };
+    throw e;
+  }
+  return true;
+}
+
+// Deja constancia de un cambio de nombre autorizado (log del servidor siempre; historial de la reserva si hay una).
+async function registrarCambioDeNombre(tx, ficha, persona, permiso = {}) {
+  const nuevo = nombresDeFicha(persona).nombre;
+  console.info(
+    "[ficha] Cambio de nombre autorizado:",
+    JSON.stringify({ usuario: permiso.usuario ?? null, fichaId: ficha.id, nombreAnterior: ficha.nombre, nombreNuevo: nuevo, motivo: String(permiso.motivo ?? "").trim(), reservaId: permiso.reservaId ?? null })
+  );
+  if (permiso.reservaId) {
+    await tx.eventoEstadia.create({
+      data: {
+        reservaId: permiso.reservaId,
+        accion: "Corrección de nombre de la ficha",
+        detalle: JSON.stringify({ fichaId: ficha.id, nombreAnterior: ficha.nombre, nombreNuevo: nuevo, motivo: String(permiso.motivo ?? "").trim() }),
+        operador: permiso.usuario || "Recepción",
+      },
+    });
+  }
+}
+
 // La identidad se calcula con el número YA normalizado (solo letras y dígitos). Un número que queda vacío
 // ("-", ".") no tiene que producir una identidad: todas las personas con ese "número" compartirían la misma.
 function claveDocumento(p) {
@@ -45,13 +92,18 @@ function nombresDeFicha(persona) {
   if (nombres && apellido) return { nombre: `${nombres} ${apellido}`, nombres, apellido };
   return { nombre: `${nombres} ${apellido}`.trim() };
 }
-// Toda edición o alta de ficha sincroniza nombres y apellido en Huesped (si la ficha los tiene).
-async function sincronizarNombres(tx, huespedId, persona) {
+// Toda edición o alta de ficha sincroniza nombres y apellido en Huesped (si la ficha los tiene) — SOLO si el
+// cambio está autorizado (regla 2.3): un nombre distinto del de la ficha existente se rechaza.
+async function sincronizarNombres(tx, huespedId, persona, permiso = {}) {
   const datos = nombresDeFicha(persona);
   if (!huespedId || !datos.apellido) return;
+  const ficha = await tx.huesped.findUnique({ where: { id: huespedId } });
+  if (!ficha) return;
+  if (!autorizarCambioDeNombre(ficha, persona, permiso)) return;
   await tx.huesped.update({ where: { id: huespedId }, data: datos });
+  await registrarCambioDeNombre(tx, ficha, persona, permiso);
 }
-async function vincularPersona(tx, reserva, persona, actual) {
+async function vincularPersona(tx, reserva, persona, actual, permiso = {}) {
   const identidadDocumento = claveDocumento(persona);
   if (!identidadDocumento) {
     if (actual?.huespedId) return actual.huespedId;
@@ -110,10 +162,14 @@ async function vincularPersona(tx, reserva, persona, actual) {
       where: { identidadDocumento },
     });
     if (!existente) {
+      // Completa la identidad del titular de la reserva. Su nombre ya está en la ficha: no se cambia en silencio.
+      const cambioNombre = autorizarCambioDeNombre(titular, persona, permiso);
+      const { nombre, nombres, apellido, ...sinNombre } = datos;
       await tx.huesped.update({
         where: { id: titular.id },
-        data: { ...datos, identidadDocumento },
+        data: { ...sinNombre, ...(cambioNombre ? { nombre, nombres, apellido } : {}), identidadDocumento },
       });
+      if (cambioNombre) await registrarCambioDeNombre(tx, titular, persona, permiso);
       return titular.id;
     }
     if (titular.id !== existente.id) {
@@ -124,11 +180,24 @@ async function vincularPersona(tx, reserva, persona, actual) {
     }
     return existente.id;
   }
-  const personaUnica = await tx.huesped.upsert({
-    where: { identidadDocumento },
-    update: nombresDeFicha(persona).apellido ? nombresDeFicha(persona) : {},
-    create: { ...datos, identidadDocumento },
-  });
+  // La ficha de esa persona: si existe se reutiliza SIN pisar su nombre ni sus datos; si no, se crea (y si otra
+  // operación la creó en paralelo, P2002, se relee la existente y se usa tal cual).
+  let personaUnica = await tx.huesped.findUnique({ where: { identidadDocumento } });
+  if (personaUnica) {
+    if (autorizarCambioDeNombre(personaUnica, persona, permiso)) {
+      await tx.huesped.update({ where: { id: personaUnica.id }, data: nombresDeFicha(persona) });
+      await registrarCambioDeNombre(tx, personaUnica, persona, permiso);
+    }
+  } else {
+    try {
+      personaUnica = await tx.huesped.create({ data: { ...datos, identidadDocumento } });
+    } catch (error) {
+      if (error?.code !== "P2002") throw error;
+      personaUnica = await tx.huesped.findUnique({ where: { identidadDocumento } });
+      if (!personaUnica) throw error;
+      autorizarCambioDeNombre(personaUnica, persona, permiso);
+    }
+  }
   return personaUnica.id;
 }
 
@@ -167,16 +236,27 @@ async function actualizarResidenciaEnLote(tx, filas) {
   );
 }
 
-// Persona que vuelve: al reutilizar su ficha (misma identidad de documento) se actualizan
-// nombre (y nombres y apellido), nacimiento, contacto y residencia con lo declarado ahora, en UNA sola sentencia.
-// Un dato vacío no borra el que ya estaba (COALESCE).
-const CAMPOS_FICHA = ["nombre", "nombres", "apellido", "fechaNacimiento", "contacto", ...CAMPOS_RESIDENCIA];
+// Persona que vuelve: al reutilizar su ficha (misma identidad de documento) se completan nacimiento, contacto y
+// residencia, en UNA sola sentencia. NUNCA se pisa un dato que la ficha ya tiene salvo que la fila lo pida
+// explícitamente (`sobrescribir`, la casilla "Actualizar la ficha del huésped con estos datos"); sin eso, solo se
+// completan los vacíos. Nombre y apellido no se tocan acá (regla 2.3, ver autorizarCambioDeNombre). Un dato vacío
+// nunca borra el que ya estaba.
+const CAMPOS_FICHA = ["fechaNacimiento", "contacto", ...CAMPOS_RESIDENCIA];
 async function actualizarFichasEnLote(tx, filas) {
   const conDatos = filas.filter((fila) => fila.huespedId && CAMPOS_FICHA.some((campo) => fila.datos[campo]));
   if (!conDatos.length) return;
   const asignaciones = CAMPOS_FICHA.map((campo) => {
-    const cuando = conDatos.map((fila) => Prisma.sql`WHEN ${fila.huespedId} THEN ${fila.datos[campo] || null}`);
-    return Prisma.sql`${Prisma.raw(campo)} = COALESCE(CASE id ${Prisma.join(cuando, " ")} END, ${Prisma.raw(campo)})`;
+    const columna = Prisma.raw(campo);
+    const cuando = conDatos.map((fila) => {
+      const nuevo = fila.datos[campo] || null;
+      if (fila.sobrescribir === true) return Prisma.sql`WHEN ${fila.huespedId} THEN COALESCE(${nuevo}, ${columna})`;
+      // fechaNacimiento es una columna DATE: compararla con '' da error 1292 ("Incorrect date value") en la base;
+      // un nacimiento vacío es NULL, así que alcanza con COALESCE. Las demás son texto y pueden estar vacías ('').
+      return campo === "fechaNacimiento"
+        ? Prisma.sql`WHEN ${fila.huespedId} THEN COALESCE(${columna}, ${nuevo})`
+        : Prisma.sql`WHEN ${fila.huespedId} THEN COALESCE(NULLIF(${columna}, ''), ${nuevo}, ${columna})`;
+    });
+    return Prisma.sql`${columna} = CASE id ${Prisma.join(cuando, " ")} ELSE ${columna} END`;
   });
   const ids = conDatos.map((fila) => fila.huespedId);
   await tx.$executeRaw(
@@ -184,14 +264,30 @@ async function actualizarFichasEnLote(tx, filas) {
   );
 }
 
+// Cambios de nombre AUTORIZADOS (administrador con motivo) de varias fichas, en una sola sentencia.
+async function renombrarFichasEnLote(tx, filas) {
+  if (!filas.length) return;
+  const caso = (campo) =>
+    Prisma.sql`${Prisma.raw(campo)} = CASE id ${Prisma.join(filas.map((f) => Prisma.sql`WHEN ${f.huespedId} THEN ${f.datos[campo] ?? null}`), " ")} ELSE ${Prisma.raw(campo)} END`;
+  await tx.$executeRaw(
+    Prisma.sql`UPDATE huespedes SET ${Prisma.join(["nombre", "nombres", "apellido"].map(caso), ", ")} WHERE id IN (${Prisma.join(filas.map((f) => f.huespedId))})`,
+  );
+}
+
 // Nacionalidad, país de residencia, domicilio y localidad son datos de la persona:
 // viven en Huesped y la ficha guarda los últimos declarados. Un dato que no se
 // declara (vacío) no borra el que ya estaba.
-async function actualizarResidencia(tx, huespedId, residencia) {
+async function actualizarResidencia(tx, huespedId, residencia, { sobrescribir = false } = {}) {
   const datos = {};
   for (const campo of CAMPOS_RESIDENCIA) if (residencia[campo]) datos[campo] = residencia[campo];
   if (!Object.keys(datos).length) return;
-  await tx.huesped.update({ where: { id: huespedId }, data: datos });
+  if (sobrescribir) {
+    await tx.huesped.update({ where: { id: huespedId }, data: datos });
+    return;
+  }
+  // Sin la casilla de actualizar: solo se completan los datos que la ficha todavía no tiene.
+  const asignaciones = Object.keys(datos).map((campo) => Prisma.sql`${Prisma.raw(campo)} = COALESCE(NULLIF(${Prisma.raw(campo)}, ''), ${datos[campo]})`);
+  await tx.$executeRaw(Prisma.sql`UPDATE huespedes SET ${Prisma.join(asignaciones, ", ")} WHERE id = ${huespedId}`);
 }
 
 module.exports = {
@@ -204,6 +300,11 @@ module.exports = {
   actualizarResidencia,
   actualizarResidenciaEnLote,
   actualizarFichasEnLote,
+  renombrarFichasEnLote,
+  autorizarCambioDeNombre,
+  registrarCambioDeNombre,
+  ErrorNombreDistinto,
+  MENSAJE_NOMBRE_DISTINTO,
   datosDeHuesped,
   esProvisoria,
   PREFIJO_SIN_DOCUMENTO,

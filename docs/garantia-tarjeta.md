@@ -140,7 +140,9 @@ Débito y transferencia **ya no se ofrecen**: con débito el dinero sale de la c
 transferencia no está entre los medios previstos. El monto es fijo (`MONTO_PREAUTORIZACION_CHECKIN`, $30.000, server-side).
 
 Orden: la pasarela se llama **antes** del check-in (si la tarjeta se rechaza, no hay check-in; 402) y nunca dentro de
-una transacción. Si el check-in falla después de preautorizar, se libera la retención; si no se puede guardar la
+una transacción. Desde la robustez contra la base remota (`docs/robustez-base-remota.md`), la preautorización corre **en
+paralelo** con las validaciones del check-in (las lecturas) y el registro de la garantía (`registrar`) corre en paralelo con
+la relectura final; la regla no cambió: si algo falla después de preautorizar, la retención se libera. Si el check-in falla después de preautorizar, se libera la retención; si no se puede guardar la
 garantía, también. Estados de `GarantiaEstadia`: Pendiente → (Capturada | Liberada | Aplicada | Devuelta) en el check-out.
 
 Endpoint nuevo: `GET /api/reservas/:id/garantia` (admin, recepcionista) → `{ reserva, estadia }` sin token. Lo usa el

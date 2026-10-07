@@ -7,6 +7,7 @@
 
 const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
+const { descontarStockEnLote } = require("../../lib/stockLote");
 const {
   ESTADOS_REQUERIMIENTO,
   ORIGENES_REQUERIMIENTO,
@@ -276,29 +277,16 @@ async function intentarAprobarTransferencia(tx, requerimiento) {
   // faltado stock desde el principio, en vez de tirar un error que
   // aborte la transacción entera del que llamó (crearRequerimiento, o la
   // recepción de una OC no relacionada vía reintentarTransferenciasPendientes).
-  const decrementos = [];
-  let carrera = false;
-  for (const linea of requerimiento.detalle) {
-    const habilitacion = porArticulo[linea.articuloId];
-    const cantidad = Number(linea.cantidadSolicitada);
-    const resultado = await tx.articuloDepositoStock.updateMany({
-      where: { articuloDepositoId: habilitacion.id, stockActual: { gte: cantidad } },
-      data: { stockActual: { decrement: cantidad } },
-    });
-    if (resultado.count === 0) {
-      carrera = true;
-      break;
-    }
-    decrementos.push({ articuloDepositoId: habilitacion.id, cantidad });
-  }
-
-  if (carrera) {
-    for (const d of decrementos) {
-      await tx.articuloDepositoStock.update({
-        where: { articuloDepositoId: d.articuloDepositoId },
-        data: { stockActual: { increment: d.cantidad } },
-      });
-    }
+  // El descuento va en LOTE (una sola sentencia para todas las líneas, todo o nada): con la base remota una consulta
+  // por línea hacía crecer la transacción con la cantidad de artículos. Si alguna línea no alcanza (carrera), no se
+  // descontó nada, así que no hay nada que revertir.
+  const filasDescuento = requerimiento.detalle.map((linea) => ({
+    articuloDepositoId: porArticulo[linea.articuloId].id,
+    articuloId: linea.articuloId,
+    cantidad: Number(linea.cantidadSolicitada),
+  }));
+  const sinStockPorCarrera = await descontarStockEnLote(tx, filasDescuento);
+  if (sinStockPorCarrera.length > 0) {
     await marcarPendienteDeStockYReponer(
       tx,
       requerimiento,
@@ -332,15 +320,19 @@ async function intentarAprobarTransferencia(tx, requerimiento) {
     },
   });
 
-  for (const linea of requerimiento.detalle) {
-    await tx.movimientoStockDetalle.create({
-      data: { movStockId: movimiento.id, articuloId: linea.articuloId, cantidad: Number(linea.cantidadSolicitada) },
-    });
-    // Punto 4: la reserva es, con la manual y la salida, una de las tres
-    // formas en que el central pierde stock propio — tiene que poder
-    // disparar su propia reposición igual que las otras dos.
-    await verificarStockMinimoCentral(tx, porArticulo[linea.articuloId].id);
-  }
+  await tx.movimientoStockDetalle.createMany({
+    data: requerimiento.detalle.map((linea) => ({
+      movStockId: movimiento.id,
+      articuloId: linea.articuloId,
+      cantidad: Number(linea.cantidadSolicitada),
+    })),
+  });
+  // Punto 4: la reserva es, con la manual y la salida, una de las tres formas en que el central pierde stock propio —
+  // tiene que poder disparar su propia reposición igual que las otras dos (un solo chequeo en lote).
+  await verificarStockMinimoCentralEnLote(
+    tx,
+    filasDescuento.map((f) => f.articuloDepositoId)
+  );
 
   await tx.requerimientoReposicion.update({
     where: { id: requerimiento.id },
@@ -618,6 +610,21 @@ async function verificarStockMinimoCentral(tx, articuloDepositoId) {
     where: { id: articuloDepositoId },
     include: { deposito: true, stock: true },
   });
+  await reponerSiBajoElMinimo(tx, habilitacion);
+}
+
+// Lo mismo para varias habilitaciones a la vez: UNA lectura (con la base remota, una consulta por artículo suma
+// ~0,9 s cada una) y recién después, solo para las que son de un central y quedaron bajo el mínimo (pocas), la reposición.
+async function verificarStockMinimoCentralEnLote(tx, articuloDepositoIds) {
+  if (articuloDepositoIds.length === 0) return;
+  const habilitaciones = await tx.articuloDeposito.findMany({
+    where: { id: { in: articuloDepositoIds } },
+    include: { deposito: true, stock: true },
+  });
+  for (const habilitacion of habilitaciones) await reponerSiBajoElMinimo(tx, habilitacion);
+}
+
+async function reponerSiBajoElMinimo(tx, habilitacion) {
   if (!habilitacion || !habilitacion.deposito.esCentral || !habilitacion.stock) return;
 
   const stockActual = Number(habilitacion.stock.stockActual);
@@ -959,15 +966,13 @@ async function anularRequerimiento(id, motivo) {
           where: { requerimientoCompraId: id },
           data: { requerimientoCompraId: null },
         });
-        for (const { id: transferenciaId } of liberadas) {
-          await tx.requerimientoLog.create({
-            data: {
-              requerimientoId: transferenciaId,
-              usuario: "sistema",
-              accion: `La compra de reposición vinculada (REQ-${String(id).padStart(4, "0")}) fue anulada — se libera para poder pedir reposición de nuevo`,
-            },
-          });
-        }
+        await tx.requerimientoLog.createMany({
+          data: liberadas.map(({ id: transferenciaId }) => ({
+            requerimientoId: transferenciaId,
+            usuario: "sistema",
+            accion: `La compra de reposición vinculada (REQ-${String(id).padStart(4, "0")}) fue anulada — se libera para poder pedir reposición de nuevo`,
+          })),
+        });
       }
     }
 
@@ -1045,6 +1050,7 @@ module.exports = {
   anularRequerimiento,
   confirmarSugerencia,
   verificarStockMinimoCentral,
+  verificarStockMinimoCentralEnLote,
   barrerStockMinimoCentral,
   barrerTransferenciasPendientes,
   intentarAprobarTransferencia,

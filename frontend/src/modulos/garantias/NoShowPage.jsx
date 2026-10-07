@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutacionUnica } from "../../lib/useMutacionUnica";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, UserX } from "lucide-react";
 import { Button } from "../../componentes/Button";
@@ -34,7 +35,7 @@ export function NoShowPage() {
     enabled: puedeGestionar,
   });
 
-  const mutacion = useMutation({
+  const mutacion = useMutacionUnica({
     mutationFn: ({ id, motivo }) => marcarNoShow(id, motivo),
     onSuccess: (reserva) => {
       queryClient.invalidateQueries({ queryKey: ["reservas"] });

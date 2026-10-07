@@ -30,6 +30,8 @@
 // la pasarela: número y CVV nunca se guardan, se loguean ni se devuelven. De
 // la tarjeta, DatosReservaWeb conserva solo el titular.
 const crypto = require("node:crypto");
+const { claveNombre } = require("../../lib/documento");
+const { ACCION_NOMBRE_WEB_DISTINTO } = require("../reservas/reservas.constantes");
 const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
 const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
@@ -158,6 +160,24 @@ async function transaccionAlta(tx, { datos, candidatas, autorizada, total }) {
   // Nacionalidad y país de residencia (normalizarHuesped no los maneja): solo los vacíos.
   if (Object.keys(residencia).length > 0) {
     await tx.huesped.update({ where: { id: reserva.huespedId }, data: residencia });
+  }
+
+  // Si el documento ya tiene ficha y el nombre declarado en la web no coincide con el de la ficha, la reserva queda
+  // asociada a la ficha (regla de siempre: la web no la pisa) pero se deja constancia en el historial de la reserva
+  // (sin cambiar el esquema: EventoEstadia). Recepción lo ve como una marca en Llegadas y en el detalle, para verificar
+  // el documento en el check-in. El sitio público nunca muestra datos de la ficha.
+  if (ficha) {
+    const declarado = `${datos.huesped.nombres ?? ""} ${datos.huesped.apellido ?? ""}`.trim();
+    if (claveNombre(declarado) !== claveNombre(ficha.nombre)) {
+      await tx.eventoEstadia.create({
+        data: {
+          reservaId: reserva.id,
+          accion: ACCION_NOMBRE_WEB_DISTINTO,
+          detalle: JSON.stringify({ nombreDeclarado: declarado, nombreDeLaFicha: ficha.nombre, huespedId: ficha.id }),
+          operador: "Sistema: reserva web",
+        },
+      });
+    }
   }
 
   // f. La garantía, con la misma función y los mismos estados que el alta del mostrador.
@@ -309,4 +329,4 @@ async function crearReservaWeb(cuerpo, tarjeta) {
   return { status: 201, cuerpo: respuesta };
 }
 
-module.exports = { crearReservaWeb, MOTIVO_PAGO_NO_CAPTURADO, MENSAJE_PAGO_NO_CAPTURADO };
+module.exports = { crearReservaWeb, ACCION_NOMBRE_WEB_DISTINTO, MOTIVO_PAGO_NO_CAPTURADO, MENSAJE_PAGO_NO_CAPTURADO };

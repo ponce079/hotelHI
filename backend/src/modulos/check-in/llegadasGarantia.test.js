@@ -42,6 +42,14 @@ test("trae pago anticipado, seña y garantía en UNA consulta, sin token ni refe
   expect(include).not.toHaveProperty("datosWeb");
 });
 
+test("marca la reserva web cuyo nombre declarado no coincide con la ficha (regla 2.6), en la misma consulta", async () => {
+  prisma.reserva.findMany.mockResolvedValue([{ ...reserva(1), historialEstadia: [{ id: 9 }] }, reserva(2)]);
+  const { reservas } = await listarLlegadas({});
+  const { include } = prisma.reserva.findMany.mock.calls[0][0];
+  expect(include.historialEstadia.where).toEqual({ accion: "Nombre declarado en la web distinto del de la ficha" });
+  expect(reservas.map((r) => r.nombreWebDistinto)).toEqual([true, false]);
+});
+
 test("los cuatro casos: web no reembolsable (tarjeta + pago anticipado), tarjeta flexible, seña histórica y nada", async () => {
   prisma.reserva.findMany.mockResolvedValue([
     reserva(1, { pagos: [pago("Pago anticipado", 80000, "Visa ****4242 · aut. CAP-123456")], garantiaReserva: tarjeta("Visa", "4242", { estado: "Capturada" }) }),

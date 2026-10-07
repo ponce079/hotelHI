@@ -40,6 +40,14 @@ try {
   process.exit(1);
 }
 
+// Secreto de las sesiones: en producción es obligatorio (AUTH_SECRET, 32+ caracteres).
+try {
+  require("./src/modulos/usuarios/usuarios.seguridad").leerAuthSecret();
+} catch (error) {
+  console.error(`[configuración] ${error.message}`);
+  process.exit(1);
+}
+
 // Secreto de la pasarela de pagos simulada: en producción es obligatorio (PASARELA_TOKEN_SECRETO, 32+ caracteres).
 try {
   require("./src/modulos/garantias/pasarelaSecreto").leerSecreto();

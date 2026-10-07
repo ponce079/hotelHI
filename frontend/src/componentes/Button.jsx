@@ -71,6 +71,7 @@ export function Button({ variante = "ok", tamano = "normal", icono: Icono, carga
   return (
     <button
       disabled={disabled || cargando}
+      aria-busy={cargando || undefined}
       className={`inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-md border font-heading font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${TAMANOS[tamano]} ${VARIANTES[variante]} ${className}`}
       {...props}
     >
@@ -79,7 +80,7 @@ export function Button({ variante = "ok", tamano = "normal", icono: Icono, carga
       ) : (
         Icono && <Icono size={16} className="flex-none" />
       )}
-      {children}
+      {cargando && typeof children === "string" ? "Procesando…" : children}
     </button>
   );
 }

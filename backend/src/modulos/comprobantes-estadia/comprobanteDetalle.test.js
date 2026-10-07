@@ -17,6 +17,11 @@ jest.mock("../../lib/prisma", () => {
       },
       update: async ({ data }) => ({ ...mockCreados[0], id: 1, ...data }),
     },
+    pagoEstadia: {
+      findMany: async () => [
+        { concepto: "Pago de estadía", medios: [{ medioPago: "Tarjeta crédito", importe: "110000", referencia: "Visa ****4242" }] },
+      ],
+    },
     $transaction: async (fn) => fn(api),
   };
   return api;
@@ -111,6 +116,8 @@ describe("obtenerComprobante — detalle", () => {
     const c = await servicio.obtenerComprobante(1);
     expect(c.detalle.lineas).toHaveLength(4);
     expect(c.detalle.total).toBe(110000);
+    // Medios de pago para el encabezado del comprobante (un renglón por medio de cada pago vigente).
+    expect(c.mediosDePago).toEqual([{ concepto: "Pago de estadía", medioPago: "Tarjeta crédito", importe: 110000, referencia: "Visa ****4242" }]);
   });
 
   it("la Nota de Crédito no lleva detalle", async () => {

@@ -49,6 +49,8 @@ async function postConfirmarConReserva(req, res) {
     const resultado = await checkInServicio.confirmarCheckInConReserva({
       reservaId: req.params.reservaId,
       ...req.body,
+      // Solo la sesión decide si es administrador (puede corregir el nombre de una ficha existente, con motivo).
+      corregirNombre: req.usuarioActual?.rol === "admin",
     });
     return res.json(resultado);
   } catch (err) {
@@ -66,7 +68,7 @@ async function postCheckInWalkIn(req, res) {
           error:
             "Indicá adultos y menores en las habitaciones de la reserva, sin una segunda declaración de cantidades.",
         });
-    return res.status(201).json(await checkInServicio.registrarCheckInWalkIn(req.body));
+    return res.status(201).json(await checkInServicio.registrarCheckInWalkIn({ ...req.body, corregirNombre: req.usuarioActual?.rol === "admin" }));
   } catch (err) {
     return responderError(res, err, "Error al registrar el check-in walk-in:", "No se pudo registrar el check-in.");
   }

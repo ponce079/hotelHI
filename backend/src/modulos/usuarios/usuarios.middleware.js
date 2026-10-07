@@ -19,6 +19,9 @@ function leerToken(req) {
 }
 
 async function requiereSesion(req, res, next) {
+  // La API cerrada (apiCerrada.js) ya verificó el token y leyó al usuario en ESTE mismo pedido: no se repite la
+  // consulta (con la base remota cada consulta cuesta cientos de milisegundos).
+  if (req.sesionVerificada === true && req.usuarioActual) return next();
   const datos = verificarToken(leerToken(req));
   if (!datos) {
     return res.status(401).json({
@@ -36,6 +39,7 @@ async function requiereSesion(req, res, next) {
       });
     }
     req.usuarioActual = { id: usuario.id, usuario: usuario.usuario, rol: usuario.rol };
+    req.sesionVerificada = true;
     return next();
   } catch (err) {
     console.error("Error al validar la sesión:", err);

@@ -9,8 +9,10 @@ const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
 // sin pasar por una request HTTP, algo que con todo mezclado en la ruta
 // no se podía hacer.
 
+const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
-const { verificarStockMinimoCentral, crearRequerimiento } = require("../requerimientos/requerimientos.servicio");
+const { verificarStockMinimoCentral, verificarStockMinimoCentralEnLote, crearRequerimiento } = require("../requerimientos/requerimientos.servicio");
+const { incrementarStockEnLote, descontarStockEnLote } = require("../../lib/stockLote");
 const { ESTADOS_REQUERIMIENTO, TIPOS_REQUERIMIENTO, MOTIVOS_RESOLUCION_DIFERENCIA } = require("../../lib/constantes");
 
 class ErrorDeNegocio extends Error {
@@ -99,20 +101,15 @@ async function registrarEntrada({ depositoId, tipoMovStockId, detalle, usuario, 
         },
       });
 
-      for (const item of items) {
-        const cantidad = Number(item.cantidad);
-        const articuloDepositoId = habilitacionPorArticulo[item.articuloId].id;
-
-        await tx.movimientoStockDetalle.create({
-          data: { movStockId: movimiento.id, articuloId: item.articuloId, cantidad },
-        });
-
-        await tx.articuloDepositoStock.upsert({
-          where: { articuloDepositoId },
-          create: { articuloDepositoId, stockActual: cantidad },
-          update: { stockActual: { increment: cantidad } },
-        });
-      }
+      // Una sola sentencia para todo el detalle y otra para todo el stock: la cantidad de consultas dentro de la
+      // transacción no crece con la cantidad de artículos (con la base remota, 2 por ítem pasaba los 15 s con 20 ítems).
+      await tx.movimientoStockDetalle.createMany({
+        data: items.map((item) => ({ movStockId: movimiento.id, articuloId: item.articuloId, cantidad: Number(item.cantidad) })),
+      });
+      await incrementarStockEnLote(
+        tx,
+        items.map((item) => ({ articuloDepositoId: habilitacionPorArticulo[item.articuloId].id, cantidad: Number(item.cantidad) })),
+      );
 
       return tx.movimientoStock.findUnique({
         where: { id: movimiento.id },
@@ -257,35 +254,28 @@ async function registrarTransferencia({ depositoId, depositoDestinoId, detalle, 
         },
       });
 
-      for (const item of items) {
-        const cantidad = Number(item.cantidad);
-        const articuloDepositoId = habilitacionPorArticulo[item.articuloId].id;
-
-        await tx.movimientoStockDetalle.create({
-          data: { movStockId: movimiento.id, articuloId: item.articuloId, cantidad },
-        });
-
-        // updateMany con el chequeo de stock en el WHERE: verificar y
-        // descontar en una sola sentencia atómica, para que dos
-        // transferencias/salidas simultáneas sobre el mismo artículo no
-        // puedan pasar ambas la validación con el mismo stock leído.
-        const resultado = await tx.articuloDepositoStock.updateMany({
-          where: { articuloDepositoId, stockActual: { gte: cantidad } },
-          data: { stockActual: { decrement: cantidad } },
-        });
-        if (resultado.count === 0) {
-          const stock = await tx.articuloDepositoStock.findUnique({ where: { articuloDepositoId } });
-          const stockActual = stock ? Number(stock.stockActual) : 0;
-          throw new ErrorDeNegocio(
-            `Stock insuficiente para el artículo ${item.articuloId}. Actual: ${stockActual}, Solicitado: ${cantidad}.`
-          );
-        }
-
-        // Sprint 3 — Transferencia a Central: una transferencia manual
-        // (HU-14) puede salir justamente DESDE un central. Si lo deja bajo
-        // el mínimo, dispara su reposición igual que cualquier otra salida.
-        await verificarStockMinimoCentral(tx, articuloDepositoId);
+      // Detalle y descuento en lote (una sentencia cada uno): "verificar y descontar" sigue siendo atómico (todo o
+      // nada; dos transferencias/salidas simultáneas no pueden pasar ambas la validación con el mismo stock leído).
+      await tx.movimientoStockDetalle.createMany({
+        data: items.map((item) => ({ movStockId: movimiento.id, articuloId: item.articuloId, cantidad: Number(item.cantidad) })),
+      });
+      const filas = items.map((item) => ({
+        articuloDepositoId: habilitacionPorArticulo[item.articuloId].id,
+        articuloId: item.articuloId,
+        cantidad: Number(item.cantidad),
+      }));
+      const sinStock = await descontarStockEnLote(tx, filas);
+      if (sinStock.length > 0) {
+        const f = sinStock[0];
+        throw new ErrorDeNegocio(
+          `Stock insuficiente para el artículo ${f.articuloId}. Actual: ${f.stockActual}, Solicitado: ${f.cantidad}.`
+        );
       }
+
+      // Sprint 3 — Transferencia a Central: una transferencia manual (HU-14) puede salir justamente DESDE un
+      // central. Si lo deja bajo el mínimo, dispara su reposición igual que cualquier otra salida (un solo chequeo
+      // en lote; ni siquiera se consulta si el depósito de origen no es central).
+      if (origen.esCentral) await verificarStockMinimoCentralEnLote(tx, filas.map((f) => f.articuloDepositoId));
 
       return tx.movimientoStock.findUnique({
         where: { id: movimiento.id },
@@ -382,28 +372,28 @@ async function confirmarRecepcion(id, { lineas, usuario } = {}) {
         },
       });
 
+      // En lote: la cantidad recibida de cada línea (una sentencia), el detalle de la entrada (createMany) y el stock
+      // de destino (una sentencia). Las consultas dentro de la transacción no dependen de cuántos artículos lleguen.
       for (const det of movimiento.detalleMovimientos) {
-        const recibido = recibidoPorArticulo.get(det.articuloId);
-        const habilitacion = habilitacionPorArticulo[det.articuloId];
-        if (!habilitacion) {
+        if (!habilitacionPorArticulo[det.articuloId]) {
           throw new ErrorDeNegocio(`El artículo ${det.articuloId} ya no está habilitado en el depósito destino.`);
         }
-
-        await tx.movimientoStockDetalle.update({
-          where: { id: det.id },
-          data: { cantidadRecibida: recibido },
+      }
+      const casosRecibido = movimiento.detalleMovimientos.map(
+        (det) => Prisma.sql`WHEN ${det.id} THEN ${recibidoPorArticulo.get(det.articuloId)}`,
+      );
+      await tx.$executeRaw(
+        Prisma.sql`UPDATE movimientos_stock_detalle SET cantidadRecibida = CASE id ${Prisma.join(casosRecibido, " ")} END WHERE id IN (${Prisma.join(movimiento.detalleMovimientos.map((det) => det.id))})`,
+      );
+      const recibidas = movimiento.detalleMovimientos.filter((det) => recibidoPorArticulo.get(det.articuloId) > 0);
+      if (recibidas.length > 0) {
+        await tx.movimientoStockDetalle.createMany({
+          data: recibidas.map((det) => ({ movStockId: entrada.id, articuloId: det.articuloId, cantidad: recibidoPorArticulo.get(det.articuloId) })),
         });
-
-        if (recibido > 0) {
-          await tx.movimientoStockDetalle.create({
-            data: { movStockId: entrada.id, articuloId: det.articuloId, cantidad: recibido },
-          });
-          await tx.articuloDepositoStock.upsert({
-            where: { articuloDepositoId: habilitacion.id },
-            create: { articuloDepositoId: habilitacion.id, stockActual: recibido },
-            update: { stockActual: { increment: recibido } },
-          });
-        }
+        await incrementarStockEnLote(
+          tx,
+          recibidas.map((det) => ({ articuloDepositoId: habilitacionPorArticulo[det.articuloId].id, cantidad: recibidoPorArticulo.get(det.articuloId) })),
+        );
       }
 
       await tx.movimientoStock.update({

@@ -36,17 +36,39 @@ async function verificarContrasena(contrasena, guardado) {
   return esperado.length === calculado.length && crypto.timingSafeEqual(esperado, calculado);
 }
 
-// Clave para firmar los tokens. Si el .env trae AUTH_SECRET se usa esa; si
-// no, se deriva de DATABASE_URL (que ya es secreta y ya está en el .env de
-// todo el equipo). Así funciona sin configurar nada nuevo, no queda ninguna
-// clave escrita en el repositorio, y los tokens siguen valiendo aunque se
-// reinicie el backend.
+// Clave para firmar los tokens de sesión: variable AUTH_SECRET.
+//  - En producción (NODE_ENV=production) es obligatoria y tiene que medir al menos 32 caracteres: si falta o
+//    es corta, el backend NO arranca (index.js llama a leerAuthSecret).
+//  - En desarrollo y test, si falta, se deriva de DATABASE_URL (así funciona sin configurar nada y los tokens
+//    siguen valiendo al reiniciar) y se avisa UNA sola vez por consola, sin imprimir ningún valor.
+const LARGO_MINIMO_AUTH_SECRET = 32;
+let advertidoAuthSecret = false;
+
+function leerAuthSecret(env = process.env, { advertir = (m) => console.warn(m) } = {}) {
+  const valor = String(env.AUTH_SECRET ?? "");
+  if (env.NODE_ENV === "production") {
+    if (!valor)
+      throw new Error(
+        "Falta AUTH_SECRET: en producción es obligatoria (con al menos 32 caracteres aleatorios). El backend no arranca sin ella."
+      );
+    if (valor.length < LARGO_MINIMO_AUTH_SECRET)
+      throw new Error(`AUTH_SECRET es demasiado corta (${valor.length} caracteres): en producción tiene que tener al menos ${LARGO_MINIMO_AUTH_SECRET}.`);
+    return valor;
+  }
+  if (valor) return valor;
+  if (!advertidoAuthSecret) {
+    advertidoAuthSecret = true;
+    advertir(
+      "[auth] AUTH_SECRET no está definida: la clave de las sesiones se deriva de DATABASE_URL (solo para entornos locales). " +
+        "Definila en backend/.env; en producción es obligatoria."
+    );
+  }
+  return `sgh-auth|${env.DATABASE_URL ?? ""}`;
+}
+
 let claveCacheada = null;
 function claveFirma() {
-  if (!claveCacheada) {
-    const base = process.env.AUTH_SECRET || `sgh-auth|${process.env.DATABASE_URL ?? ""}`;
-    claveCacheada = crypto.createHash("sha256").update(base).digest();
-  }
+  if (!claveCacheada) claveCacheada = crypto.createHash("sha256").update(leerAuthSecret()).digest();
   return claveCacheada;
 }
 
@@ -86,4 +108,6 @@ module.exports = {
   verificarContrasena,
   firmarToken,
   verificarToken,
+  leerAuthSecret,
+  LARGO_MINIMO_AUTH_SECRET,
 };

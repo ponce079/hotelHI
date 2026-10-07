@@ -36,7 +36,9 @@ const ROLES_OPERACION = ["admin", "recepcionista"];
 const lectura = [requiereSesion, requiereRol(...ROLES_LECTURA)];
 const operacion = [requiereSesion, requiereRol(...ROLES_OPERACION)];
 // El operador que queda en los eventos es el usuario de la sesión, no lo que mande el cliente.
-const conOperador = (r) => ({ ...r.body, operador: r.usuarioActual.usuario });
+// `corregirNombre` lo fija la sesión (solo un administrador puede corregir el nombre de una ficha existente): lo que
+// mande el cliente se ignora.
+const conOperador = (r) => ({ ...r.body, operador: r.usuarioActual.usuario, corregirNombre: r.usuarioActual.rol === "admin" });
 
 router.get(
   "/alojados",

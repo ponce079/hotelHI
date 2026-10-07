@@ -71,6 +71,64 @@ function tarifaVigente(tarifas, tipoId, temporadaId, fechaVenta) {
   );
 }
 
+// Límites de la base y tiempos que condicionan la robustez del mostrador contra una base remota (todo SELECT).
+async function verificarOperacion(conn, avisos) {
+  {
+    titulo("Conexiones y timeouts del servidor (solo lectura)");
+    const filas = await conn.query(
+      "SHOW VARIABLES WHERE Variable_name IN ('max_user_connections','max_connections','wait_timeout','interactive_timeout','innodb_lock_wait_timeout')",
+    );
+    const v = Object.fromEntries(filas.map((f) => [f.Variable_name, Number(f.Value)]));
+    for (const k of ["max_user_connections", "max_connections", "wait_timeout", "interactive_timeout", "innodb_lock_wait_timeout"]) {
+      console.log(`  ${k.padEnd(26)} ${v[k] ?? "(no disponible)"}`);
+    }
+    const limite = v.max_user_connections > 0 ? v.max_user_connections : v.max_connections;
+    const configurado = Number(process.env.DATABASE_CONNECTION_LIMIT ?? 2);
+    if (limite > 0) {
+      console.log(`  Límite efectivo por usuario: ${limite} conexiones (${v.max_user_connections > 0 ? "max_user_connections" : "max_connections"}).`);
+      console.log("  Recomendación de DATABASE_CONNECTION_LIMIT según los integrantes con su backend conectado a la vez:");
+      for (const n of [1, 2, 3, 4, 5, 6]) console.log(`    con ${n} integrante(s): como máximo ${Math.max(1, Math.min(10, Math.floor(limite / n)))}`);
+      console.log(`  Configurado en esta terminal: ${configurado}.`);
+      if (configurado * 2 > limite) {
+        avisos.push(`DATABASE_CONNECTION_LIMIT=${configurado} es alto para un límite de ${limite}: con 2 integrantes ya llegarían a ${configurado * 2}.`);
+      }
+      if (limite < 8) avisos.push(`El límite de conexiones del usuario es bajo (${limite}): con la base remota las pantallas con varias lecturas en paralelo hacen cola.`);
+    }
+    const inactividad = Number(process.env.DATABASE_IDLE_TIMEOUT_MS ?? 30000);
+    const tope = Math.min(v.wait_timeout || Infinity, v.interactive_timeout || Infinity);
+    if (Number.isFinite(tope)) {
+      const recomendado = Math.min(30000, Math.floor((tope * 1000) / 2));
+      console.log(`  DATABASE_IDLE_TIMEOUT_MS recomendado: ${recomendado} (la mitad del menor entre wait_timeout e interactive_timeout, máximo 30000). Configurado: ${inactividad}.`);
+      if (inactividad >= tope * 1000) {
+        avisos.push(`DATABASE_IDLE_TIMEOUT_MS=${inactividad} es mayor o igual que el wait_timeout del servidor (${tope} s): el servidor cortará las conexiones inactivas primero (ECONNABORTED). Usá ${recomendado}.`);
+      }
+    }
+    if (v.innodb_lock_wait_timeout) {
+      console.log(`  innodb_lock_wait_timeout = ${v.innodb_lock_wait_timeout} s: lo máximo que espera una transacción por un bloqueo de otra (el check-in y el walk-in bloquean las habitaciones).`);
+      if (v.innodb_lock_wait_timeout > 30) avisos.push(`innodb_lock_wait_timeout=${v.innodb_lock_wait_timeout} s supera los 30 s de las transacciones de la aplicación.`);
+    }
+
+    titulo("Consistencia entre habitaciones y reservas En curso (solo conteos y números de habitación)");
+    const sinReserva = await conn.query(
+      "SELECT h.numero FROM habitaciones h WHERE h.estado = 'ocupada' AND NOT EXISTS (SELECT 1 FROM reservas_habitaciones rh JOIN reservas r ON r.id = rh.reservaId WHERE rh.habitacionId = h.id AND r.estado = 'En curso') ORDER BY h.numero",
+    );
+    const sinHabitacion = await conn.query(
+      "SELECT DISTINCT h.numero FROM reservas r JOIN reservas_habitaciones rh ON rh.reservaId = r.id JOIN habitaciones h ON h.id = rh.habitacionId WHERE r.estado = 'En curso' AND h.estado <> 'ocupada' ORDER BY h.numero",
+    );
+    console.log(`  Habitaciones 'ocupada' sin una reserva En curso que las ocupe: ${sinReserva.length}${sinReserva.length ? ` (hab. ${sinReserva.map((x) => x.numero).join(", ")})` : ""}`);
+    console.log(`  Reservas En curso con una habitación que no figura 'ocupada': ${sinHabitacion.length}${sinHabitacion.length ? ` (hab. ${sinHabitacion.map((x) => x.numero).join(", ")})` : ""}`);
+    if (sinReserva.length) avisos.push(`${sinReserva.length} habitación(es) 'ocupada' sin reserva En curso (hab. ${sinReserva.map((x) => x.numero).join(", ")}): puede haberlas dejado una prueba interrumpida.`);
+    if (sinHabitacion.length) avisos.push(`${sinHabitacion.length} habitación(es) de reservas En curso que no figuran 'ocupada' (hab. ${sinHabitacion.map((x) => x.numero).join(", ")}).`);
+
+    titulo("Variables de entorno de esta terminal (sin mostrar valores)");
+    const largo = (k) => String(process.env[k] ?? "").length;
+    console.log(`  AUTH_SECRET             ${largo("AUTH_SECRET") ? `definida (${largo("AUTH_SECRET")} caracteres)` : "NO definida"}  (obligatoria en producción, 32 o más)`);
+    console.log(`  PASARELA_TOKEN_SECRETO  ${largo("PASARELA_TOKEN_SECRETO") ? `definida (${largo("PASARELA_TOKEN_SECRETO")} caracteres)` : "NO definida"}  (obligatoria en producción, 32 o más)`);
+    console.log(`  TAREAS_AUTOMATICAS      ${process.env.TAREAS_AUTOMATICAS ? process.env.TAREAS_AUTOMATICAS : "(vacía: tareas activas)"}  (contra la compartida, solo un backend con tareas activas)`);
+    if (largo("AUTH_SECRET") < 32) avisos.push("AUTH_SECRET no está definida o tiene menos de 32 caracteres: en producción el backend no arranca.");
+  }
+}
+
 async function main() {
   const url = await exigirDestino(process.env, "la verificación del e-commerce", { confirmarPorTeclado: false });
   const destino = describirDestino(url);
@@ -124,6 +182,7 @@ async function main() {
 
     // 4) Datos de negocio que la web necesita (avisos: no frenan).
     if (!faltantesBase.length) await datosDeNegocio(conn);
+    await verificarOperacion(conn, avisos);
 
     // 5) Conteos antes / después.
     const archivo = path.resolve(__dirname, "../.local", `verificacion-ecommerce-${destino.base}.json`);
