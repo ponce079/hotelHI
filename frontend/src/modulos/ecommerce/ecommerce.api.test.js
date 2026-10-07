@@ -157,7 +157,7 @@ describe("ecommerce.api con VITE_ECOMMERCE_MOCK=true", () => {
       noches: 2,
       total: 50000,
       cobradoAhora: 0,
-      garantia: { tipo: "GARANTIA", marca: "VISA", ultimos4: "4242" },
+      garantia: { tipo: "GARANTIA", marca: "Visa", ultimos4: "4242" },
       habitaciones: [{ tipo: "Doble", adultos: 2, menores: 0 }],
       email: { enviado: true },
     });
@@ -201,13 +201,12 @@ describe("ecommerce.api con VITE_ECOMMERCE_MOCK=true", () => {
       expect(pasaLuhn("4242424242424241")).toBe(false);
     });
 
-    it("terminada en 0002 → rechazada en no reembolsable (fondos insuficientes), aceptada en tarifa flexible", async () => {
+    it("terminada en 0002 → rechazada en CUALQUIER tarifa (fondos insuficientes), como la pasarela real del backend", async () => {
       const tarjeta = { ...cuerpoReserva().tarjeta, numero: "4000000000000002" };
-      const err = await fallo(crearReserva(cuerpoReserva({ planTarifarioId: 2, totalEsperado: 42500, tarjeta })));
-      expect(err).toMatchObject({ codigo: "PAGO_RECHAZADO", status: 402, motivo: "Fondos insuficientes" });
-      await expect(crearReserva(cuerpoReserva({ claveIdempotencia: "clave-de-prueba-0002", tarjeta }))).resolves.toMatchObject({
-        garantia: { tipo: "GARANTIA", ultimos4: "0002" },
-      });
+      const nrf = await fallo(crearReserva(cuerpoReserva({ planTarifarioId: 2, totalEsperado: 42500, tarjeta })));
+      expect(nrf).toMatchObject({ codigo: "PAGO_RECHAZADO", status: 402, motivo: "Fondos insuficientes" });
+      const bar = await fallo(crearReserva(cuerpoReserva({ claveIdempotencia: "clave-de-prueba-0002", tarjeta })));
+      expect(bar).toMatchObject({ codigo: "PAGO_RECHAZADO", status: 402, motivo: "Fondos insuficientes" });
     });
 
     it("terminada en 0069 → PAGO_RECHAZADO (tarjeta vencida)", async () => {

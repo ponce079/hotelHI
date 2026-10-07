@@ -13,12 +13,13 @@
 //                       clave nueva funciona.
 //   ERROR_INTERNO       todas las llamadas → 500.
 //   DEMASIADOS_INTENTOS todas las llamadas → 429.
-// Tarjetas (mismas reglas que la pasarela simulada del backend):
-// 4242424242424242 aprobada; terminada en 0069 → rechaza todo ("Tarjeta
-// vencida"); terminada en 0002 → rechaza la tarifa no reembolsable ("Fondos
-// insuficientes") pero ACEPTA la flexible (la garantía de monto 0 no mira el
-// saldo); sin Luhn → DATOS_INVALIDOS (tarjeta.numero); ya vencida hoy → 402
-// "Tarjeta vencida"; vence antes de la salida → 422 TARJETA_VENCE_ANTES.
+// Tarjetas (mismas reglas que la pasarela simulada del backend, la única del sistema:
+// backend/src/modulos/garantias/pasarela.servicio.js): 4242424242424242 aprobada;
+// terminada en 0069 → rechaza todo ("Tarjeta vencida"); terminada en 0002 → rechaza
+// TAMBIÉN la tarifa flexible ("Fondos insuficientes"); sin Luhn → DATOS_INVALIDOS
+// (tarjeta.numero); ya vencida hoy → 402 "Tarjeta vencida"; vence antes de la
+// salida → 422 TARJETA_VENCE_ANTES. Marcas como las de la pasarela: "Visa",
+// "Mastercard", "American Express".
 //
 // Mi reserva (código + email, decisión 6 de CONTRATO.md). Online solo se
 // cancela sin cargo; en los demás casos la respuesta trae el motivo:
@@ -112,7 +113,7 @@ const RESERVA_DEMO = {
   habitaciones: [{ tipo: "Doble", adultos: 2, menores: 1 }],
   total: 75000,
   cobrado: 0,
-  garantia: { tipo: "GARANTIA", marca: "VISA", ultimos4: "4242" },
+  garantia: { tipo: "GARANTIA", marca: "Visa", ultimos4: "4242" },
   titular: "Juan P.",
   documento: "****222",
   cancelacion: SIN_CARGO,
@@ -149,7 +150,7 @@ const RESERVAS_MI_RESERVA = [
       habitaciones: [{ tipo: "Simple", adultos: 1, menores: 0 }],
       total: 42500,
       cobrado: 42500,
-      garantia: { tipo: "PREPAGO", marca: "MASTERCARD", ultimos4: "4444" },
+      garantia: { tipo: "PREPAGO", marca: "Mastercard", ultimos4: "4444" },
       titular: "Carla G.",
       documento: "****561",
       cancelacion: {
@@ -319,12 +320,12 @@ export function pasaLuhn(numero) {
 }
 
 function marcaDe(numero) {
-  if (/^4/.test(numero)) return "VISA";
+  if (/^4/.test(numero)) return "Visa";
   const dos = Number(numero.slice(0, 2));
   const cuatro = Number(numero.slice(0, 4));
-  if ((dos >= 51 && dos <= 55) || (cuatro >= 2221 && cuatro <= 2720)) return "MASTERCARD";
-  if (/^3[47]/.test(numero)) return "AMEX";
-  return "OTRA";
+  if ((dos >= 51 && dos <= 55) || (cuatro >= 2221 && cuatro <= 2720)) return "Mastercard";
+  if (/^3[47]/.test(numero)) return "American Express";
+  return "Tarjeta";
 }
 
 // "Mismos datos" para la idempotencia, igual que el backend: fechas, plan,
@@ -553,7 +554,7 @@ export function mockCrearReserva(cuerpo) {
 
     // 4. Pasarela: garantía (flexible) o preautorización (no reembolsable).
     if (numero.endsWith("0069")) throw error(402, CODIGO_ERROR.PAGO_RECHAZADO, "Pago rechazado.", { motivo: "Tarjeta vencida" });
-    if (!plan.reembolsable && numero.endsWith("0002")) {
+    if (numero.endsWith("0002")) {
       throw error(402, CODIGO_ERROR.PAGO_RECHAZADO, "Pago rechazado.", { motivo: "Fondos insuficientes" });
     }
 

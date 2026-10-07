@@ -1,6 +1,10 @@
 # Contrato de la API del e-commerce (`/api/web`)
 
-> **Contrato v7 (desglose por noche en `/cotizar`, email con el límite de cancelación exacto, contenido y datos de contacto completos). Cambios al contrato: solo Gimena.**
+> **Contrato v8 (pasarela única con registro persistente, garantía en `GarantiaReserva`, concepto "Pago anticipado", API cerrada con lista blanca, web vieja retirada). Cambios al contrato: solo Gimena.**
+>
+> v8 (integración con `master`, trabajo de Ricardo): **una sola pasarela** (`backend/src/modulos/garantias/pasarela.servicio.js`) con **registro persistente** (`pasarela_operaciones`), idempotencia que sobrevive al reinicio y control de estado de las preautorizaciones; **una sola garantía** por reserva sin importar el canal (`GarantiaReserva`); un solo concepto de pago al reservar, **"Pago anticipado"** (desaparece "Prepago"); marca **"Visa"** (no "VISA"); las columnas de tarjeta de `DatosReservaWeb` quedan **sin uso** (solo se escribe `tarjetaTitular`); estado **No-show** en Mi reserva ("No presentada"); **API cerrada**: todo `/api` exige sesión salvo `/api/web/*` y el login; la web vieja (`/disponibilidad`, `/reservar`) se retiró y redirige a `/web`. Variable nueva: `PASARELA_TOKEN_SECRETO` (obligatoria en producción).
+>
+> v7: desglose por noche en `/cotizar`, email con el límite de cancelación exacto, contenido y datos de contacto completos.
 >
 > v6: integración de Datos, Pago y Confirmación de Tomás, email definitivo y límite de intentos.
 >
@@ -14,7 +18,7 @@
 | `GET /api/web/planes` | **Real** (etapa 2) |
 | `GET /api/web/disponibilidad` | **Real** (etapa 1B-1) |
 | `POST /api/web/cotizar` | **Real** (etapa 1B-1) |
-| `POST /api/web/reservas` | **Real** (etapa 1B-2), con la pasarela simulada del backend |
+| `POST /api/web/reservas` | **Real**, con la pasarela única del sistema (módulo de garantías) |
 | `POST /api/web/mi-reserva` y `/mi-reserva/cancelar` | **Real** (etapa 4) |
 | `GET /api/reservas-web/:reservaId` | **Real** (etapa 2) — **interno del mostrador**, con sesión; no es parte de `/api/web` |
 
@@ -39,7 +43,7 @@ incluido, solo tarjeta de crédito, sin cuentas de huésped.
 
 ## Convenciones generales
 
-- Base: `/api/web`. Todas las rutas son públicas (sin sesión de staff).
+- Base: `/api/web`. Todas las rutas son públicas (sin sesión de staff): es, junto con el login (`POST /api/auth/login`), **lo único de `/api` que se puede usar sin sesión** (ver **API cerrada**).
 - Fechas "solo día" en formato `YYYY-MM-DD` (hora de Argentina). `fechaHasta`
   es el día de salida (no se cuenta como noche).
 - Montos en pesos argentinos, **precio final con IVA incluido**, como número
@@ -370,7 +374,7 @@ con `campo`, salvo el vencimiento de la tarjeta:
 Orden del backend: validación → idempotencia → habitaciones libres y
 precio (`409 SIN_DISPONIBILIDAD` / `409 PRECIO_CAMBIADO`, **sin** tocar la
 pasarela) → pasarela (`402 PAGO_RECHAZADO` con `motivo`) → una transacción
-→ captura (solo no reembolsable) → email.
+(reserva + `GarantiaReserva` + `DatosReservaWeb`) → captura y "Pago anticipado" (solo no reembolsable) → email.
 
 **Response 201** (o **200** si la clave ya existía con los mismos datos) —
 respuesta real de la base local (tarifa no reembolsable):
@@ -385,7 +389,7 @@ respuesta real de la base local (tarifa no reembolsable):
   "plan": { "codigo": "NRF", "nombre": "No Reembolsable", "reembolsable": false, "horasCancelacionSinCargo": null },
   "total": 74800,
   "cobradoAhora": 74800,
-  "garantia": { "tipo": "PREPAGO", "marca": "VISA", "ultimos4": "4242" },
+  "garantia": { "tipo": "PREPAGO", "marca": "Visa", "ultimos4": "4242" },
   "habitaciones": [{ "tipo": "Doble", "adultos": 2, "menores": 0 }],
   "email": { "enviado": true }
 }
@@ -400,8 +404,9 @@ respuesta real de la base local (tarifa no reembolsable):
   - `false` → no se pudo enviar (la reserva **sí** quedó creada);
   - `null` → **desconocido**: solo en la repetición idempotente (200), que no
     vuelve a mandar el email.
-- En la repetición idempotente (200), `garantia` sale de lo guardado
-  (`DatosReservaWeb`): nunca es `null`.
+- `garantia` sale de lo guardado en **`GarantiaReserva`** (la garantía única de la reserva, la misma que ve el
+  mostrador); en la repetición idempotente (200) también: nunca es `null`. El `tipo` (`GARANTIA`/`PREPAGO`) es una
+  etiqueta de esta API pública, no el `tipo` de `GarantiaReserva` (que es `TARJETA`).
 - Sin ids ni números de habitación. El código es el **código de confirmación
   del sistema** (el mismo que ve el mostrador): 8 caracteres hexadecimales en
   mayúsculas.
@@ -467,7 +472,7 @@ Consulta de una reserva con código + email (HU-104). No hay cuentas de huésped
   "habitaciones": [{ "tipo": "Doble", "adultos": 2, "menores": 1 }],
   "total": 75000,
   "cobrado": 0,
-  "garantia": { "tipo": "GARANTIA", "marca": "VISA", "ultimos4": "4242" },
+  "garantia": { "tipo": "GARANTIA", "marca": "Visa", "ultimos4": "4242" },
   "titular": "Juan P.",
   "documento": "****222",
   "cancelacion": {
@@ -501,9 +506,9 @@ Consulta de una reserva con código + email (HU-104). No hay cuentas de huésped
   primer nombre + inicial del apellido) ni datos de otros huéspedes.
 - `habitaciones`: tipo y ocupación de cada habitación, en el orden en que se
   cargaron. `total`: suma de las noches; `cobrado`: suma de los pagos no
-  anulados (seña, prepago, etc.).
-- `garantia`: la tarjeta de una reserva web (`"GARANTIA"` en la tarifa
-  flexible, `"PREPAGO"` en la no reembolsable); `null` en una del mostrador.
+  anulados (seña, pago anticipado, etc.).
+- `garantia`: la tarjeta de la garantía de la reserva (`GarantiaReserva`; `"GARANTIA"` en la tarifa
+  flexible, `"PREPAGO"` en la no reembolsable); `null` si la reserva no tiene una tarjeta registrada.
 - `plan.horasCancelacionSinCargo` es `null` si el plan no es reembolsable.
 
 ### `cancelacion` (decisión 14: online solo **sin cargo**)
@@ -513,9 +518,9 @@ este orden (el primero que falla da el `motivo`):
 
 | # | Regla | `motivo` si falla |
 |---|---|---|
-| 1 | Estado `Confirmada` | `Cancelada` → "Esta reserva ya fue cancelada."; `En curso` / `Cerrada` → `null` |
+| 1 | Estado `Confirmada` | `Cancelada` → "Esta reserva ya fue cancelada."; `No-show` → "La reserva figura como no presentada. Contactá a recepción." (la insignia dice "No presentada"); `En curso` / `Cerrada` → `null` |
 | 2 | Antes de las 14 h (hora argentina) del día de llegada | "Tu llegada es hoy. Para cualquier cambio, contactá a recepción." (si el día ya pasó: "La fecha de llegada ya pasó. Para cualquier cambio, contactá a recepción.") |
-| 3 | Sin pagos activos (`PagoEstadia` no anulado; el **prepago** de la tarifa no reembolsable no cuenta acá: lo cubre la regla 4) | "Tu reserva tiene un pago registrado. Para cancelarla, contactá a recepción." |
+| 3 | Sin pagos activos (`PagoEstadia` no anulado; el **pago anticipado** de la tarifa no reembolsable no cuenta acá: lo cubre la regla 4) | "Tu reserva tiene un pago registrado. Para cancelarla, contactá a recepción." |
 | 4 | Plan reembolsable | "Esta tarifa no admite reintegro. Si necesitás cancelar, contactá a recepción." |
 | 5 | Penalidad 0 según `calcularPenalidad` (motor de tarifas, sin cambios) | "Cancelar ahora tiene un cargo de $ X (<explicación del motor>). Para cancelar, contactá a recepción." |
 
@@ -565,8 +570,8 @@ este orden (el primero que falla da el `motivo`):
 No es parte de la API pública: lo usa el detalle de reserva del mostrador para
 el bloque "Reserva web". Exige **sesión** (`requiereSesion`) y el permiso de
 ver reservas (`requiereRol("admin", "recepcionista", "gerente")`, el mismo
-criterio que `verReservas` del frontend). `GET /api/reservas/:id` sigue sin
-sesión y **no** se le agregaron estos datos.
+criterio que `verReservas` del frontend). `GET /api/reservas/:id` también exige sesión (API cerrada) y **no** se le
+agregaron estos datos.
 
 **Response 200**
 
@@ -576,15 +581,16 @@ sesión y **no** se le agregaron estos datos.
   "telefonoContacto": "+54 9 387 555-1234",
   "horaEstimadaLlegada": "20-22",
   "solicitudesEspeciales": "Cuna para bebé, si es posible.",
-  "tarjeta": { "titular": "MARIA GONZALEZ", "marca": "VISA", "ultimos4": "4242", "vencimiento": "08/2028" },
-  "tipoGarantia": "GARANTIA",
+  "tarjetaTitular": "MARIA GONZALEZ",
   "aceptaPoliticasEn": "2026-10-04T17:32:00.000Z",
   "versionPoliticas": "2026-10-01",
   "aceptaComunicaciones": false
 }
 ```
 
-- `tipoGarantia`: `"GARANTIA"` (tarifa flexible) | `"PREPAGO"` (no reembolsable).
+- La **garantía no va acá**: vive en `GarantiaReserva` y el detalle la muestra **una sola vez**, en su propia tarjeta
+  "Garantía de la reserva" (`GET /api/reservas/:id/garantia`, sin token). Este endpoint solo trae el contacto, las políticas
+  aceptadas, la llegada, las solicitudes y el **titular** de la tarjeta.
 - **Nunca** devuelve `garantiaToken` ni `pasarelaReferencia` (ni siquiera los lee).
 - **`200` con `null`** si la reserva no tiene datos web (reserva del mostrador
   o inexistente; antes era un 404, etapa 4); `401` sin sesión; `403` con un rol que no ve reservas; `400` con un id inválido.
@@ -592,8 +598,7 @@ sesión y **no** se le agregaron estos datos.
 En el detalle (`frontend/src/modulos/reservas/detalle/ColumnaDerecha.jsx`) la
 tarjeta "Reserva web" va después de "Quién reservó", solo si el endpoint
 devuelve datos (`null` o un error no muestran nada): contacto, "Llegada
-estimada: 20 a 22 h", solicitudes (o "Sin solicitudes"), "Garantizada con VISA
-••4242 · vence 08/2028" o "Prepagada con VISA ••4242", "Aceptó términos
+estimada: 20 a 22 h", solicitudes (o "Sin solicitudes"), "Titular de la tarjeta", "Aceptó términos
 v2026-10-01 el 04/10/2026 14:32" (hora argentina) y "Acepta comunicaciones:
 sí/no".
 
@@ -681,64 +686,67 @@ válidos):
 - La identidad de la persona es **tipo + país + número** del documento, con la
   misma normalización que el sistema (`persona.servicio.js → claveDocumento`).
 
-## Cómo se procesa el pago (etapa 1B-2)
+## Cómo se procesa el pago
 
-- **Plan reembolsable** (tarifa flexible): `GARANTIA` con monto 0 — valida la
-  tarjeta y devuelve un token. **No se cobra nada y no es un pago**: no se
-  registra en `PagoEstadia` (`consolidarCargos` la restaría del saldo del
-  check-out). Marca, últimos 4, vencimiento, token y referencia van en
-  `DatosReservaWeb`. El no-show se cobrará después con el token.
-- **Plan no reembolsable**: `PREAUTORIZACION` por el total → se crea la
-  reserva **y** un `PagoEstadia` con concepto **"Prepago"**
-  (`CONCEPTO_PREPAGO`), medio "Tarjeta crédito" y la referencia de la
-  preautorización, en la misma transacción → `CAPTURA`.
-  - Si la transacción falla (cualquier error): `LIBERACION` y se responde el
-    error.
-  - Si la **captura** falla después de crear la reserva, se compensa con las
-    funciones del sistema: se anula el prepago con motivo "Pago no capturado"
-    (`anularPago`), se cancela la reserva con ese mismo motivo
-    (`cancelarReserva`, que no aplica penalidades ni manda emails), se libera
-    la preautorización y se responde `402 PAGO_RECHAZADO`: "No pudimos
+El alta web usa **las mismas funciones que el alta del mostrador** (`POST /api/reservas/con-garantia`, módulo
+`backend/src/modulos/garantias/`): una sola `GarantiaReserva` por reserva, sin importar el canal, mismos estados, tipos,
+conceptos y orden. `reservaWeb.servicio.js` no copia esa lógica: llama a `validarGarantiaDeReserva`,
+`autorizarGarantia`, `registrarEnTransaccion`, `capturarCobroDeReserva` y `liberarPreautorizacion`.
+
+- **Plan reembolsable** (tarifa flexible): `GARANTIA` con monto 0 — valida la tarjeta y devuelve un token. **No se cobra
+  nada y no es un pago**: no se registra en `PagoEstadia` (`consolidarCargos` la restaría del saldo del check-out). En la
+  transacción del alta se registra `GarantiaReserva` (tipo `TARJETA`, estado `Vigente`, token, marca, últimos 4,
+  vencimiento `MM/AA`, referencia). El no-show y la penalidad de cancelación se cobran después **con ese token**
+  (`cierreReserva.servicio.js`).
+- **Plan no reembolsable**: `PREAUTORIZACION` por el total → la transacción del alta crea la reserva y la
+  `GarantiaReserva` en estado `Preautorizada` (monto = total) → `CAPTURA` → recién ahí se registra el `PagoEstadia`
+  con concepto **"Pago anticipado"** (medio "Tarjeta crédito", referencia `Visa ****4242 · aut. CAP-nnnnnn`) y la garantía
+  pasa a `Capturada`.
+  - Si la transacción falla (cualquier error): `LIBERACION` de la preautorización y se responde el error.
+  - Si la **captura** falla después de crear la reserva, se usa el mismo camino del mostrador
+    (`capturarCobroDeReserva`): se libera la retención, la reserva se **cancela con motivo y sin penalidad** (no pasa por
+    `cancelarReserva`, que cobraría una) y la garantía queda `Liberada`; se responde `402 PAGO_RECHAZADO`: "No pudimos
     confirmar el pago. No se realizó ningún cargo."
 - La llamada a la pasarela va **fuera de la transacción de la base**.
-- En el check-out, el saldo de alojamiento de una reserva no reembolsable es 0
-  (el prepago se descuenta); en una flexible es el total (la garantía no).
-- La pasarela es **simulada**, propia del módulo
-  (`backend/src/modulos/ecommerce/pasarelaSimulada.js`), con la firma de
-  abajo. Es el único punto que se reemplaza por el módulo de garantías de
-  Ricardo.
+- En el check-out, el saldo de alojamiento de una reserva no reembolsable es 0 (el pago anticipado se descuenta); en una
+  flexible es el total (la garantía no).
+- **Cada intento de alta no reembolsable pide su propia preautorización** (clave `"<claveIdempotencia>:<uuid>"`); la
+  garantía de una flexible se pide con la clave del pedido. La idempotencia **del alta** es la de `DatosReservaWeb`
+  (decisión 19); la de la pasarela es la de abajo.
 
-### Firma de la pasarela — *propuesta enviada a Ricardo, a confirmar*
+### La pasarela (única, simulada, con registro persistente)
 
-La guía de Ricardo no está en el repositorio; la firma sale de ella.
+Hay **una sola pasarela** en el sistema: `backend/src/modulos/garantias/pasarela.servicio.js` (de Ricardo). Se eliminó
+`ecommerce/pasarelaSimulada.js`. Es **simulada** (sin proveedor real), pero se comporta como uno:
 
 ```js
 procesarTarjeta({ operacion, monto, tarjeta, referenciaPrevia, claveIdempotencia })
 //   operacion: 'GARANTIA' | 'COBRO' | 'PREAUTORIZACION' | 'CAPTURA' | 'LIBERACION'
 //   monto: Prisma.Decimal (0 para GARANTIA)
 //   tarjeta: { titular, numero, vencimientoMes, vencimientoAnio, cvv }  (se valida y NO se guarda)
-//   referenciaPrevia: para CAPTURA y LIBERACION
+//   referenciaPrevia: token de una tarjeta guardada (COBRO, PREAUTORIZACION) o referencia PRE-nnnnnn (CAPTURA, LIBERACION)
 // → { aprobado, referencia, token, marca, ultimos4, motivoRechazo }
 ```
 
-Y para registrar dentro de la transacción, **sin** llamar a la pasarela:
+- **Registro persistente** (`pasarela_operaciones`): cada operación se guarda (nunca el número completo ni el CVV). La misma
+  `claveIdempotencia` con la misma operación devuelve el resultado guardado, **también después de reiniciar el backend**.
+- **Control de estado de las preautorizaciones**: `Vigente` → `Capturada` (con el monto capturado) | `Liberada` | `Capturada,
+  remanente liberado`. CAPTURA y LIBERACION exigen una PREAUTORIZACION existente y aprobada ("Preautorización desconocida."
+  si no); no se captura más de lo preautorizado; una segunda captura o liberación se rechaza; una captura parcial admite
+  **una** liberación del remanente.
+- Si el registro no se puede escribir, la operación se informa como error de la pasarela (nunca se aprueba en silencio).
+- Los tokens se firman con `PASARELA_TOKEN_SECRETO` (obligatoria en producción, 32+ caracteres; el backend no arranca sin ella).
 
-```js
-registrarGarantiaEnTransaccion(tx, { reservaId, tipo, token, marca, ultimos4, vencimiento, referencia, monto, estado })
-```
+Tarjetas de prueba (**por operación**; las mismas en el mock del frontend y en el backend real):
 
-Tarjetas de prueba de la pasarela simulada:
+| Número | `GARANTIA` | `PREAUTORIZACION` / `COBRO` |
+|---|---|---|
+| `4242424242424242` | Aprobada (marca "Visa") | Aprobada |
+| `4000000000000002` | **Rechazada** — "Fondos insuficientes." | **Rechazada** — "Fondos insuficientes." |
+| `4000000000000069` | Rechazada — "Tarjeta vencida." | Rechazada — "Tarjeta vencida." |
 
-| Número | Resultado |
-|---|---|
-| `4242424242424242` | Aprobada |
-| `4000000000000002` | Tarifa **flexible**: aceptada (la garantía de monto 0 no mira el saldo). Tarifa **no reembolsable**: rechazada — fondos insuficientes |
-| `4000000000000069` | Rechazada en cualquier tarifa — tarjeta vencida |
-
-Marca por prefijo: VISA `4`; MASTERCARD `51`–`55` y `2221`–`2720`; AMEX `34` y
-`37`; cualquier otra, `OTRA`. La pasarela es idempotente en memoria por
-(clave, operación) y lleva el estado de cada preautorización (pendiente,
-capturada, liberada).
+Marca por prefijo: "Visa" `4`; "Mastercard" `51`–`55` y `2221`–`2720`; "American Express" `34` y `37`; cualquier otra, "Tarjeta".
+Un rechazo de la pasarela en el alta web es `402 PAGO_RECHAZADO` con `motivo` y **no crea nada** (ni reserva ni ficha).
 
 ### Tarjetas: aclaración importante
 
@@ -772,8 +780,8 @@ etapa 1B-1 con `backend/prisma/agregar-datos-reserva-web.sql`):
 | `emailContacto`, `telefonoContacto` | el contacto declarado en la web |
 | `horaEstimadaLlegada`, `solicitudesEspeciales` | llegada y pedidos |
 | `aceptaPoliticasEn`, `versionPoliticas`, `aceptaComunicaciones` | consentimiento |
-| `tarjetaTitular`, `tarjetaMarca`, `tarjetaUltimos4`, `tarjetaVencimiento` | la tarjeta de la garantía, **sin número completo ni CVV** |
-| `garantiaToken`, `pasarelaReferencia` | lo que devuelve la pasarela |
+| `tarjetaTitular` | el titular de la tarjeta (único dato de la tarjeta que se escribe acá) |
+| `tarjetaMarca`, `tarjetaUltimos4`, `tarjetaVencimiento`, `garantiaToken`, `pasarelaReferencia` | **sin uso** desde la v8 (quedan en el esquema, nullable, sin escribirse; se eliminan después de la entrega). La garantía vive en `GarantiaReserva` |
 | `creadoEn` | alta |
 
 ### Canal de la reserva
@@ -799,13 +807,14 @@ cargó el mostrador o el check-in. No se modifica `resolverHuesped`.
 
 En un plan reembolsable la tarjeta **garantiza** la reserva: no se cobra y no
 es un pago, así que **no** va a `PagoEstadia` (`consolidarCargos` la restaría
-del saldo). Sus datos, sin número ni CVV, van en `DatosReservaWeb`.
+del saldo). Sus datos, sin número ni CVV, van en **`GarantiaReserva`** (la misma tabla y los mismos estados que usa el
+alta del mostrador).
 
-En las **llegadas del check-in**, la columna "Garantía" muestra cómo está
-asegurada cada reserva, en este orden: "Prepagada · $ X" (prepago), "Garantizada
-con tarjeta · MARCA ••1234" (reserva web flexible), la seña como siempre o "Sin
-garantía · tomar al ingreso". El paso de garantía para consumos del check-in
-no cambia: se pide a todos, incluso a quien prepagó.
+En las **llegadas del check-in**, la columna "Garantía" muestra cómo está asegurada cada reserva, con el formato de
+Ricardo: "Tarjeta en garantía · Visa ****4242" (de `GarantiaReserva`), el pago anticipado (referencia del pago, o la seña
+histórica) o "Sin garantía · tomar al ingreso". El paso de garantía para consumos del check-in no cambia: se pide a todos,
+incluso a quien pagó por adelantado. El check-in preautoriza **con el token de la tarjeta guardada** de la reserva web,
+sin volver a pedirla.
 
 ### Habitación representante
 
@@ -1064,8 +1073,8 @@ del endpoint interno).
 
 5. **Tarjetas de prueba** (iguales en el mock y en el backend real):
    `4242424242424242` aprobada; `4000000000000069` rechazada en cualquier
-   tarifa (tarjeta vencida); `4000000000000002` aceptada en la tarifa flexible
-   y rechazada en la no reembolsable (fondos insuficientes); un número que no
+   tarifa (tarjeta vencida); `4000000000000002` rechazada en **cualquier** tarifa
+   (fondos insuficientes: la pasarela única rechaza también la garantía); un número que no
    pasa Luhn → `DATOS_INVALIDOS` (`campo: "tarjeta.numero"`); ya vencida →
    `402 PAGO_RECHAZADO`; vence antes de la salida → `TARJETA_VENCE_ANTES`.
 6. **Estilos**: solo clases `ec-` y variables de `.ec-raiz` (definidas en
@@ -1165,6 +1174,21 @@ El pie del sitio lleva la leyenda "Sitio de demostración · Proyecto académico
 de Sistemas III. Los datos de contacto son ficticios." y no queda ningún
 `[COMPLETAR]` en el módulo.
 
+## API cerrada (HU-106) y web vieja retirada
+
+- **Todo `/api` exige sesión** (token firmado, usuario activo; `401` con `codigo: "SESION_INVALIDA"` si falta, venció o el usuario
+  ya no está activo) **salvo la lista blanca** de `backend/src/lib/apiCerrada.js`:
+  - `/api/web/*` (este contrato), con su límite de intentos por origen;
+  - `POST /api/auth/login`.
+  Se monta en `index.js` **antes** de leer el cuerpo y de las rutas, así ninguna ruta nueva queda abierta por olvido. Un test recorre
+  todas las rutas registradas (`src/rutas.js`) y verifica que respondan `401` sin sesión.
+- Crear y modificar reservas desde el mostrador (`POST /api/reservas`, `POST /api/reservas/con-garantia`, `PATCH /api/reservas/:id`) y el
+  check-in que recibe la tarjeta de la garantía (`walk-in`, `confirmar`) exigen además rol de `admin` o `recepcionista`.
+- El frontend manda la sesión en **todas** las llamadas (cliente común `lib/api.js`) y un `401` de sesión lleva al login con
+  "Tu sesión venció. Ingresá de nuevo.".
+- La **web vieja (HU-40) se retiró**: `/disponibilidad` y `/reservar` redirigen a `/web`; se borraron sus pantallas y el endpoint
+  `GET /api/reservas/codigo/:codigo` que solo ella usaba.
+
 ## Pantalla de Pago: mensaje de espera
 
 Mientras `POST /api/web/reservas` se procesa (la pasarela y la transacción
@@ -1175,21 +1199,20 @@ recargues esta ventana.". Desaparece con la respuesta, sea cual sea.
 
 ## Limitaciones conocidas
 
-- Pago simulado (no hay pasarela real). El estado de la pasarela simulada
-  (idempotencia y preautorizaciones) vive en memoria del proceso: se pierde al
-  reiniciar el backend. Se reemplaza por el módulo de garantías de Ricardo.
+- **Pasarela simulada (sin proveedor real)**: el registro de operaciones, la idempotencia y el estado de las
+  preautorizaciones son de la simulación; con un proveedor real se reemplaza `pasarela.servicio.js` manteniendo la firma.
+- Fichas con **nombres distintos para el mismo documento** (mismo tipo, país y número): no se unifican solas; se revisan a
+  mano ("Revisar a mano" de `scripts/normalizar-documentos.js`).
 - Si falla el envío del email, la reserva igual queda confirmada y la
   Confirmación avisa al huésped que guarde el código; el fallo solo se registra
   en el log del backend (no queda guardado para reintentar ni hay reenvío desde
   el mostrador): pendiente.
 - El límite de intentos es **por IP y en memoria** (se reinicia con el backend y
   no se comparte entre instancias).
-- HU-106: el **cierre de los endpoints de `/api`** (middleware de sesión con
-  lista blanca) está **pendiente** (Tomás).
-- **Cancelar desde el mostrador una reserva web no reembolsable** (con prepago)
-  con 24 h o más de anticipación **anula el prepago en el sistema sin devolver
-  el cobro** en la pasarela: `cancelarReserva` (de Ricardo) anula todos los
-  pagos activos sin distinguir el concepto "Prepago". Pendiente.
+- Cancelar desde el mostrador una reserva web **no reembolsable**: el "Pago anticipado" queda **retenido** (la penalidad
+  es el total) y no se devuelve nada (`cierreReserva.servicio.js`, de Ricardo). Si la tarifa fuera reembolsable y hubiera
+  un pago anticipado, se devuelve lo que sobre de la penalidad como un asiento "Devolución" (el reintegro real al huésped
+  se hace a mano).
 - El desglose por noche del resumen "Tu reserva" sale de la cotización de
   `/cotizar`: **tras un `PRECIO_CAMBIADO` el desglose desaparece** (el total
   nuevo reemplaza la cotización sin `noches`, porque ya no sumaría lo mismo) y el
@@ -1197,14 +1220,13 @@ recargues esta ventana.". Desaparece con la respuesta, sea cual sea.
 - Sin servicios adicionales, facturación ni check-in online.
 - Sin modificación web de la reserva (HU-105 postergada): el huésped cancela y
   vuelve a reservar, o contacta a recepción.
-- Mi reserva cancela online **solo sin cargo**. Con penalidad, con un pago
-  registrado o con tarifa no reembolsable, se deriva a recepción hasta
-  integrar el cobro de penalidades (Ricardo).
+- Mi reserva cancela online **solo sin cargo**. Con penalidad, con un pago registrado o con tarifa no reembolsable, se
+  deriva a recepción (que cobra la penalidad con el token de la garantía). Una reserva `No-show` se ve como "No presentada" y
+  tampoco se cancela online.
 - El historial de la reserva **no registra la fecha de ninguna cancelación**
   (ni web ni del mostrador): queda el estado `Cancelada` y el motivo, sin un
   evento con fecha y hora. Mejora pendiente.
 - La UI de esta entrega maneja una habitación por reserva web (los grupos
   reservan por recepción); el contrato ya acepta hasta 3 (selector de varias
   habitaciones: etapa 2).
-- La web vieja (`/disponibilidad` y `/reservar`) se reemplaza en el cierre del
-  proyecto, no ahora.
+- La web vieja (`/disponibilidad` y `/reservar`, HU-40) **se retiró**: las dos rutas redirigen a `/web`.
