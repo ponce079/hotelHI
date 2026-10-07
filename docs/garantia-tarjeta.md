@@ -41,11 +41,12 @@ La pasarela es **simulada**, pero se comporta como un proveedor real: guarda cad
 (`garantias/pasarelaRegistro.js`), así que la **idempotencia sobrevive a un reinicio del backend** (la misma
 `claveIdempotencia` con la misma operación devuelve el resultado ya guardado) y cada preautorización tiene un **estado**:
 
-`Vigente` → `Capturada` (con el monto capturado) · `Liberada` · `Capturada, remanente liberado` (estado final).
+`Vigente` → `Capturada` (captura por el total) · `Capturada, remanente liberado` (captura parcial, estado final) · `Liberada`; en los estados con captura se guarda el monto capturado.
 
 Reglas: CAPTURA y LIBERACION exigen una PREAUTORIZACION **existente y aprobada** (si no: "Preautorización desconocida.");
-no se puede capturar más de lo preautorizado; una segunda captura o liberación se rechaza; una captura **parcial** deja la
-preautorización en `Capturada` y admite **una** liberación del remanente. Si el registro no se puede escribir, la operación
+no se puede capturar más de lo preautorizado; una segunda captura o liberación se rechaza; una captura **parcial** libera el remanente
+sola y deja la preautorización en `Capturada, remanente liberado` (estado final): una LIBERACION posterior se rechaza con
+"La preautorización ya fue cerrada.". Si el registro no se puede escribir, la operación
 se informa como error de la pasarela (nunca se aprueba en silencio). El secreto de los tokens es `PASARELA_TOKEN_SECRETO`.
 
 Secuencias reales que hacen los flujos sobre una referencia (cada una tiene su test en `garantias/pasarela.registro.test.js`):
@@ -57,14 +58,13 @@ Secuencias reales que hacen los flujos sobre una referencia (cada una tiene su t
 | 3 | Falla de la captura en el alta NRF | `PREAUTORIZACION` → `CAPTURA` (falla) → `LIBERACION` |
 | 4 | Falla la transacción del alta, o el check-in, o el registro de la garantía | `PREAUTORIZACION` → `LIBERACION` |
 | 5 | Preautorización del check-in (por token o con tarjeta nueva) | `PREAUTORIZACION` ($30.000) |
-| 6 | Check-out: la garantía cubre el saldo | `PREAUTORIZACION` → `CAPTURA` parcial (hasta el saldo) |
+| 6 | Check-out: la garantía cubre el saldo | `PREAUTORIZACION` → `CAPTURA` parcial (hasta el saldo); queda `Capturada, remanente liberado`, sin LIBERACION aparte |
 | 7 | Check-out sin usar la garantía | `PREAUTORIZACION` → `LIBERACION` (total retenido) |
 | 8 | Cancelación con penalidad | `COBRO` por token |
 | 9 | No-show | `COBRO` por token |
 
-Nota: tras la captura parcial del punto 6, el flujo de check-out **no** pide liberar el remanente (su comentario dice que se
-libera solo). Con este registro la preautorización queda en `Capturada` con el monto capturado, y el remanente se puede liberar
-una vez si se lo pide; hoy ningún flujo lo hace.
+Nota: el flujo de check-out no pide liberar el remanente tras la captura parcial (su comentario dice que se libera solo); con
+este registro eso es literal: la captura parcial cierra la preautorización y el remanente queda liberado automáticamente.
 
 ## Alta de reserva: `POST /api/reservas/con-garantia`
 

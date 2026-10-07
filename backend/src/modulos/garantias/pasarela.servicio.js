@@ -26,8 +26,9 @@
 //    veces).
 //  - Estado de las preautorizaciones: Vigente -> Capturada (con el monto capturado) | Liberada. CAPTURA y
 //    LIBERACION exigen una PREAUTORIZACION existente y aprobada. Una captura no puede superar lo retenido; una
-//    segunda captura o liberación se rechaza; una captura PARCIAL deja la preautorización en "Capturada" y
-//    admite UNA liberación del remanente (estado final "Capturada, remanente liberado").
+//    segunda captura o liberación se rechaza; una captura PARCIAL libera el remanente sola y deja la
+//    preautorización en el estado final "Capturada, remanente liberado" (una LIBERACION posterior se rechaza:
+//    "La preautorización ya fue cerrada.").
 //  - Si el registro no se puede escribir, la operación se informa como error de la pasarela (nunca se aprueba
 //    en silencio).
 
@@ -225,7 +226,10 @@ function decidirSobrePreautorizacion(operacion, pre, importe) {
     if (estado === ESTADO_PREAUTORIZACION.LIBERADA) return { motivo: "La preautorización ya fue liberada." };
     if (estado !== ESTADO_PREAUTORIZACION.VIGENTE) return { motivo: "La preautorización ya fue capturada." };
     if (importe.greaterThan(retenido)) return { motivo: "El monto a capturar supera el monto preautorizado." };
-    return { hasta: ESTADO_PREAUTORIZACION.CAPTURADA, montoCapturado: importe };
+    // Captura TOTAL → "Capturada". Captura PARCIAL → el remanente se libera solo, como en un proveedor real:
+    // "Capturada, remanente liberado" (estado final).
+    const hasta = importe.lessThan(retenido) ? ESTADO_PREAUTORIZACION.REMANENTE_LIBERADO : ESTADO_PREAUTORIZACION.CAPTURADA;
+    return { hasta, montoCapturado: importe };
   }
 
   // LIBERACION
@@ -234,12 +238,12 @@ function decidirSobrePreautorizacion(operacion, pre, importe) {
     return { hasta: ESTADO_PREAUTORIZACION.LIBERADA };
   }
   if (estado === ESTADO_PREAUTORIZACION.CAPTURADA) {
-    const remanente = retenido.minus(capturado);
-    if (!remanente.greaterThan(0)) return { motivo: "La preautorización se capturó por completo: no hay remanente que liberar." };
-    if (importe.greaterThan(remanente)) return { motivo: "El monto a liberar supera el remanente de la preautorización." };
-    return { hasta: ESTADO_PREAUTORIZACION.REMANENTE_LIBERADO };
+    // Capturada por completo (no hay remanente). Una fila con captura parcial en "Capturada" es anterior a este
+    // cierre automático: también está cerrada.
+    if (capturado.lessThan(retenido)) return { motivo: "La preautorización ya fue cerrada." };
+    return { motivo: "La preautorización se capturó por completo: no hay remanente que liberar." };
   }
-  if (estado === ESTADO_PREAUTORIZACION.REMANENTE_LIBERADO) return { motivo: "El remanente de la preautorización ya fue liberado." };
+  if (estado === ESTADO_PREAUTORIZACION.REMANENTE_LIBERADO) return { motivo: "La preautorización ya fue cerrada." };
   return { motivo: "La preautorización ya fue liberada." };
 }
 

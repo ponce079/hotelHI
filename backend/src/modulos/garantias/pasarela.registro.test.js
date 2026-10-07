@@ -182,39 +182,31 @@ describe("secuencia 5 — preautorización del check-in (monto fijo, por token o
   });
 });
 
-describe("secuencia 6 — check-out: la garantía cubre el saldo (CAPTURA PARCIAL) y el remanente", () => {
-  test("captura parcial: queda 'Capturada' con el monto capturado y permite UNA liberación del remanente", async () => {
+describe("secuencia 6 — check-out: la garantía cubre el saldo (CAPTURA PARCIAL cierra sola)", () => {
+  test("captura parcial: queda 'Capturada, remanente liberado' con el monto capturado, sin liberación aparte", async () => {
     const pre = await preautorizar(30000);
     const cap = await procesar({ operacion: "CAPTURA", monto: 18000, referenciaPrevia: pre, claveIdempotencia: "captura-estadia:7" });
     expect(cap.aprobado).toBe(true);
-    expect(estadoDe(pre)).toBe(ESTADO.CAPTURADA);
-    expect(capturadoDe(pre)).toBe(18000);
-
-    // El remanente (12.000) se libera UNA vez: estado final.
-    const lib = await procesar({ operacion: "LIBERACION", monto: 12000, referenciaPrevia: pre });
-    expect(lib.aprobado).toBe(true);
     expect(estadoDe(pre)).toBe(ESTADO.REMANENTE_LIBERADO);
     expect(estadoDe(pre)).toBe("Capturada, remanente liberado");
     expect(capturadoDe(pre)).toBe(18000);
-
-    const segunda = await procesar({ operacion: "LIBERACION", monto: 12000, referenciaPrevia: pre });
-    expect(segunda).toMatchObject({ aprobado: false, motivoRechazo: "El remanente de la preautorización ya fue liberado." });
-    const tercera = await procesar({ operacion: "CAPTURA", monto: 1000, referenciaPrevia: pre });
-    expect(tercera).toMatchObject({ aprobado: false, motivoRechazo: "La preautorización ya fue capturada." });
-  });
-
-  test("la captura parcial NO obliga a liberar el remanente (el flujo de check-out no lo pide): queda 'Capturada'", async () => {
-    const pre = await preautorizar(30000);
-    await procesar({ operacion: "CAPTURA", monto: 18000, referenciaPrevia: pre });
-    expect(estadoDe(pre)).toBe(ESTADO.CAPTURADA);
     expect(operacionesRegistradas()).toEqual(["PREAUTORIZACION", "CAPTURA"]);
   });
 
-  test("liberar MÁS que el remanente se rechaza y no cambia el estado", async () => {
+  test("después de la captura parcial, una LIBERACION se rechaza: 'La preautorización ya fue cerrada.'", async () => {
     const pre = await preautorizar(30000);
     await procesar({ operacion: "CAPTURA", monto: 18000, referenciaPrevia: pre });
-    const lib = await procesar({ operacion: "LIBERACION", monto: 15000, referenciaPrevia: pre });
-    expect(lib).toMatchObject({ aprobado: false, motivoRechazo: "El monto a liberar supera el remanente de la preautorización." });
+    const lib = await procesar({ operacion: "LIBERACION", monto: 12000, referenciaPrevia: pre });
+    expect(lib).toMatchObject({ aprobado: false, motivoRechazo: "La preautorización ya fue cerrada." });
+    const otra = await procesar({ operacion: "CAPTURA", monto: 1000, referenciaPrevia: pre });
+    expect(otra).toMatchObject({ aprobado: false, motivoRechazo: "La preautorización ya fue capturada." });
+    expect(estadoDe(pre)).toBe(ESTADO.REMANENTE_LIBERADO);
+    expect(capturadoDe(pre)).toBe(18000);
+  });
+
+  test("captura por el total retenido: queda 'Capturada' (no hay remanente)", async () => {
+    const pre = await preautorizar(30000);
+    await procesar({ operacion: "CAPTURA", monto: 30000, referenciaPrevia: pre });
     expect(estadoDe(pre)).toBe(ESTADO.CAPTURADA);
   });
 
