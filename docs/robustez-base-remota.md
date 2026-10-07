@@ -14,7 +14,7 @@ agrega demora (nunca contra la compartida).
 | `TAREAS_AUTOMATICAS` | no (activas por defecto) | `off` apaga las tareas de fondo (alertas de stock mínimo). Quien desarrolla contra la base compartida debería arrancar con `off` para no competir por las conexiones; las corridas no se superponen y no dejan promesas sin atrapar. |
 | `AUTH_SECRET` | **sí en producción** (≥ 32 caracteres) | Firma las sesiones. En desarrollo, si falta, se deriva de `DATABASE_URL` y se avisa **una sola vez** por consola. En producción el backend no arranca sin él. Generalo con `node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"`. Cambiarlo cierra todas las sesiones. |
 
-Agregar `AUTH_SECRET` al despliegue es parte del runbook (`docs/despliegue-estadia.md`, paso de variables de entorno).
+Agregar `AUTH_SECRET` al despliegue es parte del runbook (`docs/despliegue-ecommerce.md`).
 
 ## Qué se hizo con las transacciones
 

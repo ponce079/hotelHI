@@ -121,3 +121,23 @@ describe("ficha creada en paralelo por otra alta (P2002 del índice único)", ()
     await expect(resolverHuesped(tx, base)).rejects.toMatchObject({ codigo: "NOMBRE_DISTINTO", statusCode: 409 });
   });
 });
+
+describe("la notificación de confirmación usa el contacto declarado en la reserva", () => {
+  const { armarNotificacionConfirmacion, conContactoDeclarado } = require("./reservas.servicio");
+  const reserva = { id: 1, codigoConfirmacion: "ABC12345", fechaDesde: new Date("2026-10-20"), fechaHasta: new Date("2026-10-21") };
+  const habitaciones = [{ numero: "403" }];
+
+  test("ficha con teléfono y correo declarado: canal Email (no un aviso interno)", () => {
+    const ficha = { id: 7, nombre: "Ulises Uno", contacto: "3875550001" };
+    const n = armarNotificacionConfirmacion({ reserva, huesped: conContactoDeclarado(ficha, { contacto: "nuevo@correo.com" }), habitaciones, origen: "RECEPCION" });
+    expect(n.canal).not.toBe("Interno");
+    expect(ficha.contacto).toBe("3875550001"); // la ficha no se modifica
+  });
+
+  test("sin contacto declarado vale el de la ficha", () => {
+    const ficha = { id: 7, nombre: "Ulises Uno", contacto: "ya@guardado.com" };
+    expect(conContactoDeclarado(ficha, { contacto: "  " })).toBe(ficha);
+    expect(conContactoDeclarado(ficha, {}).contacto).toBe("ya@guardado.com");
+    expect(armarNotificacionConfirmacion({ reserva, huesped: conContactoDeclarado(ficha, {}), habitaciones, origen: "RECEPCION" }).canal).not.toBe("Interno");
+  });
+});

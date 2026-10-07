@@ -330,13 +330,7 @@ ssl-mode=REQUIRED
 
 **Debería verse** una fila con el código, estado `Cerrada` y `PRUEBA-DESPLIEGUE-1`. **Anotarlo al final de este documento** ("Datos de prueba a limpiar").
 
-### 8 bis. Variables de entorno del backend (antes de usar la app contra la compartida)
-
-Revisar `backend/.env` contra `backend/.env.example` y `docs/robustez-base-remota.md`:
-
-- **`AUTH_SECRET`** (≥ 32 caracteres): **obligatoria en producción** (el backend no arranca sin ella). En desarrollo se avisa una sola vez si falta.
-- `DATABASE_CONNECTION_LIMIT` (por defecto 2), `DATABASE_IDLE_TIMEOUT_MS` (por defecto 30000, menor que `wait_timeout`) y `TAREAS_AUTOMATICAS=off` en las máquinas de desarrollo que apuntan a la compartida.
-- Correr `node scripts/verificar-previo-ecommerce.js`: informa los límites reales del servidor y recomienda valores.
+Variables de entorno nuevas: ver docs/despliegue-ecommerce.md y docs/robustez-base-remota.md
 
 ### 9. Aviso al grupo
 

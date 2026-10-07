@@ -868,6 +868,14 @@ async function resolverHuesped(tx, datosConPermiso) {
 // criterio de aceptación ("queda un registro del envío"), sin integración
 // real. Sin datos de contacto cargados no se puede fingir un envío: queda
 // como aviso interno para el mostrador.
+// La confirmación va al contacto que se DECLARÓ al reservar (el mismo al que sale el correo), aunque la ficha existente
+// conserve otro (por ejemplo un teléfono): sin la casilla "Actualizar la ficha" la ficha no se toca, pero la notificación
+// y el envío usan lo declarado. Si no se declaró contacto, vale el de la ficha.
+function conContactoDeclarado(huespedGuardado, declarado) {
+  const contacto = typeof declarado?.contacto === "string" ? declarado.contacto.trim() : "";
+  return contacto ? { ...huespedGuardado, contacto } : huespedGuardado;
+}
+
 function armarNotificacionConfirmacion({ reserva, huesped, habitaciones, origen }) {
   const numeros = habitaciones.map((h) => h.numero).join(", ");
   const periodo = `${formatearFechaMensaje(reserva.fechaDesde)} al ${formatearFechaMensaje(reserva.fechaHasta)}`;
@@ -1121,7 +1129,7 @@ async function crearReservaEnTransaccion(tx, datos, { incluirTitular = true } = 
   await tx.notificacion.create({
     data: armarNotificacionConfirmacion({
       reserva,
-      huesped: huespedGuardado,
+      huesped: conContactoDeclarado(huespedGuardado, huesped),
       habitaciones: habitacionesDb,
       origen,
     }),
@@ -2166,6 +2174,7 @@ module.exports = {
   cotizarReservaEnvuelto,
   reservarCodigoLibre,
   armarNotificacionConfirmacion,
+  conContactoDeclarado,
   exigirMismoNombre,
   // Transiciones para Check-in / Check-out
   marcarEnCurso,
