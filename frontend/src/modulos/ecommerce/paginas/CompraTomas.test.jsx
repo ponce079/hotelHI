@@ -314,6 +314,13 @@ describe("/web/confirmacion (HU-103)", () => {
     email: { enviado: true },
   };
 
+  it("email en segundo plano (enCamino): dice que se está enviando, sin aviso de error", () => {
+    guardarProceso({ ...DATOS_OK, claveIdempotencia: null, resultado: { ...RESULTADO, email: { enviado: null, enCamino: true } } });
+    renderRuta("/web/confirmacion");
+    expect(screen.getByText(/Te estamos enviando el comprobante a/)).toBeInTheDocument();
+    expect(screen.queryByText(/No pudimos enviarte el email/)).not.toBeInTheDocument();
+  });
+
   it("no reembolsable: código, 'Pagada', nombre comercial y lo cobrado", () => {
     guardarProceso({ ...DATOS_OK, claveIdempotencia: null, resultado: RESULTADO });
     renderRuta("/web/confirmacion");

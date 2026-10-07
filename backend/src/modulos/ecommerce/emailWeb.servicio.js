@@ -340,9 +340,32 @@ async function enviarConfirmacion(reserva, emailContacto, extra = {}) {
   }
 }
 
-// --- Cancelación (HU-104: online solo se cancela sin cargo) -------------------
+// --- Cancelación (HU-104: online, con o sin cargo) ----------------------------
 
-function armarEmailCancelacion(reserva) {
+// Qué se le dice al huésped sobre el dinero. `cargo` es el resultado de la cancelación (miReserva.cancelacion.js):
+// { estado: SIN_CARGO | COBRADO | RETENIDO | PENDIENTE, monto, tarjeta: { marca, ultimos4 } | null }.
+function textoCargoCancelacion(cargo) {
+  const monto = Number(cargo?.monto ?? 0);
+  switch (cargo?.estado) {
+    case "COBRADO": {
+      const t = cargo.tarjeta;
+      const marca = t?.marca ? `${t.marca[0].toUpperCase()}${t.marca.slice(1).toLowerCase()} ` : "";
+      return t?.ultimos4
+        ? `Se cobró ${precio(monto)} con tu tarjeta ${marca}terminada en ${t.ultimos4} (cargo por cancelación).`
+        : `Se cobró ${precio(monto)} (cargo por cancelación).`;
+    }
+    case "RETENIDO":
+      return `No se reintegra el importe pagado (${precio(monto)}).`;
+    case "PENDIENTE":
+      return `El cargo de ${precio(monto)} quedó pendiente; recepción se va a comunicar con vos.`;
+    default:
+      return "No se realizó ningún cargo.";
+  }
+}
+
+function armarEmailCancelacion(reserva, cargo = null) {
+  const textoCargo = textoCargoCancelacion(cargo);
+  const sinCargo = !cargo || cargo.estado === "SIN_CARGO";
   const { codigoConfirmacion, fechaDesde, fechaHasta, noches, plan, habitaciones } = reserva;
   const lineasHabitaciones = habitaciones.map((h) => `Habitación ${h.tipo} · ${textoOcupacion(h)}`);
   const tarifa = nombreComercialPlan(plan);
@@ -355,7 +378,7 @@ function armarEmailCancelacion(reserva) {
     ...lineasHabitaciones,
     tarifa,
     ``,
-    "No se realizó ningún cargo.",
+    textoCargo,
     `Si no fuiste vos quien canceló, ${TEXTO_RECEPCION}.`,
     "",
     TEXTO_DATOS_PERSONALES,
@@ -380,7 +403,7 @@ function armarEmailCancelacion(reserva) {
           </table>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top:24px;background:${COLOR.verdeClaro};border-radius:12px">
             <tr>
-              <td style="padding:16px 20px;font-family:${FUENTE};font-size:15px;color:${COLOR.verde}"><strong>No se realizó ningún cargo.</strong></td>
+              <td style="padding:16px 20px;font-family:${FUENTE};font-size:15px;color:${COLOR.verde}"><strong>${escaparHTML(textoCargo)}</strong></td>
             </tr>
           </table>
           <p style="margin:20px 0 0;font-family:${FUENTE};font-size:14px;line-height:1.5;color:${COLOR.tinta}">${escaparHTML(`Si no fuiste vos quien canceló, ${TEXTO_RECEPCION}.`)}</p>`;
@@ -388,15 +411,15 @@ function armarEmailCancelacion(reserva) {
   return {
     asunto: `Tu reserva ${codigoConfirmacion} fue cancelada`,
     texto: lineas.join("\n"),
-    html: plantilla({ preheader: `Tu reserva ${codigoConfirmacion} fue cancelada sin cargo.`, contenido }),
+    html: plantilla({ preheader: sinCargo ? `Tu reserva ${codigoConfirmacion} fue cancelada sin cargo.` : `Tu reserva ${codigoConfirmacion} fue cancelada.`, contenido }),
   };
 }
 
 // Devuelve { enviado: boolean }. Nunca tira.
-async function enviarCancelacion(reserva, para) {
+async function enviarCancelacion(reserva, para, cargo = null) {
   try {
     if (!para) return { enviado: false };
-    const { asunto, texto, html } = armarEmailCancelacion(reserva);
+    const { asunto, texto, html } = armarEmailCancelacion(reserva, cargo);
     const resultado = await enviarCorreo({ para, asunto, texto, html });
     return { enviado: resultado.enviado === true };
   } catch (err) {
@@ -405,4 +428,4 @@ async function enviarCancelacion(reserva, para) {
   }
 }
 
-module.exports = { armarEmail, enviarConfirmacion, armarEmailCancelacion, enviarCancelacion, textoMiReserva };
+module.exports = { armarEmail, enviarConfirmacion, armarEmailCancelacion, enviarCancelacion, textoMiReserva, textoCargoCancelacion };

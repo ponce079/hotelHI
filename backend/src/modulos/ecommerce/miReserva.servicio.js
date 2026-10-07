@@ -1,5 +1,5 @@
 // "Mi reserva" REAL (HU-104): consulta con código + email y cancelación
-// online sin cargo. Sin cuentas de huésped.
+// online (con o sin cargo). Sin cuentas de huésped.
 //
 // Seguridad de la consulta:
 //   - código o email con formato inválido, código inexistente, email que no
@@ -14,6 +14,7 @@
 // La cancelación online está en miReserva.cancelacion.js.
 const prisma = require("../../lib/prisma");
 const { calcularPenalidad } = require("../tarifas/penalidades.servicio");
+const reservasServicio = require("../reservas/reservas.servicio");
 const { CONCEPTO_PAGO_ANTICIPADO } = require("../garantias/garantias.constantes");
 const { ErrorWeb, CODIGO } = require("./ecommerce.errores");
 const {
@@ -24,6 +25,7 @@ const {
   emailDeLaReserva,
   mismoEmail,
   evaluarCancelacion,
+  llegadaSuperada,
   armarRespuestaMiReserva,
 } = require("./miReserva");
 
@@ -88,6 +90,7 @@ async function buscarReserva(cuerpo) {
 
 async function evaluar(reserva, ahora = new Date()) {
   let penalidad = null;
+  let liquidacion = null;
   if (reserva.estado === "Confirmada") {
     try {
       penalidad = await calcularPenalidad({ reservaId: reserva.id, tipo: "CANCELACION", momento: ahora });
@@ -95,18 +98,27 @@ async function evaluar(reserva, ahora = new Date()) {
       // Sin penalidad calculable (por ejemplo, sin plan): no se cancela online.
       penalidad = null;
     }
+    // Con cargo (y antes de la hora límite) se pide la liquidación a Ricardo: previsualizarCierre envuelve a
+    // calcularPenalidad y reparte lo ya pagado, lo que se cobra a la tarjeta y lo que no se puede cobrar.
+    if (penalidad?.aplica && Number(penalidad.monto) > 0 && !llegadaSuperada(reserva.fechaDesde, ahora)) {
+      try {
+        liquidacion = await reservasServicio.previsualizarCierreReserva(reserva.id, "CANCELACION");
+      } catch {
+        liquidacion = null;
+      }
+    }
   }
   return evaluarCancelacion(
     {
       estado: reserva.estado,
       fechaDesde: reserva.fechaDesde,
-      reembolsable: reserva.planTarifario.reembolsable,
-      // El "Pago anticipado" no cuenta acá: en una reserva web solo existe en tarifas no reembolsables, que
-      // tienen su propio motivo (la regla siguiente). Cualquier otro pago activo (por ejemplo, una seña) sí bloquea.
+      // Sin cargo, cualquier pago activo (por ejemplo, una seña) se resuelve en recepción. El "Pago anticipado" no
+      // cuenta acá: solo existe en tarifas no reembolsables, que siempre tienen cargo (se decide con la liquidación).
       tienePagosActivos: (reserva.pagosEstadia ?? []).some((p) => !p.anulado && p.concepto !== CONCEPTO_PAGO_ANTICIPADO),
     },
     penalidad,
-    ahora
+    ahora,
+    liquidacion
   );
 }
 

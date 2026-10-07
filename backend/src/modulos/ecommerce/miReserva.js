@@ -17,7 +17,7 @@ const MOTIVO = {
   LLEGADA_HOY: "Tu llegada es hoy. Para cualquier cambio, contactá a recepción.",
   LLEGADA_PASADA: "La fecha de llegada ya pasó. Para cualquier cambio, contactá a recepción.",
   CON_PAGO: "Tu reserva tiene un pago registrado. Para cancelarla, contactá a recepción.",
-  NO_REEMBOLSABLE: "Esta tarifa no admite reintegro. Si necesitás cancelar, contactá a recepción.",
+  SIN_TARJETA: "Cancelar tiene un cargo y no hay una tarjeta en garantía para cobrarlo. Para cancelar, contactá a recepción.",
 };
 
 // Código en mayúsculas, sin espacios ni guiones; email en minúsculas y sin espacios.
@@ -68,21 +68,47 @@ function formatoPesos(monto) {
   return `$ ${n.toLocaleString("es-AR", { minimumFractionDigits: entero ? 0 : 2, maximumFractionDigits: entero ? 0 : 2 })}`;
 }
 
-// Decisión 14 — cancelación online. Orden:
-//   1. estado (solo "Confirmada" se puede cancelar; "Cancelada" y "No-show" lo dicen);
-//   2. horario (después de las 14 h del día de llegada, hora argentina);
-//   3. pagos activos (seña u otro PagoEstadia: lo resuelve recepción);
-//   4. plan (no reembolsable);
-//   5. penalidad de calcularPenalidad (solo sin cargo).
-// `penalidad` es el resultado de calcularPenalidad (o null si no se calculó).
-function evaluarCancelacion({ estado, fechaDesde, reembolsable, tienePagosActivos }, penalidad, ahora = new Date()) {
-  const sinCancelar = (motivo, pen = null) => ({ puedeCancelarOnline: false, motivo, penalidad: pen });
+// Cancelación online (decisión 14, ampliada en v9): se cancela online toda reserva Confirmada hasta las 14:00 del día
+// de llegada, con o sin cargo. Orden:
+//   1. estado (solo "Confirmada"; "Cancelada" y "No-show" lo dicen);
+//   2. horario (desde las 14 h del día de llegada, hora argentina → recepción);
+//   3. sin cargo con un pago registrado (seña u otro) → recepción;
+//   4. con cargo: se usa la liquidación del módulo de garantías (previsualizarCierre de Ricardo, que envuelve
+//      calcularPenalidad: acá no se calcula ningún precio):
+//        - hay algo para devolver (reintegro manual) o la penalidad se reparte entre lo pagado y la tarjeta → recepción;
+//        - hay que cobrar y no hay tarjeta en la garantía → recepción;
+//        - hay que cobrar a la tarjeta de la garantía → online, con `cargo` { tipo: "COBRO", ... };
+//        - la penalidad queda cubierta con lo ya pagado (NRF) → online, con `cargo` { tipo: "RETENIDO", ... }.
+// `penalidad` es el resultado de calcularPenalidad (o null) y `liquidacion` el de previsualizarCierre (o null; solo
+// hace falta cuando la penalidad aplica).
+function llegadaSuperada(fechaDesde, ahora = new Date()) {
+  const limite = combinarFechaConHoraArgentina(new Date(fechaDesde), HORA_CHECKIN.hora, HORA_CHECKIN.minuto);
+  return new Date(ahora).getTime() >= limite.getTime();
+}
+
+const CONCEPTO_COBRO = "Cargo por cancelación";
+const CONCEPTO_RETENIDO = "Importe pagado no reintegrable";
+
+function nombreDeTarjeta(tarjeta) {
+  const marca = String(tarjeta?.marca ?? "").trim();
+  const marcaBonita = marca ? marca[0].toUpperCase() + marca.slice(1).toLowerCase() : "";
+  return `tu tarjeta ${marcaBonita ? `${marcaBonita} ` : ""}terminada en ${tarjeta.ultimos4}`;
+}
+
+// Explicación corta de la regla de la penalidad, para la frase del cargo.
+function explicacionDeRegla(regla) {
+  if (regla === "PRIMERA_NOCHE") return "primera noche";
+  if (regla === "TOTAL_NO_REEMBOLSABLE") return "tarifa no reembolsable";
+  return "cargo por cancelación";
+}
+
+function evaluarCancelacion({ estado, fechaDesde, tienePagosActivos }, penalidad, ahora = new Date(), liquidacion = null) {
+  const sinCancelar = (motivo, pen = null) => ({ puedeCancelarOnline: false, motivo, penalidad: pen, cargo: null });
   if (estado === "Cancelada") return sinCancelar(MOTIVO.CANCELADA);
   if (estado === "No-show") return sinCancelar(MOTIVO.NO_PRESENTADA);
   if (estado !== "Confirmada") return sinCancelar(null);
 
   const desde = new Date(fechaDesde);
-  const limiteLlegada = combinarFechaConHoraArgentina(desde, HORA_CHECKIN.hora, HORA_CHECKIN.minuto);
   const penalidadPublica = penalidad
     ? {
         aplica: Boolean(penalidad.aplica),
@@ -91,21 +117,53 @@ function evaluarCancelacion({ estado, fechaDesde, reembolsable, tienePagosActivo
         mensaje: penalidad.mensaje ?? "",
       }
     : null;
-  if (new Date(ahora).getTime() >= limiteLlegada.getTime()) {
+  if (llegadaSuperada(desde, ahora)) {
     const esHoy = isoDeFecha(desde) === new Date(ahora).toLocaleDateString("en-CA", { timeZone: ZONA_ARGENTINA });
     return sinCancelar(esHoy ? MOTIVO.LLEGADA_HOY : MOTIVO.LLEGADA_PASADA, penalidadPublica);
   }
-  if (tienePagosActivos) return sinCancelar(MOTIVO.CON_PAGO, penalidadPublica);
-  if (!reembolsable) return sinCancelar(MOTIVO.NO_REEMBOLSABLE, penalidadPublica);
   if (!penalidadPublica) return sinCancelar(null);
-  if (penalidadPublica.aplica && penalidadPublica.monto > 0) {
-    const explicacion = penalidadPublica.mensaje.replace(/\.$/, "").toLowerCase();
-    return sinCancelar(
-      `Cancelar ahora tiene un cargo de ${formatoPesos(penalidadPublica.monto)} (${explicacion}). Para cancelar, contactá a recepción.`,
-      penalidadPublica
-    );
+
+  // Sin cargo.
+  if (!(penalidadPublica.aplica && penalidadPublica.monto > 0)) {
+    if (tienePagosActivos) return sinCancelar(MOTIVO.CON_PAGO, penalidadPublica);
+    return { puedeCancelarOnline: true, motivo: null, penalidad: penalidadPublica, cargo: null };
   }
-  return { puedeCancelarOnline: true, motivo: null, penalidad: penalidadPublica };
+
+  // Con cargo: hace falta la liquidación del módulo de garantías.
+  if (!liquidacion) return sinCancelar(null, penalidadPublica);
+  if (liquidacion.devuelto > 0) return sinCancelar(MOTIVO.CON_PAGO, penalidadPublica);
+  if (liquidacion.sinCobrar > 0) return sinCancelar(MOTIVO.SIN_TARJETA, penalidadPublica);
+  if (liquidacion.retenido > 0 && liquidacion.aCobrarATarjeta > 0) return sinCancelar(MOTIVO.CON_PAGO, penalidadPublica);
+  if (liquidacion.retenido > 0) {
+    // La penalidad queda cubierta con lo ya pagado: no hay cobro nuevo y no se devuelve nada.
+    const monto = Number(liquidacion.retenido);
+    return {
+      puedeCancelarOnline: true,
+      motivo: null,
+      penalidad: penalidadPublica,
+      cargo: {
+        tipo: "RETENIDO",
+        monto,
+        concepto: CONCEPTO_RETENIDO,
+        texto: `Esta tarifa no admite devolución: no se reintegra el importe pagado (${formatoPesos(monto)}).`,
+      },
+    };
+  }
+  if (liquidacion.aCobrarATarjeta > 0 && liquidacion.tarjeta?.ultimos4) {
+    const monto = Number(liquidacion.aCobrarATarjeta);
+    return {
+      puedeCancelarOnline: true,
+      motivo: null,
+      penalidad: penalidadPublica,
+      cargo: {
+        tipo: "COBRO",
+        monto,
+        concepto: CONCEPTO_COBRO,
+        texto: `Cancelar tiene un cargo de ${formatoPesos(monto)} (${explicacionDeRegla(liquidacion.regla)}), que se cobra a ${nombreDeTarjeta(liquidacion.tarjeta)}.`,
+      },
+    };
+  }
+  return sinCancelar(MOTIVO.SIN_TARJETA, penalidadPublica);
 }
 
 const sumarDecimal = (valores) => valores.reduce((acc, v) => acc.plus(new Prisma.Decimal(v)), new Prisma.Decimal(0)).toNumber();
@@ -155,5 +213,7 @@ module.exports = {
   enmascararTitular,
   enmascararDocumento,
   evaluarCancelacion,
+  llegadaSuperada,
+  formatoPesos,
   armarRespuestaMiReserva,
 };

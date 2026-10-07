@@ -1,6 +1,8 @@
 # Contrato de la API del e-commerce (`/api/web`)
 
-> **Contrato v8 (pasarela única con registro persistente, garantía en `GarantiaReserva`, concepto "Pago anticipado", API cerrada con lista blanca, web vieja retirada). Cambios al contrato: solo Gimena.**
+> **Contrato v9 (cancelación online con cargo en Mi reserva, email fuera del camino crítico del alta, captura parcial que cierra la preautorización). Cambios al contrato: solo Gimena.**
+>
+> v9: **Mi reserva cancela online con o sin cargo** hasta las 14 h del día de llegada. `POST /api/web/mi-reserva` suma `cancelacion.cargo` (`{ tipo, monto, concepto, texto }`) y `POST /api/web/mi-reserva/cancelar` recibe `aceptaCargo` (boolean) y `montoAceptado` (texto decimal) y devuelve el resultado del cargo (`cargo`: cobrado, retenido o pendiente); nuevo caso de `PENALIDAD_CAMBIO` con `cargo` (el importe cambió) y `422 DATOS_INVALIDOS` con `campo: "aceptaCargo"` / `"montoAceptado"`. El monto lo calcula `previsualizarCierre` (módulo de garantías, que envuelve a `calcularPenalidad`): el e-commerce no calcula ningún precio. **El email ya no está en el camino crítico**: el alta (web y mostrador) y la cancelación esperan el envío como máximo 1,5 s; si no llegó, sigue en segundo plano y la respuesta trae `email: { "enviado": null, "enCamino": true }`. El timeout del alta web en el frontend pasa de 45 a 60 s. Una captura **parcial** en la pasarela deja la preautorización en "Capturada, remanente liberado" (estado final).
 >
 > v8 (integración con `master`, trabajo de Ricardo): **una sola pasarela** (`backend/src/modulos/garantias/pasarela.servicio.js`) con **registro persistente** (`pasarela_operaciones`), idempotencia que sobrevive al reinicio y control de estado de las preautorizaciones; **una sola garantía** por reserva sin importar el canal (`GarantiaReserva`); un solo concepto de pago al reservar, **"Pago anticipado"** (desaparece "Prepago"); marca **"Visa"** (no "VISA"); las columnas de tarjeta de `DatosReservaWeb` quedan **sin uso** (solo se escribe `tarjetaTitular`); estado **No-show** en Mi reserva ("No presentada"); **API cerrada**: todo `/api` exige sesión salvo `/api/web/*` y el login; la web vieja (`/disponibilidad`, `/reservar`) se retiró y redirige a `/web`. Variable nueva: `PASARELA_TOKEN_SECRETO` (obligatoria en producción).
 >
@@ -402,8 +404,10 @@ respuesta real de la base local (tarifa no reembolsable):
 - `email.enviado`:
   - `true` → se envió la confirmación al email del titular;
   - `false` → no se pudo enviar (la reserva **sí** quedó creada);
-  - `null` → **desconocido**: solo en la repetición idempotente (200), que no
-    vuelve a mandar el email.
+  - `null` → **desconocido o en camino**. Con `enCamino: true` (desde la v9): el envío
+    tardó más de 1,5 s y **sigue en segundo plano** (si falla queda en el log del
+    backend); sin `enCamino`: la repetición idempotente (200), que no vuelve a mandar
+    el email. El alta **no espera** al servidor de correo más de 1,5 s.
 - `garantia` sale de lo guardado en **`GarantiaReserva`** (la garantía única de la reserva, la misma que ve el
   mostrador); en la repetición idempotente (200) también: nunca es `null`. El `tipo` (`GARANTIA`/`PREPAGO`) es una
   etiqueta de esta API pública, no el `tipo` de `GarantiaReserva` (que es `TARJETA`).
@@ -483,7 +487,24 @@ Consulta de una reserva con código + email (HU-104). No hay cuentas de huésped
       "monto": 0,
       "limiteSinCargo": "2026-11-18T17:00:00.000Z",
       "mensaje": "Cancelación sin cargo."
-    }
+    },
+    "cargo": null
+  }
+}
+```
+
+Con cargo (llegada dentro de las 48 h de una tarifa flexible, con tarjeta en la garantía), `cancelacion` trae:
+
+```json
+"cancelacion": {
+  "puedeCancelarOnline": true,
+  "motivo": null,
+  "penalidad": { "aplica": true, "monto": 40000, "limiteSinCargo": "2026-11-18T17:00:00.000Z", "mensaje": "Cancelación fuera de plazo: se cobra la primera noche." },
+  "cargo": {
+    "tipo": "COBRO",
+    "monto": 40000,
+    "concepto": "Cargo por cancelación",
+    "texto": "Cancelar tiene un cargo de $ 40.000 (primera noche), que se cobra a tu tarjeta Visa terminada en 4242."
   }
 }
 ```
@@ -511,57 +532,96 @@ Consulta de una reserva con código + email (HU-104). No hay cuentas de huésped
   flexible, `"PREPAGO"` en la no reembolsable); `null` si la reserva no tiene una tarjeta registrada.
 - `plan.horasCancelacionSinCargo` es `null` si el plan no es reembolsable.
 
-### `cancelacion` (decisión 14: online solo **sin cargo**)
+### `cancelacion` (decisión 14, ampliada en la v9: online **con o sin cargo**)
 
-`puedeCancelarOnline` es `true` solo si **todo** esto se cumple, evaluado en
-este orden (el primero que falla da el `motivo`):
+`puedeCancelarOnline` es `true` si **todo** esto se cumple, evaluado en este orden (el primero
+que falla da el `motivo`):
 
 | # | Regla | `motivo` si falla |
 |---|---|---|
 | 1 | Estado `Confirmada` | `Cancelada` → "Esta reserva ya fue cancelada."; `No-show` → "La reserva figura como no presentada. Contactá a recepción." (la insignia dice "No presentada"); `En curso` / `Cerrada` → `null` |
 | 2 | Antes de las 14 h (hora argentina) del día de llegada | "Tu llegada es hoy. Para cualquier cambio, contactá a recepción." (si el día ya pasó: "La fecha de llegada ya pasó. Para cualquier cambio, contactá a recepción.") |
-| 3 | Sin pagos activos (`PagoEstadia` no anulado; el **pago anticipado** de la tarifa no reembolsable no cuenta acá: lo cubre la regla 4) | "Tu reserva tiene un pago registrado. Para cancelarla, contactá a recepción." |
-| 4 | Plan reembolsable | "Esta tarifa no admite reintegro. Si necesitás cancelar, contactá a recepción." |
-| 5 | Penalidad 0 según `calcularPenalidad` (motor de tarifas, sin cambios) | "Cancelar ahora tiene un cargo de $ X (<explicación del motor>). Para cancelar, contactá a recepción." |
+| 3 | **Sin cargo**: sin pagos activos (`PagoEstadia` no anulado) | "Tu reserva tiene un pago registrado. Para cancelarla, contactá a recepción." |
+| 4 | **Con cargo** (`calcularPenalidad` > 0): la liquidación de `previsualizarCierre` no tiene nada para **devolver** (reintegro manual) ni reparte la penalidad entre un pago previo y la tarjeta | "Tu reserva tiene un pago registrado. Para cancelarla, contactá a recepción." |
+| 5 | **Con cargo a cobrar**: hay una **tarjeta en la garantía** para cobrarlo | "Cancelar tiene un cargo y no hay una tarjeta en garantía para cobrarlo. Para cancelar, contactá a recepción." |
 
-- `penalidad`: `{ aplica, monto, limiteSinCargo, mensaje }` de
-  `calcularPenalidad` (solo se calcula si la reserva está `Confirmada`);
-  `null` en los demás estados.
-- La cancelación **con cargo** no se hace online: se deriva a recepción hasta
-  que se integre el cobro de penalidades (Ricardo).
+- Se cancela online **con o sin cargo**, toda reserva `Confirmada` (web o del mostrador, con email verificado)
+  hasta las 14:00 del día de llegada. Después de esa hora, o si no está `Confirmada`, se deriva a recepción.
+- `penalidad`: `{ aplica, monto, limiteSinCargo, mensaje }` de `calcularPenalidad` (solo si la reserva está
+  `Confirmada`); `null` en los demás estados.
+- **`cargo`** (nuevo en la v9; `null` si no hay cargo o si no se puede cancelar online): lo que se le muestra al huésped
+  **antes** de confirmar. Sale de `previsualizarCierre` (módulo de garantías, que envuelve a `calcularPenalidad`):
+  el e-commerce **no calcula ningún precio**.
+
+  | `tipo` | Cuándo | `monto` | `texto` |
+  |---|---|---|---|
+  | `COBRO` | Tarifa flexible con cargo y tarjeta en garantía | lo que se cobra a la tarjeta | "Cancelar tiene un cargo de $ X (primera noche), que se cobra a tu tarjeta Visa terminada en 4242." |
+  | `RETENIDO` | No reembolsable ya pagada: la penalidad (el total) queda cubierta con el pago anticipado | el importe pagado que no se reintegra | "Esta tarifa no admite devolución: no se reintegra el importe pagado ($ X)." (sin cobro nuevo) |
+
+  `concepto` es "Cargo por cancelación" (`COBRO`) o "Importe pagado no reintegrable" (`RETENIDO`).
+- Con **pagos previos** (por ejemplo una seña del mostrador) la reserva se cancela online solo si no hay nada para
+  devolver; si habría un reintegro, se deriva a recepción (el reintegro es manual: asiento "Devolución").
 
 ## POST `/api/web/mi-reserva/cancelar`
 
 **Request**
 
 ```json
-{ "codigo": "3FA9C21B", "email": "juan@correo.com", "montoPenalidadAceptado": 0 }
+{ "codigo": "3FA9C21B", "email": "juan@correo.com", "aceptaCargo": true, "montoAceptado": "40000.00" }
 ```
+
+- `aceptaCargo` (boolean) y `montoAceptado` (texto decimal, hasta 2 decimales: `"40000"` o `"40000.00"`) son
+  **obligatorios cuando hay cargo** (`cancelacion.cargo` distinto de `null`). Sin cargo, `montoAceptado` es opcional:
+  si viene, tiene que ser `"0"`/`"0.00"`.
 
 **Response 200**
 
 ```json
-{ "estado": "Cancelada", "penalidadCobrada": 0, "email": { "enviado": true } }
+{
+  "estado": "Cancelada",
+  "penalidadCobrada": 40000,
+  "cargo": {
+    "estado": "COBRADO",
+    "monto": 40000,
+    "tarjeta": { "marca": "Visa", "ultimos4": "4242" },
+    "texto": "Se cobró $ 40.000 con tu tarjeta Visa terminada en 4242 (cargo por cancelación)."
+  },
+  "email": { "enviado": true }
+}
 ```
 
-- Busca la reserva igual que la consulta: mismos casos de **404
-  `NO_ENCONTRADA`** y mismo piso de 400 ms.
-- **Ya cancelada** → `200 { "estado": "Cancelada", "penalidadCobrada": 0 }`
-  (sin `email`): es idempotente, no cancela de nuevo ni manda otro email.
-- Recalcula todo en el servidor. Si ya no se puede cancelar online (pasó el
-  plazo, hay un pago, etc.) → **`409 PENALIDAD_CAMBIO`** con `montoNuevo` (la
-  penalidad actual, o 0) y `motivo` (el mismo texto de la tabla); `error` trae
+- `cargo.estado` (el resultado, tras cancelar):
+
+  | `estado` | Qué pasó | `texto` |
+  |---|---|---|
+  | `SIN_CARGO` | No había cargo | "No se realizó ningún cargo." |
+  | `COBRADO` | Se cobró a la tarjeta de la garantía (`COBRO` aprobado, pago "Penalidad por cancelación") | "Se cobró $ X con tu tarjeta Visa terminada en 4242 (cargo por cancelación)." |
+  | `RETENIDO` | Tarifa no reembolsable: el pago anticipado queda retenido, **sin cobro nuevo** | "No se reintegra el importe pagado ($ X)." |
+  | `PENDIENTE` | La tarjeta rechazó el cobro: la reserva **queda cancelada** y la deuda visible en recepción | "No pudimos cobrar el cargo. Recepción se va a comunicar con vos." |
+
+  `penalidadCobrada` es el monto cobrado a la tarjeta (0 si no se cobró). `email`: ver "Email" más abajo
+  (`{ "enviado": null, "enCamino": true }` si el envío tardó más de 1,5 s).
+- Busca la reserva igual que la consulta: mismos casos de **404 `NO_ENCONTRADA`** y mismo piso de 400 ms.
+- **Ya cancelada** → `200 { "estado": "Cancelada", "penalidadCobrada": 0 }` (sin `cargo` ni `email`): es
+  idempotente, no cancela de nuevo, **no cobra otra vez** ni manda otro email.
+- Recalcula todo en el servidor. Si ya no se puede cancelar online (pasó el plazo, hay algo para devolver, no hay
+  tarjeta, etc.) → **`409 PENALIDAD_CAMBIO`** con `montoNuevo` y `motivo` (el mismo texto de la tabla); `error` trae
   ese mismo motivo.
-- `montoPenalidadAceptado` tiene que ser **0** (online solo se cancela sin
-  cargo); cualquier otro valor (o vacío) → `409 PENALIDAD_CAMBIO` con
-  `montoNuevo: 0` y `motivo: null`.
-- Si se puede: `cancelarReserva(id, { motivoCancelacion: "Cancelada por el
-  huésped desde la web" })` del módulo de reservas (sin cambios: estado
-  `Cancelada` y la habitación queda libre; una reserva cancelable online no
-  tiene pagos que anular) y el **email de cancelación** al email de la
-  reserva ("Tu reserva <código> fue cancelada", con fechas, tipo, tarifa y "No
-  se realizó ningún cargo"). `email.enviado` es `false` si el SMTP falla; la
-  cancelación queda hecha igual.
+- Orden de las validaciones del cuerpo:
+  1. `montoAceptado` con formato inválido → `422 DATOS_INVALIDOS` con `campo: "montoAceptado"`;
+  2. `montoAceptado` distinto del monto vigente (`cargo.monto`, o 0 sin cargo) → **`409 PENALIDAD_CAMBIO`** con
+     `montoNuevo` (el monto vigente), `motivo: null` y **`cargo`** (el cargo vigente, o `null`): la pantalla muestra el
+     importe nuevo y pide aceptar otra vez;
+  3. hay cargo y `aceptaCargo` no es `true` → `422 DATOS_INVALIDOS` con `campo: "aceptaCargo"`;
+  4. hay cargo y falta `montoAceptado` → `422 DATOS_INVALIDOS` con `campo: "montoAceptado"`.
+- Si se puede: `cancelarReserva(id, { motivoCancelacion: "Cancelada por el huésped desde la web" })` del módulo de
+  reservas **tal cual** (estado `Cancelada`, la habitación queda libre, y el cierre con penalidad de Ricardo cobra a
+  la tarjeta de la garantía por token, retiene el pago anticipado o deja la deuda pendiente) y el **email de
+  cancelación** al email de la reserva con el resultado del dinero: "No se realizó ningún cargo.", "Se cobró $ X con
+  tu tarjeta Visa terminada en 4242 (cargo por cancelación).", "No se reintegra el importe pagado ($ X)." o "El cargo
+  de $ X quedó pendiente; recepción se va a comunicar con vos.". Si el SMTP falla la cancelación queda hecha igual.
+- **Ventana conocida**: entre comprobar `montoAceptado` y la cancelación, `cancelarReserva` recalcula la penalidad
+  (milisegundos). Solo cambiaría si justo se cruzara el límite de las 48 h; el huésped acepta el monto que vio.
 
 ---
 
@@ -617,12 +677,12 @@ El frontend los normaliza a `{ codigo, mensaje, status, ...extra }`
 
 | Código | HTTP | Extra | Qué hace la pantalla |
 |---|---|---|---|
-| `DATOS_INVALIDOS` | 400 | `campo` (ej. `"huesped.email"`, `"tarjeta.numero"`) | Marca el campo con el error. |
+| `DATOS_INVALIDOS` | 400 (422 en la cancelación con `campo: "aceptaCargo"` / `"montoAceptado"`) | `campo` (ej. `"huesped.email"`, `"tarjeta.numero"`) | Marca el campo con el error. |
 | `NO_ENCONTRADA` | 404 | — | Mensaje general único ("No encontramos una reserva con esos datos. Revisá el código y el email, o contactá a recepción."), sin revelar si el código existe. |
 | `PRECIO_CAMBIADO` | 409 | `totalNuevo` | Muestra el total nuevo y pide confirmar de nuevo. |
 | `SIN_DISPONIBILIDAD` | 409 | — | Solo cuando **no hay habitación libre** para la selección. Vuelve a resultados. |
 | `CLAVE_REUTILIZADA` | 409 | — | Genera una clave nueva y reintenta. |
-| `PENALIDAD_CAMBIO` | 409 | `montoNuevo`, `motivo` | Mi reserva vuelve a consultar y muestra el motivo nuevo (sin botón de cancelar). |
+| `PENALIDAD_CAMBIO` | 409 | `montoNuevo`, `motivo`, `cargo` (v9) | Con `motivo`: Mi reserva vuelve a consultar y muestra el motivo nuevo (sin botón de cancelar). Con `motivo: null` y `cargo`: el importe cambió; el diálogo muestra el nuevo y pide aceptarlo de nuevo. |
 | `PAGO_RECHAZADO` | 402 | `motivo` | Pide otra tarjeta. |
 | `TARJETA_VENCE_ANTES` | 422 | — | Pide otra tarjeta. |
 | `DEMASIADOS_INTENTOS` | 429 | — | Pide que espere unos minutos. |
@@ -839,8 +899,9 @@ El email se compara con `DatosReservaWeb.emailContacto` en las reservas web y
 con `Huesped.contacto` (solo si es un email) en las del mostrador. Sin email
 con qué comparar → `NO_ENCONTRADA` con el mensaje genérico.
 
-La cancelación online usa `cancelarReserva` y `calcularPenalidad` tal cual
-(no se modificaron). El historial de la reserva queda con el estado
+La cancelación online usa `cancelarReserva` (que cierra con `cerrarReservaConPenalidad`) y `calcularPenalidad` tal
+cual (no se modificaron); el importe que se le muestra al huésped sale de `previsualizarCierre` de Ricardo, sin
+duplicar ningún cálculo. El historial de la reserva queda con el estado
 `Cancelada` y el motivo "Cancelada por el huésped desde la web"; no se escribe
 un evento aparte (ver **Limitaciones**). Código:
 `backend/src/modulos/ecommerce/miReserva.js` (reglas puras),
@@ -891,7 +952,8 @@ titular con la forma nueva (sección **Huésped (titular)**). Respecto de la 1A:
   - `email.enviado === true` → "Enviamos el comprobante a {email}";
   - `email.enviado === false` → aviso de que **no se pudo enviar** el email y
     que **guarde el código** (lo necesita para Mi reserva);
-  - `email.enviado === null` (repetición idempotente) → solo el código, sin
+  - `email.enviado === null` con `enCamino: true` → "Te estamos enviando el comprobante a {email}";
+  - `email.enviado === null` sin `enCamino` (repetición idempotente) → solo el código, sin
     mensaje sobre el email;
   - garantía: "Garantizada con tarjeta {marca} terminada en {ultimos4}" o
     "Cobrado {cobradoAhora} con tarjeta {marca} terminada en {ultimos4}";
@@ -985,8 +1047,8 @@ del endpoint interno).
   ser reales. **Cambió la forma de la respuesta** respecto del mock de la
   etapa 1: `puedeCancelar` y `penalidadCancelacion` se reemplazan por
   `cancelacion: { puedeCancelarOnline, motivo, penalidad }`; se agregan
-  `garantia` y `plan.penalidadNoShow`. La cancelación online es **solo sin
-  cargo** (`montoPenalidadAceptado: 0`, `penalidadCobrada: 0`).
+  `garantia` y `plan.penalidadNoShow`. La cancelación online era **solo sin
+  cargo** (`montoPenalidadAceptado: 0`) *(histórico: desde la v9 admite cargo, ver `aceptaCargo` y `montoAceptado`)*.
 - **Página** `/web/mi-reserva` terminada: código precargado desde `?codigo=`
   (el email nunca va en la URL); campos "Código de reserva" y "Email" con los
   errores de formato junto a cada uno; botón "Buscar"; el 404 como mensaje
@@ -1220,9 +1282,14 @@ recargues esta ventana.". Desaparece con la respuesta, sea cual sea.
 - Sin servicios adicionales, facturación ni check-in online.
 - Sin modificación web de la reserva (HU-105 postergada): el huésped cancela y
   vuelve a reservar, o contacta a recepción.
-- Mi reserva cancela online **solo sin cargo**. Con penalidad, con un pago registrado o con tarifa no reembolsable, se
-  deriva a recepción (que cobra la penalidad con el token de la garantía). Una reserva `No-show` se ve como "No presentada" y
-  tampoco se cancela online.
+- Mi reserva cancela online **con o sin cargo** hasta las 14 h del día de llegada. Se deriva a recepción: después de esa
+  hora, si hay un pago previo con algo para devolver (el reintegro es manual), si la penalidad se reparte entre un pago
+  previo y la tarjeta, o si hay cargo y no hay tarjeta en la garantía. Una reserva `No-show` se ve como "No presentada" y
+  tampoco se cancela online. Si la tarjeta rechaza el cobro, la reserva queda cancelada y la deuda "Cobro pendiente"
+  visible en recepción.
+- **Email en segundo plano**: si el servidor de correo tarda más de 1,5 s, el alta y la cancelación responden igual
+  (`email: { "enviado": null, "enCamino": true }`) y el envío sigue; si falla, solo queda en el log (no hay reintento ni
+  reenvío desde el mostrador).
 - El historial de la reserva **no registra la fecha de ninguna cancelación**
   (ni web ni del mostrador): queda el estado `Cancelada` y el motivo, sin un
   evento con fecha y hora. Mejora pendiente.

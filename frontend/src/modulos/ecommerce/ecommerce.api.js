@@ -95,9 +95,10 @@ export function consultarMiReserva({ codigo, email }) {
   );
 }
 
-export function cancelarMiReserva({ codigo, email, montoPenalidadAceptado }) {
+// Con cargo, `aceptaCargo: true` y `montoAceptado` (texto decimal, por ejemplo "25000.00") son obligatorios.
+export function cancelarMiReserva({ codigo, email, aceptaCargo, montoAceptado }) {
   return llamar(
-    (mock) => mock.mockCancelarMiReserva({ codigo, email, montoPenalidadAceptado }),
-    () => api.post("/web/mi-reserva/cancelar", { codigo, email, montoPenalidadAceptado })
+    (mock) => mock.mockCancelarMiReserva({ codigo, email, aceptaCargo, montoAceptado }),
+    () => api.post("/web/mi-reserva/cancelar", { codigo, email, aceptaCargo, montoAceptado })
   );
 }

@@ -6,7 +6,8 @@ const ENFOCABLES = 'button:not([disabled]), [href], input:not([disabled]), selec
 // Diálogo modal accesible (role="dialog", aria-modal): al abrirse enfoca la
 // opción que NO hace nada ("Volver"), mantiene el foco adentro con Tab,
 // cierra con Esc y, al cerrarse, devuelve el foco a donde estaba. Mientras
-// `ocupado` es true no se puede cerrar y los botones quedan deshabilitados.
+// `ocupado` es true no se puede cerrar y los botones quedan deshabilitados. `confirmarDeshabilitado` solo apaga
+// el botón de confirmar (por ejemplo, hasta tildar una casilla).
 export function DialogoConfirmacion({
   abierto,
   titulo,
@@ -16,6 +17,7 @@ export function DialogoConfirmacion({
   textoVolver = "Volver",
   peligro = false,
   ocupado = false,
+  confirmarDeshabilitado = false,
   onConfirmar,
   onCerrar,
 }) {
@@ -90,7 +92,7 @@ export function DialogoConfirmacion({
             formulario
             className={peligro ? "ec-boton--peligro" : ""}
             onClick={onConfirmar}
-            disabled={ocupado}
+            disabled={ocupado || confirmarDeshabilitado}
             aria-busy={ocupado || undefined}
           >
             {ocupado && textoOcupado ? textoOcupado : textoConfirmar}

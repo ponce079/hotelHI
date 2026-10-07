@@ -99,6 +99,7 @@ const SIN_CARGO = {
   puedeCancelarOnline: true,
   motivo: null,
   penalidad: { aplica: false, monto: 0, limiteSinCargo: "2026-11-18T17:00:00.000Z", mensaje: "Cancelación sin cargo." },
+  cargo: null,
 };
 const MOTIVO_CANCELADA = "Esta reserva ya fue cancelada.";
 
@@ -153,10 +154,17 @@ const RESERVAS_MI_RESERVA = [
       garantia: { tipo: "PREPAGO", marca: "Mastercard", ultimos4: "4444" },
       titular: "Carla G.",
       documento: "****561",
+      // v9: la no reembolsable ya pagada se cancela online; el importe pagado queda retenido.
       cancelacion: {
-        puedeCancelarOnline: false,
-        motivo: "Esta tarifa no admite reintegro. Si necesitás cancelar, contactá a recepción.",
+        puedeCancelarOnline: true,
+        motivo: null,
         penalidad: { aplica: true, monto: 42500, limiteSinCargo: null, mensaje: "Tarifa no reembolsable: se cobra el total." },
+        cargo: {
+          tipo: "RETENIDO",
+          monto: 42500,
+          concepto: "Importe pagado no reintegrable",
+          texto: "Esta tarifa no admite devolución: no se reintegra el importe pagado ($ 42.500).",
+        },
       },
     },
   },
@@ -173,15 +181,21 @@ const RESERVAS_MI_RESERVA = [
       total: 50000,
       titular: "Pedro S.",
       documento: "****730",
+      // v9: con cargo y tarjeta en la garantía se cancela online; el cargo se cobra a la tarjeta.
       cancelacion: {
-        puedeCancelarOnline: false,
-        motivo:
-          "Cancelar ahora tiene un cargo de $ 25.000 (ya pasó el plazo de cancelación sin cargo: se cobra la primera noche). Para cancelar, contactá a recepción.",
+        puedeCancelarOnline: true,
+        motivo: null,
         penalidad: {
           aplica: true,
           monto: 25000,
           limiteSinCargo: "2026-10-04T17:00:00.000Z",
           mensaje: "Ya pasó el plazo de cancelación sin cargo: se cobra la primera noche.",
+        },
+        cargo: {
+          tipo: "COBRO",
+          monto: 25000,
+          concepto: "Cargo por cancelación",
+          texto: "Cancelar tiene un cargo de $ 25.000 (primera noche), que se cobra a tu tarjeta Visa terminada en 4242.",
         },
       },
     },
@@ -621,16 +635,29 @@ export function mockCancelarMiReserva(cuerpo) {
     const { codigo, reserva } = buscarReserva(cuerpo);
     // Idempotente: ya cancelada → misma respuesta, sin otro email.
     if (estado.canceladas.has(codigo)) return { estado: "Cancelada", penalidadCobrada: 0 };
-    const { puedeCancelarOnline, motivo, penalidad } = reserva.cancelacion;
+    const { puedeCancelarOnline, motivo, penalidad, cargo } = reserva.cancelacion;
     if (!puedeCancelarOnline) {
       throw error(409, CODIGO_ERROR.PENALIDAD_CAMBIO, motivo, { montoNuevo: penalidad?.monto ?? 0, motivo });
     }
-    // Online solo se cancela sin cargo: el monto aceptado tiene que ser 0.
-    const aceptado = cuerpo?.montoPenalidadAceptado;
-    if (aceptado === null || aceptado === "" || Number(aceptado) !== 0) {
-      throw error(409, CODIGO_ERROR.PENALIDAD_CAMBIO, "El cargo por cancelar cambió.", { montoNuevo: 0, motivo: null });
+    // Mismo orden que el backend: monto distinto → 409; sin aceptar el cargo → 422.
+    const montoVigente = cargo ? cargo.monto : 0;
+    const aceptado = cuerpo?.montoAceptado;
+    if (aceptado !== undefined && aceptado !== null && aceptado !== "" && Math.round(Number(aceptado) * 100) !== Math.round(montoVigente * 100)) {
+      throw error(409, CODIGO_ERROR.PENALIDAD_CAMBIO, "Las condiciones de cancelación de tu reserva cambiaron. Revisalas antes de continuar.", { montoNuevo: montoVigente, motivo: null, cargo: cargo ?? null });
+    }
+    if (cargo && cuerpo?.aceptaCargo !== true) {
+      throw error(422, CODIGO_ERROR.DATOS_INVALIDOS, "Para cancelar tenés que aceptar el cargo.", { campo: "aceptaCargo" });
     }
     estado.canceladas.add(codigo);
-    return { estado: "Cancelada", penalidadCobrada: 0, email: { enviado: true } };
+    const resultado = !cargo
+      ? { estado: "SIN_CARGO", monto: 0, tarjeta: null, texto: "No se realizó ningún cargo." }
+      : cargo.tipo === "RETENIDO"
+        ? { estado: "RETENIDO", monto: cargo.monto, tarjeta: null, texto: `No se reintegra el importe pagado (${formatearPrecioMock(cargo.monto)}).` }
+        : { estado: "COBRADO", monto: cargo.monto, tarjeta: reserva.garantia, texto: `Se cobró ${formatearPrecioMock(cargo.monto)} con tu tarjeta ${reserva.garantia?.marca} terminada en ${reserva.garantia?.ultimos4} (cargo por cancelación).` };
+    return { estado: "Cancelada", penalidadCobrada: resultado.estado === "COBRADO" ? resultado.monto : 0, cargo: resultado, email: { enviado: true } };
   });
+}
+
+function formatearPrecioMock(monto) {
+  return `$ ${Number(monto).toLocaleString("es-AR")}`;
 }

@@ -382,6 +382,31 @@ test("un 409 de crearReservaEnTransaccion es PRECIO_CAMBIADO recotizado afuera, 
   expect(operaciones()).toEqual(["PREAUTORIZACION", "LIBERACION"]);
 });
 
+test("el email lento no demora el alta: se espera 1,5 s como máximo y la respuesta lleva enviado: null y enCamino", async () => {
+  let terminarEnvio;
+  emailWeb.enviarConfirmacion.mockReturnValue(new Promise((resolver) => (terminarEnvio = resolver)));
+  const inicio = Date.now();
+  const { status, body } = await llamar(cuerpo());
+  const demora = Date.now() - inicio;
+  expect(status).toBe(201);
+  expect(body.email).toEqual({ enviado: null, enCamino: true });
+  expect(demora).toBeGreaterThanOrEqual(1400);
+  expect(demora).toBeLessThan(4000);
+  terminarEnvio({ enviado: true });
+});
+
+test("el email que falla en segundo plano no rompe el alta: queda en el log", async () => {
+  const log = jest.spyOn(console, "error").mockImplementation(() => {});
+  let fallarEnvio;
+  emailWeb.enviarConfirmacion.mockReturnValue(new Promise((_, rechazar) => (fallarEnvio = rechazar)));
+  const { status, body } = await llamar(cuerpo());
+  expect(status).toBe(201);
+  expect(body.email).toEqual({ enviado: null, enCamino: true });
+  fallarEnvio(new Error("SMTP caído"));
+  await new Promise((resolver) => setImmediate(resolver));
+  expect(log).toHaveBeenCalledWith(expect.stringContaining("segundo plano"), "SMTP caído");
+  log.mockRestore();
+});
 test("dos pedidos con la misma clave chocan en la base (P2002): se libera y se responde la reserva del otro (200)", async () => {
   tx.datosReservaWeb.create.mockRejectedValue(
     new Prisma.PrismaClientKnownRequestError("Unique constraint failed", {

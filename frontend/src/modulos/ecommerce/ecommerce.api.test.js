@@ -284,15 +284,16 @@ describe("ecommerce.api con VITE_ECOMMERCE_MOCK=true", () => {
       expect(b.mensaje).toBe(a.mensaje);
     });
 
-    it("cancelar: solo sin cargo (monto 0); repetir responde lo mismo sin email", async () => {
-      const err = await fallo(cancelarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com", montoPenalidadAceptado: 25000 }));
+    it("cancelar sin cargo: un monto distinto de 0 → 409; repetir responde lo mismo sin email", async () => {
+      const err = await fallo(cancelarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com", montoAceptado: "25000.00" }));
       expect(err).toMatchObject({ codigo: "PENALIDAD_CAMBIO", status: 409, montoNuevo: 0 });
-      await expect(cancelarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com", montoPenalidadAceptado: 0 })).resolves.toEqual({
+      await expect(cancelarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com", montoAceptado: "0.00" })).resolves.toEqual({
         estado: "Cancelada",
         penalidadCobrada: 0,
+        cargo: { estado: "SIN_CARGO", monto: 0, tarjeta: null, texto: "No se realizó ningún cargo." },
         email: { enviado: true },
       });
-      await expect(cancelarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com", montoPenalidadAceptado: 0 })).resolves.toEqual({
+      await expect(cancelarMiReserva({ codigo: "3FA9C21B", email: "demo@hotel.com", montoAceptado: "0.00" })).resolves.toEqual({
         estado: "Cancelada",
         penalidadCobrada: 0,
       });
@@ -301,15 +302,33 @@ describe("ecommerce.api con VITE_ECOMMERCE_MOCK=true", () => {
       expect(r.cancelacion).toEqual({ puedeCancelarOnline: false, motivo: "Esta reserva ya fue cancelada.", penalidad: null });
     });
 
-    it.each([
-      ["5D21A7F0", "nrf@hotel.com", /no admite reintegro/],
-      ["9E4B0C37", "plazo@hotel.com", /tiene un cargo de \$ 25\.000/],
-      ["A6E3F218", "sena@hotel.com", /tiene un pago registrado/],
-    ])("%s no se cancela online: motivo en la consulta y 409 al intentarlo", async (codigo, email, motivo) => {
-      const r = await consultarMiReserva({ codigo, email });
+    it("con cargo: 422 sin aceptaCargo, 409 con otro monto y cancela al aceptar el cargo vigente", async () => {
+      const base = { codigo: "9E4B0C37", email: "plazo@hotel.com" };
+      const r = await consultarMiReserva(base);
+      expect(r.cancelacion).toMatchObject({ puedeCancelarOnline: true, cargo: { tipo: "COBRO", monto: 25000 } });
+      expect(await fallo(cancelarMiReserva({ ...base, montoAceptado: "25000.00" }))).toMatchObject({ codigo: "DATOS_INVALIDOS", status: 422, campo: "aceptaCargo" });
+      expect(await fallo(cancelarMiReserva({ ...base, aceptaCargo: true, montoAceptado: "1.00" }))).toMatchObject({ codigo: "PENALIDAD_CAMBIO", status: 409, montoNuevo: 25000 });
+      await expect(cancelarMiReserva({ ...base, aceptaCargo: true, montoAceptado: "25000.00" })).resolves.toMatchObject({
+        estado: "Cancelada",
+        penalidadCobrada: 25000,
+        cargo: { estado: "COBRADO", monto: 25000 },
+      });
+    });
+
+    it("no reembolsable pagada: se cancela online y el importe queda retenido", async () => {
+      const base = { codigo: "5D21A7F0", email: "nrf@hotel.com" };
+      expect((await consultarMiReserva(base)).cancelacion.cargo).toMatchObject({ tipo: "RETENIDO", monto: 42500 });
+      await expect(cancelarMiReserva({ ...base, aceptaCargo: true, montoAceptado: "42500.00" })).resolves.toMatchObject({
+        penalidadCobrada: 0,
+        cargo: { estado: "RETENIDO", monto: 42500 },
+      });
+    });
+
+    it("con una seña (A6E3F218) no se cancela online: motivo en la consulta y 409 al intentarlo", async () => {
+      const r = await consultarMiReserva({ codigo: "A6E3F218", email: "sena@hotel.com" });
       expect(r.cancelacion.puedeCancelarOnline).toBe(false);
-      expect(r.cancelacion.motivo).toMatch(motivo);
-      const err = await fallo(cancelarMiReserva({ codigo, email, montoPenalidadAceptado: 0 }));
+      expect(r.cancelacion.motivo).toMatch(/tiene un pago registrado/);
+      const err = await fallo(cancelarMiReserva({ codigo: "A6E3F218", email: "sena@hotel.com", montoAceptado: "0.00" }));
       expect(err).toMatchObject({ codigo: "PENALIDAD_CAMBIO", status: 409, motivo: r.cancelacion.motivo });
     });
   });
@@ -335,8 +354,8 @@ describe("ecommerce.api sin mock (backend real)", () => {
     expect(api.post).toHaveBeenCalledWith("/web/reservas", { a: 1 }, expect.objectContaining({ timeout: expect.any(Number) }));
     await consultarMiReserva({ codigo: "C", email: "e@x.com" });
     expect(api.post).toHaveBeenCalledWith("/web/mi-reserva", { codigo: "C", email: "e@x.com" });
-    await cancelarMiReserva({ codigo: "C", email: "e@x.com", montoPenalidadAceptado: 0 });
-    expect(api.post).toHaveBeenCalledWith("/web/mi-reserva/cancelar", { codigo: "C", email: "e@x.com", montoPenalidadAceptado: 0 });
+    await cancelarMiReserva({ codigo: "C", email: "e@x.com", aceptaCargo: true, montoAceptado: "25000.00" });
+    expect(api.post).toHaveBeenCalledWith("/web/mi-reserva/cancelar", { codigo: "C", email: "e@x.com", aceptaCargo: true, montoAceptado: "25000.00" });
   });
 
   it("normaliza los errores del backend a { codigo, mensaje, status, ...extra }", async () => {

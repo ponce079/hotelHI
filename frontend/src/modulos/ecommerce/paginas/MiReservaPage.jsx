@@ -22,8 +22,8 @@ import {
 import { useTituloPagina } from "../useTituloPagina";
 
 // /web/mi-reserva — Responsable: Gimena (HU-104). Consulta con código de
-// reserva + email (sin cuentas de huésped) y cancelación online SIN cargo.
-// Todo lo demás (cancelar con cargo, modificar) se deriva a recepción.
+// reserva + email (sin cuentas de huésped) y cancelación online, con o sin cargo
+// (con cargo: se muestra el importe y hay que aceptarlo con una casilla). Lo demás se deriva a recepción.
 // El código puede venir en ?codigo= (link del email); el email nunca viaja
 // en la URL.
 
@@ -40,6 +40,15 @@ const COLOR_ESTADO = { Confirmada: "verde", "En curso": "verde", Cerrada: "neutr
 const ETIQUETA_ESTADO = { "No-show": "No presentada" };
 
 const MOTIVO_CANCELADA = "Esta reserva ya fue cancelada.";
+
+// Casilla obligatoria del diálogo, según lo que pasa con el dinero.
+const TEXTO_ACEPTACION = {
+  COBRO: "Entiendo y acepto el cargo de cancelación",
+  RETENIDO: "Entiendo que no se reintegra el importe pagado",
+};
+
+// El monto viaja como texto decimal ("25000.00"), tal cual lo valida el backend.
+const montoComoTexto = (monto) => Number(monto ?? 0).toFixed(2);
 
 function textoPago({ cobrado, garantia }) {
   const tarjeta = garantia ? `${garantia.marca} ••${garantia.ultimos4}` : null;
@@ -65,7 +74,9 @@ export function MiReservaPage() {
   const [dialogoAbierto, setDialogoAbierto] = useState(false);
   const [cancelando, setCancelando] = useState(false);
   const [errorCancelacion, setErrorCancelacion] = useState(null);
-  const [cancelada, setCancelada] = useState(null); // { emailEnviado } tras cancelar desde acá
+  const [cancelada, setCancelada] = useState(null); // { emailEnviado, emailEnCamino, cargo } tras cancelar desde acá
+  const [acepta, setAcepta] = useState(false); // casilla "Entiendo y acepto…" del diálogo con cargo
+  const [avisoCargo, setAvisoCargo] = useState(null); // el cargo cambió mientras se confirmaba
 
   async function consultar(evento) {
     evento.preventDefault();
@@ -98,6 +109,8 @@ export function MiReservaPage() {
 
   function abrirDialogo() {
     setErrorCancelacion(null);
+    setAvisoCargo(null);
+    setAcepta(false);
     setDialogoAbierto(true);
   }
 
@@ -106,16 +119,34 @@ export function MiReservaPage() {
     setCancelando(true);
     setErrorCancelacion(null);
     try {
-      const respuesta = await cancelarMiReserva({ ...credenciales.current, montoPenalidadAceptado: 0 });
+      const cargoVisto = reserva?.cancelacion?.cargo ?? null;
+      const respuesta = await cancelarMiReserva({
+        ...credenciales.current,
+        ...(cargoVisto ? { aceptaCargo: true } : {}),
+        montoAceptado: montoComoTexto(cargoVisto?.monto ?? 0),
+      });
       setReserva((actual) => ({
         ...actual,
         estado: "Cancelada",
-        cancelacion: { puedeCancelarOnline: false, motivo: MOTIVO_CANCELADA, penalidad: null },
+        cancelacion: { puedeCancelarOnline: false, motivo: MOTIVO_CANCELADA, penalidad: null, cargo: null },
       }));
-      setCancelada({ emailEnviado: respuesta?.email?.enviado !== false });
+      setCancelada({
+        emailEnviado: respuesta?.email?.enviado !== false && respuesta?.email?.enCamino !== true,
+        emailEnCamino: respuesta?.email?.enCamino === true,
+        cargo: respuesta?.cargo ?? null,
+      });
       setDialogoAbierto(false);
     } catch (err) {
-      if (err?.codigo === CODIGO_ERROR.PENALIDAD_CAMBIO) {
+      if (err?.codigo === CODIGO_ERROR.PENALIDAD_CAMBIO && err.motivo == null && err.cargo !== undefined) {
+        // El importe cambió (por ejemplo, se cruzó el límite de las 48 h): se muestra el nuevo y hay que aceptarlo de nuevo.
+        setReserva((actual) => ({ ...actual, cancelacion: { ...actual.cancelacion, cargo: err.cargo } }));
+        setAcepta(false);
+        setAvisoCargo(
+          err.cargo
+            ? `El cargo cambió: ahora es de ${formatearPrecio(err.montoNuevo)}. Revisalo y aceptalo de nuevo para cancelar.`
+            : "El cargo cambió: ahora no hay ningún cargo. Confirmá de nuevo para cancelar."
+        );
+      } else if (err?.codigo === CODIGO_ERROR.PENALIDAD_CAMBIO) {
         // Cambió algo desde la consulta (por ejemplo, pasó el plazo): se
         // vuelve a consultar y la tarjeta muestra el motivo nuevo.
         try {
@@ -133,6 +164,7 @@ export function MiReservaPage() {
   }
 
   const cancelacion = reserva?.cancelacion;
+  const cargo = cancelacion?.cargo ?? null;
   const limite = cancelacion?.penalidad?.limiteSinCargo ? formatearInstanteHotel(cancelacion.penalidad.limiteSinCargo) : "";
 
   return (
@@ -227,17 +259,29 @@ export function MiReservaPage() {
             {cancelada ? (
               <div className="ec-alerta ec-alerta--info" role="status">
                 <CircleCheck size={20} strokeWidth={1.7} aria-hidden="true" />
-                <p>
-                  {cancelada.emailEnviado
-                    ? "Reserva cancelada. Te enviamos la confirmación por email."
-                    : "Reserva cancelada. No pudimos enviarte el email de confirmación; si lo necesitás, contactá a recepción."}
-                </p>
+                <div>
+                  <p>
+                    Reserva cancelada.{" "}
+                    {cancelada.cargo?.texto ?? "No se realizó ningún cargo."}
+                  </p>
+                  <p>
+                    {cancelada.emailEnCamino
+                      ? "Te estamos enviando la confirmación por email."
+                      : cancelada.emailEnviado
+                        ? "Te enviamos la confirmación por email."
+                        : "No pudimos enviarte el email de confirmación; si lo necesitás, contactá a recepción."}
+                  </p>
+                </div>
               </div>
             ) : cancelacion?.puedeCancelarOnline ? (
               <div className="ec-mi-reserva__cancelar">
-                {limite && <p className="ec-texto-2">Podés cancelar sin cargo hasta el {limite}.</p>}
+                {cargo ? (
+                  <p className="ec-texto-2">{cargo.texto}</p>
+                ) : (
+                  limite && <p className="ec-texto-2">Podés cancelar sin cargo hasta el {limite}.</p>
+                )}
                 <Boton variante="texto" className="ec-enlace-peligro" onClick={abrirDialogo}>
-                  Cancelar reserva
+                  {cargo ? "Cancelar con cargo" : "Cancelar reserva"}
                 </Boton>
               </div>
             ) : (
@@ -258,14 +302,40 @@ export function MiReservaPage() {
       <DialogoConfirmacion
         abierto={dialogoAbierto}
         titulo="Cancelar reserva"
-        textoConfirmar="Sí, cancelar"
+        textoConfirmar={cargo ? "Sí, cancelar con cargo" : "Sí, cancelar"}
         textoOcupado="Cancelando…"
         peligro
         ocupado={cancelando}
+        confirmarDeshabilitado={Boolean(cargo) && !acepta}
         onConfirmar={confirmarCancelacion}
         onCerrar={() => setDialogoAbierto(false)}
       >
-        <p>Vas a cancelar tu reserva {reserva?.codigoConfirmacion}. No se realiza ningún cargo. ¿Confirmás?</p>
+        {cargo ? (
+          <>
+            <p>Vas a cancelar tu reserva {reserva?.codigoConfirmacion}.</p>
+            <p>
+              <strong>{cargo.texto}</strong>
+            </p>
+            {avisoCargo && (
+              <p className="ec-campo__error" role="alert">
+                {avisoCargo}
+              </p>
+            )}
+            <label className="ec-check">
+              <input type="checkbox" checked={acepta} onChange={(e) => setAcepta(e.target.checked)} disabled={cancelando} />
+              <span>{TEXTO_ACEPTACION[cargo.tipo] ?? TEXTO_ACEPTACION.COBRO}</span>
+            </label>
+          </>
+        ) : (
+          <>
+            <p>Vas a cancelar tu reserva {reserva?.codigoConfirmacion}. No se realiza ningún cargo. ¿Confirmás?</p>
+            {avisoCargo && (
+              <p className="ec-campo__error" role="alert">
+                {avisoCargo}
+              </p>
+            )}
+          </>
+        )}
         <MensajeError error={errorCancelacion} />
       </DialogoConfirmacion>
     </div>

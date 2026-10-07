@@ -253,3 +253,35 @@ describe("email de cancelación", () => {
     espia.mockRestore();
   });
 });
+
+describe("email de cancelación con cargo (F6)", () => {
+  const { armarEmailCancelacion, textoCargoCancelacion } = require("./emailWeb.servicio");
+  const cancelada = {
+    codigoConfirmacion: "3FA9C21B",
+    estado: "Cancelada",
+    fechaDesde: "2026-10-16",
+    fechaHasta: "2026-10-18",
+    noches: 2,
+    plan: { codigo: "BAR", nombre: "Best Available Rate", reembolsable: true, horasCancelacionSinCargo: 48 },
+    habitaciones: [{ tipo: "Doble", adultos: 2, menores: 0 }],
+  };
+
+  test.each([
+    [null, "No se realizó ningún cargo."],
+    [{ estado: "SIN_CARGO", monto: 0 }, "No se realizó ningún cargo."],
+    [{ estado: "COBRADO", monto: 25000, tarjeta: { marca: "VISA", ultimos4: "4242" } }, "Se cobró $ 25.000 con tu tarjeta Visa terminada en 4242 (cargo por cancelación)."],
+    [{ estado: "RETENIDO", monto: 63750 }, "No se reintegra el importe pagado ($ 63.750)."],
+    [{ estado: "PENDIENTE", monto: 25000 }, "El cargo de $ 25.000 quedó pendiente; recepción se va a comunicar con vos."],
+  ])("%j → %s", (cargo, esperado) => {
+    expect(textoCargoCancelacion(cargo)).toBe(esperado);
+    const { texto, html } = armarEmailCancelacion(cancelada, cargo);
+    expect(texto).toContain(esperado);
+    expect(html).toContain(esperado);
+  });
+
+  test("con cargo, el email no dice 'sin cargo'", () => {
+    const { html } = armarEmailCancelacion(cancelada, { estado: "COBRADO", monto: 25000, tarjeta: { marca: "VISA", ultimos4: "4242" } });
+    expect(html).not.toContain("No se realizó ningún cargo");
+    expect(html).not.toContain("fue cancelada sin cargo");
+  });
+});

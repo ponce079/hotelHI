@@ -30,8 +30,16 @@ const CANCELABLE = {
     puedeCancelarOnline: true,
     motivo: null,
     penalidad: { aplica: false, monto: 0, limiteSinCargo: "2026-10-14T17:00:00.000Z", mensaje: "Cancelación sin cargo." },
+    cargo: null,
   },
 };
+const TEXTO_COBRO = "Cancelar tiene un cargo de $ 25.000 (primera noche), que se cobra a tu tarjeta Visa terminada en 4242.";
+const COBRO = { tipo: "COBRO", monto: 25000, concepto: "Cargo por cancelación", texto: TEXTO_COBRO };
+const TEXTO_RETENIDO = "Esta tarifa no admite devolución: no se reintegra el importe pagado ($ 50.000).";
+const RETENIDO = { tipo: "RETENIDO", monto: 50000, concepto: "Importe pagado no reintegrable", texto: TEXTO_RETENIDO };
+const penalidadCon = (monto) => ({ aplica: true, monto, limiteSinCargo: null, mensaje: "" });
+const CARGO_ONLINE = { ...CANCELABLE, cancelacion: { puedeCancelarOnline: true, motivo: null, penalidad: penalidadCon(25000), cargo: COBRO } };
+const NRF_ONLINE = { ...CANCELABLE, cobrado: 50000, total: 50000, cancelacion: { puedeCancelarOnline: true, motivo: null, penalidad: penalidadCon(50000), cargo: RETENIDO } };
 const MOTIVO_CARGO = "Cancelar ahora tiene un cargo de $ 25.000 (ya pasó el plazo). Para cancelar, contactá a recepción.";
 const CON_CARGO = {
   ...CANCELABLE,
@@ -148,13 +156,14 @@ describe("MiReservaPage", () => {
     completarYBuscar();
     fireEvent.click(await screen.findByRole("button", { name: "Cancelar reserva" }));
     fireEvent.click(screen.getByRole("button", { name: "Sí, cancelar" }));
-    expect(cancelarMiReserva).toHaveBeenCalledWith({ codigo: "3FA9C21B", email: "demo@hotel.com", montoPenalidadAceptado: 0 });
+    expect(cancelarMiReserva).toHaveBeenCalledWith({ codigo: "3FA9C21B", email: "demo@hotel.com", montoAceptado: "0.00" });
     expect(screen.getByRole("button", { name: "Cancelando…" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Cancelando…" }));
     expect(cancelarMiReserva).toHaveBeenCalledTimes(1);
 
-    resolver({ estado: "Cancelada", penalidadCobrada: 0, email: { enviado: true } });
-    expect(await screen.findByText("Reserva cancelada. Te enviamos la confirmación por email.")).toBeInTheDocument();
+    resolver({ estado: "Cancelada", penalidadCobrada: 0, cargo: { estado: "SIN_CARGO", monto: 0, texto: "No se realizó ningún cargo." }, email: { enviado: true } });
+    expect(await screen.findByText("Reserva cancelada. No se realizó ningún cargo.")).toBeInTheDocument();
+    expect(screen.getByText("Te enviamos la confirmación por email.")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByText("Cancelada")).toHaveClass("ec-insignia--rojo");
     expect(screen.queryByRole("button", { name: "Cancelar reserva" })).not.toBeInTheDocument();
@@ -171,6 +180,91 @@ describe("MiReservaPage", () => {
     expect(consultarMiReserva).toHaveBeenCalledTimes(2);
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.queryByRole("button", { name: "Cancelar reserva" })).not.toBeInTheDocument();
+  });
+
+  it("email en segundo plano (enCamino): dice que se lo están enviando", async () => {
+    consultarMiReserva.mockResolvedValue(CANCELABLE);
+    cancelarMiReserva.mockResolvedValue({ estado: "Cancelada", penalidadCobrada: 0, cargo: { estado: "SIN_CARGO", monto: 0 }, email: { enviado: null, enCamino: true } });
+    renderPagina();
+    completarYBuscar();
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar reserva" }));
+    fireEvent.click(screen.getByRole("button", { name: "Sí, cancelar" }));
+    expect(await screen.findByText("Te estamos enviando la confirmación por email.")).toBeInTheDocument();
+  });
+
+  describe("cancelar con cargo (v9)", () => {
+    async function abrirDialogoConCargo(reserva = CARGO_ONLINE) {
+      consultarMiReserva.mockResolvedValue(reserva);
+      renderPagina();
+      completarYBuscar();
+      expect(await screen.findByText(reserva.cancelacion.cargo.texto)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Cancelar con cargo" }));
+      return screen.getByRole("dialog", { name: "Cancelar reserva" });
+    }
+
+    it("flexible con cargo: el botón dice 'Cancelar con cargo', el diálogo repite el texto y pide la casilla (sin tildar) para confirmar", async () => {
+      const dialogo = await abrirDialogoConCargo();
+      expect(within(dialogo).getByText(TEXTO_COBRO)).toBeInTheDocument();
+      const casilla = within(dialogo).getByRole("checkbox", { name: "Entiendo y acepto el cargo de cancelación" });
+      expect(casilla).not.toBeChecked();
+      const confirmar = within(dialogo).getByRole("button", { name: "Sí, cancelar con cargo" });
+      expect(confirmar).toBeDisabled();
+      fireEvent.click(confirmar);
+      expect(cancelarMiReserva).not.toHaveBeenCalled();
+      fireEvent.click(casilla);
+      expect(confirmar).toBeEnabled();
+    });
+
+    it("al confirmar manda aceptaCargo y el monto como texto; muestra lo cobrado a la tarjeta", async () => {
+      cancelarMiReserva.mockResolvedValue({
+        estado: "Cancelada",
+        penalidadCobrada: 25000,
+        cargo: { estado: "COBRADO", monto: 25000, tarjeta: { marca: "VISA", ultimos4: "4242" }, texto: "Se cobró $ 25.000 con tu tarjeta Visa terminada en 4242 (cargo por cancelación)." },
+        email: { enviado: true },
+      });
+      const dialogo = await abrirDialogoConCargo();
+      fireEvent.click(within(dialogo).getByRole("checkbox"));
+      fireEvent.click(within(dialogo).getByRole("button", { name: "Sí, cancelar con cargo" }));
+      expect(cancelarMiReserva).toHaveBeenCalledWith({ codigo: "3FA9C21B", email: "demo@hotel.com", aceptaCargo: true, montoAceptado: "25000.00" });
+      expect(await screen.findByText(/Se cobró \$ 25\.000 con tu tarjeta Visa terminada en 4242/)).toBeInTheDocument();
+      expect(screen.getByText("Cancelada")).toHaveClass("ec-insignia--rojo");
+    });
+
+    it("no reembolsable pagada: la casilla dice que no se reintegra el importe; el resultado, que queda retenido", async () => {
+      cancelarMiReserva.mockResolvedValue({ estado: "Cancelada", penalidadCobrada: 0, cargo: { estado: "RETENIDO", monto: 50000, texto: "No se reintegra el importe pagado ($ 50.000)." }, email: { enviado: true } });
+      const dialogo = await abrirDialogoConCargo(NRF_ONLINE);
+      fireEvent.click(within(dialogo).getByRole("checkbox", { name: "Entiendo que no se reintegra el importe pagado" }));
+      fireEvent.click(within(dialogo).getByRole("button", { name: "Sí, cancelar con cargo" }));
+      expect(cancelarMiReserva).toHaveBeenCalledWith({ codigo: "3FA9C21B", email: "demo@hotel.com", aceptaCargo: true, montoAceptado: "50000.00" });
+      expect(await screen.findByText(/No se reintegra el importe pagado \(\$ 50\.000\)\./)).toBeInTheDocument();
+    });
+
+    it("cobro rechazado: se informa que el cargo quedó pendiente y que recepción se comunica", async () => {
+      cancelarMiReserva.mockResolvedValue({ estado: "Cancelada", penalidadCobrada: 0, cargo: { estado: "PENDIENTE", monto: 25000, texto: "No pudimos cobrar el cargo. Recepción se va a comunicar con vos." }, email: { enviado: true } });
+      const dialogo = await abrirDialogoConCargo();
+      fireEvent.click(within(dialogo).getByRole("checkbox"));
+      fireEvent.click(within(dialogo).getByRole("button", { name: "Sí, cancelar con cargo" }));
+      expect(await screen.findByText(/No pudimos cobrar el cargo\. Recepción se va a comunicar con vos\./)).toBeInTheDocument();
+    });
+
+    it("409 con monto nuevo: queda en el diálogo, muestra el importe nuevo y pide aceptar otra vez (casilla destildada)", async () => {
+      const NUEVO = { tipo: "COBRO", monto: 40000, concepto: "Cargo por cancelación", texto: "Cancelar tiene un cargo de $ 40.000 (primera noche), que se cobra a tu tarjeta Visa terminada en 4242." };
+      cancelarMiReserva.mockRejectedValueOnce({ codigo: "PENALIDAD_CAMBIO", status: 409, montoNuevo: 40000, motivo: null, cargo: NUEVO });
+      cancelarMiReserva.mockResolvedValueOnce({ estado: "Cancelada", penalidadCobrada: 40000, cargo: { estado: "COBRADO", monto: 40000, texto: "Se cobró $ 40.000." }, email: { enviado: true } });
+      const dialogo = await abrirDialogoConCargo();
+      fireEvent.click(within(dialogo).getByRole("checkbox"));
+      fireEvent.click(within(dialogo).getByRole("button", { name: "Sí, cancelar con cargo" }));
+      expect(await within(dialogo).findByRole("alert")).toHaveTextContent(/El cargo cambió: ahora es de \$ 40\.000/);
+      expect(within(dialogo).getByText(NUEVO.texto)).toBeInTheDocument();
+      expect(consultarMiReserva).toHaveBeenCalledTimes(1);
+      expect(within(dialogo).getByRole("checkbox")).not.toBeChecked();
+      expect(within(dialogo).getByRole("button", { name: "Sí, cancelar con cargo" })).toBeDisabled();
+
+      fireEvent.click(within(dialogo).getByRole("checkbox"));
+      fireEvent.click(within(dialogo).getByRole("button", { name: "Sí, cancelar con cargo" }));
+      await screen.findByText(/Se cobró \$ 40\.000\./);
+      expect(cancelarMiReserva).toHaveBeenLastCalledWith({ codigo: "3FA9C21B", email: "demo@hotel.com", aceptaCargo: true, montoAceptado: "40000.00" });
+    });
   });
 
   it("otro error al cancelar: queda en el diálogo para reintentar", async () => {

@@ -10,6 +10,7 @@ const {
   enmascararTitular,
   enmascararDocumento,
   evaluarCancelacion,
+  llegadaSuperada,
   armarRespuestaMiReserva,
 } = require("./miReserva");
 
@@ -55,47 +56,81 @@ test("enmascarado del titular y del documento", () => {
   expect(enmascararDocumento(null)).toBe("");
 });
 
-describe("evaluarCancelacion (decisión 14)", () => {
+describe("evaluarCancelacion (decisión 14, v9: con o sin cargo hasta las 14 h del día de llegada)", () => {
   // Llegada el 2026-10-16: el límite de llegada es 16/10 14:00 de Argentina (17:00 UTC).
-  const base = { estado: "Confirmada", fechaDesde: new Date("2026-10-16T00:00:00.000Z"), reembolsable: true, tienePagosActivos: false };
+  const base = { estado: "Confirmada", fechaDesde: new Date("2026-10-16T00:00:00.000Z"), tienePagosActivos: false };
   const SIN_CARGO = { aplica: false, monto: 0, limiteSinCargo: new Date("2026-10-14T17:00:00.000Z"), mensaje: "Cancelación sin cargo.", tipo: "x" };
   const CON_CARGO = { aplica: true, monto: 25000, limiteSinCargo: new Date("2026-10-14T17:00:00.000Z"), mensaje: "Ya pasó el plazo: se cobra la primera noche." };
   const ANTES = new Date("2026-10-10T12:00:00.000Z");
+  const TARJETA = { marca: "VISA", ultimos4: "4242" };
+  const LIQ_COBRO = { regla: "PRIMERA_NOCHE", monto: 25000, retenido: 0, devuelto: 0, aCobrarATarjeta: 25000, sinCobrar: 0, tarjeta: TARJETA, estadoCobro: "COBRADO" };
+  const LIQ_RETENIDO = { regla: "TOTAL_NO_REEMBOLSABLE", monto: 63750, retenido: 63750, devuelto: 0, aCobrarATarjeta: 0, sinCobrar: 0, tarjeta: TARJETA, estadoCobro: "RETENIDO" };
 
-  test("flexible, en plazo y sin pagos → se cancela online; la penalidad sale reducida", () => {
+  test("sin cargo y sin pagos → se cancela online, sin cargo; la penalidad sale reducida", () => {
     expect(evaluarCancelacion(base, SIN_CARGO, ANTES)).toEqual({
       puedeCancelarOnline: true,
       motivo: null,
       penalidad: { aplica: false, monto: 0, limiteSinCargo: SIN_CARGO.limiteSinCargo, mensaje: "Cancelación sin cargo." },
+      cargo: null,
     });
   });
 
-  test("con cargo → motivo con el monto y la explicación", () => {
-    const r = evaluarCancelacion(base, CON_CARGO, ANTES);
-    expect(r.puedeCancelarOnline).toBe(false);
-    expect(r.motivo).toMatch(/^Cancelar ahora tiene un cargo de \$\s?25\.000 \(ya pasó el plazo: se cobra la primera noche\)\. Para cancelar, contactá a recepción\.$/);
+  test("flexible con cargo y tarjeta en garantía → se cancela online con el texto del cobro a la tarjeta", () => {
+    const r = evaluarCancelacion(base, CON_CARGO, ANTES, LIQ_COBRO);
+    expect(r.puedeCancelarOnline).toBe(true);
+    expect(r.motivo).toBeNull();
+    expect(r.cargo).toEqual({
+      tipo: "COBRO",
+      monto: 25000,
+      concepto: "Cargo por cancelación",
+      texto: expect.stringMatching(/^Cancelar tiene un cargo de \$\s?25\.000 \(primera noche\), que se cobra a tu tarjeta Visa terminada en 4242\.$/),
+    });
     expect(r.penalidad).toMatchObject({ aplica: true, monto: 25000 });
   });
 
-  test("no reembolsable → motivo de la tarifa", () => {
-    expect(evaluarCancelacion({ ...base, reembolsable: false }, CON_CARGO, ANTES).motivo).toBe(MOTIVO.NO_REEMBOLSABLE);
+  test("no reembolsable ya pagada → se cancela online, sin cobro nuevo: 'no se reintegra el importe pagado'", () => {
+    const r = evaluarCancelacion(base, { ...CON_CARGO, monto: 63750 }, ANTES, LIQ_RETENIDO);
+    expect(r.puedeCancelarOnline).toBe(true);
+    expect(r.cargo).toMatchObject({ tipo: "RETENIDO", monto: 63750 });
+    expect(r.cargo.texto).toMatch(/^Esta tarifa no admite devolución: no se reintegra el importe pagado \(\$\s?63\.750\)\.$/);
   });
 
-  test("con un pago activo → motivo del pago (antes que la regla del plan)", () => {
-    expect(evaluarCancelacion({ ...base, reembolsable: false, tienePagosActivos: true }, CON_CARGO, ANTES).motivo).toBe(MOTIVO.CON_PAGO);
+  test("con cargo pero sin tarjeta en la garantía → se deriva a recepción", () => {
+    const r = evaluarCancelacion(base, CON_CARGO, ANTES, { ...LIQ_COBRO, aCobrarATarjeta: 0, sinCobrar: 25000, tarjeta: null, estadoCobro: "PENDIENTE" });
+    expect(r).toMatchObject({ puedeCancelarOnline: false, motivo: MOTIVO.SIN_TARJETA, cargo: null });
+    expect(evaluarCancelacion(base, CON_CARGO, ANTES, { ...LIQ_COBRO, tarjeta: null }).motivo).toBe(MOTIVO.SIN_TARJETA);
+  });
+
+  test("con importe a devolver, o con la penalidad repartida entre lo pagado y la tarjeta → recepción (reintegro manual)", () => {
+    expect(evaluarCancelacion(base, CON_CARGO, ANTES, { ...LIQ_RETENIDO, devuelto: 1000 }).motivo).toBe(MOTIVO.CON_PAGO);
+    expect(evaluarCancelacion(base, CON_CARGO, ANTES, { ...LIQ_COBRO, retenido: 5000, aCobrarATarjeta: 20000 }).motivo).toBe(MOTIVO.CON_PAGO);
+  });
+
+  test("sin cargo pero con un pago activo → motivo del pago", () => {
     expect(evaluarCancelacion({ ...base, tienePagosActivos: true }, SIN_CARGO, ANTES).motivo).toBe(MOTIVO.CON_PAGO);
   });
 
-  test("el día de llegada desde las 14 h → llegada hoy (antes que pagos y plan); después → ya pasó", () => {
+  test("con cargo sin liquidación (falló el cálculo) → no se cancela online", () => {
+    expect(evaluarCancelacion(base, CON_CARGO, ANTES, null)).toMatchObject({ puedeCancelarOnline: false, motivo: null });
+  });
+
+  test("el día de llegada desde las 14 h → llegada hoy (antes que pagos y cargo); después → ya pasó; antes de las 14 h se puede", () => {
     const hoy1401 = new Date("2026-10-16T17:01:00.000Z");
-    expect(evaluarCancelacion({ ...base, tienePagosActivos: true, reembolsable: false }, SIN_CARGO, hoy1401).motivo).toBe(MOTIVO.LLEGADA_HOY);
+    expect(evaluarCancelacion({ ...base, tienePagosActivos: true }, SIN_CARGO, hoy1401).motivo).toBe(MOTIVO.LLEGADA_HOY);
+    expect(evaluarCancelacion(base, CON_CARGO, hoy1401, LIQ_COBRO)).toMatchObject({ puedeCancelarOnline: false, motivo: MOTIVO.LLEGADA_HOY, cargo: null });
     expect(evaluarCancelacion(base, SIN_CARGO, new Date("2026-10-16T16:59:00.000Z")).puedeCancelarOnline).toBe(true);
+    expect(evaluarCancelacion(base, CON_CARGO, new Date("2026-10-16T16:59:00.000Z"), LIQ_COBRO).puedeCancelarOnline).toBe(true);
     expect(evaluarCancelacion(base, SIN_CARGO, new Date("2026-10-18T12:00:00.000Z")).motivo).toBe(MOTIVO.LLEGADA_PASADA);
   });
 
+  test("llegadaSuperada: el límite es las 14:00 de Argentina del día de llegada", () => {
+    expect(llegadaSuperada(base.fechaDesde, new Date("2026-10-16T16:59:59.000Z"))).toBe(false);
+    expect(llegadaSuperada(base.fechaDesde, new Date("2026-10-16T17:00:00.000Z"))).toBe(true);
+  });
+
   test("estado: Cancelada lo dice; otros estados no se cancelan y no traen motivo", () => {
-    expect(evaluarCancelacion({ ...base, estado: "Cancelada" }, null, ANTES)).toEqual({ puedeCancelarOnline: false, motivo: MOTIVO.CANCELADA, penalidad: null });
-    expect(evaluarCancelacion({ ...base, estado: "En curso" }, null, ANTES)).toEqual({ puedeCancelarOnline: false, motivo: null, penalidad: null });
+    expect(evaluarCancelacion({ ...base, estado: "Cancelada" }, null, ANTES)).toEqual({ puedeCancelarOnline: false, motivo: MOTIVO.CANCELADA, penalidad: null, cargo: null });
+    expect(evaluarCancelacion({ ...base, estado: "En curso" }, null, ANTES)).toEqual({ puedeCancelarOnline: false, motivo: null, penalidad: null, cargo: null });
   });
 
   test("estado No-show: no se cancela y dice que figura como no presentada", () => {
@@ -103,6 +138,7 @@ describe("evaluarCancelacion (decisión 14)", () => {
       puedeCancelarOnline: false,
       motivo: "La reserva figura como no presentada. Contactá a recepción.",
       penalidad: null,
+      cargo: null,
     });
   });
 
