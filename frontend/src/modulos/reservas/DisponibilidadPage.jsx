@@ -8,18 +8,16 @@ import { Cifra } from "../../componentes/Cifra";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
 import { hoyEnHoraLocal } from "../../lib/fechas";
-import { LayoutPublico } from "./LayoutPublico";
 import { consultarDisponibilidad } from "./reservas.api";
 import { listarTiposHabitacion } from "../tipos-habitacion/tiposHabitacion.api";
 
-// HU-38 — consulta pública de disponibilidad en tiempo real por fecha y
-// tipo. Sin sesión: el rol habilitado es "Huésped" (autoservicio), así que
-// la ruta vive fuera de <RequireSesion> en App.jsx.
+// HU-38 — consulta de disponibilidad en tiempo real por fecha y tipo, para el MOSTRADOR (/reservas/disponibilidad,
+// con sesión). La versión pública de esta pantalla (web vieja, HU-40) se retiró: /disponibilidad y /reservar
+// redirigen a /web, el motor de reservas web (HU-99 a HU-106).
 //
 // "En tiempo real" se resuelve sin websockets ni polling: la consulta se
 // recalcula contra la base en cada búsqueda y react-query no sirve una
-// respuesta vieja (staleTime 0), así que un alta o una cancelación hecha
-// por recepción ya se ve en la siguiente consulta del huésped.
+// respuesta vieja (staleTime 0), así que un alta o una cancelación se ve en la siguiente consulta.
 
 const FORMATO_MONEDA = new Intl.NumberFormat("es-AR", { style: "currency", currency: "ARS", maximumFractionDigits: 0 });
 
@@ -36,7 +34,7 @@ function precioDesde(habitacion) {
   return Math.min(...planes.map((p) => p.promedioPorNoche));
 }
 
-export function DisponibilidadPublicaPage({ modoInterno = false }) {
+export function DisponibilidadPage() {
   const navigate = useNavigate();
   const [criterio, setCriterio] = useState({
     fechaDesde: hoyEnHoraLocal(),
@@ -51,18 +49,13 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
   });
   const [buscado, setBuscado] = useState(null);
 
-  // HU-89 — catálogo para el select de tipo. En la web pública (modoInterno
-  // false) solo tipos activos con al menos una habitación activa: no tiene
-  // sentido ofrecerle al huésped un tipo sin ninguna unidad real. En uso
-  // interno (modoInterno true, /reservas/disponibilidad) todos los tipos
-  // activos del catálogo, mismo criterio que el resto de las pantallas de
-  // mostrador.
+  // HU-89 — catálogo para el select de tipo: todos los tipos activos del catálogo, mismo criterio que el resto de
+  // las pantallas de mostrador.
   const tiposQuery = useQuery({
-    queryKey: ["tipos-habitacion", "activos", modoInterno],
-    queryFn: () => listarTiposHabitacion(modoInterno ? { activo: "true" } : { activo: "true", conHabitacionActiva: "true" }),
+    queryKey: ["tipos-habitacion", "activos"],
+    queryFn: () => listarTiposHabitacion({ activo: "true" }),
   });
-  // Selección de tarjetas (solo tiene efecto en modoInterno — ver el botón
-  // "Crear reserva" más abajo): mismo patrón visual y de estado que
+  // Selección de tarjetas (ver el botón "Crear reserva" más abajo): mismo patrón visual y de estado que
   // CheckInWalkIn.jsx (relleno sólido cuando está elegida).
   const [habitacionIds, setHabitacionIds] = useState([]);
 
@@ -95,12 +88,12 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
     setCriterio((c) => ({ ...c, [campo]: valor }));
   }
 
-  const contenido = (
+  return (
       <div className="flex flex-col gap-6">
-        <div className={modoInterno ? "rounded-lg bg-pino px-6 py-5 text-hueso" : ""}>
+        <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
           <h1 className="font-heading text-[34px] font-semibold">Disponibilidad</h1>
-          <p className={`mt-1.5 text-[13.5px] ${modoInterno ? "text-hueso/70" : "text-piedra"}`}>
-            Elegí las fechas de tu estadía y mirá qué habitaciones quedan libres.
+          <p className="mt-1.5 text-[13.5px] text-hueso/70">
+            Elegí las fechas de la estadía y mirá qué habitaciones quedan libres.
           </p>
         </div>
 
@@ -229,45 +222,36 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
               {resultado.habitaciones.length > 0 && (
                 <Button
                   variante="ok"
-                  disabled={modoInterno && habitacionIds.length === 0}
+                  disabled={habitacionIds.length === 0}
                   onClick={() =>
-                    modoInterno
-                      ? navigate(`/reservas?nueva=1&desde=${buscado.fechaDesde}&hasta=${buscado.fechaHasta}`, {
-                          state: {
-                            habitaciones: habitacionIds.map((id) => ({
-                              habitacionId: id,
-                              adultos: buscado.adultos,
-                              menores: buscado.menores,
-                            })),
-                          },
-                        })
-                      : navigate(`/reservar?desde=${buscado.fechaDesde}&hasta=${buscado.fechaHasta}`)
+                    navigate(`/reservas?nueva=1&desde=${buscado.fechaDesde}&hasta=${buscado.fechaHasta}`, {
+                      state: {
+                        habitaciones: habitacionIds.map((id) => ({
+                          habitacionId: id,
+                          adultos: buscado.adultos,
+                          menores: buscado.menores,
+                        })),
+                      },
+                    })
                   }
                 >
-                  {modoInterno
-                    ? `Crear reserva${habitacionIds.length > 0 ? ` (${habitacionIds.length} ${habitacionIds.length === 1 ? "habitación" : "habitaciones"})` : ""}`
-                    : "Reservar estas fechas"}
+                  {`Crear reserva${habitacionIds.length > 0 ? ` (${habitacionIds.length} ${habitacionIds.length === 1 ? "habitación" : "habitaciones"})` : ""}`}
                 </Button>
               )}
             </div>
 
             <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
               {resultado.habitaciones.map((h) => {
-                // La selección (para alimentar directo al wizard de "Nueva
-                // reserva") solo tiene sentido en modoInterno: el
-                // autoservicio público sigue yendo a /reservar tal cual,
-                // sin preselección de habitación.
-                const elegida = modoInterno && habitacionIds.includes(h.id);
+                // La selección alimenta directo al wizard de "Nueva reserva".
+                const elegida = habitacionIds.includes(h.id);
                 return (
                   <button
                     key={h.id}
                     type="button"
-                    onClick={modoInterno ? () => alternarHabitacion(h.id) : undefined}
-                    aria-pressed={modoInterno ? elegida : undefined}
-                    className={`flex flex-col gap-2 rounded-lg border p-5 text-left transition-colors ${
-                      modoInterno
-                        ? `cursor-pointer ${elegida ? "border-pino bg-pino text-hueso" : "border-borde bg-white hover:bg-hueso"}`
-                        : "border-borde bg-white"
+                    onClick={() => alternarHabitacion(h.id)}
+                    aria-pressed={elegida}
+                    className={`flex cursor-pointer flex-col gap-2 rounded-lg border p-5 text-left transition-colors ${
+                      elegida ? "border-pino bg-pino text-hueso" : "border-borde bg-white hover:bg-hueso"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -323,7 +307,5 @@ export function DisponibilidadPublicaPage({ modoInterno = false }) {
         )}
       </div>
   );
-
-  return modoInterno ? contenido : <LayoutPublico>{contenido}</LayoutPublico>;
 }
 

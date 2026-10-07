@@ -28,14 +28,7 @@ export async function obtenerReserva(id) {
   return data;
 }
 
-// HU-43 (Check-in) entra por acá cuando el huésped llega con su código.
-export async function obtenerReservaPorCodigo(codigo) {
-  const { data } = await api.get(`/reservas/codigo/${encodeURIComponent(codigo)}`);
-  return data;
-}
-
-// HU-38 — no requiere sesión de staff: la consumen también las pantallas
-// públicas (/disponibilidad y /reservar).
+// HU-38 — disponibilidad en tiempo real (mostrador, con sesión).
 export async function consultarDisponibilidad(params) {
   const { data } = await api.get("/reservas/disponibilidad", { params });
   return data;

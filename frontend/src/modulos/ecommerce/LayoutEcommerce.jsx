@@ -132,7 +132,7 @@ function Footer() {
   );
 }
 
-// Envoltorio del sitio web nuevo. NO usa LayoutPublico (web vieja) ni el
+// Envoltorio del sitio web nuevo. No usa el
 // Layout del sistema: todo lo visual vive dentro de .ec-raiz.
 export function LayoutEcommerce() {
   const { pathname, hash } = useLocation();

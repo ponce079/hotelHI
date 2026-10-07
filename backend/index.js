@@ -48,45 +48,17 @@ try {
   process.exit(1);
 }
 
+// API cerrada (HU-106): todo /api exige sesión salvo la lista blanca de lib/apiCerrada.js (/api/web/* y el login).
+// Va ANTES de leer el cuerpo y de las rutas: ninguna ruta nueva puede quedar abierta por olvido, y un pedido
+// sin sesión se rechaza sin procesar nada.
+const { apiCerrada } = require("./src/lib/apiCerrada");
+app.use("/api", apiCerrada);
+
 app.use(express.json());
 
-// --- Rutas (patrón controller/service/routes, dentro de src/modulos) ---
-app.use("/api/movimientos-stock", require("./src/modulos/movimientos-stock/movimientosStock.routes"));
-app.use("/api/stock", require("./src/modulos/stock/stock.routes"));
-app.use("/api/articulos", require("./src/modulos/articulos/articulos.routes"));
-app.use("/api/articulo-depositos", require("./src/modulos/articulo-deposito/articulo-deposito.routes"));
-app.use("/api/movimientos-salida", require("./src/modulos/movimientos-salida/movimientoSalida.routes"));
-app.use("/api/tipos-movimiento", require("./src/modulos/tipos-movimiento/tiposMovimiento.routes"));
-app.use("/api/depositos", require("./src/modulos/depositos/depositos.routes"));
+// --- Rutas (patrón controller/service/routes, dentro de src/modulos): ver src/rutas.js ---
+require("./src/rutas").montarRutas(app);
 
-// --- Sprint 2 — Compras y Gastos ---
-app.use("/api/ordenes-pago", require("./src/modulos/pagos/pagos.routes"));
-const cuentaCorrienteRoutes = require("./src/modulos/cuenta-corriente/cuentaCorriente.routes");
-app.use("/api/proveedores", cuentaCorrienteRoutes.routerProveedores);
-app.use("/api/cuenta-corriente", cuentaCorrienteRoutes.routerCuentaCorriente);
-app.use("/api/proveedores", require("./src/modulos/proveedores/proveedores.routes"));
-app.use("/api/requerimientos", require("./src/modulos/requerimientos/requerimientos.routes"));
-app.use("/api/presupuestos", require("./src/modulos/presupuestos/presupuestos.routes"));
-app.use("/api/comprobantes", require("./src/modulos/comprobantes/comprobantes.routes"));
-app.use("/api/ordenes-compra", require("./src/modulos/ordenes-compra/ordenesCompra.routes"));
-app.use("/api/habitaciones", require("./src/modulos/habitaciones/habitaciones.routes"));
-app.use("/api/tipos-habitacion", require("./src/modulos/tipos-habitacion/tiposHabitacion.routes"));
-app.use("/api/tarifas", require("./src/modulos/tarifas/tarifas.routes"));
-app.use("/api/reservas", require("./src/modulos/reservas/reservas.routes"));
-app.use("/api/check-in", require("./src/modulos/check-in/checkIn.routes"));
-app.use("/api/estadia", require("./src/modulos/estadia/estadia.routes"));
-app.use("/api/huespedes", require("./src/modulos/huespedes/huespedes.routes"));
-app.use("/api/consumos-servicios", require("./src/modulos/servicios-adicionales/serviciosAdicionales.routes"));
-app.use("/api/comprobantes-estadia", require("./src/modulos/comprobantes-estadia/comprobanteEstadia.routes"));
-app.use("/api/pagos-estadia", require("./src/modulos/pagos-estadia/pagoEstadia.routes"));
-app.use("/api/check-out", require("./src/modulos/check-out/checkOut.routes"));
-app.use("/api/web", require("./src/modulos/ecommerce/ecommerce.routes"));
-app.use("/api/reservas-web", require("./src/modulos/ecommerce/reservasWeb.routes"));
-
-// --- Usuarios y Seguridad (login real + gestión de usuarios) ---
-const usuariosRoutes = require("./src/modulos/usuarios/usuarios.routes");
-app.use("/api/auth", usuariosRoutes.routerAuth);
-app.use("/api/usuarios", usuariosRoutes.routerUsuarios);
 app.get("/", (req, res) => {
   res.json({ status: "ok", proyecto: "Sistema de Gestión Hotelera - Holiday Inn" });
 });

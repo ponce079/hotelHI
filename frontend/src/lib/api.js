@@ -6,8 +6,8 @@ export const api = axios.create({
 });
 
 // Usuarios y Seguridad: cada pedido sale con el token de la sesión en el
-// header Authorization. Hoy solo lo exigen /api/usuarios y /api/auth/yo; el
-// resto del backend lo ignora, así que no cambia nada para los demás módulos.
+// header Authorization. Desde HU-106 el backend exige sesión en TODO /api salvo /api/web/* y el login: este
+// es el ÚNICO cliente HTTP de la app (no hay fetch ni descargas por fuera), así que ningún pedido sale sin ella.
 api.interceptors.request.use((config) => {
   try {
     const token = JSON.parse(sessionStorage.getItem(CLAVE_SESION) ?? "null")?.token;

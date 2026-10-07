@@ -114,7 +114,7 @@ function precioDesde(habitacion) {
 
 function estadoInicial(reserva, valoresIniciales) {
   if (!reserva) {
-    // La pantalla interna de disponibilidad (Disponibilidad, modoInterno)
+    // La pantalla interna de disponibilidad (Disponibilidad)
     // manda el período y las habitaciones ya elegidas por navigate(state);
     // la pública de autoservicio (HU-38/40) solo manda el período. Con
     // habitaciones ya elegidas, los pasos 1 y 2 se saltan — pero la
@@ -279,7 +279,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
 
   // HU-89 — catálogo para el select de tipo del paso 2 (ya no `resumenPorTipo`,
   // que solo trae los tipos que tienen habitaciones en el universo consultado
-  // hoy — ver DisponibilidadPublicaPage.jsx para el mismo criterio). En modo
+  // hoy — ver DisponibilidadPage.jsx para el mismo criterio). En modo
   // "WEB" (autoservicio del huésped, HU-40) mismo filtro que la disponibilidad
   // pública: solo tipos activos con al menos una habitación activa. En modo
   // mostrador, todos los tipos activos del catálogo.

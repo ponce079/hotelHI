@@ -4,11 +4,8 @@
 // y deja en req.usuarioActual el usuario vivo de la base.
 // requiereRol(...roles): además exige que ese usuario tenga uno de esos roles.
 //
-// Por ahora protegen las rutas de /api/usuarios (y /api/auth/yo). Las rutas
-// de los demás módulos siguen sin chequear sesión en el backend, igual que
-// antes de este cambio: el frontend ya manda el token en todos los pedidos
-// (ver frontend/src/lib/api.js), así que protegerlas más adelante es solo
-// agregar requiereSesion en su router, sin tocar el frontend.
+// Desde HU-106 la sesión se exige en TODO /api (lib/apiCerrada.js) salvo la lista blanca (/api/web/* y el
+// login); estos middlewares siguen siendo los que verifican el token, y requiereRol suma el permiso de cada ruta.
 
 const { verificarToken } = require("./usuarios.seguridad");
 const usuariosServicio = require("./usuarios.servicio");
@@ -46,22 +43,6 @@ async function requiereSesion(req, res, next) {
   }
 }
 
-// Como requiereSesion pero sin rechazar: con un token válido deja req.usuarioActual; sin token (la
-// reserva web) o con uno vencido sigue como anónimo. Sirve para rutas públicas que dan más
-// permisos a quien tiene sesión (por ejemplo, que un administrador corrija un nombre).
-async function sesionOpcional(req, res, next) {
-  const datos = verificarToken(leerToken(req));
-  if (datos) {
-    try {
-      const usuario = await usuariosServicio.obtenerUsuarioParaSesion(datos.id);
-      if (usuario) req.usuarioActual = { id: usuario.id, usuario: usuario.usuario, rol: usuario.rol };
-    } catch (err) {
-      console.error("Error al validar la sesión opcional:", err);
-    }
-  }
-  return next();
-}
-
 function requiereRol(...roles) {
   return (req, res, next) => {
     if (!req.usuarioActual || !roles.includes(req.usuarioActual.rol)) {
@@ -71,4 +52,4 @@ function requiereRol(...roles) {
   };
 }
 
-module.exports = { requiereSesion, sesionOpcional, requiereRol, SESION_INVALIDA };
+module.exports = { requiereSesion, requiereRol, SESION_INVALIDA };
