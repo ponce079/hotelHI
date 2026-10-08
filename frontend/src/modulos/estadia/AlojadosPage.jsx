@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import { api } from "../../lib/api";
 import { formatearFechaHora } from "../../lib/fechas";
 import { Input } from "../../componentes/Input";
+import { PageHeader } from "../../componentes/PageHeader";
 import { useSesion } from "../../lib/sesion";
 import { SinPermiso } from "../../componentes/SinPermiso";
 export function AlojadosPage() {
@@ -19,8 +20,7 @@ export function AlojadosPage() {
   if (!autorizado) return <SinPermiso />;
   return (
     <div className="space-y-5">
-      <h1 className="font-heading text-3xl">Personas alojadas</h1>
-      <p>Personas con ingreso registrado y sin salida. Máximo 500 resultados por búsqueda.</p>
+      <PageHeader titulo="Huéspedes en casa" subtitulo="Personas con ingreso registrado y sin salida. Máximo 500 resultados por búsqueda." />
       <Input label="Buscar por nombre, apellido o documento" value={q} onChange={(e) => setQ(e.target.value)} />
       {consulta.isLoading && <p>Cargando…</p>}
       {consulta.isError && <p role="alert">No se pudo consultar el listado.</p>}

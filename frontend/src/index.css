@@ -1,27 +1,29 @@
 @import "tailwindcss";
+@import "./estilos/variables.css";
+@import "./estilos/shell.css";
 
 @theme {
   /* Pisa el "white" default de Tailwind con el --color-surface del
      prototipo (#fffdf8): en todo el codebase bg-white/border-white ya se
      usaba para tarjetas/sidebar/tablas, asi que redefinir el token alcanza
      para alinear todo sin tocar archivo por archivo. */
-  --color-white: #fffdf8;
+  --color-white: var(--surface);
 
   /* Base */
-  --color-hueso: #f5f2ea; /* --color-bg del prototipo: fondo de app */
-  --color-surface: #fffdf8; /* alias explicito = white, por si se prefiere el nombre semantico */
-  --color-tinta: #1b1a16;
-  --color-borde: color-mix(in srgb, #1b1a16 13%, transparent); /* tinta 13% */
+  --color-hueso: var(--bg-content); /* --color-bg del prototipo: fondo de app */
+  --color-surface: var(--surface); /* alias explicito = white, por si se prefiere el nombre semantico */
+  --color-tinta: var(--text);
+  --color-borde: var(--border); /* tinta 13% */
 
   /* Primario — pino (--color-accent: #1f4d3a), rampa completa */
-  --color-pino: #1f4d3a;
+  --color-pino: var(--primary);
   --color-pino-100: #e8f0eb;
   --color-pino-200: #cfe0d5;
   --color-pino-300: #a7c6b5;
   --color-pino-400: #6fa189;
   --color-pino-500: #3d7a5e;
   --color-pino-600: #2c6349;
-  --color-pino-700: #1f4d3a;
+  --color-pino-700: var(--primary);
   --color-pino-800: #16382a;
   --color-pino-900: #0e241b;
   --color-pino-oscuro: #16382a; /* alias = 800, hover de botones solidos */
@@ -45,9 +47,9 @@
   --color-neutro-100: #faf8f2;
   --color-neutro-300: #e2dccd;
   --color-neutro-500: #a79e88;
-  --color-neutro-700: #67604e;
+  --color-neutro-700: var(--text-2);
   --color-neutro-900: #2b2820;
-  --color-piedra: #67604e; /* alias = neutro-700, texto secundario */
+  --color-piedra: var(--text-2); /* alias = neutro-700, texto secundario */
 
   /* Semanticos */
   --color-exito: #2f6b4f;
@@ -74,25 +76,35 @@
   --color-inactivo: #867d68;
   --color-inactivo-suave: #ece6d9;
 
-  --font-heading: "Fraunces", ui-serif, Georgia, serif;
-  --font-body: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-brand);
+  --font-body: var(--font-ui);
   --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
   /* Radios: pisan la escala default de Tailwind, asi rounded-sm/md/lg
      quedan en 6/10/16px en toda la app sin tocar cada componente. */
   --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-card);
 }
 
 body {
   background: var(--color-hueso);
   color: var(--color-tinta);
   font-family: var(--font-body);
+  font-size: var(--fs-base);
+  /* Importes y contadores alinean en columna. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Serif (Cormorant) solo en la marca y en el h1 de página; el resto de los
+   títulos usa la sans de la interfaz. Cormorant trae cifras de texto por
+   defecto: se fuerzan alineadas para que los números no "bailen". */
+h1, .font-heading {
+  font-family: var(--font-heading);
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-heading);
   font-weight: 600;
   line-height: 1.08;
   letter-spacing: -0.015em;
@@ -114,6 +126,6 @@ p {
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-pino);
+  outline: 2px solid var(--primary);
   outline-offset: 2px;
 }
