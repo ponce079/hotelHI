@@ -1,0 +1,43 @@
+/* Sistema de diseño del SGH (HU-117): ÚNICO archivo con los valores de color,
+   radio y tipografía. Todo lo demás (index.css @theme, shell.css, componentes)
+   referencia estas variables con var(...), sin repetir hex. */
+:root {
+  /* Menú lateral */
+  --sb-bg: #17352a;
+  --sb-active: #24503f;
+  --sb-text: #d9e2dc;
+  --sb-group: #a9bdb1;
+  --sb-text-active: #ffffff;
+  --accent: #c9a25a;
+
+  /* Contenido */
+  --bg-content: #f6f2ea;
+  --surface: #ffffff;
+  --border: #e6dfd2;
+  --text: #1e2a24;
+  --text-2: #5c6b63;
+
+  /* Acciones */
+  --primary: #1f4a3a;
+  --terracota: #b5603a;
+  --danger: #8a2e22;
+  --on-color: #ffffff;
+  --scrim: rgb(23 53 42 / 0.55);
+
+  /* Radios */
+  --radius-control: 8px;
+  --radius-card: 12px;
+
+  /* Tipografía: Manrope para toda la interfaz; Cormorant Garamond solo marca y h1 */
+  --font-ui: "Manrope", ui-sans-serif, system-ui, sans-serif;
+  --font-brand: "Cormorant Garamond", ui-serif, Georgia, serif;
+  --fs-base: 14px;
+  --fs-label: 13px;
+  --fs-group: 11px;
+  --fs-h1: 34px;
+
+  /* Medidas del shell */
+  --sb-width: 264px;
+  --sb-width-collapsed: 76px;
+  --topbar-height: 56px;
+}

@@ -3,6 +3,7 @@ import { Badge } from "../../../componentes/Badge";
 import { Button } from "../../../componentes/Button";
 import { CodigoClave } from "../../../componentes/CodigoClave";
 import { MenuAcciones } from "../../../componentes/MenuAcciones";
+import { PageHeader } from "../../../componentes/PageHeader";
 import { ESTADO_RESERVA_BADGE, etiquetaEstadoReserva } from "../reservas.constantes";
 
 const ICONOS = { modificar: Pencil, "check-in": LogIn, consumo: Plus, "check-out": LogOut, comprobante: ReceiptText, cancelar: Ban };
@@ -60,33 +61,36 @@ export function EncabezadoReserva({ reserva, pasos, acciones, onAccion, checkIn,
   };
   return (
     <section className="flex flex-col gap-4" aria-label="Datos de la reserva">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-2">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-heading text-[30px] font-semibold leading-tight">Reserva</h1>
+      <PageHeader
+        className="page-header-plano"
+        titulo="Reserva"
+        subtitulo={
+          <div className="mt-1 flex flex-wrap items-center gap-3">
             <CodigoClave className="text-[20px]">{reserva.codigoConfirmacion}</CodigoClave>
             <Badge variante={ESTADO_RESERVA_BADGE[reserva.estado]}>{etiquetaEstadoReserva(reserva.estado)}</Badge>
             {reserva.planTarifario && <Badge variante="neutro">{reserva.planTarifario.nombre}</Badge>}
             {reserva.cantidadHabitaciones > 1 && <Badge variante="info">Reserva grupal</Badge>}
           </div>
-          <LineaDeTiempo pasos={pasos} />
-        </div>
-        {(acciones.principales.length > 0 || acciones.menu.length > 0) && (
-          <div className="flex flex-wrap items-start gap-2">
-            {acciones.principales.map(accion)}
-            {acciones.menu.length > 0 && (
-              <MenuAcciones
-                etiqueta="Más acciones de la reserva"
-                acciones={acciones.menu.map((a) => ({
-                  label: a.texto,
-                  variante: a.tipo === "destructiva" ? "destructivo" : undefined,
-                  onClick: () => onAccion(a.id),
-                }))}
-              />
-            )}
-          </div>
-        )}
-      </div>
+        }
+        acciones={
+          (acciones.principales.length > 0 || acciones.menu.length > 0) && (
+            <div className="flex flex-wrap items-start gap-2">
+              {acciones.principales.map(accion)}
+              {acciones.menu.length > 0 && (
+                <MenuAcciones
+                  etiqueta="Más acciones de la reserva"
+                  acciones={acciones.menu.map((a) => ({
+                    label: a.texto,
+                    variante: a.tipo === "destructiva" ? "destructivo" : undefined,
+                    onClick: () => onAccion(a.id),
+                  }))}
+                />
+              )}
+            </div>
+          )
+        }
+      />
+      <LineaDeTiempo pasos={pasos} />
       <div className="grid grid-cols-2 overflow-hidden rounded-lg border border-borde bg-white md:grid-cols-3 xl:grid-cols-6">
         <DatoClave etiqueta="Titular" dato={datos.titular} />
         <DatoClave etiqueta="Entrada" dato={datos.entrada} />

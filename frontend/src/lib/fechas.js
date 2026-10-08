@@ -16,6 +16,16 @@ export function hoyEnHoraLocal() {
   return new Date().toLocaleDateString("en-CA", { timeZone: ZONA_ARGENTINA });
 }
 
+// "jue 08/10/2026": día de la semana abreviado + fecha de HOY en hora
+// argentina, para la barra superior. Se arma desde hoyEnHoraLocal() (nunca
+// desde la zona del navegador) y se formatea en UTC para que no corra de día.
+export function etiquetaHoyConDia() {
+  const [anio, mes, dia] = hoyEnHoraLocal().split("-").map(Number);
+  const fecha = new Date(Date.UTC(anio, mes - 1, dia));
+  const semana = fecha.toLocaleDateString("es-AR", { weekday: "short", timeZone: "UTC" }).replace(".", "");
+  return `${semana} ${String(dia).padStart(2, "0")}/${String(mes).padStart(2, "0")}/${anio}`;
+}
+
 export function primerDiaDelMesISO() {
   return `${hoyEnHoraLocal().slice(0, 7)}-01`;
 }

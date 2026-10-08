@@ -12,6 +12,7 @@ import { FilterBar } from "../../componentes/FilterBar";
 import { Input } from "../../componentes/Input";
 import { MenuAcciones } from "../../componentes/MenuAcciones";
 import { MiniPasos } from "../../componentes/MiniPasos";
+import { PageHeader } from "../../componentes/PageHeader";
 import { Modal } from "../../componentes/Modal";
 import { NombreClave } from "../../componentes/NombreClave";
 import { Select } from "../../componentes/Select";
@@ -129,12 +130,7 @@ export function ReservasPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
-        <h1 className="font-heading text-[34px] font-semibold">Reservas</h1>
-        <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
-          Alta individual y grupal, disponibilidad, huéspedes y confirmación
-        </p>
-      </div>
+      <PageHeader titulo="Reservas" subtitulo="Alta individual y grupal, disponibilidad, huéspedes y confirmación" />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         {ESTADOS_RESERVA.map((valor) => {
