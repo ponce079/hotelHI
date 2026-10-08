@@ -421,7 +421,7 @@ export function reducer(estado, accion) {
       let aviso = "";
       const habitaciones = estado.habitaciones.map((h, i) => {
         if (h.clave !== clave) return h;
-        const nueva = { ...h, adultos, menores };
+        const nueva = { ...h, adultos, menores, ocupacionPrevia: null };
         if (h.habitacionId && h.capacidad != null && adultos + menores > h.capacidad) {
           aviso = `La ${h.numero} no admite ${adultos + menores} personas: elegí otra para la habitación ${i + 1}.`;
           return { ...nueva, habitacionId: null, numero: null, tipo: null, tipoHabitacionId: null, capacidad: null, piso: null };
@@ -447,27 +447,37 @@ export function reducer(estado, accion) {
         filas: liberarResponsables(estado.filas.filter((f) => f.habitacionClave !== accion.clave)),
       };
     case "elegirHabitacion": {
+      // Al elegir, la habitación se completa con adultos hasta su capacidad (los menores cargados
+      // se mantienen). Al cambiarla vuelve la ocupación de antes, si no se tocó a mano.
       const { clave, habitacion } = accion;
+      const habitaciones = estado.habitaciones.map((h) => {
+        if (h.clave !== clave) return h;
+        if (!habitacion) {
+          const previa = h.ocupacionPrevia ?? { adultos: h.adultos, menores: h.menores };
+          return { ...h, ...previa, ocupacionPrevia: null, habitacionId: null, numero: null, tipo: null, tipoHabitacionId: null, capacidad: null, piso: null, planes: [] };
+        }
+        const adultos = habitacion.capacidad != null ? Math.max(h.adultos, habitacion.capacidad - h.menores) : h.adultos;
+        return {
+          ...h,
+          adultos,
+          ocupacionPrevia: adultos !== h.adultos ? { adultos: h.adultos, menores: h.menores } : null,
+          habitacionId: habitacion.id,
+          numero: habitacion.numero,
+          tipo: habitacion.tipo,
+          tipoHabitacionId: habitacion.tipoHabitacionId,
+          capacidad: habitacion.capacidad,
+          piso: habitacion.piso,
+          planes: habitacion.planes ?? [],
+          errorServidor: null,
+        };
+      });
+      const h = habitaciones.find((x) => x.clave === clave);
+      const nuevas = h ? completarFilas(filasDe(estado, clave), h.adultos, h.menores, clave) : [];
       return {
         ...estado,
         aviso: "",
-        habitaciones: estado.habitaciones.map((h) =>
-          h.clave === clave
-            ? habitacion
-              ? {
-                  ...h,
-                  habitacionId: habitacion.id,
-                  numero: habitacion.numero,
-                  tipo: habitacion.tipo,
-                  tipoHabitacionId: habitacion.tipoHabitacionId,
-                  capacidad: habitacion.capacidad,
-                  piso: habitacion.piso,
-                  planes: habitacion.planes ?? [],
-                  errorServidor: null,
-                }
-              : { ...h, habitacionId: null, numero: null, tipo: null, tipoHabitacionId: null, capacidad: null, piso: null, planes: [] }
-            : h,
-        ),
+        habitaciones,
+        filas: h ? liberarResponsables(conFilasDeHabitacion({ ...estado, habitaciones }, clave, nuevas)) : estado.filas,
       };
     }
     // ---------------------------------------------------------------- respuestas del servidor
