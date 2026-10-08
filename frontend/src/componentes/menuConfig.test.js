@@ -30,6 +30,19 @@ describe("menuConfig — mismos permisos que el menú anterior (HU-71)", () => {
     expect(nombres).toEqual([null, "Habitaciones", "Stock"]);
   });
 
+  it("Administración queda solo con Usuarios y roles y solo la ve el administrador", () => {
+    const admin = MENU.find((b) => b.grupo === "Administración");
+    expect(admin.items.map((i) => i.to)).toEqual(["/usuarios"]);
+    for (const rol of Object.keys(ROLES)) {
+      expect(filtrarMenuPorRol(rol).some((b) => b.grupo === "Administración")).toBe(rol === "admin");
+    }
+  });
+
+  it("Tipos de habitación va en Habitaciones, después de Mantenimiento", () => {
+    const hab = MENU.find((b) => b.grupo === "Habitaciones");
+    expect(hab.items.map((i) => i.to)).toEqual(["/habitaciones", "/historial-mantenimiento", "/tipos-habitacion"]);
+  });
+
   it("el administrador ve los grupos en el orden definido", () => {
     expect(filtrarMenuPorRol("admin").map((b) => b.grupo)).toEqual([
       null,

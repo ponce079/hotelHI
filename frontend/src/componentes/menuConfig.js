@@ -76,6 +76,7 @@ export const MENU = [
       { to: "/habitaciones", label: "Estado de habitaciones", icon: BedDouble, roles: ["admin", "recepcionista", "housekeeping"] },
       // Antes "Historial de Mantenimiento" (HU-33/34).
       { to: "/historial-mantenimiento", label: "Mantenimiento", icon: Wrench, roles: ["admin", "recepcionista", "housekeeping"] },
+      { to: "/tipos-habitacion", label: "Tipos de habitación", icon: Tag, roles: ["admin", "recepcionista", "gerente"] },
     ],
   },
   {
@@ -112,7 +113,6 @@ export const MENU = [
   {
     grupo: "Administración",
     items: [
-      { to: "/tipos-habitacion", label: "Tipos de habitación", icon: Tag, roles: ["admin", "recepcionista", "gerente"] },
       { to: "/usuarios", label: "Usuarios y roles", icon: UserCog, roles: ["admin"] },
     ],
   },
