@@ -2,20 +2,28 @@ import { Link } from "react-router-dom";
 import { ChevronDown, Mountain, PanelLeftClose, PanelLeftOpen, X } from "lucide-react";
 import { MenuCuenta } from "./MenuCuenta";
 
+// `badge`: { cantidad, tono, titulo }. Con 0 no se muestra nada. Contraído la burbuja pasa a un punto y el número
+// va en el title del ítem.
 function ItemMenu({ item, activo, contraido, badge }) {
   const { icon: Icono, to, label } = item;
+  const cantidad = badge?.cantidad ?? 0;
+  const detalle = badge?.titulo ?? (cantidad > 0 ? String(cantidad) : "");
   return (
     <Link
       to={to}
       className="sb-item"
       aria-current={activo ? "page" : undefined}
       // Contraído solo queda el ícono: el nombre pasa a tooltip y a nombre accesible.
-      title={contraido ? label : undefined}
+      title={contraido ? (cantidad > 0 ? `${label} · ${detalle}` : label) : undefined}
       aria-label={contraido ? label : undefined}
     >
       <Icono size={18} strokeWidth={1.8} aria-hidden="true" />
       <span className="sb-item-txt">{label}</span>
-      {Boolean(badge) && <span className="sb-badge">{badge}</span>}
+      {cantidad > 0 && (
+        <span className={`sb-badge sb-badge-${badge.tono ?? "terracota"}`} title={contraido ? undefined : badge.titulo}>
+          {cantidad}
+        </span>
+      )}
     </Link>
   );
 }

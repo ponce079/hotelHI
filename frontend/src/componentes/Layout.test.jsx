@@ -6,8 +6,14 @@ import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { Layout } from "./Layout";
 import { useSesion } from "../lib/sesion";
 import { listarOrdenesMantenimiento } from "../modulos/habitaciones/habitaciones.api";
+import { listarLlegadas } from "../modulos/check-in/checkIn.api";
+import { listarReservas } from "../modulos/reservas/reservas.api";
+import { hoyEnHoraLocal } from "../lib/fechas";
 
 vi.mock("../lib/sesion", () => ({ useSesion: vi.fn() }));
+
+vi.mock("../modulos/check-in/checkIn.api", () => ({ listarLlegadas: vi.fn() }));
+vi.mock("../modulos/reservas/reservas.api", () => ({ listarReservas: vi.fn() }));
 
 vi.mock("../modulos/habitaciones/habitaciones.api", () => ({
   listarOrdenesMantenimiento: vi.fn(),
@@ -250,5 +256,89 @@ describe("Layout — barra superior", () => {
     expect(hamburguesa).toHaveAttribute("aria-expanded", "true");
     await usuario.keyboard("{Escape}");
     expect(hamburguesa).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
+// Contadores de Check-in / Check-out (mismos roles que el ítem del menú).
+describe("Layout — contadores de recepción", () => {
+  const admin = () => useSesion.mockReturnValue(sesion({ rol: "admin", usuario: "admin", rolInfo: { label: "Administrador" } }));
+  function dia(dias) {
+    const [a, m, d] = hoyEnHoraLocal().split("-").map(Number);
+    return `${new Date(Date.UTC(a, m - 1, d + dias)).toISOString().slice(0, 10)}T00:00:00.000Z`;
+  }
+  const enCurso = (id, dias) => ({ id, estado: "En curso", fechaHasta: dia(dias), habitaciones: [{ id }, { id: id + 100 }] });
+
+  beforeEach(() => {
+    listarLlegadas.mockReset();
+    listarReservas.mockReset();
+    listarLlegadas.mockResolvedValue({ reservas: [] });
+    listarReservas.mockResolvedValue([]);
+    admin();
+  });
+
+  it("Check-in muestra las llegadas pendientes en terracota; Check-out las salidas de hoy en verde", async () => {
+    listarLlegadas.mockResolvedValue({ reservas: [{ id: 1, habitaciones: [{ id: 1 }, { id: 2 }, { id: 3 }] }] }); // grupal: 1
+    listarReservas.mockResolvedValue([enCurso(1, 0), enCurso(2, 1)]);
+    renderLayout({ ruta: "/reservas" });
+
+    const checkIn = await screen.findByRole("link", { name: /Check-in/ });
+    await waitFor(() => expect(checkIn).toHaveTextContent("1"));
+    const burbujaIn = checkIn.querySelector(".sb-badge");
+    expect(burbujaIn).toHaveClass("sb-badge-terracota");
+    expect(burbujaIn).toHaveAttribute("title", "1 llegada pendiente");
+
+    const checkOut = screen.getByRole("link", { name: /Check-out/ });
+    await waitFor(() => expect(checkOut).toHaveTextContent("1"));
+    expect(checkOut.querySelector(".sb-badge")).toHaveClass("sb-badge-verde");
+    expect(checkOut.querySelector(".sb-badge")).toHaveAttribute("title", "1 salida pendiente");
+  });
+
+  it("con salidas vencidas la burbuja de Check-out va en rojo y el title detalla las vencidas", async () => {
+    listarReservas.mockResolvedValue([enCurso(1, 0), enCurso(2, -1), enCurso(3, -4)]);
+    renderLayout({ ruta: "/reservas" });
+    const checkOut = screen.getByRole("link", { name: /Check-out/ });
+    await waitFor(() => expect(checkOut).toHaveTextContent("3"));
+    const burbuja = checkOut.querySelector(".sb-badge");
+    expect(burbuja).toHaveClass("sb-badge-peligro");
+    expect(burbuja).toHaveAttribute("title", "3 salidas pendientes (2 vencidas)");
+  });
+
+  it("con 0 o con el pedido fallando no hay burbuja ni error visible", async () => {
+    listarLlegadas.mockRejectedValue(new Error("sin backend"));
+    listarReservas.mockResolvedValue([]);
+    renderLayout({ ruta: "/reservas" });
+    await waitFor(() => expect(listarLlegadas).toHaveBeenCalled());
+    await waitFor(() => expect(listarReservas).toHaveBeenCalled());
+    expect(screen.getByRole("link", { name: "Check-in" }).querySelector(".sb-badge")).toBeNull();
+    expect(screen.getByRole("link", { name: "Check-out" }).querySelector(".sb-badge")).toBeNull();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("menú contraído: el número va en el title del ítem", async () => {
+    const usuario = userEvent.setup();
+    listarLlegadas.mockResolvedValue({ reservas: [{ id: 1 }, { id: 2 }] });
+    renderLayout({ ruta: "/reservas" });
+    await waitFor(() => expect(screen.getByRole("link", { name: /Check-in/ })).toHaveTextContent("2"));
+    await usuario.click(screen.getByRole("button", { name: "Contraer menú" }));
+    expect(screen.getByRole("link", { name: "Check-in" })).toHaveAttribute("title", "Check-in · 2 llegadas pendientes");
+  });
+
+  it("un rol sin Check-in ni Check-out no pide nada", async () => {
+    useSesion.mockReturnValue(sesion());
+    renderLayout();
+    await waitFor(() => expect(screen.getByRole("navigation", { name: "Navegación principal" })).toBeInTheDocument());
+    expect(listarLlegadas).not.toHaveBeenCalled();
+    expect(listarReservas).not.toHaveBeenCalled();
+  });
+
+  it("el chevron de la tarjeta de usuario acompaña el estado del menú de cuenta", async () => {
+    const usuario = userEvent.setup();
+    renderLayout();
+    const tarjeta = screen.getByRole("button", { name: /Administrador/ });
+    expect(tarjeta).toHaveAttribute("aria-haspopup", "menu");
+    expect(tarjeta).toHaveAttribute("aria-expanded", "false");
+    expect(tarjeta.querySelector(".sb-user-chevron")).toBeInTheDocument();
+    await usuario.click(tarjeta);
+    expect(tarjeta).toHaveAttribute("aria-expanded", "true");
   });
 });

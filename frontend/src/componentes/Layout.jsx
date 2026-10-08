@@ -10,6 +10,7 @@ import {
   leerMenuContraido,
 } from "../lib/preferenciasMenu";
 import { listarOrdenesMantenimiento } from "../modulos/habitaciones/habitaciones.api";
+import { useContadoresRecepcion } from "../lib/useContadoresRecepcion";
 import { MENU, buscarActivo, buscarMiga, filtrarMenuPorRol } from "./menuConfig";
 import { Sidebar } from "./layout/Sidebar";
 import { Topbar } from "./layout/Topbar";
@@ -42,6 +43,27 @@ export function Layout() {
   const nombresGrupos = useMemo(() => bloques.filter((b) => b.grupo !== null).map((b) => b.grupo), [bloques]);
   const activo = useMemo(() => buscarActivo(bloques, pathname), [bloques, pathname]);
   const miga = useMemo(() => buscarMiga(pathname), [pathname]);
+
+  const verItem = (ruta) => bloques.some((b) => b.items.some((i) => i.to === ruta));
+  const { llegadas, salidas, vencidas } = useContadoresRecepcion({
+    puedeVerCheckIn: verItem("/check-in"),
+    puedeVerCheckOut: verItem("/check-out"),
+  });
+  const badges = {
+    "/historial-mantenimiento": { cantidad: pendientesMantenimiento, tono: "terracota" },
+    "/check-in": {
+      cantidad: llegadas,
+      tono: "terracota",
+      titulo: `${llegadas} ${llegadas === 1 ? "llegada pendiente" : "llegadas pendientes"}`,
+    },
+    "/check-out": {
+      cantidad: salidas,
+      tono: vencidas > 0 ? "peligro" : "verde",
+      titulo:
+        `${salidas} ${salidas === 1 ? "salida pendiente" : "salidas pendientes"}` +
+        (vencidas > 0 ? ` (${vencidas} ${vencidas === 1 ? "vencida" : "vencidas"})` : ""),
+    },
+  };
 
   const [contraido, setContraido] = useState(() => leerMenuContraido(usuario));
   const [gruposManual, setGruposManual] = useState(() => leerGruposMenu(usuario));
@@ -99,7 +121,7 @@ export function Layout() {
         activo={activo}
         gruposAbiertos={gruposAbiertos}
         onToggleGrupo={alternarGrupo}
-        badges={{ "/historial-mantenimiento": pendientesMantenimiento }}
+        badges={badges}
         contraido={contraido}
         onToggleContraido={alternarContraido}
         movilAbierto={movilAbierto}

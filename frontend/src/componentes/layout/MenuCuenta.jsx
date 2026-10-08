@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { LogOut, UserRound } from "lucide-react";
+import { ChevronUp, LogOut, UserRound } from "lucide-react";
 import { inicialesDe, nombreCompleto } from "../../modulos/usuarios/usuarios.constantes";
 
 // Tarjeta de usuario del menú lateral + menú de cuenta (HU-117). Solo enlaza lo
@@ -74,6 +74,7 @@ export function MenuCuenta({ datos, usuario, rolLabel, onCerrarSesion }) {
           <span className="sb-user-nombre">{nombre}</span>
           <span className="sb-user-rol">{rolLabel}</span>
         </span>
+        <ChevronUp className="sb-user-chevron" size={16} strokeWidth={2} aria-hidden="true" />
       </button>
     </div>
   );

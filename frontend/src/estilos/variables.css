@@ -9,6 +9,8 @@
   --sb-group: #a9bdb1;
   --sb-text-active: #ffffff;
   --accent: #c9a25a;
+  --sb-divider: rgb(255 255 255 / 0.08);
+  --sb-user-open: rgb(255 255 255 / 0.1);
 
   /* Contenido */
   --bg-content: #f6f2ea;
@@ -20,6 +22,8 @@
   /* Acciones */
   --primary: #1f4a3a;
   --terracota: #b5603a;
+  --terracota-contador: color-mix(in srgb, var(--terracota) 90%, black);
+  --verde-contador: #2f6b55;
   --danger: #8a2e22;
   --on-color: #ffffff;
   --scrim: rgb(23 53 42 / 0.55);
