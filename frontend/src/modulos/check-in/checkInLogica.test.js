@@ -173,4 +173,39 @@ describe("walk-in", () => {
     expect(e.aviso).toBe("La 204 no admite 3 personas: elegí otra para la habitación 1.");
     expect(e.filas.map((f) => f.tipo)).toEqual(["adulto", "adulto", "menor"]);
   });
+
+  it("al elegir una habitación, se completa con adultos hasta su capacidad", () => {
+    let e = estadoInicialWalkin();
+    const clave = e.habitaciones[0].clave;
+    e = reducer(e, { tipo: "elegirHabitacion", clave, habitacion: { id: 30, numero: "301", tipo: "Cuádruple", tipoHabitacionId: 3, capacidad: 4, piso: 3 } });
+    expect(e.habitaciones[0]).toMatchObject({ adultos: 4, menores: 0 });
+    expect(e.filas.map((f) => f.tipo)).toEqual(["adulto", "adulto", "adulto", "adulto"]);
+  });
+
+  it("los menores cargados se mantienen y los adultos completan la capacidad", () => {
+    let e = estadoInicialWalkin();
+    const clave = e.habitaciones[0].clave;
+    e = reducer(e, { tipo: "ocupacion", clave, adultos: 1, menores: 1 });
+    e = reducer(e, { tipo: "elegirHabitacion", clave, habitacion: { id: 30, numero: "301", tipo: "Cuádruple", tipoHabitacionId: 3, capacidad: 4, piso: 3 } });
+    expect(e.habitaciones[0]).toMatchObject({ adultos: 3, menores: 1 });
+    expect(e.filas.map((f) => f.tipo)).toEqual(["adulto", "adulto", "adulto", "menor"]);
+  });
+
+  it("al cambiar la habitación vuelve la ocupación de antes de elegirla", () => {
+    let e = estadoInicialWalkin();
+    const clave = e.habitaciones[0].clave;
+    e = reducer(e, { tipo: "elegirHabitacion", clave, habitacion: { id: 30, numero: "301", tipo: "Cuádruple", tipoHabitacionId: 3, capacidad: 4, piso: 3 } });
+    e = reducer(e, { tipo: "elegirHabitacion", clave, habitacion: null });
+    expect(e.habitaciones[0]).toMatchObject({ habitacionId: null, adultos: 2, menores: 0 });
+    expect(e.filas).toHaveLength(2);
+  });
+
+  it("si la ocupación se tocó a mano después de elegir, al cambiar la habitación se mantiene", () => {
+    let e = estadoInicialWalkin();
+    const clave = e.habitaciones[0].clave;
+    e = reducer(e, { tipo: "elegirHabitacion", clave, habitacion: { id: 30, numero: "301", tipo: "Cuádruple", tipoHabitacionId: 3, capacidad: 4, piso: 3 } });
+    e = reducer(e, { tipo: "ocupacion", clave, adultos: 3, menores: 0 });
+    e = reducer(e, { tipo: "elegirHabitacion", clave, habitacion: null });
+    expect(e.habitaciones[0]).toMatchObject({ adultos: 3, menores: 0 });
+  });
 });

@@ -559,7 +559,7 @@ describe("Walk-in", () => {
     ],
   });
 
-  it("2 habitaciones de distinto tipo con una tarifa: excluir, total del cotizador y 201", async () => {
+  it("2 habitaciones de distinto tipo con una tarifa: excluir, ocupación hasta la capacidad, total del cotizador y 201", async () => {
     api.listarLlegadas.mockResolvedValue({ fecha: hoy, anterioresPendientes: 0, reservas: [] });
     const D315 = libre(315, "315", "Doble", 1, 3, [98000, 83300]);
     const T204 = libre(204, "204", "Twin", 2, 2, [92000, 78200]);
@@ -580,11 +580,14 @@ describe("Walk-in", () => {
 
     // Personas: titular de la primera habitación solo con teléfono.
     const completar = (fila, datos) => Object.entries(datos).forEach(([k, v]) => cambiar(fila, k, v));
-    await waitFor(() => expect(filas()).toHaveLength(3));
-    const [a1, a2, b1] = filas();
+    // Cada habitación elegida se completa hasta su capacidad: 315 → 3 adultos, 204 → 2.
+    await waitFor(() => expect(filas()).toHaveLength(5));
+    const [a1, a2, a3, b1, b2] = filas();
     completar(a1, { "Número": "27093318", Nombres: "Raúl", Apellido: "Ibarra", Nacimiento: haceAnios(46).texto, Localidad: "Jujuy", Domicilio: "Belgrano 845", Teléfono: "+54 388 555-0147" });
     completar(a2, { "Número": "27093319", Nombres: "Ana", Apellido: "Ibarra", Nacimiento: haceAnios(44).texto });
+    completar(a3, { "Número": "27093321", Nombres: "Lucía", Apellido: "Ibarra", Nacimiento: haceAnios(20).texto });
     completar(b1, { "Número": "27093320", Nombres: "Tomás", Apellido: "Ibarra", Nacimiento: haceAnios(24).texto, Localidad: "Jujuy", Domicilio: "Belgrano 845" });
+    completar(b2, { "Número": "27093322", Nombres: "Sofía", Apellido: "Ibarra", Nacimiento: haceAnios(22).texto });
     fireEvent.click(await screen.findByLabelText(/Confirmo que recibí/));
     await waitFor(() => expect(botonConfirmar()).toBeEnabled());
     fireEvent.click(botonConfirmar());
@@ -593,8 +596,8 @@ describe("Walk-in", () => {
     expect(cuerpo).toMatchObject({ planTarifarioId: 1, totalEsperado: 190000, fechaHasta: sumarDiasISO(hoy, 1) });
     expect(cuerpo.huesped).toBeUndefined();
     expect(cuerpo.habitaciones).toEqual([
-      { habitacionId: 315, adultos: 2, menores: 0 },
-      { habitacionId: 204, adultos: 1, menores: 0 },
+      { habitacionId: 315, adultos: 3, menores: 0 },
+      { habitacionId: 204, adultos: 2, menores: 0 },
     ]);
     expect(cuerpo.personas[0]).toMatchObject({ esTitular: true, telefono: "+54 388 555-0147", email: null });
     expect(cuerpo.personas[1]).toMatchObject({ esTitular: false, paisResidencia: "AR" });
