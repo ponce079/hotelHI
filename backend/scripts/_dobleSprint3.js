@@ -132,6 +132,8 @@ const TABLAS = [
   // check-in. cancelarReserva, la penalidad y el check-in las leen siempre.
   "garantiaReserva",
   "garantiaEstadia",
+  // Registro de la pasarela simulada (idempotencia y estado de las preautorizaciones).
+  "pasarelaOperacion",
 ];
 
 // Campos `@default(now())` del schema real que ningún servicio setea a
@@ -190,6 +192,7 @@ const CAMPO_STRING_POR_DEFECTO = {
   // Defaults del schema de la garantía con tarjeta.
   garantiaReserva: { estado: "Vigente", monto: 0 },
   garantiaEstadia: { estado: "Pendiente", monto: 0, montoUsado: 0 },
+  pasarelaOperacion: { monto: 0 },
 };
 
 // Relaciones 1-a-N creadas con la sintaxis anidada de Prisma

@@ -41,17 +41,29 @@ test("normalizarPais reconoce cualquier país del catálogo ISO, no solo los lim
   );
 });
 
-test("actualizarResidencia guarda en Huesped los últimos datos declarados y no borra con vacíos", async () => {
+test("actualizarResidencia con la casilla de actualizar guarda los últimos datos declarados y no borra con vacíos", async () => {
   const { actualizarResidencia } = require("./persona.servicio");
   const tx = { huesped: { update: jest.fn() } };
-  await actualizarResidencia(tx, 7, { nacionalidad: "AR", paisResidencia: "UY", domicilio: null, localidad: "" });
+  await actualizarResidencia(tx, 7, { nacionalidad: "AR", paisResidencia: "UY", domicilio: null, localidad: "" }, { sobrescribir: true });
   expect(tx.huesped.update).toHaveBeenCalledWith({
     where: { id: 7 },
     data: { nacionalidad: "AR", paisResidencia: "UY" },
   });
   tx.huesped.update.mockClear();
-  await actualizarResidencia(tx, 7, { nacionalidad: null });
+  await actualizarResidencia(tx, 7, { nacionalidad: null }, { sobrescribir: true });
   expect(tx.huesped.update).not.toHaveBeenCalled();
+});
+
+test("actualizarResidencia SIN la casilla nunca pisa un dato de la ficha: solo completa los vacíos, en una sola sentencia", async () => {
+  const { actualizarResidencia } = require("./persona.servicio");
+  const tx = { huesped: { update: jest.fn() }, $executeRaw: jest.fn() };
+  await actualizarResidencia(tx, 7, { nacionalidad: "AR", paisResidencia: "UY", domicilio: null, localidad: "" });
+  expect(tx.huesped.update).not.toHaveBeenCalled();
+  expect(tx.$executeRaw).toHaveBeenCalledTimes(1);
+  const sql = tx.$executeRaw.mock.calls[0][0].sql;
+  expect(sql).toMatch(/NULLIF\(nacionalidad, ''\)/);
+  expect(sql).toMatch(/NULLIF\(paisResidencia, ''\)/);
+  expect(sql).not.toMatch(/domicilio|localidad/);
 });
 
 test("actualizarResidenciaEnLote usa una sola sentencia sin importar cuántas fichas haya", async () => {
@@ -83,4 +95,78 @@ test("una ficha con identidad provisoria se completa como una sin identidad", as
   expect(tx.huesped.update).toHaveBeenCalledWith(
     expect.objectContaining({ data: expect.objectContaining({ identidadDocumento: expect.any(String) }) }),
   );
+});
+
+// ---- Regla 2.3: el nombre de una ficha existente no se cambia en silencio ("Nombre Pisado") ----
+describe("nombre de una ficha existente (regla 2.3)", () => {
+  const { sincronizarNombres, autorizarCambioDeNombre } = require("./persona.servicio");
+  const persona = { tipoDocumento: "Pasaporte", paisDocumento: "AR", numeroDocumento: "PRUEBA-DIAG-2", nombre: "Nombre", apellido: "Pisado" };
+  const ficha = { id: 168, nombre: "Acompanante Diagnostico", nombres: "Acompanante", apellido: "Diagnostico", identidadDocumento: claveDocumento(persona) };
+
+  function cliente() {
+    return {
+      huesped: { findUnique: jest.fn().mockResolvedValue(ficha), update: jest.fn(), create: jest.fn() },
+      eventoEstadia: { create: jest.fn() },
+    };
+  }
+
+  test("agregar una persona con el documento de una ficha y OTRO nombre → 409 NOMBRE_DISTINTO y la ficha no se toca", async () => {
+    const tx = cliente();
+    await expect(vincularPersona(tx, { huesped: null }, persona, null)).rejects.toMatchObject({ statusCode: 409, codigo: "NOMBRE_DISTINTO" });
+    expect(tx.huesped.update).not.toHaveBeenCalled();
+    expect(tx.huesped.create).not.toHaveBeenCalled();
+  });
+
+  test("con el MISMO nombre (aunque cambien tildes, mayúsculas o espacios) reutiliza la ficha sin escribir nada", async () => {
+    const tx = cliente();
+    const id = await vincularPersona(tx, { huesped: null }, { ...persona, nombre: "ACOMPAÑANTE ", apellido: "diagnostico" }, null);
+    expect(id).toBe(168);
+    expect(tx.huesped.update).not.toHaveBeenCalled();
+  });
+
+  test("un administrador SIN motivo → 400 con el campo; CON motivo cambia el nombre y lo deja en el log y en el historial", async () => {
+    const tx = cliente();
+    await expect(vincularPersona(tx, { huesped: null }, persona, null, { esAdmin: true })).rejects.toMatchObject({
+      statusCode: 400,
+      codigo: "MOTIVO_CAMBIO_NOMBRE",
+      campos: { motivoCambioNombre: expect.any(String) },
+    });
+    const log = jest.spyOn(console, "info").mockImplementation(() => {});
+    await vincularPersona(tx, { huesped: null }, persona, null, { esAdmin: true, motivo: "error de tipeo", usuario: "admin", reservaId: 9 });
+    expect(tx.huesped.update).toHaveBeenCalledWith({ where: { id: 168 }, data: expect.objectContaining({ nombre: "Nombre Pisado" }) });
+    expect(log).toHaveBeenCalledWith("[ficha] Cambio de nombre autorizado:", expect.stringContaining('"nombreAnterior":"Acompanante Diagnostico"'));
+    const registro = JSON.parse(log.mock.calls[0][1]);
+    expect(registro).toMatchObject({ usuario: "admin", fichaId: 168, nombreAnterior: "Acompanante Diagnostico", nombreNuevo: "Nombre Pisado", motivo: "error de tipeo", reservaId: 9 });
+    expect(tx.eventoEstadia.create.mock.calls[0][0].data).toMatchObject({ reservaId: 9, accion: "Corrección de nombre de la ficha", operador: "admin" });
+    log.mockRestore();
+  });
+
+  test("sin una reserva de contexto (ficha de huésped) el cambio igual queda en el log del servidor", async () => {
+    const tx = cliente();
+    const log = jest.spyOn(console, "info").mockImplementation(() => {});
+    await sincronizarNombres(tx, 168, persona, { esAdmin: true, motivo: "corrección", usuario: "admin" });
+    expect(JSON.parse(log.mock.calls[0][1])).toMatchObject({ usuario: "admin", fichaId: 168, motivo: "corrección", reservaId: null });
+    expect(tx.eventoEstadia.create).not.toHaveBeenCalled();
+    log.mockRestore();
+  });
+
+  test("sincronizarNombres: nombre distinto de un recepcionista → rechazado; mismo nombre → sin escritura", async () => {
+    const tx = cliente();
+    await expect(sincronizarNombres(tx, 168, persona, {})).rejects.toMatchObject({ codigo: "NOMBRE_DISTINTO" });
+    await sincronizarNombres(tx, 168, { nombre: "Acompanante", apellido: "Diagnostico" }, {});
+    expect(tx.huesped.update).not.toHaveBeenCalled();
+  });
+
+  test("ficha creada en paralelo (P2002): se relee la existente y se usa sin pisarla", async () => {
+    const tx = cliente();
+    tx.huesped.findUnique.mockResolvedValueOnce(null).mockResolvedValueOnce(ficha);
+    tx.huesped.create.mockRejectedValue(Object.assign(new Error("Unique constraint failed"), { code: "P2002" }));
+    const mismoNombre = { ...persona, nombre: "Acompanante", apellido: "Diagnostico" };
+    await expect(vincularPersona(tx, { huesped: null }, mismoNombre, null)).resolves.toBe(168);
+    expect(tx.huesped.update).not.toHaveBeenCalled();
+  });
+
+  test("autorizarCambioDeNombre: sin diferencia no hay nada que autorizar", () => {
+    expect(autorizarCambioDeNombre(ficha, { nombre: "Acompanante", apellido: "Diagnostico" }, {})).toBe(false);
+  });
 });

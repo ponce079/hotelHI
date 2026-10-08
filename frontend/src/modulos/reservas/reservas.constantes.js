@@ -32,9 +32,16 @@ export const ESTADO_RESERVA_BADGE = {
   [ESTADO_RESERVA.EN_CURSO]: "info",
   [ESTADO_RESERVA.CERRADA]: "cerrado",
   [ESTADO_RESERVA.CANCELADA]: "error",
-  // No-show: salida del camino con consecuencia económica (alerta, no error).
-  [ESTADO_RESERVA.NO_SHOW]: "alerta",
+  // No presentada (No-show): misma familia visual que Cancelada (el huésped no llegó).
+  [ESTADO_RESERVA.NO_SHOW]: "error",
 };
+
+// Lo que se ve en pantalla: el estado guardado "No-show" se muestra como "No presentada" (los demás,
+// tal cual). Sirve para insignias, chips, filtros y textos; el valor que viaja al backend no cambia.
+export const ETIQUETA_ESTADO_RESERVA = {
+  [ESTADO_RESERVA.NO_SHOW]: "No presentada",
+};
+export const etiquetaEstadoReserva = (estado) => ETIQUETA_ESTADO_RESERVA[estado] ?? estado;
 
 // Tarjetas de estado de ReservasPage.jsx (chips clickeables, mismo patrón
 // que ESTADO_HABITACION_COLOR/stat-chip de HabitacionesPage y los chips de
@@ -47,8 +54,8 @@ export const ESTADO_RESERVA_COLOR = {
   [ESTADO_RESERVA.EN_CURSO]: { fondo: "#cfe4d8", texto: "#1f4d3a", borde: "#a9cdb7" },
   [ESTADO_RESERVA.CERRADA]: { fondo: "#ddd0b3", texto: "#5a5340", borde: "#c4b48d" },
   [ESTADO_RESERVA.CANCELADA]: { fondo: "#f2c6b9", texto: "#8f3322", borde: "#e4a08c" },
-  // Latón (mismo tono que el Badge "alerta"): distinto de Cancelada para no mezclarlos.
-  [ESTADO_RESERVA.NO_SHOW]: { fondo: "#eadfc2", texto: "#6b5420", borde: "#d4c28c" },
+  // No presentada: mismos colores que Cancelada (misma familia visual).
+  [ESTADO_RESERVA.NO_SHOW]: { fondo: "#f2c6b9", texto: "#8f3322", borde: "#e4a08c" },
 };
 
 // Catálogo único de huésped y ocupantes (lib/tiposDocumento.js).
@@ -101,6 +108,6 @@ export function construirPasosReserva(reserva) {
   return {
     pasos: PASOS_RESERVA,
     pasoActual: indicePorEstado[reserva?.estado] ?? 0,
-    pasoAlternativo: { label: noShow ? "No-show" : "Cancelada", activo: cancelada || noShow },
+    pasoAlternativo: { label: noShow ? etiquetaEstadoReserva(ESTADO_RESERVA.NO_SHOW) : "Cancelada", activo: cancelada || noShow },
   };
 }

@@ -73,3 +73,24 @@ describe("Layout — badge de pendientes en \"Historial de Mantenimiento\"", () 
     await waitFor(() => expect(link).not.toHaveTextContent(/\d/));
   });
 });
+
+// Usuarios y Seguridad: la tarjeta del usuario lleva a la página "Mi perfil"
+// (ya no abre un modal).
+describe("Layout — tarjeta del usuario", () => {
+  it("es un link a /mi-perfil con el nombre y apellido del perfil", async () => {
+    listarOrdenesMantenimiento.mockResolvedValue([]);
+    useSesion.mockReturnValue({
+      rol: "housekeeping",
+      usuario: "ana.hk",
+      perfil: { nombre: "Ana", apellido: "Pérez", usuario: "ana.hk" },
+      rolInfo: { label: "Housekeeping" },
+      cerrarSesion: vi.fn(),
+      puede: () => true,
+    });
+    renderLayout();
+
+    const tarjeta = screen.getByRole("link", { name: /Ana Pérez/ });
+    expect(tarjeta).toHaveAttribute("href", "/mi-perfil");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});

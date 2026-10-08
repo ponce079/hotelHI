@@ -182,7 +182,7 @@ export function OrdenesCompraPage() {
           <ShoppingCart size={26} className="text-pino" /> Órdenes de Compra
         </h1>
         <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-          HU 22, 24, 25, 85 — seguimiento de envío, recepción y cierre
+          Seguimiento de envío, recepción y cierre
         </p>
       </div>
 

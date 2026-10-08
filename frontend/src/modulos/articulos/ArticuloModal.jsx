@@ -111,7 +111,7 @@ export function ArticuloModal({ articulo, onClose, onExito }) {
     ? "Para cambiar habilitaciones de un artículo existente, entrá al depósito."
     : depositosSeleccionados.length === 0
       ? "Ningún depósito seleccionado: el artículo queda sólo en el catálogo."
-      : `Se crearán ${depositosSeleccionados.length} habilitación${depositosSeleccionados.length > 1 ? "es" : ""} con stock inicial en 0.`;
+      : `Se crearán ${depositosSeleccionados.length} ${depositosSeleccionados.length > 1 ? "habilitaciones" : "habilitación"} con stock inicial en 0.`;
 
   function validar() {
     const nuevosErrores = {};

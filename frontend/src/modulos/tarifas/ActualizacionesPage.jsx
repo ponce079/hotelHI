@@ -55,7 +55,7 @@ export function ActualizacionesPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-semibold">Actualizaciones masivas</h1>
-          <p className="text-sm text-piedra">Lotes de aumento/descuento por porcentaje sobre la tarifa vigente (HU-93).</p>
+          <p className="text-sm text-piedra">Lotes de aumento/descuento por porcentaje sobre la tarifa vigente.</p>
         </div>
         {puedeGestionar && (
           <Button icono={Plus} onClick={() => setWizardAbierto(true)}>

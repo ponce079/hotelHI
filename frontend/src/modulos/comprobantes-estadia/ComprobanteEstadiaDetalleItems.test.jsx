@@ -73,6 +73,32 @@ describe("ComprobanteEstadiaDetallePage — detalle de cargos", () => {
     expect(screen.queryByTestId("detalle-comprobante")).not.toBeInTheDocument();
   });
 
+  it("encabezado con los datos del hotel (sin CUIT inventado), medios de pago y la leyenda de comprobante interno", async () => {
+    obtenerComprobante.mockResolvedValue({
+      ...BASE,
+      detalle: DETALLE,
+      mediosDePago: [{ concepto: "Pago de estadía", medioPago: "Tarjeta crédito", importe: 110000, referencia: "Visa ****4242" }],
+      reserva: { ...BASE.reserva, estado: "Cerrada" },
+    });
+    renderizar();
+    await screen.findByTestId("detalle-comprobante");
+    expect(screen.getByText("Holiday Inn")).toBeInTheDocument();
+    expect(screen.getByText("Hotel de demostración")).toBeInTheDocument();
+    expect(screen.getByText("CUIT: no aplica — proyecto académico")).toBeInTheDocument();
+    expect(screen.getByText(/Av\. Belgrano 1450/)).toBeInTheDocument();
+    expect(screen.getByText("Medios de pago")).toBeInTheDocument();
+    expect(screen.getByText(/Tarjeta crédito/)).toBeInTheDocument();
+    expect(screen.getByText(/Comprobante interno\. No válido como factura\./)).toBeInTheDocument();
+    expect(screen.queryByText(/Comprobante provisorio/)).not.toBeInTheDocument();
+  });
+
+  it("antes del check-out (reserva sin cerrar) el comprobante es provisorio", async () => {
+    obtenerComprobante.mockResolvedValue({ ...BASE, detalle: DETALLE, mediosDePago: [], reserva: { ...BASE.reserva, estado: "En curso" } });
+    renderizar();
+    await screen.findByTestId("detalle-comprobante");
+    expect(screen.getAllByText(/Comprobante provisorio/).length).toBeGreaterThan(0);
+  });
+
   it("la nota de crédito no muestra detalle", async () => {
     obtenerComprobante.mockResolvedValue({ ...BASE, tipo: "Nota de Crédito", motivo: "x", detalle: null });
     renderizar();

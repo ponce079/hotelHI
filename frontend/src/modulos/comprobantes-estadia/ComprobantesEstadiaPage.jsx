@@ -56,7 +56,7 @@ export function ComprobantesEstadiaPage() {
       <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
         <h1 className="font-heading text-[34px] font-semibold">Comprobantes de huésped</h1>
         <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
-          HU 53, 55 y 56 — comprobantes de estadía y notas de crédito
+          Comprobantes de estadía y notas de crédito
         </p>
       </div>
 

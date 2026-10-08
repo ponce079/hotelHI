@@ -283,6 +283,8 @@ async function capturarCobroDeReserva({ reservaId, autorizada, claveIdempotencia
         motivoCancelacion: "No se pudo capturar el cobro de la tarifa no reembolsable.",
       },
     });
+    // La retención ya se soltó: la garantía no puede seguir figurando como "Preautorizada".
+    await prisma.garantiaReserva.update({ where: { reservaId }, data: { estado: ESTADO_GARANTIA.LIBERADA } });
     throw new ErrorDeNegocio(
       `No se pudo cobrar la tarifa no reembolsable (${captura.motivoRechazo}). La reserva no quedó confirmada.`,
       502

@@ -85,7 +85,14 @@ function normalizarPersona(d, reserva) {
     }
     r.tipoDocumento = canonico;
   }
-  if (r.numeroDocumento) r.numeroDocumento = require("../../lib/documento").normalizarNumeroDocumento(r.numeroDocumento);
+  if (r.numeroDocumento) {
+    r.numeroDocumento = require("../../lib/documento").normalizarNumeroDocumento(r.numeroDocumento);
+    // "-" o "." no son un documento: tras normalizar no queda nada y no se puede armar una identidad.
+    if (!r.numeroDocumento) {
+      const mensaje = "El número de documento tiene que tener letras o números.";
+      throw new ErrorDeNegocio(mensaje, 400, { numeroDocumento: mensaje });
+    }
+  }
   if (r.email && !esEmail(r.email))
     throw new ErrorDeNegocio("Correo electrónico inválido.", 400, {
       email: "Ingresá un correo electrónico válido.",
@@ -394,9 +401,13 @@ async function guardar(reservaId, ocupanteId, data, cliente) {
       }
     }
     const personas = require("./persona.servicio");
-    p.huespedId = await personas.vincularPersona(tx, r, p, actual);
-    await personas.sincronizarNombres(tx, p.huespedId, p);
-    await personas.actualizarResidencia(tx, p.huespedId, residencia);
+    // Regla 2.3: el nombre de una ficha existente solo lo cambia un administrador con motivo (el controlador fija
+    // `corregirNombre` según la sesión; el cliente no puede declararse administrador). Regla 2.2: nunca se pisa un dato
+    // de la ficha en silencio: sin la casilla `actualizarFicha`, la residencia solo completa lo vacío.
+    const permisoNombre = { esAdmin: data.corregirNombre === true, motivo: data.motivoCambioNombre, usuario: operador, reservaId };
+    p.huespedId = await personas.vincularPersona(tx, r, p, actual, permisoNombre);
+    await personas.sincronizarNombres(tx, p.huespedId, p, permisoNombre);
+    await personas.actualizarResidencia(tx, p.huespedId, residencia, { sobrescribir: data.actualizarFicha === true });
     const anterior = actual?.asignaciones.find((a) => !a.hasta);
     const cambio = anterior && anterior.habitacionId !== habitacionId;
     if (cambio && !texto(data.motivo, "Motivo")) throw new ErrorDeNegocio("Indicá el motivo del cambio de habitación.");

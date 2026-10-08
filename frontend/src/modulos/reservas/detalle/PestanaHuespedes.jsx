@@ -4,6 +4,7 @@ import { edadEnFecha, formatearFechaDdMmAaaa, formatearFechaHora, hoyEnHoraLocal
 import { activa, documentoDe, nombreDeOcupante } from "../../estadia/estadiaUtils";
 import { buscarPaisOcupante } from "../../estadia/ocupantesUbicacion";
 import { pendientesParaIngreso } from "../../estadia/validarOcupante";
+import { ESTADO_RESERVA } from "../reservas.constantes";
 import { MenuPersona } from "./MenuPersona";
 
 const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
@@ -31,9 +32,12 @@ function Fechas({ p, reserva }) {
   );
 }
 
+// Con la reserva cerrada, cancelada o no presentada ya no hay nada que completar ni verificar.
+const ESTADOS_SIN_PENDIENTES = [ESTADO_RESERVA.CERRADA, ESTADO_RESERVA.CANCELADA, ESTADO_RESERVA.NO_SHOW];
+
 function FilaPersona({ p, reserva, estadia }) {
   // Con la reserva cerrada o cancelada ya no hay nada que completar.
-  const faltantes = ["Cerrada", "Cancelada"].includes(reserva.estado) ? [] : pendientesParaIngreso(p);
+  const faltantes = ESTADOS_SIN_PENDIENTES.includes(reserva.estado) ? [] : pendientesParaIngreso(p);
   const esTitularReserva = estadia.titularDeLaReservaActivo?.id === p.id;
   const edad = p.fechaNacimiento ? edadEnFecha(String(p.fechaNacimiento).slice(0, 10), hoyEnHoraLocal()) : null;
   const menor = Boolean(p.responsableId);
@@ -53,7 +57,7 @@ function FilaPersona({ p, reserva, estadia }) {
             <Badge variante="ok">Titular de habitación</Badge>
           </span>
         )}
-        {!p.verificadoEn && ["Previsto", "Alojado"].includes(p.estado) && !["Cerrada", "Cancelada"].includes(reserva.estado) && (
+        {!p.verificadoEn && ["Previsto", "Alojado"].includes(p.estado) && !ESTADOS_SIN_PENDIENTES.includes(reserva.estado) && (
           <span className="ml-2">
             <Badge variante="alerta">Por verificar</Badge>
           </span>

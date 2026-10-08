@@ -1,8 +1,10 @@
 // Usuarios y Seguridad — prepara la base para el login real.
 //
 //   1) Crea la tabla `usuarios` si todavía no existe (prisma/crear-tabla-usuarios.sql).
-//   2) Crea el administrador inicial (admin / admin123) si todavía no hay
-//      ningún administrador.
+//   2) Crea el administrador inicial ("admin") si todavía no hay ningún
+//      administrador. Su contraseña NO tiene valor por defecto: se define en la
+//      variable de entorno ADMIN_PASSWORD_INICIAL (mínimo 10 caracteres) y nunca
+//      se imprime.
 //
 // Se puede correr las veces que sea: si la tabla o el admin ya existen, no
 // toca nada. Alcanza con que lo corra UNA persona del equipo (la base es
@@ -13,6 +15,7 @@
 //
 //   cd backend
 //   npx prisma generate
+//   $env:ADMIN_PASSWORD_INICIAL = "<una contraseña de 10 o más caracteres>"   # PowerShell
 //   node scripts/crear-tabla-usuarios.js
 
 require("dotenv").config();
@@ -40,10 +43,15 @@ async function main() {
   console.log("  ✔ Tabla lista.");
 
   const { asegurarAdminInicial } = require("../src/modulos/usuarios/usuarios.servicio");
-  const resultado = await asegurarAdminInicial();
+  // La contraseña solo hace falta si hay que crear el administrador; si ya hay uno, no se pide.
+  const { exigirContrasena } = require("./_contrasenaSeed");
+  let contrasena;
+  const hayAdmin = (await prisma.usuario.count({ where: { rol: "admin" } })) > 0;
+  if (!hayAdmin) contrasena = exigirContrasena("ADMIN_PASSWORD_INICIAL");
+  const resultado = await asegurarAdminInicial(contrasena);
   if (resultado.creado) {
-    console.log("  ✔ Administrador inicial creado → usuario: admin · contraseña: admin123");
-    console.log("    (cambiá la contraseña desde \"Mi perfil\" después de entrar)");
+    console.log("  ✔ Administrador inicial creado → usuario: admin · contraseña: la de ADMIN_PASSWORD_INICIAL");
+    console.log("    (cambiala desde \"Mi perfil\" después de entrar)");
   } else {
     console.log("  ✔ Ya había un administrador cargado: no se creó otro.");
   }

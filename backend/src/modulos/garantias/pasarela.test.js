@@ -1,3 +1,5 @@
+// La pasarela registra sus operaciones en la base (pasarela_operaciones): acá se usa el doble en memoria.
+jest.mock("./pasarelaRegistro", () => require("./pasarelaRegistro.doble"));
 const { procesarTarjeta, luhnValido, leerToken } = require("./pasarela.servicio");
 
 const VISA_OK = { titular: "Ana Pérez", numero: "4242 4242 4242 4242", vencimientoMes: 12, vencimientoAnio: 2099, cvv: "123" };
@@ -41,7 +43,9 @@ describe("procesarTarjeta (pasarela simulada)", () => {
     const cap = await procesarTarjeta({ operacion: "CAPTURA", monto: 50000, referenciaPrevia: pre.referencia });
     expect(cap).toMatchObject({ aprobado: true });
     expect(cap.referencia).toMatch(/^CAP-/);
-    const lib = await procesarTarjeta({ operacion: "LIBERACION", monto: 50000, referenciaPrevia: pre.referencia });
+    // Otra preautorización, que se libera (una preautorización capturada por completo no se libera: ver pasarela.registro.test.js).
+    const otra = await procesarTarjeta({ operacion: "PREAUTORIZACION", monto: 50000, tarjeta: VISA_OK });
+    const lib = await procesarTarjeta({ operacion: "LIBERACION", monto: 50000, referenciaPrevia: otra.referencia });
     expect(lib.referencia).toMatch(/^LIB-/);
   });
 
@@ -82,3 +86,4 @@ describe("procesarTarjeta (pasarela simulada)", () => {
     expect(escrito).not.toContain("4000000000000002");
   });
 });
+beforeEach(() => require("./pasarelaRegistro.doble").reiniciar());

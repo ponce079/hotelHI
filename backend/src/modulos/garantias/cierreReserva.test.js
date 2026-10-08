@@ -1,3 +1,5 @@
+// La pasarela registra sus operaciones en la base (pasarela_operaciones): acá se usa el doble en memoria.
+jest.mock("./pasarelaRegistro", () => require("./pasarelaRegistro.doble"));
 // Cancelación y no-show con cobro de la penalidad. Base en memoria + pasarela
 // real espiada: lo que se prueba es el reparto del dinero y el ORDEN de las
 // operaciones, no la matemática de tarifas (calcularPenalidad se simula).
@@ -338,3 +340,4 @@ describe("previsualizarCierre (la misma liquidación, sin escribir nada)", () =>
     });
   });
 });
+beforeEach(() => require("./pasarelaRegistro.doble").reiniciar());

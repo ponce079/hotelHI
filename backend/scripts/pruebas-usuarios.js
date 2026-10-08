@@ -171,12 +171,14 @@ const DATOS = {
   dni: "40.123.456",
   email: "Tomi@Mail.com",
   rol: "recepcionista",
-  contrasena: "secreta1",
+  contrasena: "secreta-prueba-01",
 };
+// La contraseña del administrador inicial: no hay una por defecto, quien lo crea la define (mínimo 10).
+const CLAVE_ADMIN_PRUEBA = "clave-admin-prueba-01";
 
 async function reiniciar() {
   base._limpiar();
-  await servicio.asegurarAdminInicial();
+  await servicio.asegurarAdminInicial(CLAVE_ADMIN_PRUEBA);
 }
 
 async function adminId() {
@@ -191,27 +193,37 @@ async function main() {
   // ── Admin inicial ─────────────────────────────────────────
   seccion("Semilla — administrador inicial");
 
-  await prueba("crea admin/admin123 la primera vez y no lo duplica después", async () => {
+  await prueba("crea el admin la primera vez (con la contraseña que se le da) y no lo duplica después", async () => {
     base._limpiar();
-    const primero = await servicio.asegurarAdminInicial();
+    const primero = await servicio.asegurarAdminInicial(CLAVE_ADMIN_PRUEBA);
     assert.equal(primero.creado, true);
     assert.equal(primero.usuario.usuario, "admin");
     assert.equal(primero.usuario.rol, "admin");
-    const segundo = await servicio.asegurarAdminInicial();
+    const segundo = await servicio.asegurarAdminInicial(CLAVE_ADMIN_PRUEBA);
     assert.equal(segundo.creado, false);
     assert.equal(await base.usuario.count(), 1);
+  });
+
+  await prueba("sin contraseña (o con menos de 10 caracteres) NO crea el admin: no hay contraseña por defecto", async () => {
+    base._limpiar();
+    await esperaError(() => servicio.asegurarAdminInicial(), { status: 400, texto: "al menos 10 caracteres" });
+    await esperaError(() => servicio.asegurarAdminInicial("corta123"), { status: 400, texto: "al menos 10 caracteres" });
+    assert.equal(await base.usuario.count(), 0);
+    // Con un administrador ya cargado no pide nada (y no toca nada).
+    await servicio.asegurarAdminInicial(CLAVE_ADMIN_PRUEBA);
+    assert.deepEqual(await servicio.asegurarAdminInicial(), { creado: false });
   });
 
   await prueba("la contraseña se guarda hasheada (nunca en texto plano)", async () => {
     await reiniciar();
     const fila = base._fila(await adminId());
     assert.ok(fila.passwordHash.startsWith("scrypt$"));
-    assert.ok(!fila.passwordHash.includes("admin123"));
+    assert.ok(!fila.passwordHash.includes("clave-admin-prueba-01"));
   });
 
   await prueba("dos usuarios con la misma contraseña quedan con hashes distintos (sal propia)", async () => {
     await reiniciar();
-    await servicio.crearUsuario({ ...DATOS, contrasena: "admin123" });
+    await servicio.crearUsuario({ ...DATOS, contrasena: "clave-admin-prueba-01" });
     const admin = base._fila(await adminId());
     const otro = await base.usuario.findUnique({ where: { usuario: DATOS.usuario } });
     assert.notEqual(admin.passwordHash, otro.passwordHash);
@@ -220,9 +232,9 @@ async function main() {
   // ── Login ─────────────────────────────────────────────────
   seccion("Login y bloqueo por intentos fallidos");
 
-  await prueba("admin / admin123 entra y recibe token + datos sin passwordHash", async () => {
+  await prueba("el admin entra con la contraseña con la que se creó y recibe token + datos sin passwordHash", async () => {
     await reiniciar();
-    const { token, usuario } = await servicio.iniciarSesion({ usuario: "admin", contrasena: "admin123" });
+    const { token, usuario } = await servicio.iniciarSesion({ usuario: "admin", contrasena: "clave-admin-prueba-01" });
     assert.ok(typeof token === "string" && token.includes("."));
     assert.equal(usuario.rol, "admin");
     assert.equal(usuario.passwordHash, undefined);
@@ -232,7 +244,7 @@ async function main() {
 
   await prueba("el usuario no distingue mayúsculas ni espacios de más", async () => {
     await reiniciar();
-    const { usuario } = await servicio.iniciarSesion({ usuario: "  ADMIN ", contrasena: "admin123" });
+    const { usuario } = await servicio.iniciarSesion({ usuario: "  ADMIN ", contrasena: "clave-admin-prueba-01" });
     assert.equal(usuario.usuario, "admin");
   });
 
@@ -276,7 +288,7 @@ async function main() {
   await prueba("bloqueado, ni la contraseña correcta entra hasta que pase el tiempo", async () => {
     await reiniciar();
     base._fila(await adminId()).bloqueadoHasta = new Date(Date.now() + 10 * 60000);
-    await esperaError(() => servicio.iniciarSesion({ usuario: "admin", contrasena: "admin123" }), {
+    await esperaError(() => servicio.iniciarSesion({ usuario: "admin", contrasena: "clave-admin-prueba-01" }), {
       status: 423,
       texto: "probá de nuevo en 10 minutos",
     });
@@ -286,7 +298,7 @@ async function main() {
     await reiniciar();
     const fila = base._fila(await adminId());
     fila.bloqueadoHasta = new Date(Date.now() - 1000);
-    await servicio.iniciarSesion({ usuario: "admin", contrasena: "admin123" });
+    await servicio.iniciarSesion({ usuario: "admin", contrasena: "clave-admin-prueba-01" });
     assert.equal(fila.intentosFallidos, 0);
     assert.equal(fila.bloqueadoHasta, null);
   });
@@ -306,7 +318,7 @@ async function main() {
     await reiniciar();
     await esperaError(() => servicio.iniciarSesion({ usuario: "admin", contrasena: "mal" }), { status: 401 });
     await esperaError(() => servicio.iniciarSesion({ usuario: "admin", contrasena: "mal" }), { status: 401 });
-    await servicio.iniciarSesion({ usuario: "admin", contrasena: "admin123" });
+    await servicio.iniciarSesion({ usuario: "admin", contrasena: "clave-admin-prueba-01" });
     assert.equal(base._fila(await adminId()).intentosFallidos, 0);
   });
 
@@ -386,7 +398,7 @@ async function main() {
     assert.equal(creado.rol, "recepcionista");
     assert.equal(creado.activo, true);
     assert.equal(creado.passwordHash, undefined);
-    const { usuario } = await servicio.iniciarSesion({ usuario: "tomi.recepcion", contrasena: "secreta1" });
+    const { usuario } = await servicio.iniciarSesion({ usuario: "tomi.recepcion", contrasena: "secreta-prueba-01" });
     assert.equal(usuario.id, creado.id);
   });
 
@@ -423,7 +435,7 @@ async function main() {
     await esperaError(() => servicio.crearUsuario({ ...DATOS, rol: "superusuario" }), { status: 400, texto: "rol válido" });
     await esperaError(() => servicio.crearUsuario({ ...DATOS, contrasena: "12345" }), {
       status: 400,
-      texto: `al menos ${LIMITES_USUARIO.contrasenaMin}`,
+      texto: `al menos ${LIMITES_USUARIO.contrasenaInicialMin}`,
     });
     assert.equal(await base.usuario.count(), 1, "ninguna alta inválida quedó guardada");
   });
@@ -500,8 +512,9 @@ async function main() {
     await reiniciar();
     const creado = await servicio.crearUsuario(DATOS);
     base._fila(creado.id).bloqueadoHasta = new Date(Date.now() + 600000);
-    await servicio.restablecerContrasena(creado.id, "nueva123");
-    await servicio.iniciarSesion({ usuario: DATOS.usuario, contrasena: "nueva123" });
+    await esperaError(() => servicio.restablecerContrasena(creado.id, "corta12"), { status: 400, texto: "al menos 10" });
+    await servicio.restablecerContrasena(creado.id, "nueva-prueba-0123");
+    await servicio.iniciarSesion({ usuario: DATOS.usuario, contrasena: "nueva-prueba-0123" });
     await esperaError(() => servicio.iniciarSesion({ usuario: DATOS.usuario, contrasena: DATOS.contrasena }), { status: 401 });
     await esperaError(() => servicio.restablecerContrasena(creado.id, "123"), { status: 400 });
   });
@@ -584,11 +597,11 @@ async function main() {
   await prueba("cambiar contraseña: exige la actual y una nueva distinta de al menos 6", async () => {
     await reiniciar();
     const creado = await servicio.crearUsuario(DATOS);
-    await esperaError(() => servicio.cambiarMiContrasena(creado.id, { contrasenaActual: "mal", contrasenaNueva: "nueva123" }), {
+    await esperaError(() => servicio.cambiarMiContrasena(creado.id, { contrasenaActual: "mal", contrasenaNueva: "nueva-prueba-0123" }), {
       status: 400,
       texto: "actual no es correcta",
     });
-    await esperaError(() => servicio.cambiarMiContrasena(creado.id, { contrasenaNueva: "nueva123" }), {
+    await esperaError(() => servicio.cambiarMiContrasena(creado.id, { contrasenaNueva: "nueva-prueba-0123" }), {
       status: 400,
       texto: "contraseña actual",
     });
@@ -599,8 +612,8 @@ async function main() {
     await esperaError(() => servicio.cambiarMiContrasena(creado.id, { contrasenaActual: DATOS.contrasena, contrasenaNueva: "123" }), {
       status: 400,
     });
-    await servicio.cambiarMiContrasena(creado.id, { contrasenaActual: DATOS.contrasena, contrasenaNueva: "nueva123" });
-    await servicio.iniciarSesion({ usuario: DATOS.usuario, contrasena: "nueva123" });
+    await servicio.cambiarMiContrasena(creado.id, { contrasenaActual: DATOS.contrasena, contrasenaNueva: "nueva-prueba-0123" });
+    await servicio.iniciarSesion({ usuario: DATOS.usuario, contrasena: "nueva-prueba-0123" });
   });
 
   // ── Rutas HTTP de punta a punta ───────────────────────────
@@ -639,16 +652,16 @@ async function main() {
   try {
     await prueba("POST /api/auth/login con el perfil de la tarjeta: correcto 200, equivocado 403", async () => {
       await reiniciar();
-      const ok = await pedir("POST", "/api/auth/login", { cuerpo: { usuario: "admin", contrasena: "admin123", rol: "admin" } });
+      const ok = await pedir("POST", "/api/auth/login", { cuerpo: { usuario: "admin", contrasena: "clave-admin-prueba-01", rol: "admin" } });
       assert.equal(ok.status, 200);
-      const mal = await pedir("POST", "/api/auth/login", { cuerpo: { usuario: "admin", contrasena: "admin123", rol: "compras" } });
+      const mal = await pedir("POST", "/api/auth/login", { cuerpo: { usuario: "admin", contrasena: "clave-admin-prueba-01", rol: "compras" } });
       assert.equal(mal.status, 403);
       assert.ok(mal.datos.error.includes('Elegí el perfil "Administrador"'));
     });
 
     await prueba("POST /api/auth/login → 200 con token; contraseña mala → 401 con mensaje", async () => {
       await reiniciar();
-      await loguear("admin", "admin123");
+      await loguear("admin", "clave-admin-prueba-01");
       const { status, datos } = await pedir("POST", "/api/auth/login", { cuerpo: { usuario: "admin", contrasena: "x" } });
       assert.equal(status, 401);
       assert.ok(datos.error.includes("Te quedan"));
@@ -663,7 +676,7 @@ async function main() {
 
     await prueba("con un token adulterado → 401", async () => {
       await reiniciar();
-      const token = await loguear("admin", "admin123");
+      const token = await loguear("admin", "clave-admin-prueba-01");
       const { status } = await pedir("GET", "/api/usuarios", { token: `${token}x` });
       assert.equal(status, 401);
     });
@@ -671,7 +684,7 @@ async function main() {
     await prueba("admin lista usuarios (200) y en la respuesta no aparece ningún hash", async () => {
       await reiniciar();
       await servicio.crearUsuario(DATOS);
-      const token = await loguear("admin", "admin123");
+      const token = await loguear("admin", "clave-admin-prueba-01");
       const { status, datos, texto } = await pedir("GET", "/api/usuarios", { token });
       assert.equal(status, 200);
       assert.equal(datos.length, 2);
@@ -680,7 +693,7 @@ async function main() {
 
     await prueba("admin crea un usuario (201) y un alta inválida da 400", async () => {
       await reiniciar();
-      const token = await loguear("admin", "admin123");
+      const token = await loguear("admin", "clave-admin-prueba-01");
       const ok = await pedir("POST", "/api/usuarios", { token, cuerpo: DATOS });
       assert.equal(ok.status, 201);
       assert.equal(ok.datos.usuario, "tomi.recepcion");
@@ -760,16 +773,16 @@ async function main() {
     await prueba("admin: desactivar, desbloquear y restablecer por HTTP", async () => {
       await reiniciar();
       const creado = await servicio.crearUsuario(DATOS);
-      const token = await loguear("admin", "admin123");
+      const token = await loguear("admin", "clave-admin-prueba-01");
       assert.equal((await pedir("PATCH", `/api/usuarios/${creado.id}/activo`, { token, cuerpo: { activo: false } })).datos.activo, false);
       assert.equal((await pedir("PATCH", `/api/usuarios/${creado.id}/activo`, { token, cuerpo: { activo: true } })).datos.activo, true);
       assert.equal((await pedir("PATCH", `/api/usuarios/${creado.id}/desbloquear`, { token })).status, 200);
       const restablecer = await pedir("PATCH", `/api/usuarios/${creado.id}/restablecer-contrasena`, {
         token,
-        cuerpo: { contrasena: "nueva123" },
+        cuerpo: { contrasena: "nueva-prueba-0123" },
       });
       assert.equal(restablecer.status, 200);
-      await loguear(DATOS.usuario, "nueva123");
+      await loguear(DATOS.usuario, "nueva-prueba-0123");
       assert.equal((await pedir("GET", "/api/usuarios/999", { token })).status, 404);
     });
   } finally {

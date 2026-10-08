@@ -10,7 +10,7 @@ import { buscarReservaParaCheckIn } from "../check-in/checkIn.api";
 import { TituloSeccion } from "../check-in/TituloSeccion";
 import { listarHabitaciones } from "../habitaciones/habitaciones.api";
 import { listarReservas } from "../reservas/reservas.api";
-import { ESTADO_RESERVA, ESTADO_RESERVA_BADGE } from "../reservas/reservas.constantes";
+import { ESTADO_RESERVA, ESTADO_RESERVA_BADGE, etiquetaEstadoReserva } from "../reservas/reservas.constantes";
 
 // Sin nada tipeado en el buscador, esta es la pantalla: mismo patrón que
 // "Llegadas pendientes de hoy" del buscador por defecto de Check-in
@@ -43,7 +43,7 @@ function ReservasEnCurso({ reservas, cargando, onSeleccionar }) {
             >
               <div>
                 <p className="font-heading text-lg font-bold">
-                  Habitación{r.habitaciones.length > 1 ? "es" : ""} {r.habitaciones.map((h) => h.numero).join(", ")}
+                  {r.habitaciones.length > 1 ? "Habitaciones" : "Habitación"} {r.habitaciones.map((h) => h.numero).join(", ")}
                 </p>
                 <p className="text-xs text-piedra">Titular: {r.huesped?.nombre || "Sin titular informado"}</p>
               </div>
@@ -184,7 +184,7 @@ export function BuscarConsumoModal({ onClose, onEncontrada }) {
           <div className="flex flex-col gap-4 rounded-lg border border-borde bg-white p-5">
             <div className="flex items-center gap-3">
               <CodigoClave className="text-[16px]">{resultado.codigoConfirmacion}</CodigoClave>
-              <Badge variante={ESTADO_RESERVA_BADGE[resultado.estado] ?? "neutro"}>{resultado.estado}</Badge>
+              <Badge variante={ESTADO_RESERVA_BADGE[resultado.estado] ?? "neutro"}>{etiquetaEstadoReserva(resultado.estado)}</Badge>
             </div>
 
             {motivoBloqueo && (
@@ -196,7 +196,7 @@ export function BuscarConsumoModal({ onClose, onEncontrada }) {
             <div>
               <div>
                 <p className="font-heading text-lg font-bold">
-                  Habitación{resultado.habitaciones.length > 1 ? "es" : ""}{" "}
+                  {resultado.habitaciones.length > 1 ? "Habitaciones" : "Habitación"}{" "}
                   {resultado.habitaciones.map((h) => h.numero).join(", ")}
                 </p>
                 <p className="text-xs text-piedra">Titular: {resultado.huesped?.nombre || "Sin titular informado"}</p>

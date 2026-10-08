@@ -14,7 +14,7 @@ router.get("/por-documento", requiereSesion, requiereRol(...ROLES_CHECK_IN), asy
     return res.json(await huespedesServicio.buscarPorDocumento(req.query));
   } catch (err) {
     if (responderEsperaConexion(res, err)) return;
-    if (err instanceof huespedesServicio.ErrorDeNegocio) return res.status(err.statusCode).json({ error: err.message });
+    if (err instanceof huespedesServicio.ErrorDeNegocio) return res.status(err.statusCode).json({ error: err.message, ...(err.extra ?? {}) });
     console.error("Error al buscar el huésped por documento:", err);
     return res.status(500).json({ error: "No se pudo buscar el huésped." });
   }

@@ -89,6 +89,15 @@ function validarContrasenaNueva(valor, campo = "La contraseña") {
   return valor;
 }
 
+// La contraseña que el administrador escribe al dar de alta o al restablecer: mínimo 10 caracteres (no hay
+// contraseñas por defecto en el sistema).
+function validarContrasenaInicial(valor, campo = "La contraseña") {
+  if (typeof valor !== "string" || valor.length < LIMITES_USUARIO.contrasenaInicialMin) {
+    throw new ErrorDeNegocio(`${campo} inicial debe tener al menos ${LIMITES_USUARIO.contrasenaInicialMin} caracteres.`);
+  }
+  return validarContrasenaNueva(valor, campo);
+}
+
 function normalizarFoto(valor) {
   if (valor === null || valor === "") return null;
   if (typeof valor !== "string" || !REGEX_FOTO.test(valor)) {
@@ -283,7 +292,7 @@ async function crearUsuario(data = {}) {
   const usuario = normalizarNombreUsuario(data.usuario);
   const personales = normalizarDatosPersonales(data);
   const rol = validarRol(data.rol);
-  const contrasena = validarContrasenaNueva(data.contrasena);
+  const contrasena = validarContrasenaInicial(data.contrasena);
 
   const existente = await prisma.usuario.findUnique({ where: { usuario } });
   if (existente) throw new ErrorDeNegocio("Ese nombre de usuario ya está en uso.", 409);
@@ -347,7 +356,7 @@ async function desbloquearUsuario(id) {
 // y se la pasa; después el usuario la cambia desde "Mi perfil".
 async function restablecerContrasena(id, contrasena) {
   const existente = await buscarUsuario(id);
-  const nueva = validarContrasenaNueva(contrasena, "La nueva contraseña");
+  const nueva = validarContrasenaInicial(contrasena, "La nueva contraseña");
   const actualizado = await prisma.usuario.update({
     where: { id: existente.id },
     data: { passwordHash: await hashearContrasena(nueva), intentosFallidos: 0, bloqueadoHasta: null },
@@ -391,15 +400,17 @@ async function cambiarMiContrasena(id, { contrasenaActual, contrasenaNueva } = {
 
 // ── Semilla ─────────────────────────────────────────────────
 
-// Crea el administrador inicial (admin / admin123) solo si todavía no hay
-// ningún administrador. Se puede correr las veces que sea: si ya existe,
-// no hace nada.
-async function asegurarAdminInicial() {
+// Crea el administrador inicial ("admin") solo si todavía no hay ningún administrador. La contraseña la
+// define quien lo corre (mínimo 10 caracteres): no hay una por defecto. Se puede correr las veces que sea: si ya
+// existe un administrador, no hace nada (y no pide la contraseña).
+async function asegurarAdminInicial(contrasena) {
   const admins = await prisma.usuario.count({ where: { rol: ROL_ADMIN } });
   if (admins > 0) return { creado: false };
 
   const ocupado = await prisma.usuario.findUnique({ where: { usuario: ADMIN_INICIAL.usuario } });
   if (ocupado) return { creado: false };
+
+  const clave = validarContrasenaInicial(contrasena, "La contraseña del administrador");
 
   const creado = await prisma.usuario.create({
     data: {
@@ -409,7 +420,7 @@ async function asegurarAdminInicial() {
       dni: ADMIN_INICIAL.dni,
       email: null,
       rol: ROL_ADMIN,
-      passwordHash: await hashearContrasena(ADMIN_INICIAL.contrasena),
+      passwordHash: await hashearContrasena(clave),
       activo: true,
     },
   });

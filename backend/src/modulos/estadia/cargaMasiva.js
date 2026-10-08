@@ -240,10 +240,20 @@ function filaDeOcupante(ficha, huespedId, responsableId, verificadoPor, ahora) {
 async function rechazarYaAlojadas(tx, fichas) {
   const identidades = fichas.map((f) => s.identidad(f)).filter(Boolean);
   if (!identidades.length) return;
-  const alojadas = await tx.ocupanteReserva.findMany({
+  // Primero sin relaciones: Prisma ejecuta igual la consulta del `include` aunque no haya filas, y en el camino
+  // feliz (nadie alojado) eso es una consulta de más.
+  const ocupantes = await tx.ocupanteReserva.findMany({
     where: { identidadActiva: { in: identidades } },
-    select: { nombre: true, apellido: true, identidadActiva: true, reserva: { select: { codigoConfirmacion: true } } },
+    select: { id: true, nombre: true, apellido: true, identidadActiva: true, reservaId: true },
   });
+  const alojadas = ocupantes.length
+    ? await tx.reserva
+        .findMany({ where: { id: { in: [...new Set(ocupantes.map((o) => o.reservaId))] } }, select: { id: true, codigoConfirmacion: true } })
+        .then((reservas) => {
+          const porId = new Map(reservas.map((r) => [r.id, r]));
+          return ocupantes.map((o) => ({ ...o, reserva: porId.get(o.reservaId) ?? null }));
+        })
+    : [];
   if (alojadas.length) {
     const quienes = alojadas
       .map((p) => `${p.nombre} ${p.apellido}`.trim() + (p.reserva ? ` (reserva ${p.reserva.codigoConfirmacion})` : ""))
@@ -319,4 +329,11 @@ async function cargarPersonasEnLote(tx, reservaId, entradas, operador) {
   });
 }
 
-module.exports = { cargarPersonasEnLote, validarLote };
+module.exports = {
+  cargarPersonasEnLote,
+  validarLote,
+  filaDeOcupante,
+  rechazarYaAlojadas,
+  claveDeDocumento,
+  capacidadTotal,
+};

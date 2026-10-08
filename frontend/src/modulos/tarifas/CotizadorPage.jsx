@@ -81,7 +81,7 @@ export function CotizadorPage() {
 
       <div>
         <h1 className="font-heading text-2xl font-semibold">Cotizador</h1>
-        <p className="text-sm text-piedra">Precio por noche y total de cada plan tarifario disponible (HU-94).</p>
+        <p className="text-sm text-piedra">Precio por noche y total de cada plan tarifario disponible.</p>
       </div>
 
       <form onSubmit={handleSubmit} className="rounded-lg border border-borde bg-white p-5">

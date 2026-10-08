@@ -33,6 +33,8 @@ export function personasParaEnviar(estado, contexto) {
       // Vínculo del responsable con el menor (solo menores de 18) y autorización presentada.
       vinculoResponsable: responsable ? campos.vinculoResponsable || null : null,
       autorizacionPresentada: responsable ? campos.autorizacionPresentada === true : false,
+      // Casilla "Actualizar la ficha del huésped con estos datos": sin ella la ficha existente no se pisa.
+      actualizarFicha: fila.actualizarFicha === true,
     };
   });
 }

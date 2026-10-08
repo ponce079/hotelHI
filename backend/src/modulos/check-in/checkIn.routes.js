@@ -14,8 +14,9 @@ const soloCheckIn = [requiereSesion, requiereRol(...ROLES_CHECK_IN)];
 router.get("/buscar-reserva", checkInControlador.getBuscarReserva);
 router.get("/habitaciones-libres", checkInControlador.getHabitacionesLibres);
 router.get("/llegadas", ...soloCheckIn, checkInControlador.getLlegadas);
-router.post("/walk-in", checkInControlador.postCheckInWalkIn);
+// El walk-in y la confirmación del check-in reciben los datos de la tarjeta de la garantía: sesión + rol de check-in.
+router.post("/walk-in", ...soloCheckIn, checkInControlador.postCheckInWalkIn);
 router.post("/:reservaId/previa-ocupacion", ...soloCheckIn, checkInControlador.postPreviaOcupacion);
-router.post("/:reservaId/confirmar", checkInControlador.postConfirmarConReserva);
+router.post("/:reservaId/confirmar", ...soloCheckIn, checkInControlador.postConfirmarConReserva);
 
 module.exports = router;

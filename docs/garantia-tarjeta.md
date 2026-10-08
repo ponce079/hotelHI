@@ -35,6 +35,37 @@ la preautorización.
 - Tarjetas de prueba: terminación `0002` → fondos insuficientes · `0069` → vencida · cualquier otra
   que pase Luhn y no esté vencida → aprobada (ej. `4242 4242 4242 4242`).
 
+## Registro de la pasarela y secuencias de operaciones
+
+La pasarela es **simulada**, pero se comporta como un proveedor real: guarda cada operación en `pasarela_operaciones`
+(`garantias/pasarelaRegistro.js`), así que la **idempotencia sobrevive a un reinicio del backend** (la misma
+`claveIdempotencia` con la misma operación devuelve el resultado ya guardado) y cada preautorización tiene un **estado**:
+
+`Vigente` → `Capturada` (captura por el total) · `Capturada, remanente liberado` (captura parcial, estado final) · `Liberada`; en los estados con captura se guarda el monto capturado.
+
+Reglas: CAPTURA y LIBERACION exigen una PREAUTORIZACION **existente y aprobada** (si no: "Preautorización desconocida.");
+no se puede capturar más de lo preautorizado; una segunda captura o liberación se rechaza; una captura **parcial** libera el remanente
+sola y deja la preautorización en `Capturada, remanente liberado` (estado final): una LIBERACION posterior se rechaza con
+"La preautorización ya fue cerrada.". Si el registro no se puede escribir, la operación
+se informa como error de la pasarela (nunca se aprueba en silencio). El secreto de los tokens es `PASARELA_TOKEN_SECRETO`.
+
+Secuencias reales que hacen los flujos sobre una referencia (cada una tiene su test en `garantias/pasarela.registro.test.js`):
+
+| # | Flujo | Secuencia sobre el proveedor |
+|---|---|---|
+| 1 | Alta BAR (mostrador o web) | `GARANTIA` (monto 0) |
+| 2 | Alta NRF | `PREAUTORIZACION` (total) → `CAPTURA` (total) |
+| 3 | Falla de la captura en el alta NRF | `PREAUTORIZACION` → `CAPTURA` (falla) → `LIBERACION` |
+| 4 | Falla la transacción del alta, o el check-in, o el registro de la garantía | `PREAUTORIZACION` → `LIBERACION` |
+| 5 | Preautorización del check-in (por token o con tarjeta nueva) | `PREAUTORIZACION` ($30.000) |
+| 6 | Check-out: la garantía cubre el saldo | `PREAUTORIZACION` → `CAPTURA` parcial (hasta el saldo); queda `Capturada, remanente liberado`, sin LIBERACION aparte |
+| 7 | Check-out sin usar la garantía | `PREAUTORIZACION` → `LIBERACION` (total retenido) |
+| 8 | Cancelación con penalidad | `COBRO` por token |
+| 9 | No-show | `COBRO` por token |
+
+Nota: el flujo de check-out no pide liberar el remanente tras la captura parcial (su comentario dice que se libera solo); con
+este registro eso es literal: la captura parcial cierra la preautorización y el remanente queda liberado automáticamente.
+
 ## Alta de reserva: `POST /api/reservas/con-garantia`
 
 Body: el mismo de una reserva (`fechaDesde`, `fechaHasta`, `habitaciones`, `planTarifarioId`,
@@ -109,7 +140,9 @@ Débito y transferencia **ya no se ofrecen**: con débito el dinero sale de la c
 transferencia no está entre los medios previstos. El monto es fijo (`MONTO_PREAUTORIZACION_CHECKIN`, $30.000, server-side).
 
 Orden: la pasarela se llama **antes** del check-in (si la tarjeta se rechaza, no hay check-in; 402) y nunca dentro de
-una transacción. Si el check-in falla después de preautorizar, se libera la retención; si no se puede guardar la
+una transacción. Desde la robustez contra la base remota (`docs/robustez-base-remota.md`), la preautorización corre **en
+paralelo** con las validaciones del check-in (las lecturas) y el registro de la garantía (`registrar`) corre en paralelo con
+la relectura final; la regla no cambió: si algo falla después de preautorizar, la retención se libera. Si el check-in falla después de preautorizar, se libera la retención; si no se puede guardar la
 garantía, también. Estados de `GarantiaEstadia`: Pendiente → (Capturada | Liberada | Aplicada | Devuelta) en el check-out.
 
 Endpoint nuevo: `GET /api/reservas/:id/garantia` (admin, recepcionista) → `{ reserva, estadia }` sin token. Lo usa el
@@ -155,9 +188,32 @@ Se retiraron la **seña del 20 %** (HU-88) y la **regla fija de 24 hs** de cance
 
 ## Base de datos
 
-Un solo script aditivo e idempotente: `backend/prisma/garantia-tarjeta.sql` (tabla nueva
-`garantias_reserva`). Se prueba en una base **local**; en la compartida se aplica una sola vez, en un
-despliegue coordinado, después de aprobado el PR. Esta rama no toca columnas existentes.
+Las tablas de esta función son **aditivas** (no modifican ninguna columna existente):
+
+| Tabla | Archivo SQL | Qué guarda |
+|---|---|---|
+| `garantias_reserva` | `backend/prisma/garantia-tarjeta.sql` | La garantía de **cada reserva** (mostrador y web): tipo, token, marca, últimos 4, vencimiento, estado |
+| `garantias_estadia` | `backend/prisma/garantia-tarjeta.sql` | La garantía del check-in (preautorización o depósito en efectivo) |
+| `pasarela_operaciones` | `backend/prisma/pasarela-operaciones.sql` | El registro del proveedor de pagos **simulado**: cada operación (GARANTIA, COBRO, PREAUTORIZACION, CAPTURA, LIBERACION) con su idempotencia y el estado de cada preautorización. Nunca el número de tarjeta ni el CVV |
+
+(La cuarta tabla del despliegue, `datos_reserva_web`, es del e-commerce: `backend/prisma/agregar-datos-reserva-web.sql`.)
+
+**Después de traer `master`, cada base (local y compartida) debe aplicar las tablas con
+`scripts/actualizar-esquema-ecommerce.js` y correr `scripts/normalizar-documentos.js` (primero sin `--aplicar`).**
+
+```bash
+cd backend
+node scripts/actualizar-esquema-ecommerce.js              # muestra el plan (4 tablas), no escribe nada
+node scripts/actualizar-esquema-ecommerce.js --aplicar    # crea solo las que faltan (CREATE TABLE IF NOT EXISTS)
+node scripts/normalizar-documentos.js                     # simulación: qué cambiaría
+node scripts/normalizar-documentos.js --aplicar           # aplica (hacer un backup antes)
+```
+
+El runner solo ejecuta `CREATE TABLE IF NOT EXISTS` de esas cuatro tablas, se niega si alguna ya existe con otra
+forma, y en la base compartida pide confirmación por teclado. La normalización de documentos corrige números con puntos
+o guiones y unifica fichas duplicadas; las fichas con el **mismo documento y nombres distintos no se tocan**: quedan
+en la sección "Revisar a mano" de la simulación (ids, iniciales y documento enmascarado) para que las resuelva una persona.
+En la compartida solo se aplica en un despliegue coordinado, después de aprobado el PR.
 
 ## Limitaciones conocidas
 

@@ -1,4 +1,5 @@
 import { api } from "../../lib/api";
+import { TIMEOUT_OPERACION_MS } from "../../lib/tiempos";
 
 // HU-48 — cuenta consolidada de la reserva (alojamiento + servicios
 // adicionales + cargos de verificación − pagos). Solo lectura.
@@ -16,6 +17,6 @@ export async function registrarVerificacion(reservaId, payload) {
 // HU-49 / 51 / 52 — cierra la reserva, deja las habitaciones en limpieza y
 // notifica a Housekeeping, todo en una sola transacción del backend.
 export async function confirmarCheckOut(reservaId, payload) {
-  const { data } = await api.post(`/check-out/${reservaId}/confirmar`, payload);
+  const { data } = await api.post(`/check-out/${reservaId}/confirmar`, payload, { timeout: TIMEOUT_OPERACION_MS });
   return data;
 }

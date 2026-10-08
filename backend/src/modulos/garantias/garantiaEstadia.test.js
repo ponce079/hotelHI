@@ -1,3 +1,5 @@
+// La pasarela registra sus operaciones en la base (pasarela_operaciones): acá se usa el doble en memoria.
+jest.mock("./pasarelaRegistro", () => require("./pasarelaRegistro.doble"));
 // Garantía del check-in: preautorización (tarjeta) o depósito (efectivo).
 // Base en memoria + pasarela real espiada.
 
@@ -154,3 +156,4 @@ describe("iniciarGarantiaDeCheckIn", () => {
     expect(mockCreadas[0].referencia).toBe(mockCreadas[1].referencia);
   });
 });
+beforeEach(() => require("./pasarelaRegistro.doble").reiniciar());

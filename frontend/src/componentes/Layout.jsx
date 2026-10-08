@@ -5,7 +5,6 @@ import { LogOut, Hotel, ChevronDown } from "lucide-react";
 import { useSesion } from "../lib/sesion";
 import { listarOrdenesMantenimiento } from "../modulos/habitaciones/habitaciones.api";
 import { Avatar } from "../modulos/usuarios/Avatar";
-import { MiPerfilModal } from "../modulos/usuarios/MiPerfilModal";
 import { nombreCompleto } from "../modulos/usuarios/usuarios.constantes";
 import { MENU_ITEM_SUELTO, MENU_GRUPOS } from "./menuConfig";
 
@@ -37,9 +36,9 @@ function ItemMenu({ to, end, icon: Icon, label, badge }) {
 
 export function Layout() {
   const { rol, usuario, rolInfo, cerrarSesion, puede, perfil } = useSesion();
-  // Usuarios y Seguridad: clic en la tarjeta del usuario (abajo del menú)
-  // abre "Mi perfil" — nombre, foto y contraseña de quien está logueado.
-  const [perfilAbierto, setPerfilAbierto] = useState(false);
+  // Usuarios y Seguridad: la tarjeta del usuario (abajo del menú) lleva a
+  // "Mi perfil" (/mi-perfil), una página más del sistema — nombre, foto y
+  // contraseña de quien está logueado. Queda resaltada mientras se está ahí.
   const datosTarjeta = perfil ?? { usuario };
 
   // Badge de "Historial de Mantenimiento" (pendientes): vive acá y no en la
@@ -161,20 +160,31 @@ export function Layout() {
           </nav>
 
           <div className="flex shrink-0 flex-col gap-1.5">
-            <button
-              type="button"
-              onClick={() => setPerfilAbierto(true)}
+            <NavLink
+              to="/mi-perfil"
               title="Ver y editar mi perfil"
-              className="flex w-full cursor-pointer items-center gap-2.5 rounded-lg bg-white/10 p-1.5 text-left transition-colors hover:bg-white/20"
+              className={({ isActive }) =>
+                `group flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition-colors ${
+                  isActive ? "bg-hueso ring-1 ring-laton-400/60" : "bg-white/10 hover:bg-white/20"
+                }`
+              }
             >
-              <Avatar usuario={datosTarjeta} tamano={28} />
-              <div className="min-w-0">
-                <div className="truncate font-body text-[12.5px] font-medium leading-tight text-hueso">
-                  {nombreCompleto(datosTarjeta) || usuario}
-                </div>
-                <div className="truncate font-body text-[10.5px] leading-tight text-hueso/55">{rolInfo?.label} · Mi perfil</div>
-              </div>
-            </button>
+              {({ isActive }) => (
+                <>
+                  <Avatar usuario={datosTarjeta} tamano={28} />
+                  <div className="min-w-0">
+                    <div
+                      className={`truncate font-body text-[12.5px] font-medium leading-tight ${isActive ? "text-pino-900" : "text-hueso"}`}
+                    >
+                      {nombreCompleto(datosTarjeta) || usuario}
+                    </div>
+                    <div className={`truncate font-body text-[10.5px] leading-tight ${isActive ? "text-piedra" : "text-hueso/55"}`}>
+                      {rolInfo?.label} · Mi perfil
+                    </div>
+                  </div>
+                </>
+              )}
+            </NavLink>
             <button
               type="button"
               onClick={cerrarSesion}
@@ -190,7 +200,6 @@ export function Layout() {
         <Outlet />
       </main>
 
-      {perfilAbierto && <MiPerfilModal onClose={() => setPerfilAbierto(false)} />}
     </div>
   );
 }

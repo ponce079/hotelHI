@@ -192,7 +192,7 @@ export function PresupuestosPage() {
           <FileText size={24} className="text-pino" /> Presupuestos
         </h1>
         <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-          HU 82 a 84 — cotizaciones pedidas a proveedores, listas para comparar
+          Cotizaciones pedidas a proveedores, listas para comparar
         </p>
         <p className="mt-2 text-sm text-piedra">
           {estado === ""

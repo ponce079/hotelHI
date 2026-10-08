@@ -252,21 +252,25 @@ async function crearOrdenPago({ proveedorId, aplicaciones, medios }) {
         data: {
           proveedorId: Number(proveedorId),
           estado: "Pagado",
+          // createMany anidado: un INSERT para todas las aplicaciones y otro para todos los medios (con `create` anidado,
+          // Prisma hace un INSERT por fila y la transacción crecía con la cantidad de comprobantes y medios).
           detalle: {
-            create: aplicaciones.map((a) => ({
-              comprobanteId: Number(a.comprobanteId),
-              importeAplicado: Number(a.importeAplicado),
-            })),
+            createMany: {
+              data: aplicaciones.map((a) => ({
+                comprobanteId: Number(a.comprobanteId),
+                importeAplicado: Number(a.importeAplicado),
+              })),
+            },
           },
           medios: {
-            create: medios.map((m) => ({
+            createMany: { data: medios.map((m) => ({
               medioPago: m.tipo,
               importe: Number(m.importe),
               numeroCheque: m.tipo === "Cheque" ? String(m.numeroCheque).trim() : null,
               banco: m.tipo === "Cheque" ? m.banco : null,
               fechaCheque: m.tipo === "Cheque" ? new Date(m.fecha) : null,
               estadoCheque: m.tipo === "Cheque" ? "Emitido" : null,
-            })),
+            })) },
           },
         },
         include: {

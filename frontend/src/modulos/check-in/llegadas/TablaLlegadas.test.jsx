@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
-import { TablaLlegadas } from "./TablaLlegadas";
+import { TablaLlegadas, textoSenia } from "./TablaLlegadas";
 
 const BASE = {
   id: 1,
@@ -47,5 +47,31 @@ describe("TablaLlegadas — qué respaldo trae cada reserva", () => {
     });
     expect(screen.getByText(/Tarjeta en garantía/)).toBeInTheDocument();
     expect(screen.getByText(/Efectivo/)).toBeInTheDocument();
+  });
+
+  it("reserva web no reembolsable (tarjeta cobrada al reservar): muestra la tarjeta en garantía y el pago anticipado con su referencia", () => {
+    renderTabla({
+      ...BASE,
+      garantia: { tipo: "TARJETA", marca: "Visa", ultimos4: "4242" },
+      senia: {
+        registrada: true,
+        importe: 190000,
+        medios: [{ medioPago: "Tarjeta crédito", importe: 190000, referencia: "Visa ****4242 · aut. CAP-123456" }],
+      },
+    });
+    expect(screen.getByText(/Tarjeta en garantía · Visa \*\*\*\*4242/)).toBeInTheDocument();
+    expect(screen.getByText(/aut\. CAP-123456/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sin garantía/)).not.toBeInTheDocument();
+  });
+
+  it("reserva web flexible (solo tarjeta en garantía, sin pagos): no aparece como sin garantía", () => {
+    renderTabla({ ...BASE, garantia: { tipo: "TARJETA", marca: "Visa", ultimos4: "1111" }, senia: { registrada: false, importe: 0, medios: [] } });
+    expect(screen.getByText(/Visa \*\*\*\*1111/)).toBeInTheDocument();
+    expect(screen.queryByText(/Sin garantía/)).not.toBeInTheDocument();
+  });
+
+  it("textoSenia: sin pagos devuelve null", () => {
+    expect(textoSenia({ registrada: false, importe: 0, medios: [] })).toBeNull();
+    expect(textoSenia(undefined)).toBeNull();
   });
 });

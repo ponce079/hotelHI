@@ -34,42 +34,67 @@ const {
 // que no tiene sentido para algo que cambia lento.
 const INTERVALO_MS = 6 * 60 * 60 * 1000;
 let iniciado = false;
+// Una sola corrida a la vez en este proceso: si un barrido tarda más que el intervalo (base remota lenta),
+// la siguiente invocación se saltea en vez de apilarse y competir por las conexiones del pool.
+let enCurso = false;
 
-function iniciarBarridoStockMinimoCentral() {
-  // Protege contra imports/arranques duplicados: un solo proceso debe tener
-  // un solo intervalo y ejecutar un solo barrido a la vez.
-  if (iniciado) return;
-  iniciado = true;
-  async function correr() {
-    try {
-      const resultado = await barrerStockMinimoCentral();
-      console.log(
-        `[jobsStockMinimo] barrido de stock mínimo central: ${resultado.revisados} artículo(s) revisado(s), ${resultado.conError} con error.`
-      );
-    } catch (err) {
-      // Un fallo acá (ej. la base remota caída en ese instante) no puede
-      // tirar abajo el servidor — se reintenta solo en la próxima corrida.
-      console.error("[jobsStockMinimo] falló el barrido de stock mínimo central:", err.message);
-    }
-
-    // Barrido independiente del de arriba (no comparte transacción ni
-    // depende de su resultado): red de seguridad del reintento por evento
-    // de registrarRecepcion — ver el comentario al principio de este
-    // archivo y dispararReintentoTransferenciasPendientes en
-    // ordenesCompra.servicio.js.
-    try {
-      const resultado = await barrerTransferenciasPendientes();
-      console.log(`[jobsStockMinimo] barrido de transferencias pendientes: ${resultado.revisadas} revisada(s).`);
-    } catch (err) {
-      console.error("[jobsStockMinimo] falló el barrido de transferencias pendientes:", err.message);
-    }
-  }
-
-  // Corre una vez al arrancar (cierra el gap si el servidor estuvo caído o
-  // si se acaba de cargar/editar data) y después cada INTERVALO_MS.
-  // El primer barrido queda para el intervalo: ejecutarlo al arrancar
-  // competía con las primeras consultas en la base remota compartida.
-  setInterval(correr, INTERVALO_MS);
+// TAREAS_AUTOMATICAS=off desactiva las tareas de fondo (contra la base compartida, solo un backend del equipo
+// debería tenerlas activas). Cualquier otro valor, o vacío, las deja activas.
+function tareasActivas(env = process.env) {
+  return String(env.TAREAS_AUTOMATICAS ?? "").trim().toLowerCase() !== "off";
 }
 
-module.exports = { iniciarBarridoStockMinimoCentral };
+// Corre un barrido sin dejar nunca una promesa rechazada sin catch.
+async function correrBarrido(nombre, fn, describir) {
+  try {
+    console.log(`[jobsStockMinimo] ${describir(await fn())}`);
+  } catch (err) {
+    // Un fallo acá (ej. la base remota caída en ese instante) no puede tirar abajo el servidor — se
+    // reintenta solo en la próxima corrida.
+    console.error(`[jobsStockMinimo] falló el ${nombre}:`, err?.message ?? err);
+  }
+}
+
+async function correr() {
+  if (enCurso) {
+    console.warn("[jobsStockMinimo] la corrida anterior todavía no terminó: se saltea esta.");
+    return false;
+  }
+  enCurso = true;
+  try {
+    await correrBarrido(
+      "barrido de stock mínimo central",
+      barrerStockMinimoCentral,
+      (r) => `barrido de stock mínimo central: ${r.revisados} artículo(s) revisado(s), ${r.conError} con error.`
+    );
+    // Barrido independiente del de arriba (no comparte transacción ni depende de su resultado): red de
+    // seguridad del reintento por evento de registrarRecepcion — ver el comentario al principio de este archivo.
+    await correrBarrido(
+      "barrido de transferencias pendientes",
+      barrerTransferenciasPendientes,
+      (r) => `barrido de transferencias pendientes: ${r.revisadas} revisada(s).`
+    );
+  } finally {
+    enCurso = false;
+  }
+  return true;
+}
+
+function iniciarBarridoStockMinimoCentral(env = process.env) {
+  if (!tareasActivas(env)) {
+    console.log("[jobsStockMinimo] TAREAS_AUTOMATICAS=off: las tareas automáticas están desactivadas en este proceso.");
+    return false;
+  }
+  // Protege contra imports/arranques duplicados: un solo proceso debe tener un solo intervalo.
+  if (iniciado) return false;
+  iniciado = true;
+  // El primer barrido queda para el intervalo: ejecutarlo al arrancar competía con las primeras consultas en la
+  // base remota compartida.
+  const temporizador = setInterval(() => {
+    correr().catch((err) => console.error("[jobsStockMinimo] error inesperado:", err?.message ?? err));
+  }, INTERVALO_MS);
+  temporizador.unref?.();
+  return true;
+}
+
+module.exports = { iniciarBarridoStockMinimoCentral, tareasActivas, correr };

@@ -1,8 +1,11 @@
+import { useQuery } from "@tanstack/react-query";
 import { Badge } from "../../../componentes/Badge";
 import { formatearFechaHora } from "../../../lib/fechas";
 import { formatearPrecio } from "../../../lib/moneda";
 import { CONCEPTO_GARANTIA } from "../../pagos-estadia/pagoEstadia.constantes";
+import { obtenerGarantiasReserva } from "../../garantias/garantias.api";
 import { ESTADO_RESERVA } from "../reservas.constantes";
+import { esDatoWebValido, obtenerDatosReservaWeb, textoHoraLlegada } from "./reservaWeb.api";
 
 const importe = (pago) => pago.medios.reduce((acc, m) => acc + Number(m.importe), 0);
 
@@ -43,7 +46,7 @@ function ResumenDeCuenta({ reserva, cuenta, garantiaVigente }) {
   if (reserva.estado === ESTADO_RESERVA.CANCELADA || reserva.estado === ESTADO_RESERVA.NO_SHOW)
     return (
       <p className="text-sm text-piedra">
-        {reserva.estado === ESTADO_RESERVA.NO_SHOW ? "Reserva no-show" : "Reserva cancelada"}: no hay cargos de
+        {reserva.estado === ESTADO_RESERVA.NO_SHOW ? "Reserva no presentada" : "Reserva cancelada"}: no hay cargos de
         alojamiento.
       </p>
     );
@@ -79,37 +82,38 @@ function ResumenDeCuenta({ reserva, cuenta, garantiaVigente }) {
   );
 }
 
-// Garantía para consumos (no es un pago de la cuenta). El check-out hoy no registra si se liberó o se
-// aplicó, así que no se afirma: se muestra lo que se tomó y su medio.
-function CajaGarantia({ reserva, garantias }) {
-  const vigente = garantias.find((g) => !g.anulado);
-  const anulada = !vigente && garantias.find((g) => g.anulado);
-  if (vigente) {
-    const efectivo = vigente.medios.every((m) => m.medioPago === "Efectivo");
-    const medios = vigente.medios.map((m) => [m.medioPago, m.referencia].filter(Boolean).join(" · ")).join(" + ");
+// Qué significa cada estado de la garantía para consumos (GarantiaEstadia), en palabras de recepción.
+const TEXTO_ESTADO_GARANTIA_ESTADIA = {
+  Pendiente: "tomada, sin usar",
+  Capturada: "cobrada de la tarjeta (se usó para cubrir el saldo)",
+  Liberada: "liberada: el monto retenido volvió al huésped",
+  Aplicada: "aplicada al saldo de la cuenta",
+  Devuelta: "devuelta al huésped",
+};
+
+// Garantía para consumos (no es un pago de la cuenta): sale de GarantiaEstadia (GET /api/reservas/:id/garantia,
+// sin token), la que se toma en el check-in. Se muestra el tipo, el monto y el estado real que dejó el check-out.
+function CajaGarantia({ reserva, garantiaEstadia }) {
+  if (garantiaEstadia) {
+    const g = garantiaEstadia;
+    const tarjeta = g.tipo === "PREAUTORIZACION";
+    const medio = tarjeta ? `Tarjeta ${g.marca ?? ""} ••${g.ultimos4 ?? "----"}`.replace("  ", " ") : "Depósito en efectivo";
     return (
       <>
         <p>
-          <span className="font-heading text-xl font-semibold tabular-nums">{formatearPrecio(importe(vigente))}</span>{" "}
-          <Badge variante="ok">{efectivo ? "Depósito" : "Preautorización"}</Badge>
+          <span className="font-heading text-xl font-semibold tabular-nums">{formatearPrecio(g.monto)}</span>{" "}
+          <Badge variante={g.estado === "Liberada" || g.estado === "Devuelta" ? "neutro" : "ok"}>{tarjeta ? "Preautorización" : "Depósito"}</Badge>
         </p>
-        <p className="mt-1.5 text-[13px] text-piedra">{medios}</p>
-        {reserva.estado === ESTADO_RESERVA.CERRADA && (
-          <p className="mt-1.5 text-[12px] text-piedra">El check-out no registra si se liberó o se aplicó.</p>
+        <p className="mt-1.5 text-[13px] text-piedra">{medio}</p>
+        <p className="mt-1 text-[13px] text-piedra">
+          Estado: {g.estado} · {TEXTO_ESTADO_GARANTIA_ESTADIA[g.estado] ?? g.estado}
+        </p>
+        {Number(g.montoUsado) > 0 && (
+          <p className="mt-1 text-[12px] text-piedra">Usada para cubrir el saldo: {formatearPrecio(g.montoUsado)}.</p>
         )}
       </>
     );
   }
-  if (anulada)
-    return (
-      <>
-        <Badge variante="neutro">Anulada</Badge>
-        <p className="mt-1.5 text-[13px] text-piedra">
-          {formatearPrecio(importe(anulada))}
-          {anulada.motivoAnulacion ? ` · ${anulada.motivoAnulacion}` : ""}
-        </p>
-      </>
-    );
   if (reserva.estado === ESTADO_RESERVA.CONFIRMADA)
     return (
       <>
@@ -139,10 +143,82 @@ function condiciones(plan, penalidad) {
   return partes.join(" ");
 }
 
+// Qué significa cada estado de la garantía de la reserva (GarantiaReserva), en palabras de recepción.
+const TEXTO_ESTADO_GARANTIA = {
+  Vigente: "tarjeta guardada, sin cobro",
+  Preautorizada: "monto retenido, sin cobrar",
+  Capturada: "cobrada",
+  Liberada: "liberada",
+  "Cobro pendiente": "cobro pendiente",
+  "Cobro rechazado": "cobro rechazado",
+};
+
+// La garantía de la reserva (tarjeta o pago anticipado), la MISMA para el mostrador y la web: sale de
+// GarantiaReserva (GET /api/reservas/:id/garantia, sin token). Es el único lugar del detalle donde se muestra;
+// la tarjeta "Reserva web" ya no la repite. Sin garantía registrada (reservas anteriores) o sin permiso, no se muestra.
+function useGarantias(reservaId) {
+  return useQuery({
+    queryKey: ["garantias", reservaId],
+    queryFn: () => obtenerGarantiasReserva(reservaId),
+    retry: false,
+    enabled: Boolean(reservaId),
+  });
+}
+
+function GarantiaDeLaReserva({ reservaId }) {
+  const consulta = useGarantias(reservaId);
+  const garantia = consulta.data?.reserva;
+  if (!garantia) return null;
+  const medio =
+    garantia.tipo === "TARJETA" ? `Tarjeta ${garantia.marca ?? ""} ••${garantia.ultimos4 ?? "----"}`.replace("  ", " ") : "Pago anticipado";
+  const estado = TEXTO_ESTADO_GARANTIA[garantia.estado] ?? garantia.estado;
+  return (
+    <Tarjeta titulo="Garantía de la reserva">
+      <Lista
+        filas={[
+          ["Medio", medio],
+          ["Estado", `${garantia.estado} · ${estado}`],
+          ...(Number(garantia.monto) > 0 ? [["Monto", formatearPrecio(garantia.monto)]] : []),
+        ]}
+      />
+    </Tarjeta>
+  );
+}
+
+// Reserva hecha desde el e-commerce: contacto, llegada, solicitudes, titular de
+// la tarjeta y consentimiento (la garantía misma se muestra una sola vez, arriba) (GET /api/reservas-web/:id, con sesión). En una reserva del
+// mostrador (404) o si la consulta falla, no se muestra nada.
+function ReservaWeb({ reservaId }) {
+  const consulta = useQuery({
+    queryKey: ["reservas-web", reservaId],
+    queryFn: () => obtenerDatosReservaWeb(reservaId),
+    retry: false,
+    enabled: Boolean(reservaId),
+  });
+  const datos = consulta.data;
+  if (!esDatoWebValido(datos)) return null;
+  return (
+    <Tarjeta titulo="Reserva web">
+      <Lista
+        filas={[
+          ["Email", datos.emailContacto],
+          ["Teléfono", datos.telefonoContacto || "—"],
+          ["Llegada estimada", textoHoraLlegada(datos.horaEstimadaLlegada)],
+          ["Solicitudes", datos.solicitudesEspeciales || "Sin solicitudes"],
+          ["Titular de la tarjeta", datos.tarjetaTitular || "—"],
+          ["Términos", `Aceptó términos v${datos.versionPoliticas} el ${formatearFechaHora(datos.aceptaPoliticasEn)}`],
+          ["Acepta comunicaciones", datos.aceptaComunicaciones ? "sí" : "no"],
+        ]}
+      />
+    </Tarjeta>
+  );
+}
+
 export function ColumnaDerecha({ reserva, cuenta, pagos, penalidad }) {
   const plan = reserva.planTarifario;
   const garantias = (pagos?.pagos ?? []).filter((p) => p.concepto === CONCEPTO_GARANTIA);
   const garantiaVigente = garantias.find((g) => !g.anulado);
+  const garantiasDeLaReserva = useGarantias(reserva.id);
   const confirmacion = (reserva.notificaciones ?? [])
     .filter((n) => n.canal !== "Interno")
     .map((n) => n.fechaEnvio)
@@ -156,7 +232,7 @@ export function ColumnaDerecha({ reserva, cuenta, pagos, penalidad }) {
       {reserva.estado !== ESTADO_RESERVA.CANCELADA && reserva.estado !== ESTADO_RESERVA.NO_SHOW && pagos && (
         <section className="rounded-lg border border-dashed border-neutro-300 bg-white/60 p-4">
           <h3 className="mb-2 font-heading text-[17px] font-semibold">Garantía para consumos</h3>
-          <CajaGarantia reserva={reserva} garantias={garantias} />
+          <CajaGarantia reserva={reserva} garantiaEstadia={garantiasDeLaReserva.data?.estadia ?? null} />
         </section>
       )}
       {plan && (
@@ -173,6 +249,7 @@ export function ColumnaDerecha({ reserva, cuenta, pagos, penalidad }) {
           />
         </Tarjeta>
       )}
+      <GarantiaDeLaReserva reservaId={reserva.id} />
       <Tarjeta titulo="Quién reservó">
         <Lista
           filas={[
@@ -180,10 +257,12 @@ export function ColumnaDerecha({ reserva, cuenta, pagos, penalidad }) {
             ["Documento", huesped ? `${huesped.tipoDocumento} ${huesped.numeroDocumento}` : "—"],
             ["Contacto", huesped?.contacto || "—"],
             ...(huesped?.preferencias ? [["Preferencias", huesped.preferencias]] : []),
-            ["Confirmación", confirmacion ? `Enviada el ${formatearFechaHora(confirmacion)}` : "Sin enviar"],
+            // La notificación guarda cuándo se generó, no si el envío llegó a destino: no se afirma que se envió.
+            ["Confirmación", confirmacion ? `Generada el ${formatearFechaHora(confirmacion)}` : "Sin generar"],
           ]}
         />
       </Tarjeta>
+      <ReservaWeb reservaId={reserva.id} />
     </aside>
   );
 }

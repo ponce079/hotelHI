@@ -262,7 +262,7 @@ export function RecepcionesPage() {
             <PackageCheck size={22} className="text-pino" /> Recepciones
           </h1>
           <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-            HU 14, 17 y 85 — recepción de compra al proveedor y de transferencias entre depósitos
+            Recepción de compra al proveedor y de transferencias entre depósitos
           </p>
         </div>
         {/* Historial (Recibida/Cerrada, Confirmado) vive aparte a propósito

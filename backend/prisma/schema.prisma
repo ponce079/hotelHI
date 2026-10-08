@@ -610,6 +610,7 @@ model Reserva {
   @@map("reservas")
   ocupantes          OcupanteReserva[]
   historialEstadia   EventoEstadia[]
+  datosWeb           DatosReservaWeb?
 }
 
 model ReservaHabitacion {
@@ -941,7 +942,7 @@ model LoteActualizacionTarifaria {
 // simulado de "elegí una tarjeta de rol"). La tabla se crea con
 // prisma/crear-tabla-usuarios.sql, mismo criterio que los otros .sql de
 // esta carpeta — o directamente con `node scripts/crear-tabla-usuarios.js`,
-// que además crea el administrador inicial (admin / admin123).
+// que además crea el administrador inicial ("admin", con la contraseña de ADMIN_PASSWORD_INICIAL).
 // ────────────────────────────────────────────────────────────
 
 model Usuario {
@@ -1095,6 +1096,40 @@ model ReservaNoche {
   @@map("reservas_noche")
 }
 
+// ────────────────────────────────────────────────────────────
+// E-commerce (HU-99 a HU-104) — datos propios de una reserva hecha desde la
+// web, 1 a 1 con Reserva. La existencia de esta fila es lo que marca la
+// reserva como web (no hay columna de canal en Reserva). Email y teléfono del
+// contacto viven acá porque Huesped tiene un solo campo `contacto`. La
+// garantía con tarjeta de un plan reembolsable NO es un pago (no va a
+// PagoEstadia, que consolidarCargos restaría del saldo): se guardan solo
+// titular, marca, últimos 4, vencimiento y el token de la pasarela; nunca el
+// número completo ni el CVV.
+// ────────────────────────────────────────────────────────────
+
+model DatosReservaWeb {
+  id                    Int      @id @default(autoincrement())
+  reservaId             Int      @unique
+  reserva               Reserva  @relation(fields: [reservaId], references: [id])
+  claveIdempotencia     String   @unique @db.VarChar(64)
+  emailContacto         String   @db.VarChar(190)
+  telefonoContacto      String   @db.VarChar(40)
+  horaEstimadaLlegada   String?  @db.VarChar(30)
+  solicitudesEspeciales String?  @db.VarChar(500)
+  aceptaPoliticasEn     DateTime
+  versionPoliticas      String   @db.VarChar(20)
+  aceptaComunicaciones  Boolean  @default(false)
+  tarjetaTitular        String?  @db.VarChar(120)
+  tarjetaMarca          String?  @db.VarChar(20)
+  tarjetaUltimos4       String?  @db.Char(4)
+  tarjetaVencimiento    String?  @db.VarChar(7)
+  garantiaToken         String?  @db.VarChar(64)
+  pasarelaReferencia    String?  @db.VarChar(64)
+  creadoEn              DateTime @default(now())
+
+  @@map("datos_reserva_web")
+}
+
 // ---------------------------------------------------------------------
 // Garantía con tarjeta de crédito (feature/garantia-tarjeta).
 // Bloque propio y aditivo: no modifica ningún campo existente.
@@ -1147,4 +1182,38 @@ model GarantiaEstadia {
   reserva      Reserva  @relation(fields: [reservaId], references: [id])
 
   @@map("garantias_estadia")
+}
+
+// ---------------------------------------------------------------------
+// Registro del proveedor de pagos SIMULADO (pasarela). No es del negocio: es lo que un proveedor real
+// guardaría de su lado. Una fila por operación (GARANTIA, COBRO, PREAUTORIZACION, CAPTURA, LIBERACION),
+// con la idempotencia (la misma clave devuelve el mismo resultado, incluso después de reiniciar el
+// backend) y el estado de cada preautorización. Sin FK a reservas a propósito.
+// NUNCA el número completo de la tarjeta ni el CVV: solo marca, últimos 4 y el token de la pasarela.
+// ---------------------------------------------------------------------
+model PasarelaOperacion {
+  id                    Int      @id @default(autoincrement())
+  // GARANTIA | COBRO | PREAUTORIZACION | CAPTURA | LIBERACION
+  operacion             String   @db.VarChar(20)
+  // "<OPERACION>:<clave del que llama>": la misma clave con otra operación es otra fila.
+  claveIdempotencia     String?  @unique @db.VarChar(191)
+  // GAR-/COB-/PRE-/CAP-/LIB-nnnnnn (solo las aprobadas).
+  referencia            String?  @unique @db.VarChar(40)
+  // En CAPTURA y LIBERACION, la referencia de la preautorización; en COBRO, el token de la tarjeta.
+  referenciaPrevia      String?  @db.VarChar(255)
+  monto                 Decimal  @default(0) @db.Decimal(12, 2)
+  aprobada              Boolean
+  motivo                String?  @db.VarChar(191)
+  marca                 String?  @db.VarChar(40)
+  ultimos4              String?  @db.Char(4)
+  // Token devuelto (GARANTIA y operaciones con tarjeta nueva): permite repetir el resultado idempotente.
+  token                 String?  @db.VarChar(255)
+  // Solo PREAUTORIZACION: Vigente | Capturada | Capturada, remanente liberado | Liberada
+  estadoPreautorizacion String?  @db.VarChar(40)
+  // Solo PREAUTORIZACION capturada: lo capturado (puede ser menos que el monto retenido).
+  montoCapturado        Decimal? @db.Decimal(12, 2)
+  creadoEn              DateTime @default(now())
+  actualizadoEn         DateTime @updatedAt
+
+  @@map("pasarela_operaciones")
 }

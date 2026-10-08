@@ -124,7 +124,7 @@ export function KardexPage() {
           <History size={22} className="text-pino" /> Kardex del artículo
         </h1>
         <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-          HU 16 — historial del artículo en el depósito (se entra desde Depósitos y Stock)
+          Historial del artículo en el depósito (se entra desde Depósitos y Stock)
         </p>
       </div>
 

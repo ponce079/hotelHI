@@ -135,6 +135,13 @@ async function asegurarTarifaParaTipo(tipoHabitacionId, precioPorNoche) {
 // HU-43/47 (crearReserva + confirmarCheckInConReserva), ya probado en
 // pruebas-checkin.js. `numero` tiene que ser único por corrida de
 // `limpiar()` así que cada prueba pasa el suyo.
+// El servidor fija el total del comprobante desde la cuenta consolidada (alojamiento + cargos + verificación): las
+// pruebas piden ese mismo total para informarlo (o lo omiten, y se verifica que el servidor lo use).
+async function totalServidor(reservaId) {
+  return (await checkOutServicio.consolidarCargos(reservaId)).totalAdeudado;
+}
+const r2 = (n) => Math.round(n * 100) / 100;
+
 async function crearReservaEnCurso({ numero, precioPorNoche = 10000, noches = 2 } = {}) {
   const habitacion = base._sembrarHabitacion({ numero });
   await asegurarTarifaParaTipo(habitacion.tipoHabitacionId, precioPorNoche);
@@ -358,8 +365,8 @@ async function main() {
     const { reserva: reservaA } = await crearReservaEnCurso({ numero: "401", precioPorNoche: 10000, noches: 1 });
     const { reserva: reservaB } = await crearReservaEnCurso({ numero: "402", precioPorNoche: 10000, noches: 1 });
 
-    const c1 = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reservaA.id, importeTotal: 1000, alicuotaIVA: 21 });
-    const c2 = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reservaB.id, importeTotal: 1000, alicuotaIVA: 21 });
+    const c1 = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reservaA.id, importeTotal: await totalServidor(reservaA.id), alicuotaIVA: 21 });
+    const c2 = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reservaB.id, importeTotal: await totalServidor(reservaB.id), alicuotaIVA: 21 });
 
     assert.equal(c1.numero, "CE-00001");
     assert.equal(c2.numero, "CE-00002");
@@ -372,16 +379,18 @@ async function main() {
 
     // Modo importeTotal (el que usa el check-out real): neto + iva tienen
     // que sumar EXACTAMENTE el total, sin centavos de diferencia.
-    const conTotal = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reservaA.id, importeTotal: 1000, alicuotaIVA: 21 });
-    assert.equal(Number(conTotal.importeTotal), 1000);
+    // El total es el de la cuenta del servidor (2 noches x $10.000 = $20.000 en estas reservas).
+    const totalA = await totalServidor(reservaA.id);
+    const conTotal = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reservaA.id, importeTotal: totalA, alicuotaIVA: 21 });
+    assert.equal(Number(conTotal.importeTotal), totalA);
     assert.equal(
       Math.round((Number(conTotal.importeNeto) + Number(conTotal.importeIVA)) * 100),
-      Math.round(1000 * 100),
+      Math.round(totalA * 100),
       "neto + iva tiene que dar exactamente el total, redondeando en centavos"
     );
-    // 1000 / 1.21 = 826.4462... → redondeado 826.45; iva = 1000 - 826.45 = 173.55.
-    assert.equal(Number(conTotal.importeNeto), 826.45);
-    assert.equal(Number(conTotal.importeIVA), 173.55);
+    // 20000 / 1.21 = 16528.9256... → redondeado 16528.93; iva = 20000 - 16528.93 = 3471.07.
+    assert.equal(Number(conTotal.importeNeto), r2(totalA / 1.21));
+    assert.equal(Number(conTotal.importeIVA), r2(totalA - r2(totalA / 1.21)));
 
     // Modo importeNeto: el IVA se suma encima.
     const conNeto = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reservaB.id, importeNeto: 1000, alicuotaIVA: 21 });
@@ -390,26 +399,39 @@ async function main() {
     assert.equal(Number(conNeto.importeTotal), 1210);
   });
 
-  await prueba("rechaza si se manda importeNeto e importeTotal juntos, o ninguno de los dos", async () => {
+  await prueba("rechaza si se manda importeNeto e importeTotal juntos; sin ninguno de los dos, usa el total del servidor", async () => {
     limpiar();
     const { reserva } = await crearReservaEnCurso({ numero: "405" });
     await esperaError(
       () => comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeNeto: 1000, importeTotal: 1210, alicuotaIVA: 21 }),
       "importeNeto o importeTotal"
     );
+    // Observación 3: el total lo fija el servidor desde la cuenta; si el cliente no manda ninguno, se usa ese.
+    const total = await totalServidor(reserva.id);
+    const comprobante = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, alicuotaIVA: 21 });
+    assert.equal(Number(comprobante.importeTotal), total, "el comprobante lleva el total de la cuenta del servidor");
+    assert.equal(r2(Number(comprobante.importeNeto) + Number(comprobante.importeIVA)), total);
+  });
+
+  await prueba("un importeTotal distinto del de la cuenta se rechaza con 409 y no se emite nada", async () => {
+    limpiar();
+    const { reserva } = await crearReservaEnCurso({ numero: "412" });
+    const total = await totalServidor(reserva.id);
     await esperaError(
-      () => comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, alicuotaIVA: 21 }),
-      "importeNeto o importeTotal"
+      () => comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: total + 1000, alicuotaIVA: 21 }),
+      "no coincide con la cuenta"
     );
+    assert.equal((await comprobanteEstadiaServicio.listarPorReserva(reserva.id)).length, 0, "no quedó ningún comprobante");
   });
 
   await prueba("no permite un segundo comprobante vigente sobre la misma reserva", async () => {
     limpiar();
     const { reserva } = await crearReservaEnCurso({ numero: "406" });
-    await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: 1000, alicuotaIVA: 21 });
+    const total = await totalServidor(reserva.id);
+    await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: total, alicuotaIVA: 21 });
 
     await esperaError(
-      () => comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: 500, alicuotaIVA: 21 }),
+      () => comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: total, alicuotaIVA: 21 }),
       "ya tiene un comprobante vigente"
     );
   });
@@ -420,10 +442,11 @@ async function main() {
   await prueba("no permite acreditar más de lo que factura el comprobante original", async () => {
     limpiar();
     const { reserva } = await crearReservaEnCurso({ numero: "407" });
-    const comprobante = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: 1000, alicuotaIVA: 21 });
+    const total = await totalServidor(reserva.id);
+    const comprobante = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: total, alicuotaIVA: 21 });
 
     await esperaError(
-      () => comprobanteEstadiaServicio.crearNotaCredito(comprobante.id, { importeTotal: 1000.01, alicuotaIVA: 21, motivo: "Ajuste" }),
+      () => comprobanteEstadiaServicio.crearNotaCredito(comprobante.id, { importeTotal: total + 0.01, alicuotaIVA: 21, motivo: "Ajuste" }),
       "supera lo que todavía se puede acreditar"
     );
   });
@@ -431,16 +454,19 @@ async function main() {
   await prueba("acumula el tope entre varias notas de crédito sobre el mismo comprobante", async () => {
     limpiar();
     const { reserva } = await crearReservaEnCurso({ numero: "408" });
-    const comprobante = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: 1000, alicuotaIVA: 21 });
+    const total = await totalServidor(reserva.id);
+    const comprobante = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: total, alicuotaIVA: 21 });
+    const cuarenta = r2(total * 0.4);
+    const sesenta = r2(total - cuarenta);
 
-    await comprobanteEstadiaServicio.crearNotaCredito(comprobante.id, { importeTotal: 400, alicuotaIVA: 21, motivo: "Descuento por queja" });
-    // Ya se acreditaron $400 de $1.000 — quedan $600 disponibles, $700 no entra.
+    await comprobanteEstadiaServicio.crearNotaCredito(comprobante.id, { importeTotal: cuarenta, alicuotaIVA: 21, motivo: "Descuento por queja" });
+    // Ya se acreditó el 40 % — queda el 60 %, el 70 % no entra.
     await esperaError(
-      () => comprobanteEstadiaServicio.crearNotaCredito(comprobante.id, { importeTotal: 700, alicuotaIVA: 21, motivo: "Otro ajuste" }),
+      () => comprobanteEstadiaServicio.crearNotaCredito(comprobante.id, { importeTotal: r2(total * 0.7), alicuotaIVA: 21, motivo: "Otro ajuste" }),
       "supera lo que todavía se puede acreditar"
     );
-    // $600 exactos sí entra.
-    await comprobanteEstadiaServicio.crearNotaCredito(comprobante.id, { importeTotal: 600, alicuotaIVA: 21, motivo: "Resto" });
+    // El 60 % exacto sí entra.
+    await comprobanteEstadiaServicio.crearNotaCredito(comprobante.id, { importeTotal: sesenta, alicuotaIVA: 21, motivo: "Resto" });
   });
 
   await prueba("reporteCajaDiaria descuenta las notas de crédito del día del total cobrado", async () => {
@@ -448,7 +474,7 @@ async function main() {
     const { reserva } = await crearReservaEnCurso({ numero: "409", precioPorNoche: 10000, noches: 1 });
 
     await pagoEstadiaServicio.crearPago({ reservaId: reserva.id, medios: [{ tipo: "Efectivo", importe: 10000 }] });
-    const comprobante = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: 10000, alicuotaIVA: 21 });
+    const comprobante = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: await totalServidor(reserva.id), alicuotaIVA: 21 });
     await comprobanteEstadiaServicio.crearNotaCredito(comprobante.id, { importeTotal: 3000, alicuotaIVA: 21, motivo: "Descuento por reclamo" });
 
     const reporte = await comprobanteEstadiaServicio.reporteCajaDiaria(enDias(0));
@@ -463,7 +489,7 @@ async function main() {
   await prueba("bloquea anular un comprobante que tiene notas de crédito vigentes", async () => {
     limpiar();
     const { reserva } = await crearReservaEnCurso({ numero: "410" });
-    const comprobante = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: 1000, alicuotaIVA: 21 });
+    const comprobante = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: await totalServidor(reserva.id), alicuotaIVA: 21 });
     await comprobanteEstadiaServicio.crearNotaCredito(comprobante.id, { importeTotal: 200, alicuotaIVA: 21, motivo: "Ajuste" });
 
     await esperaError(() => comprobanteEstadiaServicio.anularComprobante(comprobante.id), "notas de crédito asociadas");
@@ -472,7 +498,7 @@ async function main() {
   await prueba("anula sin problema un comprobante que no tiene ninguna nota de crédito", async () => {
     limpiar();
     const { reserva } = await crearReservaEnCurso({ numero: "411" });
-    const comprobante = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: 1000, alicuotaIVA: 21 });
+    const comprobante = await comprobanteEstadiaServicio.crearComprobante({ reservaId: reserva.id, importeTotal: await totalServidor(reserva.id), alicuotaIVA: 21 });
 
     const anulado = await comprobanteEstadiaServicio.anularComprobante(comprobante.id);
     assert.equal(anulado.anulado, true);

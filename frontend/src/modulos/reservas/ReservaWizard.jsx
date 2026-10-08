@@ -1,7 +1,8 @@
 import { PaisDocumentoReserva } from "../estadia/PaisDocumentoReserva";
 import { validarNacimientoTitular } from "../reservas/validarNacimientoTitular";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutacionUnica } from "../../lib/useMutacionUnica";
 import { ArrowLeft, ArrowRight, BedDouble, Check, Search, Users } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
@@ -23,7 +24,11 @@ import {
   TIPOS_DOCUMENTO,
 } from "./reservas.constantes";
 import { validarHuesped } from "./validarHuesped";
-import { useTitularPorDocumento } from "./useTitularPorDocumento";
+import { yaDentroDelPlazoConCargo } from "./plazoCancelacion";
+import { useIdentificarPersona } from "../../lib/identificacion/useIdentificarPersona";
+import { EstadoIdentificacion } from "../../lib/identificacion/EstadoIdentificacion";
+import { ActualizarFicha } from "../../lib/identificacion/ActualizarFicha";
+import { PAIS_EMISOR_POR_DEFECTO, camposCambiados } from "../../lib/identificacion/ficha";
 import { useSesionOpcional } from "../../lib/sesion";
 import { formatearNombrePropio } from "../../lib/nombres";
 import { CONTENEDOR_FICHA, FILA_FICHA, Rotulo } from "../../componentes/FilaFicha";
@@ -52,6 +57,8 @@ const HUESPED_VACIO = {
   nombres: "",
   apellido: "",
   tipoDocumento: TIPOS_DOCUMENTO[0],
+  // El país emisor del documento arranca en Argentina (se cambia en un clic): se identifica por tipo + país + número.
+  paisDocumento: PAIS_EMISOR_POR_DEFECTO,
   numeroDocumento: "",
   contacto: "",
   preferencias: "",
@@ -114,7 +121,7 @@ function precioDesde(habitacion) {
 
 function estadoInicial(reserva, valoresIniciales) {
   if (!reserva) {
-    // La pantalla interna de disponibilidad (Disponibilidad, modoInterno)
+    // La pantalla interna de disponibilidad (Disponibilidad)
     // manda el período y las habitaciones ya elegidas por navigate(state);
     // la pública de autoservicio (HU-38/40) solo manda el período. Con
     // habitaciones ya elegidas, los pasos 1 y 2 se saltan — pero la
@@ -197,41 +204,60 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
   const [intentoConfirmarGarantia, setIntentoConfirmarGarantia] = useState(false);
   const queryClient = useQueryClient();
 
-  // Un documento no se duplica: con tipo, país y número completos se busca al huésped; si ya existe,
-  // su nombre se completa solo y queda bloqueado. Solo el administrador puede corregirlo (el
-  // backend lo vuelve a exigir). La reserva web (sin sesión) no consulta datos de otros huéspedes.
+  // Un documento no se duplica: se identifica a la persona por TIPO + PAÍS EMISOR + NÚMERO (hook único de identificación,
+  // a los 400 ms o con el botón "Buscar"); si ya existe, se traen todos los datos de su ficha. Su nombre queda bloqueado:
+  // solo el administrador puede corregirlo (el backend lo vuelve a exigir). Lo que se cambie respecto de la ficha
+  // (contacto, nacimiento) se marca y solo se guarda en ella con la casilla "Actualizar la ficha del huésped con estos
+  // datos". La reserva web (sin sesión) no consulta datos de otros huéspedes.
   const sesion = useSesionOpcional();
   const esAdmin = sesion?.rol === "admin";
   const [corrigiendoNombre, setCorrigiendoNombre] = useState(false);
-  const titular = useTitularPorDocumento({
+  const [actualizarFicha, setActualizarFicha] = useState(false);
+  const titular = useIdentificarPersona({
     tipoDocumento: form.huesped.tipoDocumento,
     paisDocumento: form.huesped.paisDocumento,
     numeroDocumento: form.huesped.numeroDocumento,
     habilitada: origen !== "WEB" && Boolean(sesion?.rol),
   });
-  const nombreBloqueado = titular.estado === "registrado" && !corrigiendoNombre;
+  const nombreBloqueado = titular.estado === "registrada" && !corrigiendoNombre;
   const fichaAplicada = useRef(null);
   useEffect(() => {
-    if (titular.estado === "registrado") {
+    if (titular.estado === "registrada") {
       if (fichaAplicada.current === titular.clave) return;
       fichaAplicada.current = titular.clave;
       setCorrigiendoNombre(false);
+      setActualizarFicha(false);
+      const ficha = titular.ficha;
       setForm((f) => ({
         ...f,
         huesped: {
           ...f.huesped,
-          nombres: titular.nombres,
-          apellido: titular.apellido,
-          ...(titular.fechaNacimiento && !f.huesped.fechaNacimiento ? { fechaNacimiento: titular.fechaNacimiento } : {}),
+          nombres: ficha.nombres,
+          apellido: ficha.apellido,
+          // Se traen TODOS los datos de la ficha: nacimiento y contacto (correo; si no tiene, el teléfono).
+          ...(ficha.fechaNacimiento ? { fechaNacimiento: String(ficha.fechaNacimiento).slice(0, 10) } : {}),
+          ...(ficha.email || ficha.telefono ? { contacto: ficha.email || ficha.telefono } : {}),
         },
       }));
     } else if (titular.estado !== "buscando" && fichaAplicada.current) {
-      // Cambió el documento: los nombres autocompletados del anterior no valen para el nuevo.
+      // Cambió el documento: los datos autocompletados del anterior no valen para el nuevo.
       fichaAplicada.current = null;
       setCorrigiendoNombre(false);
+      setActualizarFicha(false);
       setForm((f) => ({ ...f, huesped: { ...f.huesped, nombres: "", apellido: "" } }));
     }
-  }, [titular.estado, titular.clave, titular.nombres, titular.apellido, titular.fechaNacimiento]);
+  }, [titular.estado, titular.clave, titular.ficha]);
+  // Datos que el recepcionista cambió respecto de la ficha.
+  const cambiosDeLaFicha =
+    titular.estado === "registrada"
+      ? camposCambiados(
+          {
+            fechaNacimiento: form.huesped.fechaNacimiento,
+            ...(String(form.huesped.contacto).includes("@") ? { email: form.huesped.contacto.trim() } : { telefono: form.huesped.contacto.trim() }),
+          },
+          titular.ficha,
+        )
+      : [];
 
   // Errores en vivo, pero solo se muestran una vez que el usuario tocó el
   // campo (onBlur) o intentó confirmar con el paso incompleto — mismo
@@ -279,7 +305,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
 
   // HU-89 — catálogo para el select de tipo del paso 2 (ya no `resumenPorTipo`,
   // que solo trae los tipos que tienen habitaciones en el universo consultado
-  // hoy — ver DisponibilidadPublicaPage.jsx para el mismo criterio). En modo
+  // hoy — ver DisponibilidadPage.jsx para el mismo criterio). En modo
   // "WEB" (autoservicio del huésped, HU-40) mismo filtro que la disponibilidad
   // pública: solo tipos activos con al menos una habitación activa. En modo
   // mostrador, todos los tipos activos del catálogo.
@@ -413,6 +439,8 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       tipoDocumento: form.huesped.tipoDocumento,
       numeroDocumento: form.huesped.numeroDocumento.trim(),
       ...(esAdmin && corrigiendoNombre ? { corregirNombre: true } : {}),
+      // Casilla "Actualizar la ficha del huésped con estos datos": sin ella la ficha existente no se pisa.
+      ...(titular.estado === "registrada" && actualizarFicha ? { actualizarFicha: true } : {}),
       fechaNacimiento: form.huesped.fechaNacimiento,
       paisDocumento: form.huesped.paisDocumento,
       contacto: form.huesped.contacto.trim(),
@@ -437,7 +465,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
     enabled: esEdicion && form.paso === PASO_HUESPED && Boolean(form.planTarifarioId),
   });
 
-  const mutacion = useMutation({
+  const mutacion = useMutacionUnica({
     retry: false,
     mutationFn: async () => {
       if (esEdicion) {
@@ -704,7 +732,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
               ))}
             </Select>
             <p className="ml-auto text-[12.5px] text-piedra">
-              {cantidadDisponiblesFiltradas} habitación{cantidadDisponiblesFiltradas === 1 ? "" : "es"} disponible
+              {cantidadDisponiblesFiltradas} {cantidadDisponiblesFiltradas === 1 ? "habitación" : "habitaciones"} disponible
               {cantidadDisponiblesFiltradas === 1 ? "" : "s"}
               {mostrarOcupadas ? ` de ${habitacionesFiltradas.length}` : ""} del {form.fechaDesde} al {form.fechaHasta}
             </p>
@@ -774,7 +802,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
             <div className="flex flex-col gap-3 rounded-lg border border-borde bg-hueso px-5 py-4">
               <div className="flex items-center gap-2 text-[13px]">
                 <Users size={15} className="text-piedra" />
-                {form.habitaciones.length} habitación{form.habitaciones.length === 1 ? "" : "es"} · capacidad total{" "}
+                {form.habitaciones.length} {form.habitaciones.length === 1 ? "habitación" : "habitaciones"} · capacidad total{" "}
                 {capacidadTotal}
                 {form.habitaciones.length > 1 && <Badge variante="info">Reserva grupal</Badge>}
               </div>
@@ -848,10 +876,9 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
             </p>
           )}
 
-          {cotizarQuery.data?.estadiaMinimaExigida != null && (
+          {cotizarQuery.data?.estadiaMinimaExigida > 1 && (
             <p className="text-[12px] text-piedra">
-              Estadía mínima para esta consulta: {cotizarQuery.data.estadiaMinimaExigida} noche
-              {cotizarQuery.data.estadiaMinimaExigida === 1 ? "" : "s"}.
+              Estadía mínima para esta consulta: {cotizarQuery.data.estadiaMinimaExigida} noches.
             </p>
           )}
 
@@ -875,11 +902,17 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
                   <p className={`text-[11px] uppercase tracking-wide ${elegido ? "text-hueso/70" : "text-piedra"}`}>
                     Precios finales, IVA incluido
                   </p>
-                  <Badge variante={plan.reembolsable ? "ok" : "error"}>
-                    {plan.reembolsable
-                      ? `Cancelación sin cargo hasta ${plan.horasCancelacionSinCargo}hs antes`
-                      : "No reembolsable"}
-                  </Badge>
+                  {plan.reembolsable && yaDentroDelPlazoConCargo(form.fechaDesde, plan.horasCancelacionSinCargo) ? (
+                    <Badge variante="aviso">
+                      Esta reserva ya está dentro del plazo con cargo: cancelarla cobra la primera noche
+                    </Badge>
+                  ) : (
+                    <Badge variante={plan.reembolsable ? "ok" : "error"}>
+                      {plan.reembolsable
+                        ? `Cancelación sin cargo hasta ${plan.horasCancelacionSinCargo}hs antes`
+                        : "No reembolsable"}
+                    </Badge>
+                  )}
                   <div className="mt-auto flex items-end justify-between gap-2 pt-2">
                     <div>
                       <p className={`text-[11px] uppercase tracking-wide ${elegido ? "text-hueso/70" : "text-piedra"}`}>
@@ -910,7 +943,58 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
           <p className="text-[12px] text-piedra">* obligatorio</p>
           {/* Mismas filas que el check-in y la ficha de ocupante (componentes/FilaFicha.jsx). */}
           <div className={CONTENEDOR_FICHA}>
-            <div className={FILA_FICHA.identidad}>
+            <div className={FILA_FICHA.documento}>
+              <Select
+                label={<Rotulo texto="Tipo" obligatorio />}
+                value={form.huesped.tipoDocumento}
+                onChange={(e) => actualizarHuesped("tipoDocumento", e.target.value)}
+              >
+                {TIPOS_DOCUMENTO.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </Select>
+              <PaisDocumentoReserva
+                label={<Rotulo texto="País emisor" obligatorio />}
+                value={form.huesped.paisDocumento}
+                onChange={(value) => actualizarHuesped("paisDocumento", value)}
+                onBlur={() => tocarHuesped("paisDocumento")}
+                error={errorHuesped("paisDocumento")}
+              />
+              <Input
+                label={<Rotulo texto="Número" obligatorio />}
+                value={form.huesped.numeroDocumento}
+                maxLength={LIMITES_RESERVA.numeroDocumento}
+                onChange={(e) => actualizarHuesped("numeroDocumento", e.target.value)}
+                onBlur={() => tocarHuesped("numeroDocumento")}
+                error={errorHuesped("numeroDocumento")}
+                placeholder="30111222"
+              />
+            </div>
+            {titular.puedeBuscar && (
+              <div className="mt-1.5">
+                <Button type="button" variante="secundario" tamano="fila" onClick={titular.buscarAhora}>
+                  Buscar
+                </Button>
+              </div>
+            )}
+            <EstadoIdentificacion identificacion={titular} className="mt-2" />
+            {titular.estado === "registrada" && (
+              <div className="mt-1 flex flex-wrap items-center gap-3 text-[12px] text-piedra" role="status">
+                <span>
+                  {corrigiendoNombre
+                    ? "Estás corrigiendo el nombre de un huésped registrado."
+                    : "Se completaron sus datos. El nombre es de la ficha: solo un administrador puede corregirlo."}
+                </span>
+                {esAdmin && (
+                  <Button type="button" variante="secundario" tamano="fila" onClick={() => setCorrigiendoNombre((v) => !v)}>
+                    {corrigiendoNombre ? "Cancelar corrección" : "Corregir nombre"}
+                  </Button>
+                )}
+              </div>
+            )}
+            <div className={`${FILA_FICHA.identidad} mt-2.5`}>
               <Input
                 label={<Rotulo texto="Nombres" obligatorio />}
                 value={form.huesped.nombres}
@@ -946,53 +1030,6 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
                 error={errorHuesped("fechaNacimiento")}
               />
             </div>
-            <div className={`${FILA_FICHA.documento} mt-2.5`}>
-              <Select
-                label={<Rotulo texto="Tipo" obligatorio />}
-                value={form.huesped.tipoDocumento}
-                onChange={(e) => actualizarHuesped("tipoDocumento", e.target.value)}
-              >
-                {TIPOS_DOCUMENTO.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </Select>
-              <PaisDocumentoReserva
-                label={<Rotulo texto="País emisor" obligatorio />}
-                value={form.huesped.paisDocumento}
-                onChange={(value) => actualizarHuesped("paisDocumento", value)}
-                onBlur={() => tocarHuesped("paisDocumento")}
-                error={errorHuesped("paisDocumento")}
-              />
-              <Input
-                label={<Rotulo texto="Número" obligatorio />}
-                value={form.huesped.numeroDocumento}
-                maxLength={LIMITES_RESERVA.numeroDocumento}
-                onChange={(e) => actualizarHuesped("numeroDocumento", e.target.value)}
-                onBlur={() => tocarHuesped("numeroDocumento")}
-                error={errorHuesped("numeroDocumento")}
-                placeholder="30111222"
-              />
-            </div>
-            {titular.estado === "buscando" && <p className="mt-2 text-[12px] text-piedra">Buscando el documento…</p>}
-            {titular.estado === "nuevo" && (
-              <p className="mt-2 text-[12px] text-piedra">Documento nuevo: cargá los datos del huésped.</p>
-            )}
-            {titular.estado === "registrado" && (
-              <div className="mt-2 flex flex-wrap items-center gap-3 text-[12px] text-piedra" role="status">
-                <span>
-                  {corrigiendoNombre
-                    ? "Estás corrigiendo el nombre de un huésped registrado."
-                    : "Huésped registrado: se completó su nombre. Solo un administrador puede corregirlo."}
-                </span>
-                {esAdmin && (
-                  <Button type="button" variante="secundario" tamano="fila" onClick={() => setCorrigiendoNombre((v) => !v)}>
-                    {corrigiendoNombre ? "Cancelar corrección" : "Corregir nombre"}
-                  </Button>
-                )}
-              </div>
-            )}
             <div className={`${FILA_FICHA.contacto} mt-2.5`}>
               <Input
                 label={<Rotulo texto="Correo electrónico" obligatorio />}
@@ -1018,6 +1055,7 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
                 </Select>
               )}
             </div>
+            <ActualizarFicha cambiados={cambiosDeLaFicha} marcada={actualizarFicha} onCambiar={setActualizarFicha} id="reserva-actualizar-ficha" className="mt-2.5" />
           </div>
 
           <label className="flex flex-col gap-1.5 font-body text-sm">

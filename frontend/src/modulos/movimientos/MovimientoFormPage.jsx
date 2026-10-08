@@ -158,7 +158,7 @@ export function MovimientoFormPage({ modo, onVolver, onExito }) {
           Volver
         </Button>
         <h1 className="font-heading text-[34px] font-semibold">{TITULOS[modo]}</h1>
-        <p className="mt-1.5 font-mono text-[11px] text-tinta/55">HU 10 a 16 — tipos de movimiento, entradas, salidas y transferencias</p>
+        <p className="mt-1.5 font-mono text-[11px] text-tinta/55">Tipos de movimiento, entradas, salidas y transferencias</p>
       </div>
 
       <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-[1fr_320px]">

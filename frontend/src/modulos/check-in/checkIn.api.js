@@ -1,4 +1,5 @@
 import { api } from "../../lib/api";
+import { TIMEOUT_OPERACION_MS } from "../../lib/tiempos";
 
 export async function buscarReservaParaCheckIn(params) {
   const { data } = await api.get("/check-in/buscar-reserva", { params });
@@ -11,12 +12,12 @@ export async function listarHabitacionesLibresAhora(params) {
 }
 
 export async function confirmarCheckInConReserva(reservaId, payload) {
-  const { data } = await api.post(`/check-in/${reservaId}/confirmar`, payload);
+  const { data } = await api.post(`/check-in/${reservaId}/confirmar`, payload, { timeout: TIMEOUT_OPERACION_MS });
   return data;
 }
 
 export async function registrarCheckInWalkIn(payload) {
-  const { data } = await api.post("/check-in/walk-in", payload);
+  const { data } = await api.post("/check-in/walk-in", payload, { timeout: TIMEOUT_OPERACION_MS });
   return data;
 }
 

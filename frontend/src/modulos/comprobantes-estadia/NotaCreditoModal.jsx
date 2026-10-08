@@ -53,7 +53,7 @@ export function NotaCreditoModal({ comprobante, disponible, onClose, onExito }) 
   return (
     <Modal
       titulo="Emitir nota de crédito"
-      subtitulo={`HU 56 — sobre el comprobante ${comprobante.numero}`}
+      subtitulo={`Sobre el comprobante ${comprobante.numero}`}
       onClose={mutacion.isPending ? () => {} : onClose}
     >
       <div className="flex flex-col gap-5 px-6 py-5">

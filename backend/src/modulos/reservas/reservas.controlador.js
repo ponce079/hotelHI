@@ -17,7 +17,7 @@ function responderError(res, err, contexto, mensaje) {
   return res.status(500).json({ error: mensaje });
 }
 
-// HU-38 — consulta pública de disponibilidad por fecha y tipo. Va antes
+// HU-38 — consulta de disponibilidad por fecha y tipo (mostrador, con sesión). Va antes
 // que getReservaPorId en el router: si no, "/disponibilidad" entraría por
 // "/:id" y fallaría pidiendo un id numérico.
 async function getDisponibilidad(req, res) {
@@ -33,14 +33,6 @@ async function getReservas(req, res) {
     return res.json(await reservasServicio.listarReservas(req.query));
   } catch (err) {
     return responderError(res, err, "Error al listar reservas:", "No se pudieron listar las reservas.");
-  }
-}
-
-async function getReservaPorCodigo(req, res) {
-  try {
-    return res.json(await reservasServicio.obtenerPorCodigoConfirmacion(req.params.codigo));
-  } catch (err) {
-    return responderError(res, err, "Error al buscar la reserva por código:", "No se pudo buscar la reserva.");
   }
 }
 
@@ -190,7 +182,6 @@ async function getPenalidad(req, res) {
 module.exports = {
   getDisponibilidad,
   getReservas,
-  getReservaPorCodigo,
   getReservaPorId,
   postCotizar,
   postReserva,

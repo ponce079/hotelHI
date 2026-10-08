@@ -12,7 +12,7 @@ import {
   LIMITES_USUARIO,
   limpiarDni,
   mensajeDeError,
-  validarContrasenaNueva,
+  validarContrasenaInicial,
   validarDatosPersonales,
   validarNombreUsuario,
 } from "./usuarios.constantes";
@@ -70,7 +70,7 @@ export function UsuarioModal({ usuario, esUnoMismo = false, onClose, onExito }) 
     if (!editando) {
       const errorUsuario = validarNombreUsuario(form.usuario);
       if (errorUsuario) nuevos.usuario = errorUsuario;
-      Object.assign(nuevos, validarContrasenaNueva(form.contrasena, form.repetir));
+      Object.assign(nuevos, validarContrasenaInicial(form.contrasena, form.repetir));
     }
     return nuevos;
   }
@@ -170,7 +170,7 @@ export function UsuarioModal({ usuario, esUnoMismo = false, onClose, onExito }) 
                 error={errores.contrasena}
                 maxLength={LIMITES_USUARIO.contrasenaMax}
                 autoComplete="new-password"
-                placeholder={`Mínimo ${LIMITES_USUARIO.contrasenaMin} caracteres`}
+                placeholder={`Mínimo ${LIMITES_USUARIO.contrasenaInicialMin} caracteres`}
               />
               <CampoContrasena
                 label="Repetir contraseña *"

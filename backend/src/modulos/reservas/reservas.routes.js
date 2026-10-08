@@ -6,7 +6,7 @@ const { getHistorial } = require("./reservas.historial");
 // exige sesión + rol gerente en el backend (no solo el gate del botón en el
 // frontend, como el resto de reservas/tarifas hoy). No se toca
 // usuarios.middleware.js ni ninguna otra ruta de este router.
-const { requiereSesion, sesionOpcional, requiereRol } = require("../usuarios/usuarios.middleware");
+const { requiereSesion, requiereRol } = require("../usuarios/usuarios.middleware");
 
 const router = express.Router();
 
@@ -14,18 +14,18 @@ const router = express.Router();
 // "/disponibilidad" contra "/:id" (mismo orden que habitaciones.routes.js
 // con "/tipos").
 router.get("/disponibilidad", reservasControlador.getDisponibilidad);
-router.get("/codigo/:codigo", reservasControlador.getReservaPorCodigo);
-// Cancelar y marcar no-show COBRAN la penalidad a la tarjeta de la garantía:
-// solo personal con permiso de gestionar reservas (mismo criterio que el
-// frontend: admin y recepcionista). Antes /cancelar no pedía sesión.
+// Cancelar, marcar no-show, crear y modificar reservas: solo personal con permiso de gestionar reservas
+// (mismo criterio que el frontend, puede("gestionarReservas"): admin y recepcionista).
 const gestionaReservas = [requiereSesion, requiereRol("admin", "recepcionista")];
 router.get("/no-show-pendientes", ...gestionaReservas, reservasControlador.getNoShowPendientes);
 router.get("/", reservasControlador.getReservas);
 router.post("/cotizar", reservasControlador.postCotizar);
-router.post("/", sesionOpcional, reservasControlador.postReserva);
-router.post("/con-garantia", sesionOpcional, reservasControlador.postReservaConGarantia);
+// Crear y modificar reservas desde el mostrador (la de /con-garantia recibe los datos de la tarjeta): sesión y rol
+// de gestionar reservas. Todo /api ya exige sesión (lib/apiCerrada.js); acá además el rol.
+router.post("/", ...gestionaReservas, reservasControlador.postReserva);
+router.post("/con-garantia", ...gestionaReservas, reservasControlador.postReservaConGarantia);
 router.get("/:id", reservasControlador.getReservaPorId);
-router.patch("/:id", sesionOpcional, reservasControlador.patchReserva);
+router.patch("/:id", ...gestionaReservas, reservasControlador.patchReserva);
 router.post("/:id/cancelar", ...gestionaReservas, reservasControlador.postCancelar);
 router.post("/:id/no-show", ...gestionaReservas, reservasControlador.postNoShow);
 router.get("/:id/cierre-previo", ...gestionaReservas, reservasControlador.getCierrePrevio);

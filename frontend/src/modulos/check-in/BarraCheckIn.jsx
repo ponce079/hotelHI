@@ -72,7 +72,7 @@ export function BarraCheckIn({ resumen, faltantes, enviando, onConfirmar, panel,
             aria-describedby={faltantes.length ? "ci-pendientes" : undefined}
             onClick={onConfirmar}
           >
-            {enviando ? "Confirmando…" : "Confirmar check-in"}
+            {enviando ? "Procesando…" : "Confirmar check-in"}
           </Button>
         </div>
         <div aria-live="polite" id="ci-pendientes" className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[13.5px]">

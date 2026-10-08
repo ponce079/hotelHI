@@ -153,14 +153,39 @@ describe("ReservaWizard — documento único: el nombre sale de la ficha", () =>
     expect(screen.getByLabelText("Apellido*")).toBeEnabled();
   });
 
+  it("ficha que solo tenía teléfono y se carga un correo: se avisa la diferencia (no se descarta en silencio) y la casilla empieza sin tildar", async () => {
+    buscarHuespedPorDocumento.mockResolvedValue({ ...FICHA, telefono: "3875550001" });
+    renderWizard({ origen: "RECEPCION" });
+    await irAlPasoHuesped();
+    cargarDocumento("45112902");
+    await waitFor(() => expect(screen.getByLabelText(/Correo/)).toHaveValue("3875550001"));
+    fireEvent.change(screen.getByLabelText(/Correo/), { target: { value: "nuevo@correo.com" } });
+    expect(await screen.findByText(/Cambiaste datos respecto de la ficha del huésped: contacto\./)).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Actualizar la ficha del huésped con estos datos" })).not.toBeChecked();
+  });
+
   it("documento nuevo (404): el recepcionista carga el nombre", async () => {
     buscarHuespedPorDocumento.mockRejectedValue({ response: { status: 404 } });
     renderWizard({ origen: "RECEPCION" });
     await irAlPasoHuesped();
     cargarDocumento("45112902");
 
-    expect(await screen.findByText(/Documento nuevo/)).toBeInTheDocument();
+    expect(await screen.findByText(/No hay un huésped registrado con ese documento/)).toBeInTheDocument();
     expect(screen.getByLabelText("Nombres*")).toBeEnabled();
+  });
+
+  it("dato cambiado respecto de la ficha: aviso y casilla sin tildar; se manda actualizarFicha solo si se tilda", async () => {
+    buscarHuespedPorDocumento.mockResolvedValue({ ...FICHA, email: "juan@correo.com", fechaUltimaEstadia: "2026-09-20" });
+    renderWizard({ origen: "RECEPCION" });
+    await irAlPasoHuesped();
+    cargarDocumento("45112902");
+    await waitFor(() => expect(screen.getByLabelText("Nombres*")).toHaveValue("Juan"));
+    expect(screen.getByText(/Huésped registrado · última estadía: 20\/09\/2026/)).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: "Actualizar la ficha del huésped con estos datos" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/Correo/), { target: { value: "otro@correo.com" } });
+    const casilla = await screen.findByRole("checkbox", { name: "Actualizar la ficha del huésped con estos datos" });
+    expect(casilla).not.toBeChecked();
   });
 
   it("si cambia el documento, el nombre autocompletado del anterior se limpia", async () => {

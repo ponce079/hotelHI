@@ -10,6 +10,8 @@ export const LIMITES_USUARIO = {
   apellido: 60,
   email: 120,
   contrasenaMin: 6,
+  // Contraseña que el administrador escribe al dar de alta o al restablecer (espejo del backend: no hay contraseñas por defecto).
+  contrasenaInicialMin: 10,
   contrasenaMax: 72,
 };
 
@@ -92,6 +94,18 @@ export function validarContrasenaNueva(contrasena, repetida) {
   const errores = {};
   if (!contrasena || contrasena.length < LIMITES_USUARIO.contrasenaMin) {
     errores.contrasena = `Mínimo ${LIMITES_USUARIO.contrasenaMin} caracteres.`;
+  } else if (contrasena.length > LIMITES_USUARIO.contrasenaMax) {
+    errores.contrasena = `Máximo ${LIMITES_USUARIO.contrasenaMax} caracteres.`;
+  }
+  if (repetida !== contrasena) errores.repetir = "Las contraseñas no coinciden.";
+  return errores;
+}
+
+// Alta y restablecimiento (los hace el administrador): la contraseña inicial exige un mínimo mayor.
+export function validarContrasenaInicial(contrasena, repetida) {
+  const errores = {};
+  if (!contrasena || contrasena.length < LIMITES_USUARIO.contrasenaInicialMin) {
+    errores.contrasena = `Mínimo ${LIMITES_USUARIO.contrasenaInicialMin} caracteres.`;
   } else if (contrasena.length > LIMITES_USUARIO.contrasenaMax) {
     errores.contrasena = `Máximo ${LIMITES_USUARIO.contrasenaMax} caracteres.`;
   }

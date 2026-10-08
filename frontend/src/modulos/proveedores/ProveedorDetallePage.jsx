@@ -105,7 +105,7 @@ export function ProveedorDetallePage() {
           <Badge variante={proveedor.activo ? "ok" : "neutro"}>{proveedor.activo ? "Activo" : "Inactivo"}</Badge>
         </h1>
         <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-          {proveedor.cuit} · HU-21 — ficha e historial de compras
+          {proveedor.cuit} · Ficha e historial de compras
         </p>
       </div>
 

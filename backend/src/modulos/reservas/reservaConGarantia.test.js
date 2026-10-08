@@ -465,6 +465,8 @@ describe("crearReservaConGarantia (garantía con tarjeta, alta atómica)", () =>
   // Espía la pasarela real: sigue calculando de verdad, pero queda registro
   // de cada operación (y se puede forzar un fallo puntual).
   function instalarPasarela(forzar = () => null) {
+    // La pasarela registra sus operaciones en la base: acá, el doble en memoria.
+    jest.doMock("../garantias/pasarelaRegistro", () => require("../garantias/pasarelaRegistro.doble"));
     jest.doMock("../garantias/pasarela.servicio", () => {
       const real = jest.requireActual("../garantias/pasarela.servicio");
       return { ...real, procesarTarjeta: jest.fn(async (p) => forzar(p) ?? real.procesarTarjeta(p)) };
@@ -481,7 +483,10 @@ describe("crearReservaConGarantia (garantía con tarjeta, alta atómica)", () =>
     doble = crearDoblePrisma();
     jest.doMock("../../lib/prisma", () => doble.prismaFalso);
     jest.doMock("../check-out/checkOut.servicio", () => checkOutFalsoFactory());
-    correo = { enviarCorreo: jest.fn().mockResolvedValue({ enviado: true, messageId: "fake-id" }) };
+    correo = {
+      enviarCorreo: jest.fn().mockResolvedValue({ enviado: true, messageId: "fake-id" }),
+      conEsperaMaxima: jest.requireActual("../../lib/correo").conEsperaMaxima,
+    };
     jest.doMock("../../lib/correo", () => correo);
     instalarPasarela();
     cargar();
@@ -580,6 +585,9 @@ describe("crearReservaConGarantia (garantía con tarjeta, alta atómica)", () =>
     expect(t.reserva[0].estado).toBe("Cancelada");
     expect(t.reserva[0].motivoCancelacion).toMatch(/no reembolsable/i);
     expect(t.pagoEstadia).toHaveLength(0);
+    // La retención se soltó: la garantía no puede seguir "Preautorizada" (y no hubo cobro de penalidad).
+    expect(t.garantiaReserva).toHaveLength(1);
+    expect(t.garantiaReserva[0].estado).toBe("Liberada");
   });
 
   test("si la transacción vence (base lenta): 408 con el código que espera el wizard, nada queda creado y se libera la retención", async () => {

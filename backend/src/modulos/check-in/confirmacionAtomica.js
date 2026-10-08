@@ -21,10 +21,11 @@
 // esta rama; el tope es LIMITES_RESERVA.habitacionesPorReserva (20).
 const { Prisma } = require("@prisma/client");
 const prisma = require("../../lib/prisma");
-const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
+const { OPCIONES_TRANSACCION_LARGA } = require("../../lib/constantes");
+const { prepararLote, escribirLote, esDuplicadoDeIdentidadActiva, MENSAJE_YA_ALOJADA } = require("./ingresoRapido");
 const reservasServicio = require("../reservas/reservas.servicio");
 const estadia = require("../estadia/estadia.servicio");
-const { cargarPersonasEnLote } = require("../estadia/cargaMasiva");
+const { rechazarYaAlojadas } = require("../estadia/cargaMasiva");
 const { validarOcupacionIngreso, resumirErrores } = require("./ocupacionIngreso");
 
 const MOTIVO_REEMPLAZO = "Reemplazada en el check-in";
@@ -80,7 +81,8 @@ function normalizarHabitaciones(reserva, habitaciones) {
 // detalle.habitacionIdAnterior (aditivo, etapa 2): qué tarjeta de habitación marca la pantalla.
 // Reglas del cambio de habitación al ingresar: mismo tipo, activa, libre, no incluida ya en la
 // reserva y sin otra reserva encimada en ninguna noche de la estadía.
-async function validarCambiosDeHabitacion(cliente, reserva, cambios, nuevas) {
+// Parte sin bloqueo (fuera de la transacción): existencia, tipo y estado de las habitaciones nuevas.
+function validarDatosDeLasHabitacionesNuevas(reserva, cambios, nuevas) {
   const idsReserva = new Set(reserva.habitaciones.map((h) => h.id));
   const porId = new Map(nuevas.map((h) => [h.id, h]));
   for (const { anterior, habitacionId } of cambios) {
@@ -109,6 +111,11 @@ async function validarCambiosDeHabitacion(cliente, reserva, cambios, nuevas) {
         { habitacionIdAnterior: anterior.id },
       );
   }
+}
+
+// Parte con bloqueo (DENTRO de la transacción): ninguna otra reserva encimada en las noches de la estadía. El
+// updateMany condicional de la habitación protege su estado físico; esto protege las reservas de esas fechas.
+async function validarConflictosDeCambios(cliente, reserva, cambios) {
   const conflictos = await reservasServicio.buscarConflictos(cliente, {
     habitacionIds: cambios.map((c) => c.habitacionId),
     fechaDesde: new Date(reserva.fechaDesde),
@@ -127,7 +134,15 @@ async function validarCambiosDeHabitacion(cliente, reserva, cambios, nuevas) {
   }
 }
 
-async function confirmarConOcupacion(reserva, { operador, habitaciones, personas, totalEsperado, motivoTitularDistinto }) {
+// Confirma el check-in en un solo paso (preparar + ejecutar). Quien necesite hacer algo en paralelo con las
+// lecturas (por ejemplo, preautorizar la garantía) usa prepararConfirmacion: valida y lee todo FUERA de la
+// transacción y devuelve la función que abre la transacción corta.
+async function confirmarConOcupacion(reserva, params) {
+  const ejecutar = await prepararConfirmacion(reserva, params);
+  return ejecutar();
+}
+
+async function prepararConfirmacion(reserva, { operador, habitaciones, personas, totalEsperado, motivoTitularDistinto, corregirNombre }) {
   const quien = String(operador ?? "").trim();
   if (!quien) throw error("Falta identificar al usuario que confirma el check-in. Volvé a iniciar sesión.", 400);
   const esperado = Number(totalEsperado);
@@ -172,116 +187,160 @@ async function confirmarConOcupacion(reserva, { operador, habitaciones, personas
   const cambioOcupacion = filas.some((f) => f.adultos !== f.anterior.adultos || f.menores !== f.anterior.menores);
   const ocupacionParaPrecio = filas.map((f) => ({ habitacionId: f.anterior.id, adultos: f.adultos, menores: f.menores }));
 
-  const { validarReservaVigente, ocuparHabitaciones, conConcurrenciaComo409 } = require("./checkIn.servicio");
-  await conConcurrenciaComo409(() => prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${reservaId} FOR UPDATE`;
-    validarReservaVigente(await tx.reserva.findUnique({ where: { id: reservaId } }));
+  // ---- FUERA de la transacción: todo lo que no necesita bloqueo ----
+  if (cambios.length) validarDatosDeLasHabitacionesNuevas(reserva, cambios, nuevas);
 
-    // Cambio de habitación: lock preventivo de las filas de esas habitaciones (igual que el alta)
-    // y validación con datos leídos dentro de la transacción.
-    if (cambios.length) {
-      const ids = cambios.map((c) => c.habitacionId);
-      await tx.$queryRaw(
-        Prisma.sql`SELECT id FROM reservas_habitaciones WHERE habitacionId IN (${Prisma.join(ids)}) FOR UPDATE`,
-      );
-      await validarCambiosDeHabitacion(tx, reserva, cambios, await tx.habitacion.findMany({ where: { id: { in: ids } } }));
-    }
+  // Reserva "en memoria" con la ocupación final: sirve para validar a cada persona y la ocupación del ingreso
+  // sin volver a leer la base.
+  const reservaFinal = {
+    id: reservaId,
+    fechaDesde: new Date(reserva.fechaDesde),
+    fechaHasta: new Date(reserva.fechaHasta),
+    huesped: reserva.huesped,
+    reservaHabitaciones: definitivas.map((d) => ({
+      habitacionId: d.habitacionId,
+      adultos: d.adultos,
+      menores: d.menores,
+      habitacion: { numero: d.numero, capacidad: d.capacidad },
+    })),
+  };
 
-    // Filas de la reserva por habitación: sirven para el total actual y para reasignar habitación
-    // (modificarReserva conserva sus ids cuando no cambian las habitaciones).
-    const filasReserva = await tx.reservaHabitacion.findMany({
-      where: { reservaId },
-      select: { id: true, habitacionId: true },
-    });
-
-    // Precio con la ocupación final, comparado ANTES de escribir.
-    const sumaActual = await tx.reservaNoche.aggregate({
-      where: { reservaHabitacionId: { in: filasReserva.map((rh) => rh.id) } },
-      _sum: { precioNoche: true },
-    });
-    const totalActual = Number(sumaActual._sum.precioNoche ?? 0);
-    const previa = cambioOcupacion
-      ? await reservasServicio.modificarReserva(reservaId, { habitaciones: ocupacionParaPrecio, soloPrevia: true }, tx)
-      : null;
-    const totalNuevo = previa ? previa.totalNuevo : totalActual;
-    if (centavos(totalNuevo) !== centavos(esperado))
-      throw error(
-        `El total cambió: se informaron $${esperado} y con la ocupación actual corresponde $${totalNuevo}. ` +
-          "Revisá la cotización con el huésped y volvé a confirmar.",
-        409,
-        "PRECIO_CAMBIO",
-        {
-          totalAnterior: esperado,
-          totalNuevo,
-          diferencia: Number((totalNuevo - esperado).toFixed(2)),
-          mensajeNoReembolsable: previa?.mensajeNoReembolsable ?? null,
-        },
-      );
-    if (cambioOcupacion) await reservasServicio.modificarReserva(reservaId, { habitaciones: ocupacionParaPrecio }, tx);
-
-    // Habitación definitiva: una sola sentencia para todas las que cambian.
-    if (cambios.length) {
-      const aMover = filasReserva.filter((rh) => cambios.some((c) => c.anterior.id === rh.habitacionId));
-      const casos = aMover.map(
-        (rh) => Prisma.sql`WHEN ${rh.id} THEN ${cambios.find((c) => c.anterior.id === rh.habitacionId).habitacionId}`,
-      );
-      await tx.$executeRaw(
-        Prisma.sql`UPDATE reservas_habitaciones SET habitacionId = CASE id ${Prisma.join(casos, " ")} END WHERE id IN (${Prisma.join(aMover.map((rh) => rh.id))})`,
-      );
-    }
-
-    // Baja lógica de las fichas que se cargaron antes (titular incorporado al reservar,
-    // fichas cargadas desde la ficha de la reserva): las reemplaza la lista confirmada.
-    const previas = await tx.ocupanteReserva.findMany({
-      where: { reservaId, estado: "Previsto" },
-      select: { id: true },
-    });
-    if (previas.length) {
-      const ids = previas.map((p) => p.id);
-      const ahora = new Date();
-      await tx.ocupanteReserva.updateMany({ where: { id: { in: ids } }, data: { estado: "Cancelado" } });
-      await tx.asignacionOcupanteHabitacion.updateMany({
-        where: { ocupanteId: { in: ids }, hasta: null },
-        data: { hasta: ahora },
+  // Tres grupos de lecturas independientes, en paralelo (con la base remota, el tiempo es lo que cuesta cada ida y
+  // vuelta): el total de la reserva y su cotización con la ocupación final, las fichas Previstas que se reemplazan,
+  // y la validación de las personas (quién ya está alojado y qué fichas existen por documento).
+  const [precio, previas, lote] = await Promise.all([
+    (async () => {
+      const filasReserva = await prisma.reservaHabitacion.findMany({ where: { reservaId }, select: { id: true, habitacionId: true } });
+      const sumaActual = await prisma.reservaNoche.aggregate({
+        where: { reservaHabitacionId: { in: filasReserva.map((rh) => rh.id) } },
+        _sum: { precioNoche: true },
       });
-      await tx.eventoEstadia.createMany({
-        data: ids.map((ocupanteId) => ({
-          reservaId,
-          accion: "cancelar",
-          detalle: JSON.stringify({ ocupanteId, motivo: MOTIVO_REEMPLAZO }),
-          operador: quien,
-        })),
-      });
-    }
-
-    await cargarPersonasEnLote(tx, reservaId, personas, quien);
-
-    if (validacion.titularDistinto) {
-      const titulares = personas.filter((p) => p.esTitular === true);
-      await estadia.evento(
-        tx,
-        reservaId,
-        "Titular distinto del de la reserva",
-        {
-          motivo: String(motivoTitularDistinto).trim(),
-          huespedReservaId: reserva.huespedId,
-          titulares: titulares.map((p) => ({
-            nombre: `${p.nombre} ${p.apellido}`.trim(),
-            documento: `${p.tipoDocumento} ${p.numeroDocumento}`,
-            habitacionId: Number(p.habitacionId),
-          })),
-        },
-        quien,
-      );
-    }
-
-    await require("../estadia/ingreso").prepararIngreso(tx, reservaId, quien);
-    await reservasServicio.marcarEnCurso(reservaId, tx);
-    await ocuparHabitaciones(
-      tx,
-      filas.map((f) => f.habitacionId),
+      const previa = cambioOcupacion
+        ? await reservasServicio.modificarReserva(reservaId, { habitaciones: ocupacionParaPrecio, soloPrevia: true }, prisma)
+        : null;
+      return { filasReserva, totalActual: Number(sumaActual._sum.precioNoche ?? 0), previa };
+    })(),
+    prisma.ocupanteReserva.findMany({ where: { reservaId, estado: "Previsto" }, select: { id: true } }),
+    prepararLote(prisma, reservaFinal, personas, { permisoNombre: { esAdmin: corregirNombre === true, usuario: quien, reservaId } }),
+  ]);
+  const { filasReserva, totalActual, previa } = precio;
+  // Precio con la ocupación final, comparado ANTES de abrir la transacción (y de escribir nada).
+  const totalNuevo = previa ? previa.totalNuevo : totalActual;
+  if (centavos(totalNuevo) !== centavos(esperado))
+    throw error(
+      `El total cambió: se informaron $${esperado} y con la ocupación actual corresponde $${totalNuevo}. ` +
+        "Revisá la cotización con el huésped y volvé a confirmar.",
+      409,
+      "PRECIO_CAMBIO",
+      {
+        totalAnterior: esperado,
+        totalNuevo,
+        diferencia: Number((totalNuevo - esperado).toFixed(2)),
+        mensajeNoReembolsable: previa?.mensajeNoReembolsable ?? null,
+      },
     );
-  }, OPCIONES_TRANSACCION));
+
+  const titulares = personas.filter((p) => p.esTitular === true);
+  const eventosExtra = [
+    ...previas.map((o) => ({ accion: "cancelar", detalle: { ocupanteId: o.id, motivo: MOTIVO_REEMPLAZO } })),
+    ...(validacion.titularDistinto
+      ? [
+          {
+            accion: "Titular distinto del de la reserva",
+            detalle: {
+              motivo: String(motivoTitularDistinto).trim(),
+              huespedReservaId: reserva.huespedId,
+              titulares: titulares.map((p) => ({
+                nombre: `${p.nombre} ${p.apellido}`.trim(),
+                documento: `${p.tipoDocumento} ${p.numeroDocumento}`,
+                habitacionId: Number(p.habitacionId),
+              })),
+            },
+          },
+        ]
+      : []),
+  ];
+
+  // ---- DENTRO de la transacción: solo bloqueo/condición, escrituras agrupadas y lo que necesita atomicidad ----
+  const { ocuparHabitaciones, conConcurrenciaComo409 } = require("./checkIn.servicio");
+  return async function ejecutar() {
+  try {
+    await conConcurrenciaComo409(() =>
+      prisma.$transaction(async (tx) => {
+        // 1) La reserva. Sin cambio de ocupación, un solo updateMany condicional (Confirmada → En curso) hace de
+        //    bloqueo y de verificación de estado: si otra operación ya la pasó a En curso, count = 0.
+        if (cambioOcupacion || cambios.length) {
+          await tx.$queryRaw`SELECT id FROM reservas WHERE id = ${reservaId} FOR UPDATE`;
+          if (cambios.length) {
+            await tx.$queryRaw(
+              Prisma.sql`SELECT id FROM reservas_habitaciones WHERE habitacionId IN (${Prisma.join(cambios.map((c) => c.habitacionId))}) FOR UPDATE`,
+            );
+            await validarConflictosDeCambios(tx, reserva, cambios);
+          }
+          if (cambioOcupacion) await reservasServicio.modificarReserva(reservaId, { habitaciones: ocupacionParaPrecio }, tx);
+        }
+        const { count } = await tx.reserva.updateMany({
+          where: { id: reservaId, estado: "Confirmada" },
+          data: { estado: "En curso" },
+        });
+        if (count !== 1) throw new ReservaYaNoConfirmada();
+
+        // 2) Habitación definitiva: una sola sentencia para todas las que cambian.
+        if (cambios.length) {
+          const aMover = filasReserva.filter((rh) => cambios.some((c) => c.anterior.id === rh.habitacionId));
+          const casos = aMover.map(
+            (rh) => Prisma.sql`WHEN ${rh.id} THEN ${cambios.find((c) => c.anterior.id === rh.habitacionId).habitacionId}`,
+          );
+          await tx.$executeRaw(
+            Prisma.sql`UPDATE reservas_habitaciones SET habitacionId = CASE id ${Prisma.join(casos, " ")} END WHERE id IN (${Prisma.join(aMover.map((rh) => rh.id))})`,
+          );
+        }
+
+        // 3) Baja lógica de las fichas anteriores (2 sentencias, sin importar cuántas sean).
+        if (previas.length) {
+          const ids = previas.map((p) => p.id);
+          await tx.ocupanteReserva.updateMany({ where: { id: { in: ids } }, data: { estado: "Cancelado" } });
+          await tx.asignacionOcupanteHabitacion.updateMany({ where: { ocupanteId: { in: ids }, hasta: null }, data: { hasta: new Date() } });
+        }
+
+        // 4) Fichas, ocupantes (ya Alojado), asignaciones y eventos: cantidad fija de consultas.
+        await escribirLote(tx, {
+          reserva: reservaFinal,
+          reservaId,
+          fichas: lote.fichas,
+          identidades: lote.identidades,
+          huespedesExistentes: lote.huespedesExistentes,
+          extras: lote.extras,
+          renombres: lote.renombres,
+          menoresReutilizados: lote.menoresReutilizados,
+          permisoNombre: { esAdmin: corregirNombre === true, usuario: quien, reservaId },
+          operador: quien,
+          eventosExtra,
+        });
+
+        // 5) Las habitaciones definitivas pasan a ocupadas (condicional por estado).
+        await ocuparHabitaciones(
+          tx,
+          filas.map((f) => f.habitacionId),
+        );
+      }, OPCIONES_TRANSACCION_LARGA),
+    );
+  } catch (err) {
+    if (esDuplicadoDeIdentidadActiva(err)) {
+      // La misma persona ya figura alojada (otro check-in ganó): mismo 409 y mensaje de siempre, con los nombres.
+      await rechazarYaAlojadas(prisma, lote.fichas);
+      throw error(MENSAJE_YA_ALOJADA, 409, "PERSONA_ALOJADA");
+    }
+    throw err;
+  }
+  };
 }
 
-module.exports = { confirmarConOcupacion, normalizarHabitaciones, MOTIVO_REEMPLAZO };
+// El updateMany condicional no encontró la reserva "Confirmada": otra operación ya la confirmó (o la canceló).
+class ReservaYaNoConfirmada extends Error {
+  constructor() {
+    super("La reserva ya no está confirmada.");
+  }
+}
+
+module.exports = { confirmarConOcupacion, prepararConfirmacion, normalizarHabitaciones, MOTIVO_REEMPLAZO, ReservaYaNoConfirmada };

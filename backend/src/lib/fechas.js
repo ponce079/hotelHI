@@ -74,6 +74,26 @@ function combinarFechaConHoraArgentina(fechaSinHora, hora, minuto = 0) {
   return new Date(fechaSinHora.getTime() + (hora + 3) * 60 * 60 * 1000 + minuto * 60 * 1000);
 }
 
+// Un instante en hora argentina, para textos al huésped: "viernes 13/11/2026 a las 14:00".
+// Función pura (usa Intl con la zona argentina, nunca la del proceso).
+function formatearInstanteArgentina(instante) {
+  const partes = Object.fromEntries(
+    new Intl.DateTimeFormat("es-AR", {
+      timeZone: ZONA_ARGENTINA,
+      weekday: "long",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+    })
+      .formatToParts(new Date(instante))
+      .map((p) => [p.type, p.value]),
+  );
+  return `${partes.weekday.toLowerCase()} ${partes.day}/${partes.month}/${partes.year} a las ${partes.hour}:${partes.minute}`;
+}
+
 // Edades. Son dos criterios distintos y no se mezclan:
 //   - EDAD_ADULTO_OCUPACION: solo para CONTAR adultos y menores de una habitación (y por lo
 //     tanto para el precio). Menores de 0 a 12 años; desde los 13 cuenta como adulto.
@@ -109,4 +129,5 @@ module.exports = {
   parsearFechaSinHora,
   diaSemanaDeFecha,
   combinarFechaConHoraArgentina,
+  formatearInstanteArgentina,
 };
