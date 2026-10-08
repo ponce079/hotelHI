@@ -9,6 +9,8 @@ jest.mock("../../lib/prisma", () => ({
   $transaction: jest.fn(),
 }));
 jest.mock("../../lib/correo", () => ({ enviarCorreo: jest.fn() }));
+// La pasarela registra sus operaciones en la base: acá, el doble en memoria.
+jest.mock("../garantias/pasarelaRegistro", () => require("../garantias/pasarelaRegistro.doble"));
 jest.mock("../garantias/pasarela.servicio", () => {
   const real = jest.requireActual("../garantias/pasarela.servicio");
   return { ...real, procesarTarjeta: jest.fn((p) => real.procesarTarjeta(p)) };

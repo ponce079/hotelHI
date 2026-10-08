@@ -267,7 +267,7 @@ export function RequerimientosPage() {
           <ClipboardList size={24} className="text-pino" /> Requerimientos de Reposición
         </h1>
         <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-          HU-81 — el pedido interno que arranca el ciclo de compra
+          El pedido interno que arranca el ciclo de compra
         </p>
       </div>
 

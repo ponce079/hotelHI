@@ -63,7 +63,7 @@ export function AlertasPage() {
         <h1 className="flex items-center gap-2 font-heading text-[34px] font-semibold">
           <TriangleAlert size={22} className="text-error" /> Alertas de Stock
         </h1>
-        <p className="mt-1.5 font-mono text-[11px] text-tinta/55">HU 8 — alerta automática al alcanzar el mínimo</p>
+        <p className="mt-1.5 font-mono text-[11px] text-tinta/55">Alerta automática al alcanzar el mínimo</p>
         <p className="mt-2 text-sm text-piedra">
           Se abren solas al cruzar el mínimo y se cierran solas cuando el stock se recupera.
         </p>

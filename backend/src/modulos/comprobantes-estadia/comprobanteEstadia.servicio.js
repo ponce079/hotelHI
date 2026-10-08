@@ -232,7 +232,21 @@ async function obtenerComprobante(id) {
     },
   });
   if (!comprobante) throw new ErrorDeNegocio('Comprobante no encontrado.', 404);
-  return { ...comprobante, detalle: await detalleDelComprobante(comprobante) };
+  const [detalle, pagos] = await Promise.all([detalleDelComprobante(comprobante), mediosDePagoDeLaReserva(comprobante.reservaId)]);
+  return { ...comprobante, detalle, mediosDePago: pagos };
+}
+
+// Cómo se pagó la estadía, para el encabezado del comprobante: un renglón por medio de cada pago vigente (sin datos
+// de tarjeta más que lo que ya guarda la referencia). Solo lectura.
+async function mediosDePagoDeLaReserva(reservaId) {
+  const pagos = await prisma.pagoEstadia.findMany({
+    where: { reservaId: Number(reservaId), anulado: false },
+    include: { medios: true },
+    orderBy: { id: 'asc' },
+  });
+  return pagos.flatMap((p) =>
+    p.medios.map((m) => ({ concepto: p.concepto, medioPago: m.medioPago, importe: Number(m.importe), referencia: m.referencia ?? null }))
+  );
 }
 
 // Observación 3: líneas que componen el total (alojamiento, cargos

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutacionUnica } from "../../lib/useMutacionUnica";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, UserX } from "lucide-react";
 import { Button } from "../../componentes/Button";
@@ -34,9 +35,12 @@ export function NoShowPage() {
     enabled: puedeGestionar,
   });
 
-  const mutacion = useMutation({
+  const mutacion = useMutacionUnica({
     mutationFn: ({ id, motivo }) => marcarNoShow(id, motivo),
     onSuccess: (reserva) => {
+      // La reserva ya no está Confirmada: se descartan la penalidad y la vista previa para que no se vuelvan a pedir (400).
+      queryClient.removeQueries({ queryKey: ["reservas", "penalidad"] });
+      queryClient.removeQueries({ queryKey: ["reservas", "cierre-previo"] });
       queryClient.invalidateQueries({ queryKey: ["reservas"] });
       mostrarToast(`Reserva ${reserva.codigoConfirmacion} marcada como no-show. ${reserva.penalidad?.mensaje ?? ""}`.trim());
       setSeleccionada(null);

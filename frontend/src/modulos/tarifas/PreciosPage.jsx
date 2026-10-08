@@ -35,7 +35,7 @@ export function PreciosPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-semibold">Tarifas</h1>
-          <p className="text-sm text-piedra">Precio vigente hoy por tipo de habitación × temporada, plan BAR (HU-92).</p>
+          <p className="text-sm text-piedra">Precio vigente hoy por tipo de habitación × temporada, plan BAR.</p>
         </div>
         {puedeGestionar && (
           <Button variante="secundario" icono={SlidersHorizontal} onClick={() => setModificadoresAbiertos(true)}>

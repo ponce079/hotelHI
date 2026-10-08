@@ -6,7 +6,7 @@ import { useSesion } from "../../lib/sesion";
 import { formatearFechaOperacion, hoyEnHoraLocal } from "../../lib/fechas";
 import { buscarReservaParaCheckIn, listarLlegadas } from "./checkIn.api";
 import { DEMORA_BUSQUEDA_LLEGADAS_MS } from "./checkInPantalla.constantes";
-import { useDebounce } from "./usePersonaQueVuelve";
+import { useDebounce } from "../../lib/identificacion/useIdentificarPersona";
 import { TablaLlegadas } from "./llegadas/TablaLlegadas";
 import { CheckInReserva } from "./reserva/CheckInReserva";
 import { CheckInWalkIn } from "./walkin/CheckInWalkIn";

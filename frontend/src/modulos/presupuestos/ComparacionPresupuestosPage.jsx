@@ -107,7 +107,7 @@ export function ComparacionPresupuestosPage() {
         </Button>
         <h1 className="font-heading text-[34px] font-semibold">Comparación de presupuestos</h1>
         <p className="mt-1.5 flex flex-wrap items-baseline gap-x-1.5 text-[11px] text-tinta/55">
-          HU-84 · <CodigoClave className="text-tinta">REQ-{String(requerimientoId).padStart(4, "0")}</CodigoClave>
+          <CodigoClave className="text-tinta">REQ-{String(requerimientoId).padStart(4, "0")}</CodigoClave>
           {req?.deposito?.nombre && ` — ${req.deposito.nombre}`}
         </p>
       </div>

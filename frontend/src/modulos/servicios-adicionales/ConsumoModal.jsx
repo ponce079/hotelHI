@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { validarFechaConsumo } from "./validarFechaConsumo";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutacionUnica } from "../../lib/useMutacionUnica";
+import { useSesionOpcional } from "../../lib/sesion";
 import { Save, X } from "lucide-react";
 import { Modal } from "../../componentes/Modal";
 import { Input } from "../../componentes/Input";
@@ -16,7 +18,6 @@ const VACIO = {
   habitacionId: "",
   tipoServicio: TIPOS_SERVICIO[0],
   monto: "",
-  registradoPor: "",
   articuloId: "",
   cantidad: "1",
 };
@@ -39,6 +40,9 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
     : reserva.habitaciones.length === 1
       ? String(reserva.habitaciones[0].id)
       : "";
+  // "Registrado por" es el usuario de la sesión: no se tipea (el servidor lo toma de la sesión y es el autor real).
+  const sesion = useSesionOpcional();
+  const registradoPor = sesion?.usuario ?? "";
   const [form, setForm] = useState({ ...VACIO, habitacionId: habitacionInicial });
   const [errores, setErrores] = useState({});
   const [claveOperacion] = useState(() => crypto.randomUUID());
@@ -56,7 +60,7 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
 
   const articuloElegido = (stockQuery.data ?? []).find((a) => String(a.articuloId) === form.articuloId);
 
-  const mutacion = useMutation({
+  const mutacion = useMutacionUnica({
     mutationFn: () => {
       const payload = {
         reservaId: reserva.id,
@@ -68,7 +72,7 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
         incluido: form.incluido === true,
         claveOperacion,
         ...(form.fechaServicio ? { fechaServicio: new Date(form.fechaServicio).toISOString() } : {}),
-        registradoPor: form.registradoPor.trim(),
+        registradoPor,
       };
       if (esMinibar) {
         payload.articuloId = Number(form.articuloId);
@@ -106,7 +110,6 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
     if (!form.habitacionId) nuevos.habitacionId = "Elegí la habitación.";
     if (!form.incluido && !(Number(form.monto) > 0)) nuevos.monto = "Ingresá un monto mayor a 0.";
     if (!(Number(form.cantidad) > 0)) nuevos.cantidad = "Ingresá una cantidad mayor a 0.";
-    if (!form.registradoPor.trim()) nuevos.registradoPor = "Indicá quién registra el consumo.";
     if (esMinibar) {
       if (depositosQuery.isSuccess && !depositoMinibar) {
         nuevos.general = `No existe el depósito "${DEPOSITO_MINIBAR_NOMBRE}" — pedile a un administrador que lo cree antes de registrar consumos de Minibar.`;
@@ -233,14 +236,8 @@ export function ConsumoModal({ reserva, habitacionIdInicial, onClose, onExito })
           />
 
           <div className={esMinibar ? "" : "sm:col-span-2"}>
-            <Input
-              label="Registrado por *"
-              value={form.registradoPor}
-              onChange={(e) => cambiar("registradoPor", e.target.value)}
-              maxLength={LIMITES_SERVICIOS_ADICIONALES.registradoPor}
-              placeholder="Tu nombre"
-              error={errores.registradoPor}
-            />
+            <p className="text-[12px] font-semibold uppercase tracking-wide text-tinta/55">Registrado por</p>
+            <p className="text-sm">{registradoPor || "—"}</p>
           </div>
         </div>
         <div className="flex justify-end gap-2.5 border-t border-borde px-6 py-4">

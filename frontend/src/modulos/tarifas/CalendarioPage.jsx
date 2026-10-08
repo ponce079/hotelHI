@@ -64,7 +64,7 @@ export function CalendarioPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="font-heading text-2xl font-semibold">Calendario anual</h1>
-          <p className="text-sm text-piedra">Temporada efectiva de cada día, con código de colores (HU-90).</p>
+          <p className="text-sm text-piedra">Temporada efectiva de cada día, con código de colores.</p>
         </div>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => setAnio((a) => a - 1)} className="cursor-pointer rounded-md border border-borde p-1.5 hover:bg-hueso">

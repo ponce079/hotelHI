@@ -161,7 +161,7 @@ export function OrdenPagoWizard({ onClose, onExito }) {
     <Modal titulo="Generar orden de pago" onClose={onClose} ancho="max-w-3xl">
     <div className="flex flex-col gap-6 px-6 py-5">
       <p className="-mt-1 font-mono text-[11px] text-tinta/55">
-        HU 76 y 77 — el total aplicado y el distribuido en medios deben coincidir
+        El total aplicado y el distribuido en medios deben coincidir
       </p>
 
       <div className="flex flex-wrap items-center gap-2 rounded-[18.4px] bg-hueso px-6 py-4">

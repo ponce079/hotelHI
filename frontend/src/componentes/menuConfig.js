@@ -82,9 +82,8 @@ export const MENU_GRUPOS = [
         icon: DollarSign,
         roles: ["admin", "recepcionista", "gerente"],
       },
-      // Sprint 3 académico — Reservas (HU-36 a 42). Las pantallas públicas
-      // (/disponibilidad y /reservar) no entran al menú: son del rol
-      // "Huésped" y viven fuera de la sesión de staff. Etapa 4B (HU-97):
+      // Sprint 3 académico — Reservas (HU-36 a 42). La web vieja (/disponibilidad y /reservar) se retiró: redirige
+      // a /web, que tampoco entra al menú (es del huésped, fuera de la sesión de staff). Etapa 4B (HU-97):
       // gerente se suma (ver sesion.jsx:verReservas) — necesita llegar a la
       // ficha de una reserva para ajustarle el precio.
       {

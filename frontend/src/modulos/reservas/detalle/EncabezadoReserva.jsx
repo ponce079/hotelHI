@@ -3,7 +3,7 @@ import { Badge } from "../../../componentes/Badge";
 import { Button } from "../../../componentes/Button";
 import { CodigoClave } from "../../../componentes/CodigoClave";
 import { MenuAcciones } from "../../../componentes/MenuAcciones";
-import { ESTADO_RESERVA_BADGE } from "../reservas.constantes";
+import { ESTADO_RESERVA_BADGE, etiquetaEstadoReserva } from "../reservas.constantes";
 
 const ICONOS = { modificar: Pencil, "check-in": LogIn, consumo: Plus, "check-out": LogOut, comprobante: ReceiptText, cancelar: Ban };
 const VARIANTES = { primaria: "ok", secundaria: "secundario", destructiva: "destructivo" };
@@ -65,7 +65,7 @@ export function EncabezadoReserva({ reserva, pasos, acciones, onAccion, checkIn,
           <div className="flex flex-wrap items-center gap-3">
             <h1 className="font-heading text-[30px] font-semibold leading-tight">Reserva</h1>
             <CodigoClave className="text-[20px]">{reserva.codigoConfirmacion}</CodigoClave>
-            <Badge variante={ESTADO_RESERVA_BADGE[reserva.estado]}>{reserva.estado}</Badge>
+            <Badge variante={ESTADO_RESERVA_BADGE[reserva.estado]}>{etiquetaEstadoReserva(reserva.estado)}</Badge>
             {reserva.planTarifario && <Badge variante="neutro">{reserva.planTarifario.nombre}</Badge>}
             {reserva.cantidadHabitaciones > 1 && <Badge variante="info">Reserva grupal</Badge>}
           </div>

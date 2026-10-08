@@ -42,8 +42,7 @@ import { CotizadorPage } from "./modulos/tarifas/CotizadorPage";
 import { ReservasPage } from "./modulos/reservas/ReservasPage";
 import { ReservaDetallePage } from "./modulos/reservas/detalle/ReservaDetallePage";
 import { NoShowPage } from "./modulos/garantias/NoShowPage";
-import { DisponibilidadPublicaPage } from "./modulos/reservas/DisponibilidadPublicaPage";
-import { ReservaWebPage } from "./modulos/reservas/ReservaWebPage";
+import { DisponibilidadPage } from "./modulos/reservas/DisponibilidadPage";
 import { CheckInPage } from "./modulos/check-in/CheckInPage";
 import { ServiciosAdicionalesPage } from "./modulos/servicios-adicionales/ServiciosAdicionalesPage";
 import { CheckOutPage } from "./modulos/check-out/CheckOutPage";
@@ -53,6 +52,8 @@ import { ComprobanteEstadiaDetallePage } from "./modulos/comprobantes-estadia/Co
 import { ReporteCajaDiariaPage } from "./modulos/comprobantes-estadia/ReporteCajaDiariaPage";
 import { MovimientosPagoPage } from "./modulos/pagos-estadia/MovimientosPagoPage";
 import { UsuariosPage } from "./modulos/usuarios/UsuariosPage";
+import { LayoutEcommerce, GuardaCompra, InicioPage, ResultadosPage, DetalleTipoPage, DatosHuespedPage, PagoPage, ConfirmacionPage, MiReservaPage } from "./modulos/ecommerce";
+import { MiPerfilPage } from "./modulos/usuarios/MiPerfilPage";
 // Gatekeeper de rutas: sin sesion iniciada (login real con usuario y
 // contraseña, ver lib/sesion.jsx), redirige a /login.
 function RequireSesion() {
@@ -65,12 +66,20 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
-      {/* Sprint 3 académico — pantallas del rol "Huésped" (HU-38 y HU-40):
-          autoservicio sin sesión de staff, así que van fuera de
-          <RequireSesion> igual que /login. Traen su propio envoltorio
-          (LayoutPublico), no el menú lateral de <Layout>. */}
-      <Route path="/disponibilidad" element={<DisponibilidadPublicaPage />} />
-      <Route path="/reservar" element={<ReservaWebPage />} />
+      {/* Web vieja (HU-40) retirada: /disponibilidad y /reservar redirigen al motor de reservas web nuevo (/web). */}
+      <Route path="/disponibilidad" element={<Navigate to="/web" replace />} />
+      <Route path="/reservar" element={<Navigate to="/web" replace />} />
+      {/* E-commerce (HU-99 a HU-106): motor de reservas web. Sin sesión de staff, con su propio layout y estilos
+          encapsulados (.ec-raiz). Contrato: docs/ecommerce/CONTRATO.md. */}
+      <Route path="/web" element={<LayoutEcommerce />}>
+        <Route index element={<InicioPage />} />
+        <Route path="resultados" element={<ResultadosPage />} />
+        <Route path="habitacion/:tipoHabitacionId" element={<DetalleTipoPage />} />
+        <Route path="datos" element={<GuardaCompra requiere="seleccion"><DatosHuespedPage /></GuardaCompra>} />
+        <Route path="pago" element={<GuardaCompra requiere="seleccion"><PagoPage /></GuardaCompra>} />
+        <Route path="confirmacion" element={<GuardaCompra requiere="resultado"><ConfirmacionPage /></GuardaCompra>} />
+        <Route path="mi-reserva" element={<MiReservaPage />} />
+      </Route>
       <Route element={<RequireSesion />}>
         <Route element={<Layout />}>
           <Route index element={<DashboardPage />} />
@@ -122,7 +131,7 @@ export default function App() {
           <Route path="/tarifas/cotizador" element={<CotizadorPage />} />
           {/* Sprint 3 académico — Reservas (HU-36 a HU-42). */}
           <Route path="/reservas" element={<ReservasPage />} />
-          <Route path="/reservas/disponibilidad" element={<DisponibilidadPublicaPage modoInterno />} />
+          <Route path="/reservas/disponibilidad" element={<DisponibilidadPage />} />
           <Route path="/reservas/no-show" element={<NoShowPage />} />
           <Route path="/reservas/:id" element={<ReservaDetallePage />} />
           {/* Sprint 3 académico — Check-in (HU-43 a HU-47). */}
@@ -139,6 +148,8 @@ export default function App() {
           <Route path="/reporte-caja-diaria" element={<ReporteCajaDiariaPage />} />
           {/* Usuarios y Seguridad — gestión de usuarios (solo admin). */}
           <Route path="/usuarios" element={<UsuariosPage />} />
+          {/* Usuarios y Seguridad — "Mi perfil" de quien está logueado (cualquier rol). */}
+          <Route path="/mi-perfil" element={<MiPerfilPage />} />
         </Route>
       </Route>
     </Routes>

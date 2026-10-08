@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQueryClient } from "@tanstack/react-query";
+import { useMutacionUnica } from "../../lib/useMutacionUnica";
 import { Check, CreditCard, Plus, Trash2, X } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
@@ -47,7 +48,7 @@ export function PagoEstadiaWizard({ reservaId, saldo, onClose, onExito }) {
   const puedeConfirmar =
     medios.length > 0 && !hayImporteInvalido && !excede && !hayTarjetaSinAutorizar && centavos(totalMedios) > 0;
 
-  const mutacion = useMutation({
+  const mutacion = useMutacionUnica({
     mutationFn: () =>
       registrarPagoEstadia({
         reservaId: Number(reservaId),
@@ -111,7 +112,7 @@ export function PagoEstadiaWizard({ reservaId, saldo, onClose, onExito }) {
   return (
     <Modal
       titulo="Registrar pago de la estadía"
-      subtitulo="HU 50 — se pueden combinar varios medios de pago"
+      subtitulo="Se pueden combinar varios medios de pago"
       onClose={mutacion.isPending ? () => {} : onClose}
       ancho="max-w-2xl"
     >
@@ -226,7 +227,7 @@ export function PagoEstadiaWizard({ reservaId, saldo, onClose, onExito }) {
             Cancelar
           </Button>
           <Button variante="ok" icono={Check} cargando={mutacion.isPending} disabled={!puedeConfirmar} onClick={confirmar}>
-            {mutacion.isPending ? "Registrando…" : "Confirmar pago"}
+            {mutacion.isPending ? "Procesando…" : "Confirmar pago"}
           </Button>
         </div>
       </div>

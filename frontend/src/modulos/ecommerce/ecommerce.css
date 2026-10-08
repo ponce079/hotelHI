@@ -1,0 +1,1962 @@
+@import url("https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Fraunces:wght@600;700&display=swap");
+
+/* ==========================================================================
+   E-commerce (motor de reservas web) — guía de estilo, página 15 de
+   docs/ecommerce/mockups-web.pdf.
+
+   REGLAS (ver docs/ecommerce/CONTRATO.md → "Estilos"):
+   - Las variables viven en .ec-raiz (nunca en :root).
+   - Toda clase empieza con "ec-". Los selectores de etiqueta solo dentro
+     de .ec-raiz. Así nada de este archivo alcanza a las pantallas que ya
+     existen (mostrador, web vieja, login…).
+   - Tokens: solo Gimena. Las páginas pueden sumar clases ec- propias.
+   ========================================================================== */
+
+.ec-raiz {
+  /* Colores */
+  --ec-verde-profundo: #0e3326;
+  --ec-verde: #1f4d3a;
+  --ec-verde-claro: #e4eee6;
+  --ec-crema: #f5f2ea;
+  --ec-papel: #fdfcf8;
+  --ec-linea: #e4ded0;
+  --ec-tinta: #1b2620;
+  --ec-texto-2: #56605a;
+  --ec-dorado: #c9a968;
+  --ec-dorado-texto: #7d5e26;
+  --ec-dorado-claro: #f4ecda;
+  --ec-rojo: #8e2c22;
+  --ec-rojo-claro: #f6e3df;
+  --ec-borde-campo: #d3cbb9;
+  --ec-neutro-claro: #ebe7dc;
+  --ec-foto: #e2dccb;
+  --ec-halo: rgba(31, 77, 58, 0.22);
+
+  /* Tipografía */
+  --ec-fuente-titulo: "Fraunces", Georgia, "Times New Roman", serif;
+  --ec-fuente-texto: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+
+  /* Medidas */
+  --ec-radio-campo: 10px;
+  --ec-radio-boton: 12px;
+  --ec-radio-tarjeta: 20px;
+  --ec-radio-tarjeta-chica: 16px;
+  --ec-radio-badge: 999px;
+  --ec-ancho-max: 1440px;
+  --ec-margen: 80px;
+  --ec-gap: 32px;
+  --ec-sombra: 0 18px 40px -24px rgba(14, 51, 38, 0.35);
+
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--ec-crema);
+  color: var(--ec-tinta);
+  font-family: var(--ec-fuente-texto);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Base acotada a .ec-raiz ---------------------------------------------- */
+.ec-raiz *,
+.ec-raiz *::before,
+.ec-raiz *::after {
+  box-sizing: border-box;
+}
+/* Reset de márgenes con :where() (especificidad baja) para que cualquier
+   clase ec- pueda poner su propio margen. */
+:where(.ec-raiz) h1,
+:where(.ec-raiz) h2,
+:where(.ec-raiz) h3,
+:where(.ec-raiz) h4,
+:where(.ec-raiz) p,
+:where(.ec-raiz) ul,
+:where(.ec-raiz) ol {
+  margin: 0;
+}
+.ec-raiz h1,
+.ec-raiz h2,
+.ec-raiz h3,
+.ec-raiz h4 {
+  font-family: var(--ec-fuente-titulo);
+  font-weight: 600;
+  color: var(--ec-verde-profundo);
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+}
+.ec-raiz p {
+  line-height: 1.55;
+}
+:where(.ec-raiz) a {
+  color: var(--ec-verde);
+}
+.ec-raiz button,
+.ec-raiz input,
+.ec-raiz select,
+.ec-raiz textarea {
+  font-family: inherit;
+  font-size: inherit;
+}
+.ec-raiz :focus-visible {
+  outline: 3px solid var(--ec-halo);
+  outline-offset: 2px;
+}
+.ec-raiz svg {
+  flex-shrink: 0;
+}
+
+/* --- Utilidades ------------------------------------------------------------ */
+.ec-visualmente-oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+.ec-contenedor {
+  width: 100%;
+  max-width: var(--ec-ancho-max);
+  margin: 0 auto;
+  padding: 0 var(--ec-margen);
+}
+.ec-main {
+  flex: 1;
+}
+.ec-sobretitulo {
+  font-family: var(--ec-fuente-texto);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ec-verde);
+}
+.ec-titulo-pagina {
+  font-size: 52px;
+}
+.ec-titulo-seccion {
+  font-size: 26px;
+}
+.ec-texto-2 {
+  color: var(--ec-texto-2);
+}
+.ec-chico {
+  font-size: 14px;
+}
+.ec-pila {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.ec-fila {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ec-responsable {
+  padding: 12px 16px;
+  border: 1px dashed var(--ec-dorado);
+  border-radius: var(--ec-radio-campo);
+  background: var(--ec-dorado-claro);
+  color: var(--ec-dorado-texto);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* --- Botones --------------------------------------------------------------- */
+.ec-boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  height: 52px;
+  padding: 0 24px;
+  border: 1px solid transparent;
+  border-radius: var(--ec-radio-boton);
+  font-family: var(--ec-fuente-texto);
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.ec-boton--primario {
+  background: var(--ec-verde);
+  color: var(--ec-papel);
+}
+.ec-boton--primario:hover:not(:disabled) {
+  background: var(--ec-verde-profundo);
+}
+.ec-boton--secundario {
+  background: transparent;
+  border-color: var(--ec-verde);
+  color: var(--ec-verde);
+}
+.ec-boton--secundario:hover:not(:disabled) {
+  background: var(--ec-verde-claro);
+}
+.ec-boton--claro {
+  background: transparent;
+  border-color: rgba(253, 252, 248, 0.7);
+  color: var(--ec-papel);
+}
+.ec-boton--claro:hover:not(:disabled) {
+  background: rgba(253, 252, 248, 0.12);
+}
+.ec-boton--texto {
+  height: auto;
+  padding: 4px 0;
+  background: transparent;
+  color: var(--ec-verde);
+  font-weight: 600;
+}
+.ec-boton--texto:hover:not(:disabled) {
+  color: var(--ec-verde-profundo);
+  text-decoration: underline;
+}
+.ec-boton--formulario {
+  height: 48px;
+}
+.ec-boton--bloque {
+  width: 100%;
+}
+.ec-boton:disabled {
+  background: var(--ec-neutro-claro);
+  border-color: var(--ec-neutro-claro);
+  color: #8d8a80;
+  cursor: not-allowed;
+}
+.ec-boton--texto:disabled {
+  background: transparent;
+}
+
+/* --- Campos ---------------------------------------------------------------- */
+.ec-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.ec-campo__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ec-tinta);
+}
+.ec-campo__requerido {
+  color: var(--ec-rojo);
+}
+.ec-campo__envoltura {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.ec-campo__icono {
+  position: absolute;
+  left: 14px;
+  color: var(--ec-texto-2);
+  pointer-events: none;
+}
+.ec-campo__control {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 14px;
+  border: 1px solid var(--ec-borde-campo);
+  border-radius: var(--ec-radio-campo);
+  background: #ffffff;
+  color: var(--ec-tinta);
+  font-size: 16px;
+  line-height: 1.4;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.ec-campo__control--con-icono {
+  padding-left: 44px;
+}
+.ec-campo__control::placeholder {
+  color: #9a9b93;
+}
+.ec-campo__control--area {
+  min-height: 112px;
+  resize: vertical;
+}
+.ec-campo__control--select {
+  cursor: pointer;
+}
+.ec-campo__control:focus {
+  outline: none;
+  border-color: var(--ec-verde);
+  box-shadow: 0 0 0 4px var(--ec-halo);
+}
+.ec-campo--error .ec-campo__control {
+  border-color: var(--ec-rojo);
+}
+.ec-campo--error .ec-campo__control:focus {
+  box-shadow: 0 0 0 4px rgba(142, 44, 34, 0.18);
+}
+.ec-campo__control:disabled {
+  background: var(--ec-crema);
+  color: var(--ec-texto-2);
+}
+.ec-campo__ayuda {
+  font-size: 13px;
+  color: var(--ec-texto-2);
+}
+.ec-campo__error {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ec-rojo);
+}
+.ec-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 15px;
+  cursor: pointer;
+}
+.ec-check input {
+  width: 20px;
+  height: 20px;
+  margin: 2px 0 0;
+  accent-color: var(--ec-verde);
+  flex-shrink: 0;
+}
+
+/* --- Tarjeta, insignias, foto ---------------------------------------------- */
+.ec-tarjeta {
+  background: var(--ec-papel);
+  border: 1px solid var(--ec-linea);
+  border-radius: var(--ec-radio-tarjeta);
+  overflow: hidden;
+}
+.ec-tarjeta--relleno {
+  padding: 32px;
+}
+.ec-tarjeta--deshabilitada {
+  opacity: 0.72;
+}
+.ec-insignia {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: var(--ec-radio-badge);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.ec-insignia--verde {
+  background: var(--ec-verde-claro);
+  color: var(--ec-verde);
+}
+.ec-insignia--dorado {
+  background: var(--ec-dorado-claro);
+  color: var(--ec-dorado-texto);
+}
+.ec-insignia--rojo {
+  background: var(--ec-rojo-claro);
+  color: var(--ec-rojo);
+}
+.ec-insignia--neutro {
+  background: var(--ec-neutro-claro);
+  color: var(--ec-texto-2);
+}
+.ec-foto {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 160px;
+  background: var(--ec-foto);
+  color: #6b6a60;
+  text-align: center;
+  padding: 16px;
+}
+.ec-foto__texto {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.ec-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  background: var(--ec-neutro-claro);
+  color: var(--ec-tinta);
+  font-size: 14px;
+}
+.ec-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* --- Mensajes -------------------------------------------------------------- */
+.ec-alerta {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  font-size: 15px;
+}
+.ec-alerta--error {
+  background: var(--ec-rojo-claro);
+  color: var(--ec-rojo);
+}
+.ec-alerta--info {
+  background: var(--ec-verde-claro);
+  color: var(--ec-verde);
+}
+.ec-alerta--aviso {
+  background: var(--ec-dorado-claro);
+  color: var(--ec-dorado-texto);
+}
+.ec-alerta__titulo {
+  font-weight: 700;
+}
+.ec-cargando {
+  padding: 48px 0;
+  text-align: center;
+  color: var(--ec-texto-2);
+}
+
+/* --- Header ---------------------------------------------------------------- */
+.ec-header {
+  background: var(--ec-papel);
+  border-bottom: 1px solid var(--ec-linea);
+}
+.ec-header--oscuro {
+  background: var(--ec-verde-profundo);
+  border-bottom-color: transparent;
+  color: var(--ec-papel);
+}
+.ec-header__interior {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  min-height: 96px;
+}
+.ec-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  text-decoration: none;
+  color: inherit;
+}
+.ec-raiz .ec-logo {
+  color: var(--ec-verde-profundo);
+}
+.ec-raiz .ec-header--oscuro .ec-logo,
+.ec-raiz .ec-footer .ec-logo {
+  color: var(--ec-papel);
+}
+.ec-logo__marca {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: var(--ec-verde);
+  color: var(--ec-papel);
+}
+.ec-header--oscuro .ec-logo__marca,
+.ec-footer .ec-logo__marca {
+  background: rgba(253, 252, 248, 0.12);
+}
+.ec-logo__nombre {
+  display: block;
+  font-family: var(--ec-fuente-titulo);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.1;
+}
+.ec-logo__bajada {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+.ec-nav {
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  margin: 0 auto;
+}
+.ec-raiz .ec-nav__link {
+  color: inherit;
+  font-size: 17px;
+  font-weight: 500;
+  text-decoration: none;
+  padding: 6px 0;
+  border-bottom: 2px solid transparent;
+}
+.ec-raiz .ec-nav__link:hover {
+  border-bottom-color: currentColor;
+}
+.ec-header__acciones {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.ec-header__seguro {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ec-verde);
+}
+.ec-menu-boton {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-left: auto;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.ec-header--oscuro .ec-boton--secundario {
+  border-color: rgba(253, 252, 248, 0.7);
+  color: var(--ec-papel);
+}
+.ec-header--oscuro .ec-boton--secundario:hover:not(:disabled) {
+  background: rgba(253, 252, 248, 0.12);
+}
+
+/* --- Footer ---------------------------------------------------------------- */
+.ec-footer {
+  margin-top: 96px;
+  background: var(--ec-verde-profundo);
+  color: rgba(253, 252, 248, 0.86);
+  padding: 64px 0 32px;
+}
+.ec-footer__grilla {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1.2fr;
+  gap: var(--ec-gap);
+}
+.ec-footer__texto {
+  margin-top: 16px;
+  max-width: 380px;
+  font-size: 16px;
+}
+.ec-footer__titulo {
+  margin-bottom: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(253, 252, 248, 0.7);
+}
+.ec-footer__lista {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 16px;
+}
+.ec-raiz .ec-footer a {
+  color: inherit;
+  text-decoration: none;
+}
+.ec-raiz .ec-footer a:hover {
+  text-decoration: underline;
+}
+.ec-footer__pie {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 48px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(253, 252, 248, 0.14);
+  font-size: 14px;
+  color: rgba(253, 252, 248, 0.7);
+}
+
+/* Desglose por noche del resumen "Tu reserva". */
+.ec-desglose {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--ec-crema);
+  font-size: 14px;
+}
+.ec-desglose__lista {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+.ec-desglose__ver {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--ec-verde);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.ec-desglose__ver:focus-visible {
+  outline: 3px solid var(--ec-dorado);
+  outline-offset: 2px;
+}
+
+/* Leyenda de sitio de demostración (proyecto académico), debajo de la línea del ©. */
+.ec-footer__demo {
+  margin: 12px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: rgba(253, 252, 248, 0.6);
+}
+
+/* Aviso de espera mientras se procesa la reserva (PagoPage). */
+.ec-compra__espera {
+  margin: 0;
+}
+
+/* --- Buscador de estadía --------------------------------------------------- */
+.ec-buscador {
+  display: grid;
+  grid-template-columns: 1.2fr 1.2fr 0.8fr 0.8fr auto;
+  align-items: start;
+  gap: 16px;
+  padding: 24px 28px;
+  background: var(--ec-papel);
+  border-radius: var(--ec-radio-tarjeta);
+  box-shadow: var(--ec-sombra);
+}
+.ec-buscador__accion {
+  padding-top: 25px;
+}
+.ec-buscador__error-general {
+  grid-column: 1 / -1;
+}
+
+/* --- Inicio ---------------------------------------------------------------- */
+.ec-hero {
+  position: relative;
+  background: var(--ec-verde-profundo);
+  color: var(--ec-papel);
+}
+.ec-hero__grilla {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  min-height: 640px;
+}
+.ec-hero__texto {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 24px;
+  padding: 96px 48px 140px 0;
+}
+.ec-hero .ec-sobretitulo {
+  color: rgba(253, 252, 248, 0.75);
+}
+.ec-raiz .ec-hero h1 {
+  font-size: 72px;
+  line-height: 1.02;
+  color: var(--ec-papel);
+}
+.ec-hero__bajada {
+  max-width: 560px;
+  font-size: 19px;
+  color: rgba(253, 252, 248, 0.82);
+}
+.ec-hero__sellos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.ec-hero__sello {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.ec-hero__foto {
+  margin-right: calc(-1 * var(--ec-margen));
+  min-height: 100%;
+}
+.ec-hero__foto .ec-foto {
+  height: 100%;
+}
+.ec-hero__buscador {
+  position: relative;
+  margin-top: -88px;
+  z-index: 1;
+}
+.ec-seccion {
+  padding-top: 96px;
+}
+.ec-seccion__encabezado {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 40px;
+}
+.ec-seccion__encabezado h2 {
+  margin-top: 12px;
+  font-size: 44px;
+}
+.ec-grilla-tipos {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--ec-gap);
+}
+.ec-tipo-card .ec-foto {
+  min-height: 300px;
+}
+.ec-tipo-card__cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 32px;
+}
+.ec-tipo-card__titulo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.ec-raiz .ec-tipo-card__titulo h3 {
+  font-size: 36px;
+}
+.ec-tipo-card__pie {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 16px;
+  border-top: 1px solid var(--ec-linea);
+}
+.ec-ventajas {
+  background: var(--ec-papel);
+  border-top: 1px solid var(--ec-linea);
+  border-bottom: 1px solid var(--ec-linea);
+  margin-top: 96px;
+  padding: 72px 0;
+}
+.ec-ventajas__grilla {
+  display: grid;
+  grid-template-columns: 1.1fr repeat(3, 1fr);
+  gap: var(--ec-gap);
+}
+.ec-raiz .ec-ventajas h2 {
+  margin-top: 12px;
+  font-size: 36px;
+}
+.ec-ventaja {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ec-ventaja__icono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  background: var(--ec-verde-claro);
+  color: var(--ec-verde);
+}
+.ec-ventaja__titulo {
+  font-size: 19px;
+  font-weight: 700;
+}
+.ec-ubicacion {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+}
+.ec-ubicacion .ec-foto {
+  min-height: 420px;
+  height: 100%;
+}
+.ec-ubicacion__datos {
+  padding: 48px;
+}
+.ec-raiz .ec-ubicacion__datos h2 {
+  margin: 12px 0 24px;
+  font-size: 40px;
+}
+.ec-dato {
+  display: grid;
+  grid-template-columns: 24px 140px 1fr;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--ec-linea);
+}
+.ec-dato__etiqueta {
+  color: var(--ec-texto-2);
+}
+.ec-dato__valor {
+  font-weight: 600;
+}
+
+/* --- Resultados ------------------------------------------------------------ */
+.ec-banda {
+  margin-top: 40px;
+  padding: 48px;
+  border-radius: 28px;
+  background: var(--ec-verde-profundo);
+  color: var(--ec-papel);
+}
+.ec-raiz .ec-banda h1 {
+  color: var(--ec-papel);
+  font-size: 52px;
+}
+.ec-banda__bajada {
+  margin: 12px 0 32px;
+  font-size: 19px;
+  color: rgba(253, 252, 248, 0.82);
+}
+.ec-banda .ec-buscador {
+  box-shadow: none;
+}
+.ec-resultados__resumen {
+  margin: 40px 0 24px;
+  font-size: 18px;
+}
+.ec-resultados__lista {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.ec-resultado {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+}
+.ec-resultado .ec-foto {
+  height: 100%;
+  min-height: 240px;
+}
+.ec-resultado__cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 32px;
+}
+.ec-resultado__titulo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ec-raiz .ec-resultado__titulo h2 {
+  font-size: 34px;
+}
+.ec-resultado__planes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 8px;
+}
+.ec-resultado__no-disponible {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--ec-neutro-claro);
+  color: var(--ec-texto-2);
+  font-weight: 600;
+}
+
+/* --- Tarjeta de plan ------------------------------------------------------- */
+.ec-plan {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 24px;
+  padding: 20px 24px;
+  border: 1px solid var(--ec-linea);
+  border-radius: var(--ec-radio-tarjeta-chica);
+  background: #ffffff;
+}
+.ec-plan--elegido {
+  border-color: var(--ec-verde);
+  box-shadow: 0 0 0 1px var(--ec-verde);
+  background: var(--ec-verde-claro);
+}
+.ec-plan__nombre {
+  font-size: 18px;
+  font-weight: 700;
+}
+.ec-plan__condiciones {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--ec-texto-2);
+}
+.ec-plan__condiciones--nrf {
+  color: var(--ec-dorado-texto);
+}
+.ec-plan__precio {
+  text-align: right;
+}
+.ec-plan__total {
+  font-family: var(--ec-fuente-titulo);
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--ec-verde-profundo);
+}
+.ec-plan__detalle {
+  font-size: 13px;
+  color: var(--ec-texto-2);
+}
+
+/* --- Proceso de compra (datos, pago) -------------------------------------- */
+.ec-compra {
+  padding-top: 40px;
+}
+.ec-compra__grilla {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 460px;
+  gap: 40px;
+  align-items: start;
+  margin-top: 32px;
+}
+.ec-compra__formulario {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.ec-compra__navegacion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.ec-compra__lateral {
+  position: sticky;
+  top: 24px;
+}
+.ec-barra-movil {
+  display: none;
+}
+
+/* --- Indicador de pasos ---------------------------------------------------- */
+.ec-pasos {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ec-paso {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--ec-texto-2);
+  font-size: 17px;
+}
+.ec-paso__circulo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1.5px solid var(--ec-borde-campo);
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.ec-paso--actual {
+  color: var(--ec-verde-profundo);
+  font-weight: 700;
+}
+.ec-paso--actual .ec-paso__circulo {
+  border-color: var(--ec-verde);
+  border-width: 2px;
+  color: var(--ec-verde);
+}
+.ec-paso--hecho {
+  color: var(--ec-tinta);
+  font-weight: 600;
+}
+.ec-paso--hecho .ec-paso__circulo {
+  border-color: var(--ec-verde);
+  background: var(--ec-verde);
+  color: var(--ec-papel);
+}
+.ec-paso__linea {
+  width: 80px;
+  height: 2px;
+  background: var(--ec-linea);
+}
+.ec-paso__linea--hecha {
+  background: var(--ec-verde);
+}
+
+/* --- Resumen de la reserva ------------------------------------------------- */
+.ec-resumen .ec-foto {
+  min-height: 180px;
+}
+.ec-resumen__cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 28px;
+}
+.ec-resumen__encabezado {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+.ec-raiz .ec-resumen__encabezado h2 {
+  margin-top: 6px;
+  font-size: 28px;
+}
+.ec-resumen__fechas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid var(--ec-linea);
+  border-radius: 14px;
+  overflow: hidden;
+}
+.ec-resumen__fecha {
+  padding: 14px 16px;
+}
+.ec-resumen__fecha + .ec-resumen__fecha {
+  border-left: 1px solid var(--ec-linea);
+}
+.ec-resumen__etiqueta {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ec-texto-2);
+}
+.ec-resumen__valor {
+  font-weight: 700;
+}
+.ec-resumen__plan {
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: var(--ec-crema);
+}
+.ec-resumen__total {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: 20px;
+  border-top: 1px solid var(--ec-linea);
+}
+.ec-resumen__monto {
+  font-family: var(--ec-fuente-titulo);
+  font-size: 40px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ec-verde-profundo);
+}
+
+/* --- Confirmación ---------------------------------------------------------- */
+.ec-confirmacion {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  max-width: 1040px;
+  margin: 0 auto;
+  padding-top: 64px;
+  text-align: center;
+}
+.ec-confirmacion__icono {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 999px;
+  background: var(--ec-verde);
+  color: var(--ec-papel);
+}
+.ec-codigo {
+  display: inline-flex;
+  align-items: center;
+  gap: 20px;
+  padding: 18px 28px;
+  border-radius: 18px;
+  background: var(--ec-verde-profundo);
+  color: rgba(253, 252, 248, 0.8);
+}
+.ec-codigo__valor {
+  font-family: var(--ec-fuente-titulo);
+  font-size: 36px;
+  font-weight: 600;
+  color: var(--ec-papel);
+  letter-spacing: 0.02em;
+}
+.ec-detalle-grilla {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  width: 100%;
+  text-align: left;
+}
+.ec-detalle-grilla > div {
+  padding: 24px;
+  border-top: 1px solid var(--ec-linea);
+}
+.ec-detalle-grilla > div + div {
+  border-left: 1px solid var(--ec-linea);
+}
+.ec-detalle-encabezado {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px;
+  text-align: left;
+}
+
+/* --- Detalle de tipo ------------------------------------------------------- */
+.ec-migas {
+  display: flex;
+  gap: 8px;
+  margin: 32px 0 16px;
+  font-size: 15px;
+  color: var(--ec-texto-2);
+}
+.ec-galeria {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr;
+  grid-template-rows: 280px 280px;
+  gap: 12px;
+  margin-top: 24px;
+  border-radius: var(--ec-radio-tarjeta);
+  overflow: hidden;
+}
+.ec-galeria .ec-foto {
+  height: 100%;
+  min-height: 0;
+}
+.ec-galeria > :first-child {
+  grid-row: 1 / 3;
+}
+.ec-detalle__grilla {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 420px;
+  gap: 48px;
+  align-items: start;
+  margin-top: 48px;
+}
+.ec-politica {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  gap: 12px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--ec-linea);
+}
+
+/* --- Mi reserva ------------------------------------------------------------ */
+.ec-mi-reserva {
+  max-width: 720px;
+  margin: 0 auto;
+  padding-top: 56px;
+}
+.ec-grilla-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 20px;
+}
+.ec-mi-reserva__cabecera {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ec-mi-reserva__datos {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+}
+.ec-mi-reserva__datos > div {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 4px 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ec-linea);
+}
+.ec-mi-reserva__datos dt {
+  color: var(--ec-texto-2);
+  font-size: 15px;
+  font-weight: 600;
+}
+.ec-mi-reserva__datos dd {
+  margin: 0;
+}
+.ec-mi-reserva__habitacion,
+.ec-mi-reserva__condiciones {
+  display: block;
+}
+.ec-mi-reserva__condiciones {
+  font-size: 15px;
+}
+.ec-mi-reserva__cancelar {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--ec-linea);
+}
+.ec-raiz .ec-enlace-peligro {
+  color: var(--ec-rojo);
+}
+.ec-raiz .ec-enlace-peligro:hover:not(:disabled) {
+  color: var(--ec-rojo);
+  text-decoration: underline;
+}
+.ec-raiz .ec-boton--peligro {
+  background: var(--ec-rojo);
+  border-color: var(--ec-rojo);
+  color: var(--ec-papel);
+}
+.ec-raiz .ec-boton--peligro:hover:not(:disabled) {
+  background: #6f2219;
+}
+
+/* --- Diálogo de confirmación ---------------------------------------------- */
+.ec-dialogo-fondo {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(14, 51, 38, 0.45);
+}
+.ec-dialogo {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 480px;
+  padding: 28px;
+  border-radius: var(--ec-radio-tarjeta);
+  background: var(--ec-papel);
+  box-shadow: var(--ec-sombra);
+}
+.ec-raiz .ec-dialogo__titulo {
+  font-size: 24px;
+}
+.ec-dialogo__acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+@media (max-width: 767px) {
+  .ec-mi-reserva {
+    padding-top: 32px;
+  }
+  .ec-mi-reserva__datos > div {
+    grid-template-columns: 1fr;
+  }
+  .ec-dialogo {
+    padding: 20px;
+  }
+  .ec-dialogo__acciones {
+    flex-direction: column-reverse;
+  }
+  .ec-dialogo__acciones .ec-boton {
+    width: 100%;
+  }
+}
+
+/* ==========================================================================
+   Móvil (páginas 8 y 9 del mockup)
+   ========================================================================== */
+@media (max-width: 1100px) {
+  .ec-raiz {
+    --ec-margen: 32px;
+  }
+  .ec-buscador {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ec-buscador__accion {
+    grid-column: 1 / -1;
+    padding-top: 0;
+  }
+  .ec-buscador__accion .ec-boton {
+    width: 100%;
+  }
+  .ec-compra__grilla,
+  .ec-detalle__grilla {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ec-compra__lateral {
+    position: static;
+  }
+  .ec-ventajas__grilla {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ec-footer__grilla {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .ec-raiz {
+    --ec-margen: 16px;
+    --ec-gap: 16px;
+    font-size: 16px;
+  }
+  .ec-titulo-pagina,
+  .ec-raiz .ec-banda h1 {
+    font-size: 36px;
+  }
+  .ec-header__interior {
+    min-height: 72px;
+    gap: 12px;
+  }
+  .ec-logo__marca {
+    width: 40px;
+    height: 40px;
+  }
+  .ec-logo__nombre {
+    font-size: 22px;
+  }
+  .ec-logo__bajada {
+    display: none;
+  }
+  .ec-menu-boton {
+    display: inline-flex;
+  }
+  .ec-nav,
+  .ec-header__acciones {
+    display: none;
+  }
+  .ec-header--menu-abierto .ec-header__interior {
+    flex-wrap: wrap;
+  }
+  .ec-header--menu-abierto .ec-nav,
+  .ec-header--menu-abierto .ec-header__acciones {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 4px;
+    margin: 0;
+    padding-bottom: 16px;
+  }
+  .ec-header--menu-abierto .ec-nav__link {
+    padding: 12px 0;
+  }
+  .ec-header__seguro span {
+    display: none;
+  }
+  .ec-hero__grilla {
+    grid-template-columns: 1fr;
+    min-height: 0;
+  }
+  .ec-hero__texto {
+    padding: 48px 0 120px;
+    gap: 16px;
+  }
+  .ec-raiz .ec-hero h1 {
+    font-size: 44px;
+  }
+  .ec-hero__bajada {
+    font-size: 17px;
+  }
+  .ec-hero__foto {
+    display: none;
+  }
+  .ec-hero__buscador {
+    margin-top: -96px;
+  }
+  .ec-buscador {
+    grid-template-columns: 1fr 1fr;
+    padding: 20px;
+    gap: 12px;
+  }
+  .ec-buscador .ec-campo__icono {
+    display: none;
+  }
+  .ec-buscador .ec-campo__control {
+    padding-left: 10px;
+    padding-right: 8px;
+  }
+  .ec-seccion {
+    padding-top: 56px;
+  }
+  .ec-seccion__encabezado h2,
+  .ec-raiz .ec-ventajas h2,
+  .ec-raiz .ec-ubicacion__datos h2 {
+    font-size: 32px;
+  }
+  .ec-grilla-tipos,
+  .ec-ventajas__grilla,
+  .ec-ubicacion,
+  .ec-footer__grilla,
+  .ec-grilla-2 {
+    grid-template-columns: 1fr;
+  }
+  .ec-tipo-card .ec-foto {
+    min-height: 200px;
+  }
+  .ec-tipo-card__cuerpo,
+  .ec-ubicacion__datos,
+  .ec-tarjeta--relleno {
+    padding: 20px;
+  }
+  .ec-raiz .ec-tipo-card__titulo h3 {
+    font-size: 30px;
+  }
+  .ec-ventajas {
+    margin-top: 56px;
+    padding: 48px 0;
+  }
+  .ec-ubicacion .ec-foto {
+    min-height: 200px;
+  }
+  .ec-dato {
+    grid-template-columns: 24px 1fr;
+  }
+  .ec-dato__valor {
+    grid-column: 2;
+  }
+  .ec-banda {
+    margin: 16px calc(-1 * var(--ec-margen)) 0;
+    padding: 32px var(--ec-margen);
+    border-radius: 0;
+  }
+  .ec-resultado {
+    grid-template-columns: 1fr;
+  }
+  .ec-resultado .ec-foto {
+    min-height: 180px;
+  }
+  .ec-resultado__cuerpo {
+    padding: 20px;
+  }
+  .ec-raiz .ec-resultado__titulo h2 {
+    font-size: 28px;
+  }
+  .ec-plan {
+    grid-template-columns: 1fr auto;
+    gap: 12px 16px;
+    padding: 16px;
+  }
+  .ec-plan__accion {
+    grid-column: 1 / -1;
+  }
+  .ec-plan__accion .ec-boton {
+    width: 100%;
+  }
+  .ec-plan__total {
+    font-size: 24px;
+  }
+  .ec-pasos {
+    gap: 8px;
+  }
+  .ec-paso__etiqueta {
+    display: none;
+  }
+  .ec-paso--actual .ec-paso__etiqueta {
+    display: inline;
+  }
+  .ec-paso__linea {
+    width: 24px;
+  }
+  .ec-compra {
+    padding-top: 24px;
+    padding-bottom: 96px;
+  }
+  .ec-compra__navegacion .ec-boton--primario {
+    display: none;
+  }
+  .ec-barra-movil {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom));
+    background: var(--ec-papel);
+    border-top: 1px solid var(--ec-linea);
+    box-shadow: 0 -12px 24px -16px rgba(14, 51, 38, 0.35);
+  }
+  .ec-barra-movil__monto {
+    font-family: var(--ec-fuente-titulo);
+    font-size: 26px;
+    font-weight: 600;
+    line-height: 1.1;
+    color: var(--ec-verde-profundo);
+  }
+  .ec-barra-movil__leyenda {
+    font-size: 12px;
+    color: var(--ec-texto-2);
+  }
+  .ec-resumen__monto {
+    font-size: 32px;
+  }
+  .ec-detalle-grilla {
+    grid-template-columns: 1fr;
+  }
+  .ec-detalle-grilla > div + div {
+    border-left: 0;
+  }
+  .ec-codigo {
+    flex-direction: column;
+    gap: 4px;
+  }
+  .ec-codigo__valor {
+    font-size: 28px;
+  }
+  .ec-galeria {
+    grid-template-columns: 1fr;
+    grid-template-rows: 240px;
+    margin-left: calc(-1 * var(--ec-margen));
+    margin-right: calc(-1 * var(--ec-margen));
+    border-radius: 0;
+  }
+  .ec-galeria > :not(:first-child) {
+    display: none;
+  }
+  .ec-galeria > :first-child {
+    grid-row: auto;
+  }
+  .ec-footer {
+    margin-top: 56px;
+    padding-top: 48px;
+  }
+}
+
+/* ==========================================================================
+   Etapa 2 — clases nuevas (ver CONTRATO.md → "Cambios de la etapa 2").
+   Solo agregados: nada de lo de arriba cambia.
+   ========================================================================== */
+
+/* --- Campo de fecha legible (componentes/CampoFecha.jsx) ------------------ */
+/* Con valor, el texto nativo (dd/mm/aaaa) se oculta y se ve el legible
+   superpuesto; el ícono del selector del sistema sigue visible y usable. */
+.ec-campo-fecha--con-valor .ec-campo-fecha__control:not(:focus) {
+  color: transparent;
+}
+.ec-campo-fecha--con-valor .ec-campo-fecha__control:not(:focus)::-webkit-datetime-edit {
+  color: transparent;
+}
+.ec-campo-fecha__control::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+}
+.ec-campo-fecha__legible {
+  position: absolute;
+  top: 50%;
+  left: 44px;
+  right: 40px;
+  transform: translateY(-50%);
+  overflow: hidden;
+  font-size: 16px;
+  color: var(--ec-tinta);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  pointer-events: none;
+}
+/* Mientras se edita con el teclado se ve el valor nativo. */
+.ec-campo-fecha__control:focus + .ec-campo-fecha__legible {
+  display: none;
+}
+
+/* --- Buscador web y compacto ---------------------------------------------- */
+.ec-buscador--web {
+  grid-template-columns: 1.3fr 1.3fr 0.8fr 1fr auto;
+}
+.ec-buscador--compacto {
+  grid-template-columns: 1fr 1fr;
+  padding: 0;
+  box-shadow: none;
+  background: transparent;
+}
+.ec-buscador--compacto .ec-buscador__accion {
+  grid-column: 1 / -1;
+  padding-top: 0;
+}
+.ec-buscador--compacto .ec-buscador__accion .ec-boton {
+  width: 100%;
+}
+.ec-buscador--compacto .ec-campo-fecha {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 1100px) {
+  .ec-buscador--web {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  /* En 375 px cada fecha va a todo el ancho: "Vie 16 oct 2026" entra sin
+     cortarse ni tapar el ícono del selector. */
+  .ec-buscador--web .ec-campo-fecha {
+    grid-column: 1 / -1;
+  }
+  .ec-buscador .ec-campo-fecha .ec-campo__icono {
+    display: block;
+  }
+  .ec-buscador .ec-campo-fecha .ec-campo__control {
+    padding-left: 44px;
+  }
+}
+
+/* --- Utilidades de accesibilidad y de vista ------------------------------- */
+.ec-solo-lector {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Error con "Reintentar" ----------------------------------------------- */
+.ec-error-reintento {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+/* --- Esqueletos de carga -------------------------------------------------- */
+.ec-esqueletos {
+  display: grid;
+  gap: 24px;
+}
+.ec-esqueleto-tarjeta {
+  overflow: hidden;
+  border: 1px solid var(--ec-linea);
+  border-radius: var(--ec-radio-tarjeta);
+  background: var(--ec-papel);
+}
+.ec-esqueleto-tarjeta__cuerpo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+}
+.ec-esqueleto {
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--ec-neutro-claro) 0%, var(--ec-crema) 50%, var(--ec-neutro-claro) 100%);
+  background-size: 200% 100%;
+  animation: ec-brillo 1.4s ease-in-out infinite;
+}
+.ec-esqueleto--foto {
+  height: 200px;
+  border-radius: 0;
+}
+.ec-esqueleto--titulo {
+  width: 40%;
+  height: 28px;
+}
+.ec-esqueleto--linea {
+  width: 90%;
+  height: 14px;
+}
+.ec-esqueleto--corta {
+  width: 60%;
+}
+.ec-esqueleto--plan {
+  height: 72px;
+}
+@keyframes ec-brillo {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ec-esqueleto {
+    animation: none;
+  }
+}
+
+@media (max-width: 767px) {
+  /* "Ver habitación" → "Ver" en las tarjetas de tipo (el nombre accesible no cambia). */
+  .ec-solo-escritorio {
+    display: none;
+  }
+  .ec-esqueletos {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* --- Resultados (componentes/TarjetaTipoResultado.jsx) -------------------- */
+.ec-plan-fila__ahorro {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--ec-dorado-claro);
+  color: var(--ec-dorado-texto);
+  font-size: 13px;
+  font-weight: 700;
+}
+.ec-resultados__aviso {
+  margin-top: 16px;
+}
+.ec-vacio {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+  padding: 28px;
+  border: 1px dashed var(--ec-borde-campo);
+  border-radius: var(--ec-radio-tarjeta);
+  background: var(--ec-papel);
+}
+.ec-resultado .ec-alerta {
+  margin: 0;
+}
+
+@media (max-width: 767px) {
+  .ec-vacio {
+    padding: 20px;
+  }
+}
+
+/* --- Detalle del tipo (paginas/DetalleTipoPage.jsx) ----------------------- */
+.ec-pila--chica {
+  gap: 8px;
+}
+.ec-detalle-tipo {
+  padding-bottom: 24px;
+}
+.ec-detalle-tipo__encabezado {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.ec-detalle-tipo__titulo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.ec-detalle-tipo__lateral {
+  position: sticky;
+  top: 24px;
+}
+.ec-detalle-tipo__panel:focus {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--ec-halo);
+}
+.ec-detalle-tipo__estadia {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.ec-detalle-tipo__planes {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+/* En el panel lateral la fila del plan va apilada (el panel es angosto). */
+.ec-detalle-tipo__planes .ec-plan {
+  grid-template-columns: 1fr;
+  gap: 12px;
+  padding: 16px;
+}
+.ec-detalle-tipo__planes .ec-plan__precio {
+  text-align: left;
+}
+.ec-detalle-tipo__planes .ec-plan__accion .ec-boton {
+  width: 100%;
+}
+.ec-detalle-tipo__lista {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding-left: 18px;
+  color: var(--ec-texto-2);
+}
+.ec-detalle-tipo__comodidades {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.ec-detalle-tipo__barra {
+  display: none;
+}
+.ec-detalle-tipo__contenido {
+  gap: 40px;
+}
+.ec-detalle-tipo__contenido > section > .ec-titulo-seccion {
+  margin-bottom: 12px;
+}
+
+/* --- Galería con visor (componentes/GaleriaTipo.jsx) ---------------------- */
+.ec-galeria-tipo {
+  position: relative;
+}
+.ec-galeria-tipo__contador {
+  display: none;
+}
+.ec-galeria-tipo__ver {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--ec-linea);
+  border-radius: 999px;
+  background: var(--ec-papel);
+  color: var(--ec-tinta);
+  font-weight: 600;
+  cursor: pointer;
+}
+.ec-galeria-tipo__ver:focus-visible,
+.ec-visor__boton:focus-visible {
+  outline: 3px solid var(--ec-verde);
+  outline-offset: 2px;
+}
+.ec-visor {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(14, 51, 38, 0.82);
+}
+.ec-visor__dialogo {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(960px, 100%);
+}
+.ec-visor__barra,
+.ec-visor__navegacion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ec-visor__contador {
+  color: #ffffff;
+  font-weight: 600;
+}
+.ec-visor__foto {
+  aspect-ratio: 16 / 10;
+  border-radius: var(--ec-radio-tarjeta);
+}
+.ec-visor__boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ec-papel);
+  color: var(--ec-tinta);
+  cursor: pointer;
+}
+
+@media (max-width: 1100px) {
+  .ec-detalle-tipo__lateral {
+    position: static;
+  }
+}
+
+@media (max-width: 767px) {
+  /* Móvil: contenido apilado, foto principal con "1/5" y barra fija abajo
+     con el total y "Reservar". */
+  .ec-detalle-tipo {
+    padding-bottom: 104px;
+  }
+  .ec-galeria-tipo__contador {
+    position: absolute;
+    left: 12px;
+    bottom: 12px;
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(14, 51, 38, 0.78);
+    color: #ffffff;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .ec-galeria-tipo__ver {
+    right: 12px;
+    bottom: 12px;
+    min-height: 36px;
+    padding: 6px 12px;
+    font-size: 14px;
+  }
+  .ec-detalle-tipo__comodidades {
+    grid-template-columns: 1fr 1fr;
+  }
+  .ec-detalle-tipo__barra {
+    display: flex;
+  }
+  .ec-visor {
+    padding: 12px;
+  }
+}
+
+/* Criterios de HU-99: no-show de cada plan y "desde $ X por noche" del tipo. */
+.ec-plan-fila__no-show {
+  margin-top: 2px;
+  font-size: 13px;
+  color: var(--ec-texto-2);
+}
+.ec-resultado__desde strong {
+  color: var(--ec-verde-profundo);
+}

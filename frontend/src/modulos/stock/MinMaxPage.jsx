@@ -83,7 +83,7 @@ export function MinMaxPage() {
           <SlidersHorizontal size={22} className="text-pino" /> Stock mín. / máx.
         </h1>
         <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-          HU 7 — parámetros de reposición por artículo y depósito
+          Parámetros de reposición por artículo y depósito
         </p>
       </div>
 

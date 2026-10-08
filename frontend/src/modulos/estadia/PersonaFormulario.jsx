@@ -1,4 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useIdentificarPersona } from "../../lib/identificacion/useIdentificarPersona";
+import { EstadoIdentificacion } from "../../lib/identificacion/EstadoIdentificacion";
+import { ActualizarFicha } from "../../lib/identificacion/ActualizarFicha";
+import { camposCambiados } from "../../lib/identificacion/ficha";
 import { Button } from "../../componentes/Button";
 import { Input } from "../../componentes/Input";
 import { Select } from "../../componentes/Select";
@@ -100,6 +104,60 @@ export function PersonaFormulario({
     nacionalidad: Boolean(persona.nacionalidad && !buscarPaisOcupante(persona.nacionalidad)),
   }));
   const paisResidencia = buscarPaisOcupante(form.paisResidencia);
+  // Identificación por documento (hook único: tipo + país emisor + número, a los 400 ms o con "Buscar"). Solo para una
+  // persona nueva o cuando se cambia el documento de una existente. Si ya hay un huésped con ese documento se traen todos
+  // los datos de su ficha y su nombre queda bloqueado (se corrige desde la ficha del huésped, con motivo). Lo que se
+  // cambie respecto de la ficha solo se guarda en ella con la casilla "Actualizar la ficha del huésped con estos datos".
+  const documentoEditado = ["tipoDocumento", "paisDocumento", "numeroDocumento"].some(
+    (k) => String(form[k] ?? "").trim().toUpperCase().replace(/\s/g, "") !== String(persona[k] ?? "").trim().toUpperCase().replace(/\s/g, ""),
+  );
+  const identificacion = useIdentificarPersona({
+    tipoDocumento: form.tipoDocumento,
+    paisDocumento: form.paisDocumento,
+    numeroDocumento: form.numeroDocumento,
+    habilitada: !persona.id || documentoEditado,
+  });
+  const fichaAplicada = useRef(null);
+  const fichaEncontrada = identificacion.estado === "registrada" ? identificacion.ficha : null;
+  useEffect(() => {
+    if (identificacion.estado !== "registrada") {
+      if (identificacion.estado !== "buscando" && fichaAplicada.current) fichaAplicada.current = null;
+      return;
+    }
+    if (fichaAplicada.current === identificacion.clave) return;
+    fichaAplicada.current = identificacion.clave;
+    const f = identificacion.ficha;
+    setForm((actual) => ({
+      ...actual,
+      nombre: f.nombres,
+      apellido: f.apellido,
+      actualizarFicha: false,
+      ...(f.fechaNacimiento ? { fechaNacimiento: String(f.fechaNacimiento).slice(0, 10) } : {}),
+      ...Object.fromEntries(
+        ["nacionalidad", "paisResidencia", "localidad", "domicilio", "telefono", "email"].filter((k) => f[k]).map((k) => [k, f[k]]),
+      ),
+    }));
+    setPaisManual((m) => ({
+      ...m,
+      paisResidencia: Boolean(f.paisResidencia && !buscarPaisOcupante(f.paisResidencia)),
+      nacionalidad: Boolean(f.nacionalidad && !buscarPaisOcupante(f.nacionalidad)),
+    }));
+    setOtraLocalidad(Boolean(f.localidad && !buscarPaisOcupante(f.paisResidencia)?.localidades.includes(f.localidad)));
+  }, [identificacion.estado, identificacion.clave, identificacion.ficha]);
+  const cambiosDeLaFicha = fichaEncontrada
+    ? camposCambiados(
+        {
+          fechaNacimiento: form.fechaNacimiento,
+          nacionalidad: form.nacionalidad,
+          paisResidencia: form.paisResidencia,
+          localidad: form.localidad,
+          domicilio: form.domicilio,
+          telefono: form.telefono,
+          email: form.email,
+        },
+        fichaEncontrada,
+      )
+    : [];
   // Solo algunos países tienen localidades sugeridas: en los demás la localidad se escribe.
   const localidadLibre = Boolean(paisResidencia && !paisResidencia.localidades.length);
   const [tocados, setTocados] = useState({});
@@ -347,7 +405,7 @@ export function PersonaFormulario({
         label={rotulo}
         placeholder={k === "numeroDocumento" ? `Ingresá el ${etiqueta.replace("Número", "número")}` : undefined}
         type={type}
-        disabled={Boolean(form.usarContactoResponsable) && ["email", "telefono"].includes(k)}
+        disabled={(Boolean(form.usarContactoResponsable) && ["email", "telefono"].includes(k)) || (Boolean(fichaEncontrada) && ["nombre", "apellido"].includes(k))}
         required={required}
         maxLength={191}
         value={form[k] || ""}
@@ -385,6 +443,9 @@ export function PersonaFormulario({
           ...(reemplazaTitular ? { reemplazarTitular: true } : {}),
         };
         if (!cambiaDocumento) delete datos.motivoCambioIdentidad;
+        // Sin la casilla tildada la ficha existente no se pisa (el servidor solo completa lo que falta).
+        if (fichaEncontrada && cambiosDeLaFicha.length && form.actualizarFicha) datos.actualizarFicha = true;
+        else delete datos.actualizarFicha;
         // Ingreso, salida y habitación de una persona alojada no se cambian desde acá.
         if (alojado) {
           delete datos.fechaDesde;
@@ -402,8 +463,28 @@ export function PersonaFormulario({
       <Bloque titulo="Identidad" obligatorio>
         <div className={CONTENEDOR_FICHA}>
         <div className={FILA_FICHA.documento}>{CAMPOS_DOCUMENTO_FILA.map(renderCampo)}</div>
+        {identificacion.puedeBuscar && (
+          <div className="mt-1.5">
+            <Button type="button" variante="secundario" tamano="fila" onClick={identificacion.buscarAhora}>
+              Buscar
+            </Button>
+          </div>
+        )}
+        <EstadoIdentificacion identificacion={identificacion} className="mt-2" />
+        {fichaEncontrada && (
+          <p className="mt-1 text-[12px] text-piedra">
+            Se completaron sus datos. El nombre es de la ficha: solo un administrador puede corregirlo, desde la ficha del huésped.
+          </p>
+        )}
         {!String(form.numeroDocumento ?? "").trim() && <div className="mt-2.5 max-w-xl">{renderCampo(CAMPO_SIN_DOCUMENTO)}</div>}
         <div className={`${FILA_FICHA.identidad} mt-2.5`}>{CAMPOS_IDENTIDAD_FILA.map(renderCampo)}</div>
+        <ActualizarFicha
+          id="persona-actualizar-ficha"
+          cambiados={cambiosDeLaFicha}
+          marcada={form.actualizarFicha}
+          onCambiar={(v) => setForm((f) => ({ ...f, actualizarFicha: v }))}
+          className="mt-2.5"
+        />
         {esMenor && (
         <div className={`${FILA_FICHA.responsable} mt-2.5`}>
           {esMenor && (

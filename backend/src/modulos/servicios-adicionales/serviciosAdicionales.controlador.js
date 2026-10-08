@@ -13,7 +13,9 @@ function responderError(res, err, contexto, mensaje) {
 // POST /api/consumos-servicios
 async function postConsumo(req, res) {
   try {
-    return res.status(201).json(await serviciosAdicionalesServicio.registrarConsumo(req.body));
+    // "Registrado por" es el usuario de la sesión (nunca lo que mande el cuerpo): queda como autor real del consumo.
+    const registradoPor = req.usuarioActual?.usuario ?? req.body?.registradoPor;
+    return res.status(201).json(await serviciosAdicionalesServicio.registrarConsumo({ ...req.body, registradoPor }));
   } catch (err) {
     return responderError(res, err, "Error al registrar el consumo:", "No se pudo registrar el consumo.");
   }

@@ -177,6 +177,13 @@ if (rubrosSinMapear.length > 0) {
 // después del commit.
 const OPCIONES_TRANSACCION = { timeout: 30000, maxWait: 15000 };
 
+// RED DE SEGURIDAD, no una meta: solo para el check-in, el walk-in y el check-out, las operaciones del mostrador
+// que más escriben y con el huésped esperando. Después de dejar adentro de la transacción solo las escrituras
+// agrupadas (con ~400 ms por consulta: check-in ~5 s, walk-in ~6 s y check-out ~8 s) los 30 s generales alcanzan;
+// estos 45 s cubren un pico de latencia sin que el huésped pierda la operación. No se sube el timeout general:
+// una transacción larga mantiene bloqueos y hace esperar a los demás usuarios.
+const OPCIONES_TRANSACCION_LARGA = { timeout: 45000, maxWait: 15000 };
+
 // Motivo al marcar como revisada la diferencia de una transferencia
 // (MovimientoStock.motivoResolucion, HU-14/17). "Se generó pedido por la
 // diferencia" lo pone solo el atajo "Pedir los N faltantes" — no está
@@ -204,6 +211,7 @@ const MOTIVOS_RESOLUCION_DIFERENCIA_OC = [
 ];
 
 module.exports = {
+  OPCIONES_TRANSACCION_LARGA,
   RUBROS,
   CONDICIONES_COMERCIALES,
   ESTADOS_REQUERIMIENTO,

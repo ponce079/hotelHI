@@ -93,6 +93,8 @@ const LONGITUD_CODIGO_BYTES = 4;
 // Misma zona de referencia que frontend/src/lib/fechas.js: "hoy" nunca es
 // la hora del proceso ni UTC a secas.
 const ZONA_ARGENTINA = "America/Argentina/Buenos_Aires";
+// Evento del historial de una reserva web cuyo nombre declarado no coincide con el de la ficha del documento.
+const ACCION_NOMBRE_WEB_DISTINTO = "Nombre declarado en la web distinto del de la ficha";
 
 module.exports = {
   ESTADO_RESERVA,
@@ -107,4 +109,5 @@ module.exports = {
   MAX_INTENTOS_CODIGO,
   LONGITUD_CODIGO_BYTES,
   ZONA_ARGENTINA,
+  ACCION_NOMBRE_WEB_DISTINTO,
 };

@@ -7,7 +7,7 @@ import { ReservaDetallePage } from "./ReservaDetallePage";
 import { useSesion } from "../../../lib/sesion";
 import { api } from "../../../lib/api";
 import { cancelarReserva, obtenerHistorialReserva, obtenerPenalidadReserva, obtenerReserva } from "../reservas.api";
-import { obtenerCierrePrevio } from "../../garantias/garantias.api";
+import { obtenerCierrePrevio, obtenerGarantiasReserva } from "../../garantias/garantias.api";
 import { buscarReservaParaCheckIn } from "../../check-in/checkIn.api";
 import { obtenerCuenta } from "../../check-out/checkOut.api";
 import { listarPagosEstadia } from "../../pagos-estadia/pagoEstadia.api";
@@ -23,7 +23,7 @@ vi.mock("../reservas.api", () => ({
   obtenerHistorialReserva: vi.fn(),
   obtenerPenalidadReserva: vi.fn(),
 }));
-vi.mock("../../garantias/garantias.api", () => ({ obtenerCierrePrevio: vi.fn() }));
+vi.mock("../../garantias/garantias.api", () => ({ obtenerCierrePrevio: vi.fn(), obtenerGarantiasReserva: vi.fn() }));
 vi.mock("../../check-in/checkIn.api", () => ({ buscarReservaParaCheckIn: vi.fn() }));
 vi.mock("../../check-out/checkOut.api", () => ({ obtenerCuenta: vi.fn() }));
 vi.mock("../../pagos-estadia/pagoEstadia.api", () => ({ listarPagosEstadia: vi.fn() }));
@@ -115,6 +115,7 @@ beforeEach(() => {
   obtenerHistorialReserva.mockResolvedValue([]);
   obtenerPenalidadReserva.mockRejectedValue(new Error("sin penalidad"));
   listarComprobantesReserva.mockResolvedValue([]);
+  obtenerGarantiasReserva.mockResolvedValue({ reserva: null, estadia: null });
   buscarReservaParaCheckIn.mockResolvedValue({ puedeIniciarCheckIn: true, motivoBloqueo: null });
 });
 
@@ -126,10 +127,12 @@ describe("ReservaDetallePage — botón Iniciar check-in", () => {
 
     renderDetalle();
 
-    const boton = await screen.findByRole("button", { name: /Iniciar check-in/ });
-    await waitFor(() => expect(boton).toBeEnabled());
+    // La pantalla hace varias consultas y con la máquina cargada (suite completa en paralelo) 1 s de espera por defecto no
+    // alcanza para que aparezca el botón: la causa de la falla intermitente era el plazo, no la lógica.
+    const boton = await screen.findByRole("button", { name: /Iniciar check-in/ }, { timeout: 5000 });
+    await waitFor(() => expect(boton).toBeEnabled(), { timeout: 5000 });
     await userEvent.setup().click(boton);
-    expect(await screen.findByText(`Check-in codigo=${RESERVA_BASE.codigoConfirmacion}`)).toBeInTheDocument();
+    expect(await screen.findByText(`Check-in codigo=${RESERVA_BASE.codigoConfirmacion}`, {}, { timeout: 5000 })).toBeInTheDocument();
   });
 
   it("Confirmada con fecha de ingreso futura: botón deshabilitado con el motivo real del backend", async () => {
@@ -346,15 +349,22 @@ describe("ReservaDetallePage — columna derecha", () => {
     obtenerReserva.mockResolvedValue({ ...RESERVA_BASE, estado: "En curso" });
     const garantia = { id: 31, concepto: "Garantía", fecha: "2026-09-20T18:00:00.000Z", anulado: false, medios: [{ medioPago: "Tarjeta crédito", importe: "30000", referencia: "482915" }] };
     listarPagosEstadia.mockResolvedValue({ pagos: [SENIA, garantia], saldo: 42000 });
+    // "Garantía para consumos" sale de GarantiaEstadia (la que toma el check-in), con su estado real.
+    obtenerGarantiasReserva.mockResolvedValue({
+      reserva: null,
+      estadia: { tipo: "PREAUTORIZACION", estado: "Capturada", monto: 30000, montoUsado: 12000, marca: "Visa", ultimos4: "4242" },
+    });
     obtenerCuenta.mockResolvedValue({ ...CUENTA_BASE, subtotales: { alojamiento: 90000, serviciosAdicionales: 0, verificacion: 0 }, totalPagado: 48000, saldo: 42000 });
     renderDetalle();
     const resumen = (await screen.findByText("Resumen de cuenta")).closest("section");
     expect(await within(resumen).findByText("$ 42.000")).toBeInTheDocument();
     expect(within(resumen).getByText(/Incluye la garantía de \$ 30\.000: hoy el check-out la resta del saldo\./)).toBeInTheDocument();
     const caja = screen.getByText("Garantía para consumos").closest("section");
-    expect(within(caja).getByText("$ 30.000")).toBeInTheDocument();
+    expect(await within(caja).findByText("$ 30.000")).toBeInTheDocument();
     expect(within(caja).getByText("Preautorización")).toBeInTheDocument();
-    expect(within(caja).getByText("Tarjeta crédito · 482915")).toBeInTheDocument();
+    expect(within(caja).getByText("Tarjeta Visa ••4242")).toBeInTheDocument();
+    expect(within(caja).getByText(/Estado: Capturada · cobrada de la tarjeta/)).toBeInTheDocument();
+    expect(within(caja).getByText(/Usada para cubrir el saldo: \$ 12\.000/)).toBeInTheDocument();
     await abrirPestana("Cuenta");
     const tabla = await screen.findByRole("table");
     expect(within(tabla).queryByText("Garantía")).not.toBeInTheDocument();
@@ -368,7 +378,8 @@ describe("ReservaDetallePage — columna derecha", () => {
     expect(await screen.findByText("Se toma al ingresar")).toBeInTheDocument();
     expect(await screen.findByText(/Cancelación sin cargo hasta el 18\/09\/2026 14:00\. No-show: se cobra la primera noche\./)).toBeInTheDocument();
     expect(screen.getByText("Confirmación")).toBeInTheDocument();
-    expect(screen.getByText("Enviada el 10/09/2026 10:23")).toBeInTheDocument();
+    // No se afirma que se envió: la notificación solo registra que se generó (no guarda el resultado del envío).
+    expect(screen.getByText("Generada el 10/09/2026 10:23")).toBeInTheDocument();
   });
 
   it("sin permiso para ver pagos (gerente): no pide los pagos ni la cuenta; muestra solo el alojamiento reservado", async () => {

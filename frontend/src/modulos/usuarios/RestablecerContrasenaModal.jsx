@@ -5,7 +5,7 @@ import { Modal } from "../../componentes/Modal";
 import { Button } from "../../componentes/Button";
 import { CampoContrasena } from "./CampoContrasena";
 import { restablecerContrasenaUsuario } from "./usuarios.api";
-import { LIMITES_USUARIO, mensajeDeError, nombreCompleto, validarContrasenaNueva } from "./usuarios.constantes";
+import { LIMITES_USUARIO, mensajeDeError, nombreCompleto, validarContrasenaInicial } from "./usuarios.constantes";
 
 // Para cuando alguien se olvida la contraseña: el admin le pone una nueva
 // (también lo desbloquea) y se la pasa.
@@ -26,7 +26,7 @@ export function RestablecerContrasenaModal({ usuario, onClose, onExito }) {
 
   function handleSubmit(evento) {
     evento.preventDefault();
-    const nuevos = validarContrasenaNueva(contrasena, repetir);
+    const nuevos = validarContrasenaInicial(contrasena, repetir);
     if (Object.keys(nuevos).length) {
       setErrores(nuevos);
       return;
@@ -49,7 +49,7 @@ export function RestablecerContrasenaModal({ usuario, onClose, onExito }) {
             error={errores.contrasena}
             maxLength={LIMITES_USUARIO.contrasenaMax}
             autoComplete="new-password"
-            placeholder={`Mínimo ${LIMITES_USUARIO.contrasenaMin} caracteres`}
+            placeholder={`Mínimo ${LIMITES_USUARIO.contrasenaInicialMin} caracteres`}
           />
           <CampoContrasena
             label="Repetir contraseña *"

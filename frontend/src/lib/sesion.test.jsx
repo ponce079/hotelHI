@@ -103,3 +103,74 @@ describe("api.js — token en cada pedido", () => {
     }
   });
 });
+
+describe("sesión vencida con la API cerrada (HU-106)", () => {
+  it("un 401 de cualquier llamada del mostrador cierra la sesión y el login dice 'Tu sesión venció. Ingresá de nuevo.'", async () => {
+    sessionStorage.setItem(CLAVE_SESION, JSON.stringify({ rol: "recepcionista", usuario: "ana", token: "t" }));
+    renderSesion();
+    const adaptadorOriginal = api.defaults.adapter;
+    api.defaults.adapter = async (config) =>
+      Promise.reject(
+        Object.assign(new Error("401"), {
+          config,
+          response: {
+            status: 401,
+            data: { error: "Tu sesión venció o no es válida. Volvé a iniciar sesión.", codigo: "SESION_INVALIDA" },
+          },
+        })
+      );
+    try {
+      await act(async () => {
+        await api.get("/reservas").catch(() => {});
+      });
+      expect(screen.getByTestId("rol")).toHaveTextContent("sin sesión");
+      expect(sessionStorage.getItem(CLAVE_SESION)).toBeNull();
+      expect(sessionStorage.getItem(CLAVE_AVISO_LOGIN)).toBe("Tu sesión venció. Ingresá de nuevo.");
+    } finally {
+      api.defaults.adapter = adaptadorOriginal;
+    }
+  });
+
+  it("sin motivo en el aviso, también dice 'Tu sesión venció. Ingresá de nuevo.'", () => {
+    sessionStorage.setItem(CLAVE_SESION, JSON.stringify({ rol: "admin", usuario: "admin", token: "t" }));
+    renderSesion();
+    act(() => {
+      window.dispatchEvent(new CustomEvent(EVENTO_SESION_VENCIDA));
+    });
+    expect(sessionStorage.getItem(CLAVE_AVISO_LOGIN)).toBe("Tu sesión venció. Ingresá de nuevo.");
+  });
+
+  it("un 401 SIN el código de sesión (por ejemplo, contraseña incorrecta en el login) no cierra nada", async () => {
+    sessionStorage.setItem(CLAVE_SESION, JSON.stringify({ rol: "admin", usuario: "admin", token: "t" }));
+    renderSesion();
+    const adaptadorOriginal = api.defaults.adapter;
+    api.defaults.adapter = async (config) =>
+      Promise.reject(Object.assign(new Error("401"), { config, response: { status: 401, data: { error: "Usuario o contraseña incorrectos." } } }));
+    try {
+      await act(async () => {
+        await api.post("/auth/login", {}).catch(() => {});
+      });
+      expect(screen.getByTestId("rol")).toHaveTextContent("admin");
+    } finally {
+      api.defaults.adapter = adaptadorOriginal;
+    }
+  });
+
+  it("todas las llamadas del frontend pasan por el cliente común (que manda la sesión): no hay fetch ni XMLHttpRequest sueltos", async () => {
+    const { readdirSync, readFileSync, statSync } = await import("node:fs");
+    const { join } = await import("node:path");
+    const raiz = join(process.cwd(), "src");
+    const hallazgos = [];
+    (function recorrer(dir) {
+      for (const nombre of readdirSync(dir)) {
+        const ruta = join(dir, nombre);
+        if (statSync(ruta).isDirectory()) recorrer(ruta);
+        else if (/\.(jsx?|mjs)$/.test(nombre) && !/\.test\.|\.mock\./.test(nombre)) {
+          const texto = readFileSync(ruta, "utf8").replace(/\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+          if (/\bfetch\s*\(|XMLHttpRequest|window\.open\s*\(|from ["']axios["']/.test(texto) && !ruta.endsWith(join("lib", "api.js"))) hallazgos.push(ruta.replace(raiz, "src"));
+        }
+      }
+    })(raiz);
+    expect(hallazgos).toEqual([]);
+  });
+});

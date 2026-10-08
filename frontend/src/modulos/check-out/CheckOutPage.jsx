@@ -38,7 +38,7 @@ export function CheckOutPage() {
       <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
         <h1 className="font-heading text-[34px] font-semibold">Check-out</h1>
         <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
-          HU 48 a 52 y 87 — cuenta consolidada, verificación de la habitación, pago y cierre
+          Cuenta consolidada, verificación de la habitación, pago y cierre
         </p>
       </div>
 

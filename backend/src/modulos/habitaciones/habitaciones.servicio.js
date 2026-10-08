@@ -81,8 +81,9 @@ async function tipoHabitacionValidoYActivo(tipoHabitacionId) {
 //   - Toda reserva 'En curso' (el huésped ya está alojado, sin condición
 //     de fecha).
 //   - Solo las 'Confirmada' cuya fechaHasta sea >= hoy en hora argentina.
-//     Una 'Confirmada' vencida es un no-show que el sistema nunca procesó
-//     (no existe un estado "No-show" en Reserva) y no tiene que bloquear.
+//     Una 'Confirmada' vencida es un no-show que todavía no se marcó (el estado
+//     "No-show" existe y se marca desde Reservas > No presentadas; una reserva ya
+//     marcada No-show tampoco bloquea) y no tiene que bloquear.
 async function exigirSinReservasVigentes(habitacionId) {
   const hoy = hoyComoFechaUTC();
   const reservasBloqueantes = await prisma.reservaHabitacion.findMany({

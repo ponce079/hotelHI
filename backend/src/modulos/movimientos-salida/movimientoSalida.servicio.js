@@ -12,7 +12,8 @@ const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 // quiere unificarla más adelante, se puede mover a src/lib/errores.js.
 
 const prisma = require("../../lib/prisma");
-const { verificarStockMinimoCentral } = require("../requerimientos/requerimientos.servicio");
+const { verificarStockMinimoCentralEnLote } = require("../requerimientos/requerimientos.servicio");
+const { descontarStockEnLote } = require("../../lib/stockLote");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -106,36 +107,26 @@ async function registrarSalidaConCliente(cliente, { depositoId, tipoMovStockId, 
       },
     });
 
-    for (const item of items) {
-      const cantidad = Number(item.cantidad);
-      const articuloDepositoId = habilitacionPorArticulo[item.articuloId].id;
-
-      await tx.movimientoStockDetalle.create({
-        data: { movStockId: movimiento.id, articuloId: item.articuloId, cantidad },
-      });
-
-      // updateMany con el chequeo de stock en el WHERE hace el
-      // "verificar y descontar" atómico en una sola sentencia SQL — dos
-      // salidas simultáneas sobre el mismo artículo ya no pueden pasar
-      // ambas la validación con el mismo stock leído (evita quedar en
-      // negativo). Si count===0, no había stock suficiente.
-      const resultado = await tx.articuloDepositoStock.updateMany({
-        where: { articuloDepositoId, stockActual: { gte: cantidad } },
-        data: { stockActual: { decrement: cantidad } },
-      });
-      if (resultado.count === 0) {
-        const stock = await tx.articuloDepositoStock.findUnique({ where: { articuloDepositoId } });
-        const stockActual = stock ? Number(stock.stockActual) : 0;
-        throw new ErrorDeNegocio(
-          `Stock insuficiente para el artículo ${item.articuloId}. Actual: ${stockActual}, Solicitado: ${cantidad}.`
-        );
-      }
-
-      // Sprint 3 — Transferencia a Central: si este depósito es central
-      // y la salida lo dejó bajo el mínimo, dispara (o acumula sobre)
-      // su reposición. No hace nada si el depósito no es central.
-      await verificarStockMinimoCentral(tx, articuloDepositoId);
+    // Detalle y descuento en lote (una sentencia cada uno). "Verificar y descontar" sigue siendo atómico en una sola
+    // sentencia SQL — dos salidas simultáneas sobre el mismo artículo no pueden pasar ambas la validación con el mismo
+    // stock leído (evita quedar en negativo) — y si algún artículo no alcanza, no se descuenta ninguno.
+    await tx.movimientoStockDetalle.createMany({
+      data: items.map((item) => ({ movStockId: movimiento.id, articuloId: item.articuloId, cantidad: Number(item.cantidad) })),
+    });
+    const filas = items.map((item) => ({
+      articuloDepositoId: habilitacionPorArticulo[item.articuloId].id,
+      articuloId: item.articuloId,
+      cantidad: Number(item.cantidad),
+    }));
+    const sinStock = await descontarStockEnLote(tx, filas);
+    if (sinStock.length > 0) {
+      const f = sinStock[0];
+      throw new ErrorDeNegocio(`Stock insuficiente para el artículo ${f.articuloId}. Actual: ${f.stockActual}, Solicitado: ${f.cantidad}.`);
     }
+
+    // Sprint 3 — Transferencia a Central: si este depósito es central y la salida lo dejó bajo el mínimo, dispara (o
+    // acumula sobre) su reposición. Un solo chequeo en lote; no se consulta nada si el depósito no es central.
+    if (deposito.esCentral) await verificarStockMinimoCentralEnLote(tx, filas.map((f) => f.articuloDepositoId));
 
     return tx.movimientoStock.findUnique({
       where: { id: movimiento.id },

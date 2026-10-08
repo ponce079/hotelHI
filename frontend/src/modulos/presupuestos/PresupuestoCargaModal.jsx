@@ -155,7 +155,7 @@ export function PresupuestoCargaModal({ presupuestoId, onClose, onExito }) {
         <form onSubmit={handleSubmit}>
           <div className="flex flex-col gap-4 px-6 py-5">
             <p className="-mt-1 flex flex-wrap items-baseline gap-x-1.5 text-[11px] text-tinta/55">
-              HU-83 · <NombreClave className="text-tinta">{presupuesto.proveedor?.razonSocial}</NombreClave> —{" "}
+              <NombreClave className="text-tinta">{presupuesto.proveedor?.razonSocial}</NombreClave> —{" "}
               <CodigoClave className="text-tinta">REQ-{String(presupuesto.requerimientoId).padStart(4, "0")}</CodigoClave>
             </p>
 

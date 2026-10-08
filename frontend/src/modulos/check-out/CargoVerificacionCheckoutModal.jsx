@@ -65,7 +65,7 @@ export function CargoVerificacionCheckoutModal({
   return (
     <Modal
       titulo="Registrar cargo de verificación"
-      subtitulo="HU 87 — daños, faltantes o consumos de minibar sin registrar"
+      subtitulo="Daños, faltantes o consumos de minibar sin registrar"
       onClose={mutacion.isPending ? () => {} : onClose}
     >
       <div className="flex flex-col gap-4 px-6 py-5">

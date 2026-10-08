@@ -1,3 +1,5 @@
+// La pasarela registra sus operaciones en la base (pasarela_operaciones): acá se usa el doble en memoria.
+jest.mock("./pasarelaRegistro", () => require("./pasarelaRegistro.doble"));
 // La garantía del check-in en el CHECK-OUT: usarla para cubrir saldo, liberarla o
 // devolverla al cerrar, y devolver el saldo a favor.
 
@@ -186,4 +188,10 @@ describe("registrarDevolucionSaldoAFavor", () => {
   test("sin excedente no registra nada", async () => {
     expect(await registrarDevolucionSaldoAFavor(txFalso(), { reservaId: 7, monto: 0 })).toBeNull();
   });
+});
+// La preautorización del check-in (PRE-123456, $30.000) ya está registrada y Vigente en el proveedor.
+beforeEach(() => {
+  const doble = require("./pasarelaRegistro.doble");
+  doble.reiniciar();
+  doble.sembrarPreautorizacion({ referencia: "PRE-123456", monto: 30000 });
 });

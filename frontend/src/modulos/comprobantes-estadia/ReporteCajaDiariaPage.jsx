@@ -39,7 +39,7 @@ export function ReporteCajaDiariaPage() {
       <div>
         <h1 className="font-heading text-[34px] font-semibold">Caja diaria</h1>
         <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-          HU 54 — cobros por medio de pago y cargos por tipo de servicio
+          Cobros por medio de pago y cargos por tipo de servicio
         </p>
       </div>
 

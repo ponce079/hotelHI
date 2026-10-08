@@ -108,7 +108,7 @@ export function ProveedorModal({ proveedor, onClose, onExito }) {
   return (
     <Modal
       titulo={editando ? "Editar proveedor" : "Nuevo proveedor"}
-      subtitulo={editando ? `Proveedor #${proveedor.id}` : "HU-18 — alta con validación de CUIT"}
+      subtitulo={editando ? `Proveedor #${proveedor.id}` : "Alta con validación de CUIT"}
       onClose={onClose}
       ancho="max-w-2xl"
     >

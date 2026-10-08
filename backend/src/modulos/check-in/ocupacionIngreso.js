@@ -13,6 +13,7 @@ const { normalizarVinculo, requiereAutorizacion } = require("../../lib/vinculos"
 const { esTelefono } = require("../../lib/contacto");
 const { normalizarTipoDocumento } = require("../../lib/tiposDocumento");
 const { normalizarPais } = require("../estadia/persona.servicio");
+const { normalizarNumeroDocumento } = require("../../lib/documento");
 
 const texto = (v) => String(v ?? "").trim();
 const nombreDe = (p) => `${texto(p.nombre)} ${texto(p.apellido)}`.trim() || "Una persona sin nombre";
@@ -30,7 +31,8 @@ function fechaSinHora(valor) {
 // Clave de documento comparable (tipo + país + número), la misma idea que la identidad de
 // Huesped: sin país no se puede afirmar que dos documentos sean de la misma persona.
 function claveDocumento(p) {
-  const numero = texto(p.numeroDocumento).toUpperCase().replace(/\s/g, "");
+  // El número se compara sin puntos, guiones ni espacios (así se guarda: lib/documento.js).
+  const numero = normalizarNumeroDocumento(p.numeroDocumento);
   const tipo = normalizarTipoDocumento(p.tipoDocumento) ?? texto(p.tipoDocumento);
   if (!numero || !tipo) return null;
   const pais = texto(p.paisDocumento) ? normalizarPais(p.paisDocumento) : "";
@@ -41,7 +43,8 @@ function claveDocumento(p) {
 // tipo y número, y por país solo cuando los dos lo tienen.
 function esLaMismaPersona(huesped, persona) {
   if (!huesped) return false;
-  const numero = (v) => texto(v).toUpperCase().replace(/\s/g, "");
+  // Sin puntos, guiones ni espacios: la reserva guarda "45112902" y en el mostrador se tipea "45.112.902".
+  const numero = normalizarNumeroDocumento;
   const tipo = (v) => (normalizarTipoDocumento(v) ?? texto(v)).toUpperCase();
   if (!numero(huesped.numeroDocumento) || numero(huesped.numeroDocumento) !== numero(persona.numeroDocumento)) return false;
   if (tipo(huesped.tipoDocumento) !== tipo(persona.tipoDocumento)) return false;

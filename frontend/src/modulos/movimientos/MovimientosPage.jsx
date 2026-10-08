@@ -46,7 +46,7 @@ export function MovimientosPage() {
       <div>
         <h1 className="font-heading text-[34px] font-semibold">Movimientos</h1>
         <p className="mt-1.5 font-mono text-[11px] text-tinta/55">
-          HU 10 a 16 — tipos de movimiento, entradas, salidas y transferencias
+          Tipos de movimiento, entradas, salidas y transferencias
         </p>
       </div>
 

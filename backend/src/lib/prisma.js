@@ -18,6 +18,15 @@ if (!Number.isSafeInteger(connectionLimit) || connectionLimit < 1 || connectionL
   throw new Error("DATABASE_CONNECTION_LIMIT debe ser un entero entre 1 y 10.");
 }
 
+// Tiempo que una conexión del pool puede quedar inactiva antes de cerrarse (en el cliente, por debajo del
+// wait_timeout del servidor: si el servidor la corta primero, el siguiente pedido se encuentra con un socket
+// muerto y el driver registra un ECONNABORTED). Por defecto 30 s; el verificador del runbook recomienda un valor
+// según el wait_timeout que lee de la base.
+const DEMORA_INACTIVIDAD_MS = Number(process.env.DATABASE_IDLE_TIMEOUT_MS ?? 30000);
+if (!Number.isSafeInteger(DEMORA_INACTIVIDAD_MS) || DEMORA_INACTIVIDAD_MS < 1000 || DEMORA_INACTIVIDAD_MS > 3600000) {
+  throw new Error("DATABASE_IDLE_TIMEOUT_MS debe ser un entero entre 1000 y 3600000 (milisegundos).");
+}
+
 const adapter = new PrismaMariaDb(
   {
     host: dbUrl.hostname,
@@ -38,7 +47,7 @@ const adapter = new PrismaMariaDb(
     // El driver que incluye este adapter necesita un mínimo positivo para
     // crear conexiones; no usar 0 aunque otras versiones lo soporten.
     minimumIdle: 1,
-    idleTimeout: 60,
+    idleTimeout: Math.ceil(DEMORA_INACTIVIDAD_MS / 1000),
     connectTimeout: 30000,
     acquireTimeout: 30000,
   },

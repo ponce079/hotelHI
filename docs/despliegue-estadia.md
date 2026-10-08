@@ -330,6 +330,8 @@ ssl-mode=REQUIRED
 
 **Debería verse** una fila con el código, estado `Cerrada` y `PRUEBA-DESPLIEGUE-1`. **Anotarlo al final de este documento** ("Datos de prueba a limpiar").
 
+Variables de entorno nuevas: ver docs/despliegue-ecommerce.md y docs/robustez-base-remota.md
+
 ### 9. Aviso al grupo
 
 > Listo: la migración de estadía quedó aplicada en la compartida (verificada: 0 pendientes, esquema igual a `master`, conteos sin cambios). Ya pueden volver a usarla. Quedó una reserva de prueba (`PRUEBA-DESPLIEGUE-1`, código XXXXXXXX), cerrada, que se borra en la limpieza del jueves 8/10.

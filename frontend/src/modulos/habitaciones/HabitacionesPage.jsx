@@ -365,7 +365,7 @@ export function HabitacionesPage() {
           {grupos.map(([numeroPiso, habitacionesDelPiso]) => (
             <div key={numeroPiso} className="flex flex-col gap-2.5">
               <p className="font-mono text-[11px] font-semibold uppercase tracking-[0.03em] text-piedra">
-                Piso {numeroPiso} · {habitacionesDelPiso.length} habitación{habitacionesDelPiso.length === 1 ? "" : "es"}
+                Piso {numeroPiso} · {habitacionesDelPiso.length} {habitacionesDelPiso.length === 1 ? "habitación" : "habitaciones"}
               </p>
               <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
                 {habitacionesDelPiso.map((habitacion) => {

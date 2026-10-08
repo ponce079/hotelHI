@@ -19,14 +19,24 @@
 // tiene el número, solo el token. COBRO y PREAUTORIZACION aceptan entonces
 // `referenciaPrevia` = token de una GARANTIA previa, en lugar de `tarjeta`.
 //
-// Idempotencia: la misma `claveIdempotencia` con la misma operación devuelve
-// el resultado ya calculado en vez de procesar otra vez (un doble clic o un
-// reintento de red no cobra dos veces). La caché es en memoria: sirve para
-// reintentos cercanos; una pasarela real la persistiría.
+// Registro persistente (tabla pasarela_operaciones, ver pasarelaRegistro.js): como un proveedor real, la
+// pasarela guarda cada operación.
+//  - Idempotencia: la misma `claveIdempotencia` con la misma operación devuelve el resultado ya guardado en
+//    vez de procesar otra vez (un doble clic, un reintento de red o un reinicio del backend no cobran dos
+//    veces).
+//  - Estado de las preautorizaciones: Vigente -> Capturada (con el monto capturado) | Liberada. CAPTURA y
+//    LIBERACION exigen una PREAUTORIZACION existente y aprobada. Una captura no puede superar lo retenido; una
+//    segunda captura o liberación se rechaza; una captura PARCIAL libera el remanente sola y deja la
+//    preautorización en el estado final "Capturada, remanente liberado" (una LIBERACION posterior se rechaza:
+//    "La preautorización ya fue cerrada.").
+//  - Si el registro no se puede escribir, la operación se informa como error de la pasarela (nunca se aprueba
+//    en silencio).
 
 const crypto = require("node:crypto");
 const { Prisma } = require("@prisma/client");
 const { hoyComoFechaUTC } = require("../../lib/fechas");
+const { leerSecreto } = require("./pasarelaSecreto");
+const registro = require("./pasarelaRegistro");
 const {
   OPERACIONES_TARJETA,
   OPERACION_TARJETA,
@@ -37,14 +47,25 @@ const {
 // "Bóveda" simulada: el token es autodescriptivo y está firmado, así la
 // pasarela no necesita base de datos y nadie puede fabricar uno a mano. NO
 // contiene el número (solo marca, últimos 4 y vencimiento).
-const SECRETO_TOKEN = process.env.PASARELA_SIMULADA_SECRETO || "sgh-pasarela-simulada-solo-desarrollo";
-const MAX_CLAVES_IDEMPOTENCIA = 1000;
-const cacheIdempotencia = new Map();
+// El secreto sale de PASARELA_TOKEN_SECRETO (ver pasarelaSecreto.js: obligatorio en producción).
+let secretoToken = null;
+function secreto() {
+  if (secretoToken === null) secretoToken = leerSecreto();
+  return secretoToken;
+}
+
+// Estados de una preautorización en el registro (columna estadoPreautorizacion).
+const ESTADO_PREAUTORIZACION = {
+  VIGENTE: "Vigente",
+  CAPTURADA: "Capturada",
+  REMANENTE_LIBERADO: "Capturada, remanente liberado",
+  LIBERADA: "Liberada",
+};
 
 class ErrorPasarela extends Error {
-  constructor(mensaje) {
+  constructor(mensaje, statusCode = 400) {
     super(mensaje);
-    this.statusCode = 400;
+    this.statusCode = statusCode;
   }
 }
 
@@ -95,7 +116,7 @@ function vencida(venc) {
 }
 
 function firmar(cuerpo) {
-  return crypto.createHmac("sha256", SECRETO_TOKEN).update(cuerpo).digest("base64url").slice(0, 22);
+  return crypto.createHmac("sha256", secreto()).update(cuerpo).digest("base64url").slice(0, 22);
 }
 
 function emitirToken({ marca, ultimos4, mes, anio }) {
@@ -164,22 +185,93 @@ function aMonto(monto) {
   }
 }
 
+// Prefijo de la referencia de cada operación aprobada.
+const PREFIJO = { GARANTIA: "GAR", COBRO: "COB", PREAUTORIZACION: "PRE", CAPTURA: "CAP", LIBERACION: "LIB" };
+
+// Lo que se guarda de una operación (sin la clave ni la referencia, que se completan al registrar).
+function datosDeRegistro({ operacion, importe, referenciaPrevia, resultado }) {
+  return {
+    operacion,
+    referenciaPrevia: referenciaPrevia ? String(referenciaPrevia).slice(0, 255) : null,
+    // Como texto con dos decimales: Prisma lo acepta para un Decimal(12,2) y no hay que clonar un Decimal.
+    monto: importe.toFixed(2),
+    aprobada: resultado.aprobado,
+    motivo: resultado.motivoRechazo ? String(resultado.motivoRechazo).slice(0, 191) : null,
+    marca: resultado.marca ?? null,
+    ultimos4: resultado.ultimos4 ?? null,
+    token: resultado.token ?? null,
+    estadoPreautorizacion: operacion === "PREAUTORIZACION" && resultado.aprobado ? ESTADO_PREAUTORIZACION.VIGENTE : null,
+  };
+}
+
+function aResultado(fila) {
+  return {
+    aprobado: Boolean(fila.aprobada),
+    referencia: fila.referencia ?? null,
+    token: fila.token ?? null,
+    marca: fila.marca ?? null,
+    ultimos4: fila.ultimos4 ?? null,
+    motivoRechazo: fila.motivo ?? null,
+  };
+}
+
+// Qué pasa con una preautorización según su estado (puro). Devuelve { motivo } si se rechaza o
+// { hasta, montoCapturado? } con la transición.
+function decidirSobrePreautorizacion(operacion, pre, importe) {
+  const retenido = new Prisma.Decimal(pre.monto);
+  const capturado = pre.montoCapturado === null || pre.montoCapturado === undefined ? retenido : new Prisma.Decimal(pre.montoCapturado);
+  const estado = pre.estadoPreautorizacion;
+
+  if (operacion === OPERACION_TARJETA.CAPTURA) {
+    if (estado === ESTADO_PREAUTORIZACION.LIBERADA) return { motivo: "La preautorización ya fue liberada." };
+    if (estado !== ESTADO_PREAUTORIZACION.VIGENTE) return { motivo: "La preautorización ya fue capturada." };
+    if (importe.greaterThan(retenido)) return { motivo: "El monto a capturar supera el monto preautorizado." };
+    // Captura TOTAL → "Capturada". Captura PARCIAL → el remanente se libera solo, como en un proveedor real:
+    // "Capturada, remanente liberado" (estado final).
+    const hasta = importe.lessThan(retenido) ? ESTADO_PREAUTORIZACION.REMANENTE_LIBERADO : ESTADO_PREAUTORIZACION.CAPTURADA;
+    return { hasta, montoCapturado: importe };
+  }
+
+  // LIBERACION
+  if (estado === ESTADO_PREAUTORIZACION.VIGENTE) {
+    if (importe.greaterThan(retenido)) return { motivo: "El monto a liberar supera lo retenido." };
+    return { hasta: ESTADO_PREAUTORIZACION.LIBERADA };
+  }
+  if (estado === ESTADO_PREAUTORIZACION.CAPTURADA) {
+    // Capturada por completo (no hay remanente). Una fila con captura parcial en "Capturada" es anterior a este
+    // cierre automático: también está cerrada.
+    if (capturado.lessThan(retenido)) return { motivo: "La preautorización ya fue cerrada." };
+    return { motivo: "La preautorización se capturó por completo: no hay remanente que liberar." };
+  }
+  if (estado === ESTADO_PREAUTORIZACION.REMANENTE_LIBERADO) return { motivo: "La preautorización ya fue cerrada." };
+  return { motivo: "La preautorización ya fue liberada." };
+}
+
+// Calcula el resultado de una operación. Devuelve { resultado, datos, transicion }: lo que se responde, lo que se
+// registra y (solo CAPTURA y LIBERACION aprobadas) el cambio de estado de la preautorización.
 async function procesar({ operacion, monto, tarjeta, referenciaPrevia }) {
   const importe = aMonto(monto);
   if (importe === null || importe.isNegative()) throw new ErrorPasarela("monto inválido.");
+  const salida = (resultado, transicion = null) => ({
+    resultado,
+    datos: datosDeRegistro({ operacion, importe, referenciaPrevia, resultado }),
+    transicion,
+  });
 
   switch (operacion) {
     case OPERACION_TARJETA.GARANTIA: {
       // Tokeniza la tarjeta sin retener ni cobrar nada.
       const t = evaluarTarjeta(tarjeta);
-      if (!t.ok) return rechazo(t.motivo);
+      if (!t.ok) return salida(rechazo(t.motivo));
       const motivo = simularResultadoDe(t);
-      if (motivo) return rechazo(motivo, { marca: t.marca, ultimos4: t.ultimos4 });
-      return aprobacion("GAR", {
-        token: emitirToken({ marca: t.marca, ultimos4: t.ultimos4, mes: t.venc.mes, anio: t.venc.anio }),
-        marca: t.marca,
-        ultimos4: t.ultimos4,
-      });
+      if (motivo) return salida(rechazo(motivo, { marca: t.marca, ultimos4: t.ultimos4 }));
+      return salida(
+        aprobacion("GAR", {
+          token: emitirToken({ marca: t.marca, ultimos4: t.ultimos4, mes: t.venc.mes, anio: t.venc.anio }),
+          marca: t.marca,
+          ultimos4: t.ultimos4,
+        })
+      );
     }
 
     case OPERACION_TARJETA.COBRO:
@@ -188,7 +280,7 @@ async function procesar({ operacion, monto, tarjeta, referenciaPrevia }) {
       let datos;
       if (tarjeta) {
         const t = evaluarTarjeta(tarjeta);
-        if (!t.ok) return rechazo(t.motivo);
+        if (!t.ok) return salida(rechazo(t.motivo));
         datos = t;
       } else {
         // Tarjeta guardada: referenciaPrevia es el token de una GARANTIA.
@@ -198,30 +290,38 @@ async function procesar({ operacion, monto, tarjeta, referenciaPrevia }) {
       }
       const motivo = simularResultadoDe(datos);
       const base = { marca: datos.marca, ultimos4: datos.ultimos4 };
-      if (motivo) return rechazo(motivo, base);
-      const prefijo = operacion === OPERACION_TARJETA.COBRO ? "COB" : "PRE";
-      return aprobacion(prefijo, {
-        ...base,
-        // Al operar con una tarjeta nueva se devuelve también su token, así
-        // quien cobra puede guardarla sin una segunda llamada.
-        token: tarjeta
-          ? emitirToken({ marca: datos.marca, ultimos4: datos.ultimos4, mes: datos.venc.mes, anio: datos.venc.anio })
-          : referenciaPrevia,
-      });
+      if (motivo) return salida(rechazo(motivo, base));
+      return salida(
+        aprobacion(PREFIJO[operacion], {
+          ...base,
+          // Al operar con una tarjeta nueva se devuelve también su token, así
+          // quien cobra puede guardarla sin una segunda llamada.
+          token: tarjeta
+            ? emitirToken({ marca: datos.marca, ultimos4: datos.ultimos4, mes: datos.venc.mes, anio: datos.venc.anio })
+            : referenciaPrevia,
+        })
+      );
     }
 
     case OPERACION_TARJETA.CAPTURA:
     case OPERACION_TARJETA.LIBERACION: {
-      // Operan sobre la referencia de una PREAUTORIZACION previa. El estado
-      // (pendiente/capturada/liberada) lo lleva la base de datos del sistema,
-      // no esta pasarela simulada.
+      // Operan sobre la referencia de una PREAUTORIZACION previa, que tiene que estar en el registro.
       if (!/^PRE-\d{6}$/.test(String(referenciaPrevia ?? ""))) {
         throw new ErrorPasarela("referenciaPrevia debe ser la referencia de una preautorización.");
       }
       if (operacion === OPERACION_TARJETA.CAPTURA && !importe.greaterThan(0)) {
         throw new ErrorPasarela("El monto a capturar tiene que ser mayor a cero.");
       }
-      return aprobacion(operacion === OPERACION_TARJETA.CAPTURA ? "CAP" : "LIB");
+      const pre = await registro.buscarPreautorizacion(referenciaPrevia);
+      if (!pre) return salida(rechazo("Preautorización desconocida."));
+      const decision = decidirSobrePreautorizacion(operacion, pre, importe);
+      if (decision.motivo) return salida(rechazo(decision.motivo));
+      return salida(aprobacion(PREFIJO[operacion]), {
+        referencia: referenciaPrevia,
+        desde: pre.estadoPreautorizacion,
+        hasta: decision.hasta,
+        ...(decision.montoCapturado !== undefined ? { montoCapturado: decision.montoCapturado.toFixed(2) } : {}),
+      });
     }
 
     default:
@@ -229,24 +329,57 @@ async function procesar({ operacion, monto, tarjeta, referenciaPrevia }) {
   }
 }
 
-async function procesarTarjeta({ operacion, monto, tarjeta, referenciaPrevia, claveIdempotencia } = {}) {
-  const clave = claveIdempotencia ? `${operacion}:${claveIdempotencia}` : null;
-  if (clave && cacheIdempotencia.has(clave)) return cacheIdempotencia.get(clave);
+const MAX_INTENTOS_REGISTRO = 5;
 
-  const resultado = await procesar({ operacion, monto, tarjeta, referenciaPrevia });
-
-  if (clave) {
-    if (cacheIdempotencia.size >= MAX_CLAVES_IDEMPOTENCIA) {
-      cacheIdempotencia.delete(cacheIdempotencia.keys().next().value);
+// Escribe el resultado en el registro. Devuelve { resultado } (lo que hay que responder: el propio o, si una
+// llamada idéntica concurrente llegó primero, el guardado) o { reintentar: true } si la preautorización cambió de
+// estado entre que se leyó y se escribió.
+async function registrar({ clave, resultado, datos, transicion }) {
+  let actual = resultado;
+  for (let intento = 0; intento < MAX_INTENTOS_REGISTRO; intento += 1) {
+    const fila = { ...datos, referencia: actual.referencia, claveIdempotencia: clave };
+    const r = transicion ? await registro.transicionarYCrear(transicion, fila) : await registro.crear(fila);
+    if (r.creada) return { resultado: actual };
+    if (r.duplicado === "estado") return { reintentar: true };
+    if (r.duplicado === "clave") {
+      const previa = await registro.buscarPorClave(clave);
+      if (previa) return { resultado: aResultado(previa) };
     }
-    cacheIdempotencia.set(clave, resultado);
+    // Choque de referencia (6 dígitos al azar): se pide otra.
+    if (r.duplicado === "referencia" && actual.referencia) {
+      actual = { ...actual, referencia: referenciaNueva(actual.referencia.split("-")[0]) };
+    }
   }
-  return resultado;
+  throw new ErrorPasarela("No se pudo registrar la operación en la pasarela.", 502);
+}
+
+async function procesarTarjeta({ operacion, monto, tarjeta, referenciaPrevia, claveIdempotencia } = {}) {
+  // Una misma clave puede usarse en operaciones distintas: la fila guarda "<OPERACION>:<clave>".
+  const clave = claveIdempotencia ? `${operacion}:${claveIdempotencia}`.slice(0, 191) : null;
+  try {
+    if (clave) {
+      const previa = await registro.buscarPorClave(clave);
+      if (previa) return aResultado(previa);
+    }
+    for (let intento = 0; intento < 3; intento += 1) {
+      const calculado = await procesar({ operacion, monto, tarjeta, referenciaPrevia });
+      const guardado = await registrar({ clave, ...calculado });
+      if (!guardado.reintentar) return guardado.resultado;
+    }
+    throw new ErrorPasarela("La preautorización cambió de estado mientras se procesaba la operación: reintentá.", 409);
+  } catch (err) {
+    if (err instanceof ErrorPasarela) throw err;
+    // Un fallo del registro NUNCA se convierte en una aprobación: se informa como error de la pasarela.
+    console.error("[pasarela] No se pudo usar el registro de operaciones:", err?.message);
+    throw new ErrorPasarela("La pasarela no pudo registrar la operación: no se procesó nada. Reintentá en un momento.", 502);
+  }
 }
 
 module.exports = {
   procesarTarjeta,
   ErrorPasarela,
+  ESTADO_PREAUTORIZACION,
+  decidirSobrePreautorizacion,
   // Para los tests y para validar la tarjeta antes de llamar a la pasarela.
   luhnValido,
   normalizarVencimiento,

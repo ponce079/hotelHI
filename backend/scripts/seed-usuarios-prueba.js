@@ -11,14 +11,21 @@
 // intentosFallidos=0, sin bloqueo) en vez de duplicar. Nunca se toca el
 // admin real que ya haya creado el equipo — solo los `*.prueba`.
 //
-// Contraseña: SEED_USUARIOS_PASSWORD del .env si está definida, si no una
-// de desarrollo por defecto (misma para los 6 usuarios). Nunca se guarda en
-// texto plano: se hashea con la misma función que usa el login real.
+// Contraseña: SEED_USUARIOS_PASSWORD (terminal o .env), OBLIGATORIA, mínimo 10 caracteres: no hay una por
+// defecto. Es la misma para los 6 usuarios y nunca se imprime. Nunca se guarda en texto plano: se hashea con la
+// misma función que usa el login real.
 //
 //   node scripts/seed-usuarios-prueba.js
 
 require("dotenv").config();
-if (!process.env.SEED_USUARIOS_PASSWORD) throw new Error("Defini SEED_USUARIOS_PASSWORD antes de ejecutar el seed.");
+// Sin SEED_USUARIOS_PASSWORD (o con menos de 10 caracteres) el script se niega, con un mensaje claro.
+let CONTRASENA;
+try {
+  CONTRASENA = require("./_contrasenaSeed").exigirContrasena("SEED_USUARIOS_PASSWORD");
+} catch (error) {
+  console.error(error.message);
+  process.exit(1);
+}
 
 if (process.env.NODE_ENV === "production") {
   console.error(
@@ -32,10 +39,6 @@ const prisma = require("../src/lib/prisma");
 const { hashearContrasena } = require("../src/modulos/usuarios/usuarios.seguridad");
 const { ROLES_USUARIO, ETIQUETAS_ROL } = require("../src/modulos/usuarios/usuarios.constantes");
 
-// Contraseña de desarrollo por defecto si no viene SEED_USUARIOS_PASSWORD —
-// cumple la política de Tomás (LIMITES_USUARIO: 6 a 72 caracteres, sin
-// exigencia de mayúsculas/números/símbolos hoy) con margen de sobra.
-const CONTRASENA = process.env.SEED_USUARIOS_PASSWORD;
 
 // DNIs de prueba, uno por rol — 7/8 dígitos (REGEX_DNI), @unique en el
 // modelo. Rango 100000001+ para que nunca choque con un DNI real cargado a
@@ -44,11 +47,7 @@ const CONTRASENA = process.env.SEED_USUARIOS_PASSWORD;
 const DNI_POR_ROL = Object.fromEntries(ROLES_USUARIO.map((rol, i) => [rol, String(10000001 + i)]));
 
 async function main() {
-  console.log(
-    `Contraseña de los usuarios de prueba: ${
-      process.env.SEED_USUARIOS_PASSWORD ? "tomada de SEED_USUARIOS_PASSWORD" : "de desarrollo por defecto (SEED_USUARIOS_PASSWORD no está definida)"
-    }.\n`
-  );
+  console.log("Contraseña de los usuarios de prueba: la de SEED_USUARIOS_PASSWORD (no se muestra).\n");
 
   const passwordHash = await hashearContrasena(CONTRASENA);
   const filas = [];

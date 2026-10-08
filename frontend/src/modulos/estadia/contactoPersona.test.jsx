@@ -1,6 +1,11 @@
 import { expect, test, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { PersonaFormulario } from "./PersonaFormulario";
+
+// La identificación por documento (consulta a la API) tiene sus propias pruebas; acá no se consulta nada.
+vi.mock("../../lib/identificacion/useIdentificarPersona", () => ({
+  useIdentificarPersona: () => ({ estado: "inactivo", clave: "", ficha: null, otrosDocumentos: [], buscarAhora: () => {}, puedeBuscar: false }),
+}));
 import { validarOcupante } from "./validarOcupante";
 const reserva = {
   fechaDesde: "2026-10-01",

@@ -100,7 +100,7 @@ export function ActualizacionMasivaWizard({ onClose, onExito }) {
   const puedeConfirmar = vistaPrevia && vistaPrevia.conflictos.length === 0 && vistaPrevia.normales.length > 0;
 
   return (
-    <Modal titulo="Actualización masiva de tarifas" subtitulo="Aplica un % a la tarifa vigente de cada celda del alcance (HU-93)" onClose={onClose} ancho="max-w-2xl">
+    <Modal titulo="Actualización masiva de tarifas" subtitulo="Aplica un % a la tarifa vigente de cada celda del alcance" onClose={onClose} ancho="max-w-2xl">
       <div className="flex flex-col gap-4 px-6 py-5">
         {errores.general && <p className="text-sm text-error-texto">{errores.general}</p>}
 

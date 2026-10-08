@@ -1,4 +1,4 @@
-const { OPCIONES_TRANSACCION } = require('../../lib/constantes');
+const { OPCIONES_TRANSACCION, OPCIONES_TRANSACCION_LARGA } = require('../../lib/constantes');
 const { Prisma } = require('@prisma/client');
 const prisma = require('../../lib/prisma');
 const { redondear } = require('../../lib/comprobantes');
@@ -476,7 +476,7 @@ async function confirmarCheckOut(reservaId, { cargosValidados } = {}) {
         notificaciones,
       };
     },
-    OPCIONES_TRANSACCION
+    OPCIONES_TRANSACCION_LARGA
   );
 
   // Con la cuenta ya cerrada: se libera la preautorización o se devuelve el depósito. Va FUERA

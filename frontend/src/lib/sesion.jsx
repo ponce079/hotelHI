@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { CLAVE_AVISO_LOGIN, CLAVE_SESION, EVENTO_SESION_VENCIDA } from "./sesionClaves";
+import { CLAVE_AVISO_LOGIN, CLAVE_SESION, EVENTO_SESION_VENCIDA, mensajeSesionVencida } from "./sesionClaves";
 
 // Usuarios y Seguridad: el login ya no es "elegí una tarjeta de rol" — se
 // entra con usuario y contraseña reales, validados contra la tabla
@@ -95,7 +95,7 @@ export function SesionProvider({ children }) {
   useEffect(() => {
     function alVencerSesion(evento) {
       try {
-        sessionStorage.setItem(CLAVE_AVISO_LOGIN, evento.detail || "Tu sesión venció. Volvé a iniciar sesión.");
+        sessionStorage.setItem(CLAVE_AVISO_LOGIN, mensajeSesionVencida(evento.detail));
       } catch {
         // Sin almacenamiento: se cierra igual, solo que sin el aviso.
       }

@@ -12,6 +12,7 @@ const { crearConNumeroSecuencial } = require("../../lib/numeracion");
 const { ESTADOS_REQUERIMIENTO, TIPOS_REQUERIMIENTO, MOTIVOS_RESOLUCION_DIFERENCIA_OC } = require("../../lib/constantes");
 const { reintentarTransferenciasPendientes } = require("../requerimientos/requerimientos.servicio");
 const { calcularSaldosComprobantes } = require("../../lib/comprobantes");
+const { incrementarStockEnLote } = require("../../lib/stockLote");
 
 class ErrorDeNegocio extends Error {
   constructor(mensaje, statusCode = 400) {
@@ -489,15 +490,14 @@ async function registrarRecepcion(id, detalleRecibido, usuario) {
         throw new ErrorDeNegocio("Solo se puede registrar recepción de una orden en estado Enviada.", 409);
       }
 
-      // Actualizar cantidadRecibida en cada línea de la OC
-      for (const linea of detalleRecibido) {
-        await tx.ordenCompraDetalle.update({
-          where: {
-            ordenCompraId_articuloId: { ordenCompraId: oc.id, articuloId: Number(linea.articuloId) },
-          },
-          data: { cantidadRecibida: linea.cantidadRecibida },
-        });
-      }
+      // Actualizar cantidadRecibida en cada línea de la OC: una sola sentencia para todas las líneas (con la base
+      // remota, una consulta por línea hacía que 20 líneas superaran el tiempo de la transacción).
+      const casosRecibida = detalleRecibido.map(
+        (linea) => Prisma.sql`WHEN ${Number(linea.articuloId)} THEN ${Number(linea.cantidadRecibida)}`,
+      );
+      await tx.$executeRaw(
+        Prisma.sql`UPDATE orden_compra_detalle SET cantidadRecibida = CASE articuloId ${Prisma.join(casosRecibida, " ")} END WHERE ordenCompraId = ${oc.id} AND articuloId IN (${Prisma.join(detalleRecibido.map((l) => Number(l.articuloId)))})`,
+      );
 
       // Movimiento de Entrada por Compra
       const movimiento = await tx.movimientoStock.create({
@@ -513,31 +513,30 @@ async function registrarRecepcion(id, detalleRecibido, usuario) {
         },
       });
 
-      // Detalle del movimiento + suma de stock, solo por lo efectivamente recibido
-      for (const linea of detalleRecibido) {
-        const cantidadRecibida = Number(linea.cantidadRecibida);
-        if (cantidadRecibida === 0) continue;
-
-        await tx.movimientoStockDetalle.create({
-          data: { movStockId: movimiento.id, articuloId: Number(linea.articuloId), cantidad: cantidadRecibida },
+      // Detalle del movimiento + suma de stock, solo por lo efectivamente recibido (en lote: dos sentencias).
+      //
+      // Sprint 3 — Fase 4: si esta OC repone un depósito central, hay que retomar las transferencias "Pendiente de
+      // stock" que esperaban este artículo. Eso YA NO pasa acá: reintentarTransferenciasPendientes hace sus propias
+      // consultas por cada transferencia pendiente, y corriendo eso adentro de esta misma transacción atómica un
+      // central con varias transferencias de prueba acumuladas hacía que la recepción entera superara el timeout de
+      // 30s (causa real reportada por el equipo). Se dispara después del commit — ver
+      // dispararReintentoTransferenciasPendientes más abajo.
+      const recibidas = detalleRecibido.filter((linea) => Number(linea.cantidadRecibida) !== 0);
+      if (recibidas.length > 0) {
+        await tx.movimientoStockDetalle.createMany({
+          data: recibidas.map((linea) => ({
+            movStockId: movimiento.id,
+            articuloId: Number(linea.articuloId),
+            cantidad: Number(linea.cantidadRecibida),
+          })),
         });
-
-        const habilitacion = habilitacionPorArticulo[Number(linea.articuloId)];
-        await tx.articuloDepositoStock.upsert({
-          where: { articuloDepositoId: habilitacion.id },
-          create: { articuloDepositoId: habilitacion.id, stockActual: cantidadRecibida },
-          update: { stockActual: { increment: cantidadRecibida } },
-        });
-
-        // Sprint 3 — Fase 4: si esta OC repone un depósito central, hay que
-        // retomar las transferencias "Pendiente de stock" que esperaban este
-        // artículo. Eso YA NO pasa acá: reintentarTransferenciasPendientes
-        // hace sus propias consultas por cada transferencia pendiente, y
-        // corriendo eso adentro de esta misma transacción atómica un central
-        // con varias transferencias de prueba acumuladas hacía que la
-        // recepción entera superara el timeout de 30s (causa real reportada
-        // por el equipo). Se dispara después del commit — ver
-        // dispararReintentoTransferenciasPendientes más abajo.
+        await incrementarStockEnLote(
+          tx,
+          recibidas.map((linea) => ({
+            articuloDepositoId: habilitacionPorArticulo[Number(linea.articuloId)].id,
+            cantidad: Number(linea.cantidadRecibida),
+          })),
+        );
       }
 
       await tx.ordenCompra.update({

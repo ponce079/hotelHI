@@ -121,7 +121,7 @@ describe("UsuariosPage — gestión de usuarios (solo admin)", () => {
     await usuario.type(screen.getByLabelText("Nombre *"), "Tomás");
     await usuario.type(screen.getByLabelText("Apellido *"), "Gudiño");
     await usuario.type(screen.getByLabelText("DNI *"), "40123456");
-    await usuario.type(screen.getByLabelText("Contraseña *"), "secreta1");
+    await usuario.type(screen.getByLabelText("Contraseña *"), "secreta-prueba-01");
     await usuario.type(screen.getByLabelText("Repetir contraseña *"), "otra");
     await usuario.click(screen.getByRole("button", { name: "Crear usuario" }));
     expect(screen.getByText("Elegí el rol del usuario.")).toBeInTheDocument();
@@ -144,8 +144,8 @@ describe("UsuariosPage — gestión de usuarios (solo admin)", () => {
     await usuario.type(screen.getByLabelText("Nombre *"), " Tomás ");
     await usuario.type(screen.getByLabelText("Apellido *"), "Gudiño");
     await usuario.type(screen.getByLabelText("DNI *"), "40.123.456");
-    await usuario.type(screen.getByLabelText("Contraseña *"), "secreta1");
-    await usuario.type(screen.getByLabelText("Repetir contraseña *"), "secreta1");
+    await usuario.type(screen.getByLabelText("Contraseña *"), "secreta-prueba-01");
+    await usuario.type(screen.getByLabelText("Repetir contraseña *"), "secreta-prueba-01");
     await usuario.click(screen.getByRole("button", { name: "Crear usuario" }));
 
     expect(crearUsuario).toHaveBeenCalledWith({
@@ -155,7 +155,7 @@ describe("UsuariosPage — gestión de usuarios (solo admin)", () => {
       dni: "40123456",
       email: "",
       rol: "recepcionista",
-      contrasena: "secreta1",
+      contrasena: "secreta-prueba-01",
     });
     expect(await screen.findByText(/creado\. Ya puede iniciar sesión/)).toBeInTheDocument();
   });
@@ -171,8 +171,8 @@ describe("UsuariosPage — gestión de usuarios (solo admin)", () => {
     await usuario.type(screen.getByLabelText("Nombre *"), "Otro");
     await usuario.type(screen.getByLabelText("Apellido *"), "Admin");
     await usuario.type(screen.getByLabelText("DNI *"), "12345678");
-    await usuario.type(screen.getByLabelText("Contraseña *"), "secreta1");
-    await usuario.type(screen.getByLabelText("Repetir contraseña *"), "secreta1");
+    await usuario.type(screen.getByLabelText("Contraseña *"), "secreta-prueba-01");
+    await usuario.type(screen.getByLabelText("Repetir contraseña *"), "secreta-prueba-01");
     await usuario.click(screen.getByRole("button", { name: "Crear usuario" }));
     expect(await screen.findByText("Ese nombre de usuario ya está en uso.")).toBeInTheDocument();
   });
@@ -211,10 +211,44 @@ describe("UsuariosPage — gestión de usuarios (solo admin)", () => {
     const filaAna = (await screen.findByText("Ana Pérez")).closest("tr");
     await usuario.click(within(filaAna).getByRole("button", { name: "Más acciones" }));
     await usuario.click(screen.getByRole("button", { name: "Restablecer contraseña" }));
+    await usuario.type(screen.getByLabelText("Nueva contraseña *"), "nueva-prueba-0123");
+    await usuario.type(screen.getByLabelText("Repetir contraseña *"), "nueva-prueba-0123");
+    await usuario.click(screen.getByRole("button", { name: "Restablecer" }));
+    expect(restablecerContrasenaUsuario).toHaveBeenCalledWith(2, "nueva-prueba-0123");
+    expect(await screen.findByText("Contraseña de ana.recepcion restablecida.")).toBeInTheDocument();
+  });
+});
+
+describe("UsuariosPage — contraseña inicial (sin contraseñas por defecto)", () => {
+  it("el alta no precarga ninguna contraseña y exige al menos 10 caracteres", async () => {
+    const usuario = userEvent.setup();
+    renderPagina();
+    await screen.findByText("Ana Pérez");
+    await usuario.click(screen.getByRole("button", { name: "Nuevo usuario" }));
+    expect(screen.getByLabelText("Contraseña *")).toHaveValue("");
+    expect(screen.getByLabelText("Contraseña *")).toHaveAttribute("placeholder", "Mínimo 10 caracteres");
+    await usuario.type(screen.getByLabelText("Usuario (para iniciar sesión) *"), "tomi");
+    await usuario.type(screen.getByLabelText("Nombre *"), "Tomás");
+    await usuario.type(screen.getByLabelText("Apellido *"), "Gudiño");
+    await usuario.type(screen.getByLabelText("DNI *"), "40123456");
+    await usuario.type(screen.getByLabelText("Contraseña *"), "corta1234");
+    await usuario.type(screen.getByLabelText("Repetir contraseña *"), "corta1234");
+    await usuario.click(screen.getByRole("button", { name: "Crear usuario" }));
+    expect(await screen.findByText("Mínimo 10 caracteres.")).toBeInTheDocument();
+    expect(crearUsuario).not.toHaveBeenCalled();
+  });
+
+  it("restablecer tampoco precarga ninguna y pide al menos 10 caracteres", async () => {
+    const usuario = userEvent.setup();
+    renderPagina();
+    const filaAna = (await screen.findByText("Ana Pérez")).closest("tr");
+    await usuario.click(within(filaAna).getByRole("button", { name: "Más acciones" }));
+    await usuario.click(screen.getByRole("button", { name: "Restablecer contraseña" }));
+    expect(screen.getByLabelText("Nueva contraseña *")).toHaveValue("");
     await usuario.type(screen.getByLabelText("Nueva contraseña *"), "nueva123");
     await usuario.type(screen.getByLabelText("Repetir contraseña *"), "nueva123");
     await usuario.click(screen.getByRole("button", { name: "Restablecer" }));
-    expect(restablecerContrasenaUsuario).toHaveBeenCalledWith(2, "nueva123");
-    expect(await screen.findByText("Contraseña de ana.recepcion restablecida.")).toBeInTheDocument();
+    expect(await screen.findByText("Mínimo 10 caracteres.")).toBeInTheDocument();
+    expect(restablecerContrasenaUsuario).not.toHaveBeenCalled();
   });
 });
