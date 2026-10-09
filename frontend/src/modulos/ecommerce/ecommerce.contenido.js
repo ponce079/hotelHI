@@ -1,8 +1,9 @@
 // Contenido estático por tipo de habitación, indexado por el NOMBRE del tipo
-// (el que devuelve /api/web/tipos). Las fotos son placeholders, como en el
-// mockup, hasta tener fotos reales. Sin número de habitación ni piso.
+// (el que devuelve /api/web/tipos). `fotos` son los textos alternativos de la
+// galería; las imágenes salen de imagenesDeTipo. Sin número de habitación ni piso.
 import {
   AirVent,
+  Bath,
   BedDouble,
   BedSingle,
   Dumbbell,
@@ -12,12 +13,14 @@ import {
   Monitor,
   Mountain,
   Refrigerator,
+  Sofa,
   SquareParking,
   Table2,
   UtensilsCrossed,
   Waves,
   Wifi,
 } from "lucide-react";
+import { HOTEL } from "./ecommerce.config";
 
 export const CONTENIDO_TIPOS = {
   Simple: {
@@ -47,6 +50,23 @@ export const CONTENIDO_TIPOS = {
       { nombre: "Cama doble", Icono: BedDouble },
     ],
     fotos: ["Foto · Habitación doble", "Foto · Baño", "Foto · Vista", "Foto · Detalle cama", "Foto · Escritorio"],
+    // Etiqueta del rediseño en las tarjetas de habitación.
+    destacada: "Más elegida",
+  },
+  Suite: {
+    descripcion: "Nuestra categoría más amplia, con living integrado, para viajar en familia o con amigos.",
+    descripcionAmpliada:
+      "La habitación más espaciosa del hotel, con living integrado y capacidad para hasta cuatro personas. Tiene Wi-Fi, aire acondicionado, TV, frigobar y baño completo. Ideal para quedarse varios días y descansar entre excursión y excursión.",
+    comodidades: [
+      { nombre: "Wi-Fi", Icono: Wifi },
+      { nombre: "TV", Icono: Monitor },
+      { nombre: "Aire acondicionado", Icono: AirVent },
+      { nombre: "Frigobar", Icono: Refrigerator },
+      { nombre: "Living", Icono: Sofa },
+      { nombre: "Baño completo", Icono: Bath },
+      { nombre: "Cama doble", Icono: BedDouble },
+    ],
+    fotos: ["Foto · Suite", "Foto · Living", "Foto · Baño", "Foto · Vista", "Foto · Detalle cama"],
   },
 };
 
@@ -63,7 +83,7 @@ export function contenidoDeTipo(nombre) {
 }
 
 // --- Rediseño "Holiday Inn Salta" (modelo HTML del equipo) ---------------------
-// Fotos del modelo, servidas desde frontend/public/web/fotos.
+// Fotos de Pexels (licencia libre), achicadas y servidas desde frontend/public/web/fotos.
 const FOTOS = "/web/fotos";
 export const fotoWeb = (nombre) => `${FOTOS}/${nombre}.jpg`;
 
@@ -74,12 +94,12 @@ export function fotoDeTipo(nombre) {
   return fotoWeb(clave ? FOTO_TIPO[clave] : "hab");
 }
 
-// "Elegí tu experiencia": accesos a las secciones del Inicio.
+// "Elegí tu experiencia": accesos a las páginas del sitio.
 export const ACCESOS_INICIO = [
-  { titulo: "Habitaciones", texto: "Confort y calidez en cada detalle", foto: "e1", destino: "#habitaciones" },
-  { titulo: "Promociones", texto: "Viví más por menos", foto: "e2", destino: "#promociones" },
-  { titulo: "Experiencias en Salta", texto: "Paisajes, cultura y tradición", foto: "e3", destino: "#experiencias" },
-  { titulo: "Gastronomía", texto: "Sabores de nuestra tierra", foto: "e4", destino: "#experiencias" },
+  { titulo: "Habitaciones", texto: "Confort y calidez en cada detalle", foto: "e1", destino: "/web/habitaciones" },
+  { titulo: "Promociones", texto: "Viví más por menos", foto: "e2", destino: "/web/promociones" },
+  { titulo: "Experiencias en Salta", texto: "Paisajes, cultura y tradición", foto: "e3", destino: "/web/experiencias" },
+  { titulo: "Gastronomía", texto: "Sabores de nuestra tierra", foto: "e4", destino: "/web/experiencias" },
 ];
 
 export const SERVICIOS_HOTEL = [
@@ -93,13 +113,24 @@ export const SERVICIOS_HOTEL = [
   { nombre: "Spa", texto: "Relax y bienestar", Icono: Flower2 },
 ];
 
+// Galería "Conocé el hotel" del Inicio, debajo de los servicios.
+export const FOTOS_SERVICIOS = [
+  { nombre: "Piscina", foto: "s-piscina" },
+  { nombre: "Restaurante", foto: "s-restaurante" },
+  { nombre: "Spa", foto: "s-spa" },
+  { nombre: "Gimnasio", foto: "s-gimnasio" },
+  { nombre: "Estacionamiento", foto: "s-estacionamiento" },
+];
+
 // Promociones del modelo: contenido de difusión. El precio final siempre lo
 // calcula el motor de reservas con la tarifa vigente.
 export const PROMOCIONES_WEB = [
-  { etiqueta: "Feriado", titulo: "Feriado del 12 de Octubre", beneficio: "15% OFF", detalle: "en estadías de 3 noches o más", foto: "p1" },
-  { etiqueta: "Fin de semana largo", titulo: "Puente de noviembre", beneficio: "20% OFF", detalle: "en tarifas reembolsables", foto: "p2" },
-  { etiqueta: "Vacaciones de invierno", titulo: "Viví Salta en invierno", beneficio: "Hasta 25% OFF", detalle: "+ desayuno incluido", foto: "p3" },
+  { categoria: "Feriados", etiqueta: "Feriado", titulo: "Feriado del 12 de Octubre", beneficio: "15% OFF", detalle: "en estadías de 3 noches o más", foto: "p1", destacada: true, vigencia: "Del 10 al 12 de octubre", condiciones: ["Mínimo 3 noches.", "Aplica a tarifa flexible y no reembolsable.", "Sujeto a disponibilidad."] },
+  { categoria: "Fines de semana largos", etiqueta: "Fin de semana largo", titulo: "Puente de noviembre", beneficio: "20% OFF", detalle: "en tarifas reembolsables", foto: "p2", vigencia: "Del 20 al 23 de noviembre", condiciones: ["Solo tarifa flexible (reembolsable).", "Mínimo 2 noches.", "Sujeto a disponibilidad."] },
+  { categoria: "Vacaciones", etiqueta: "Vacaciones de invierno", titulo: "Viví Salta en invierno", beneficio: "Hasta 25% OFF", detalle: "+ desayuno incluido", foto: "p3", vigencia: "Julio de 2027", condiciones: ["El descuento varía según la fecha.", "Desayuno incluido en todas las tarifas.", "Sujeto a disponibilidad."] },
 ];
+
+export const CATEGORIAS_PROMOCIONES = ["Todas", "Feriados", "Fines de semana largos", "Vacaciones"];
 
 export const EXPERIENCIAS_SALTA = [
   { nombre: "Excursiones", texto: "Quebrada de Humahuaca, Cafayate y los Valles Calchaquíes.", Icono: Mountain },
@@ -117,5 +148,97 @@ export const DISTANCIAS_HOTEL = [
 // Fotos de la galería de un tipo: su foto principal primero y después el resto del hotel.
 export function imagenesDeTipo(nombre) {
   const principal = fotoDeTipo(nombre);
-  return [principal, ...["det", "pre", "std", "sui", "hab"].map(fotoWeb).filter((src) => src !== principal)];
+  return [principal, ...["hab-vista", "det", "pre", "std", "sui", "hab", "e1"].map(fotoWeb).filter((src) => src !== principal)];
 }
+
+// Franja de confianza: lo que el sitio realmente ofrece (precio final, confirmación,
+// cancelación de la tarifa flexible y pago con tarjeta cifrado).
+export const CONFIANZA_WEB = [
+  { titulo: "Precio final", texto: "En pesos, IVA incluido" },
+  { titulo: "Confirmación inmediata", texto: "Tu código al instante y por email" },
+  { titulo: "Cancelación flexible", texto: "Sin cargo hasta 48 h antes" },
+  { titulo: "Pago seguro", texto: "Conexión cifrada" },
+];
+
+// Excursiones y paseos (página Experiencias). Fotos libres de Wikimedia Commons y
+// Pexels: el crédito de autor y licencia se muestra en cada tarjeta, como piden las licencias CC.
+const COMMONS = "https://commons.wikimedia.org/wiki/File:";
+const PEXELS = "https://www.pexels.com/photo/";
+export const EXCURSIONES_SALTA = [
+  {
+    nombre: "Quebrada de las Conchas",
+    tipo: "Excursión",
+    duracion: "Día completo",
+    texto: "Cerros rojizos, la Garganta del Diablo y el Anfiteatro camino a Cafayate.",
+    foto: "x-conchas",
+    credito: { autor: "Bernard Gagnon", licencia: "CC BY-SA 4.0", pagina: `${COMMONS}Quebrada_de_las_Conchas_04.jpg` },
+  },
+  {
+    nombre: "Cafayate y sus bodegas",
+    tipo: "Excursión",
+    duracion: "Día completo",
+    texto: "Viñedos de altura y degustación de torrontés en los Valles Calchaquíes.",
+    foto: "x-cafayate",
+    credito: { autor: "Micah MacAllen", licencia: "CC BY-SA 2.0", pagina: `${COMMONS}Cafayate_vineyard.jpg` },
+  },
+  {
+    nombre: "Tren a las Nubes",
+    tipo: "Excursión",
+    duracion: "Día completo",
+    texto: "Hasta el viaducto La Polvorilla, a más de 4.200 metros de altura.",
+    foto: "x-tren",
+    credito: { autor: "Ministerio de Transporte de la Nación", licencia: "CC BY-SA 2.0", pagina: `${COMMONS}Tren_nubes_trenesarg.jpg` },
+  },
+  {
+    nombre: "Salinas Grandes",
+    tipo: "Excursión",
+    duracion: "Día completo",
+    texto: "Un desierto blanco de sal en plena Puna, entre Salta y Jujuy.",
+    foto: "x-salinas",
+    credito: { autor: "Bernard Gagnon", licencia: "CC BY-SA 4.0", pagina: `${COMMONS}Salinas_Grandes_(Jujuy_and_Salta)_02.jpg` },
+  },
+  {
+    nombre: "Casco histórico y Cabildo",
+    tipo: "En la ciudad",
+    duracion: "Medio día · a pie",
+    texto: "La Plaza 9 de Julio, la Catedral y el Cabildo, hoy Museo Histórico del Norte.",
+    foto: "x-cabildo",
+    credito: { autor: "Fulviusbsas", licencia: "CC BY-SA 3.0", pagina: `${COMMONS}Salta-Cabildo1.jpg` },
+  },
+  {
+    nombre: "Teleférico al San Bernardo",
+    tipo: "En la ciudad",
+    duracion: "2 a 3 horas",
+    texto: "Subí al cerro en teleférico y mirá todo el valle de Lerma desde arriba.",
+    foto: "x-sanbernardo",
+    credito: { autor: "Héctor Pérez", licencia: "Licencia Pexels", pagina: `${PEXELS}4062592/` },
+  },
+];
+
+// Itinerario sugerido "Tu fin de semana en Salta" (página Experiencias).
+export const ITINERARIO_SALTA = [
+  {
+    dia: "Viernes",
+    titulo: "Llegada y ciudad",
+    momentos: [
+      { hora: "Tarde", texto: `Check-in desde las ${HOTEL.checkIn} y paseo por la Plaza 9 de Julio y el Cabildo.` },
+      { hora: "Noche", texto: "Peña folclórica en la calle Balcarce, con empanadas y vino." },
+    ],
+  },
+  {
+    dia: "Sábado",
+    titulo: "Quebrada y Cafayate",
+    momentos: [
+      { hora: "Mañana", texto: "Salida temprano por la Quebrada de las Conchas." },
+      { hora: "Tarde", texto: "Bodegas de Cafayate y helado de vino antes de volver." },
+    ],
+  },
+  {
+    dia: "Domingo",
+    titulo: "Salta desde arriba",
+    momentos: [
+      { hora: "Mañana", texto: `Desayuno sin apuro y check-out hasta las ${HOTEL.checkOut}.` },
+      { hora: "Mediodía", texto: "Teleférico al San Bernardo y un locro antes de partir." },
+    ],
+  },
+];

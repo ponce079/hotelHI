@@ -52,7 +52,7 @@ import { ComprobanteEstadiaDetallePage } from "./modulos/comprobantes-estadia/Co
 import { ReporteCajaDiariaPage } from "./modulos/comprobantes-estadia/ReporteCajaDiariaPage";
 import { MovimientosPagoPage } from "./modulos/pagos-estadia/MovimientosPagoPage";
 import { UsuariosPage } from "./modulos/usuarios/UsuariosPage";
-import { LayoutEcommerce, GuardaCompra, InicioPage, ResultadosPage, DetalleTipoPage, DatosHuespedPage, PagoPage, ConfirmacionPage, MiReservaPage } from "./modulos/ecommerce";
+import { LayoutEcommerce, GuardaCompra, InicioPage, HabitacionesWebPage, PromocionesPage, ExperienciasPage, ResultadosPage, DetalleTipoPage, DatosHuespedPage, PagoPage, ConfirmacionPage, MiReservaPage } from "./modulos/ecommerce";
 import { MiPerfilPage } from "./modulos/usuarios/MiPerfilPage";
 // Gatekeeper de rutas: sin sesion iniciada (login real con usuario y
 // contraseña, ver lib/sesion.jsx), redirige a /login.
@@ -73,6 +73,9 @@ export default function App() {
           encapsulados (.ec-raiz). Contrato: docs/ecommerce/CONTRATO.md. */}
       <Route path="/web" element={<LayoutEcommerce />}>
         <Route index element={<InicioPage />} />
+        <Route path="habitaciones" element={<HabitacionesWebPage />} />
+        <Route path="promociones" element={<PromocionesPage />} />
+        <Route path="experiencias" element={<ExperienciasPage />} />
         <Route path="resultados" element={<ResultadosPage />} />
         <Route path="habitacion/:tipoHabitacionId" element={<DetalleTipoPage />} />
         <Route path="datos" element={<GuardaCompra requiere="seleccion"><DatosHuespedPage /></GuardaCompra>} />

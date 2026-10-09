@@ -5,17 +5,19 @@ import "./ecommerce.css";
 import { ProcesoCompraProvider } from "./ProcesoCompraContext";
 import { HOTEL } from "./ecommerce.config";
 import { Boton } from "./componentes/Boton";
+import { BotonConsulta } from "./componentes/BotonConsulta";
 
 // Rutas del proceso de compra: header reducido ("Pago seguro").
 const RUTAS_COMPRA = ["/web/datos", "/web/pago"];
 
-// Menú principal (rediseño): cada ítem baja a su sección del Inicio.
+// Menú principal (rediseño): páginas propias y, como en el modelo, Servicios y Destino
+// Salta como secciones del Inicio.
 const MENU = [
-  { texto: "Habitaciones", to: "/web#habitaciones" },
-  { texto: "Experiencias", to: "/web#experiencias" },
-  { texto: "Promociones", to: "/web#promociones" },
+  { texto: "Habitaciones", to: "/web/habitaciones" },
+  { texto: "Experiencias", to: "/web/experiencias" },
+  { texto: "Promociones", to: "/web/promociones" },
   { texto: "Servicios", to: "/web#servicios" },
-  { texto: "Destino Salta", to: "/web#ubicacion" },
+  { texto: "Destino Salta", to: "/web#destino" },
 ];
 
 // Cerros del logo (trazo dorado del modelo).
@@ -116,13 +118,13 @@ function Footer() {
             <h2 className="ec-footer__titulo">Hotel</h2>
             <ul className="ec-footer__lista">
               <li>
-                <Link to="/web#habitaciones">Habitaciones</Link>
+                <Link to="/web/habitaciones">Habitaciones</Link>
               </li>
               <li>
-                <Link to="/web#promociones">Promociones</Link>
+                <Link to="/web/promociones">Promociones</Link>
               </li>
               <li>
-                <Link to="/web#experiencias">Experiencias</Link>
+                <Link to="/web/experiencias">Experiencias</Link>
               </li>
               <li>
                 <Link to="/web#servicios">Servicios</Link>
@@ -195,6 +197,7 @@ export function LayoutEcommerce() {
         </main>
       </ProcesoCompraProvider>
       {!enCompra && <Footer />}
+      {!enCompra && <BotonConsulta />}
     </div>
   );
 }

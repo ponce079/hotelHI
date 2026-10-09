@@ -1,65 +1,26 @@
-import { useEffect, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { Bus, Church, ChevronRight, MapPin, Plane, Users } from "lucide-react";
+import { Bus, Church, ChevronRight, MapPin, Plane } from "lucide-react";
 import { BuscadorEstadia } from "../componentes/BuscadorEstadia";
 import { Boton } from "../componentes/Boton";
+import { FotoWeb, FranjaConfianza, ListaExperiencias, NotaPrecioReferencia, Portada, TarjetaHabitacionWeb, TarjetaPromo } from "../componentes/PiezasWeb";
 import { CargandoTarjetas } from "../componentes/Esqueleto";
 import { ErrorConReintento } from "../componentes/ErrorConReintento";
 import { VENTANA_VENTA_DIAS, busquedaComoQueryWeb, capacidadMaximaDeTipos } from "../busquedaWeb";
 import { obtenerTipos } from "../ecommerce.api";
 import { HOTEL } from "../ecommerce.config";
-import {
-  ACCESOS_INICIO,
-  DISTANCIAS_HOTEL,
-  EXPERIENCIAS_SALTA,
-  PROMOCIONES_WEB,
-  SERVICIOS_HOTEL,
-  contenidoDeTipo,
-  fotoDeTipo,
-  fotoWeb,
-} from "../ecommerce.contenido";
+import { ACCESOS_INICIO, DISTANCIAS_HOTEL, FOTOS_SERVICIOS, PROMOCIONES_WEB, SERVICIOS_HOTEL } from "../ecommerce.contenido";
 import { useProcesoCompra } from "../ProcesoCompraContext";
+import { usePrecioReferencia } from "../usePrecioReferencia";
+import { useRevelar } from "../useRevelar";
 import { useTituloPagina } from "../useTituloPagina";
 
 // /web — Rediseño "Holiday Inn Salta" (modelo HTML del equipo): portada con foto,
 // buscador flotante, accesos, habitaciones (de /api/web/tipos), servicios,
-// promociones, experiencias y ubicación. Sin precios hasta buscar.
+// promociones, experiencias y ubicación. Las habitaciones muestran un precio orientativo
+// (usePrecioReferencia); el exacto aparece al buscar.
 
 const ICONOS_DISTANCIA = [Plane, Church, Bus];
-
-// Las secciones aparecen suavemente al entrar en pantalla (como en el modelo).
-// Sin IntersectionObserver (tests) o con "reducir movimiento" se muestran de una.
-function useRevelar() {
-  const ref = useRef(null);
-  useEffect(() => {
-    const raiz = ref.current;
-    if (!raiz) return undefined;
-    const elementos = raiz.querySelectorAll(".ec-revelar");
-    const sinMovimiento = window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
-    if (typeof IntersectionObserver === "undefined" || sinMovimiento) {
-      elementos.forEach((el) => el.classList.add("ec-revelar--visible"));
-      return undefined;
-    }
-    const observador = new IntersectionObserver(
-      (entradas) =>
-        entradas.forEach((entrada) => {
-          if (entrada.isIntersecting) {
-            entrada.target.classList.add("ec-revelar--visible");
-            observador.unobserve(entrada.target);
-          }
-        }),
-      { threshold: 0.1 },
-    );
-    elementos.forEach((el) => observador.observe(el));
-    return () => observador.disconnect();
-  });
-  return ref;
-}
-
-function Foto({ nombre, src, alt = "" }) {
-  return <img className="ec-foto-real" src={src ?? fotoWeb(nombre)} alt={alt} loading="lazy" />;
-}
 
 export function InicioPage() {
   useTituloPagina("Reservá directo");
@@ -68,6 +29,7 @@ export function InicioPage() {
   const { fechaDesde, fechaHasta, ocupacion, definirBusqueda } = useProcesoCompra();
   const tipos = useQuery({ queryKey: ["ecommerce", "tipos"], queryFn: obtenerTipos, retry: false });
   const capacidadMaxima = capacidadMaximaDeTipos(tipos.data?.tipos);
+  const referencia = usePrecioReferencia();
 
   function buscar(valores) {
     definirBusqueda({
@@ -80,18 +42,18 @@ export function InicioPage() {
 
   return (
     <div ref={raiz}>
-      <section className="ec-portada">
-        <img className="ec-portada__foto" src={fotoWeb("hero")} alt="" />
-        <div className="ec-contenedor ec-portada__texto">
-          <p className="ec-portada__sobretitulo">{HOTEL.nombre} {HOTEL.bajada}</p>
-          <h1>
+      <Portada
+        foto="hero"
+        sobretitulo={`${HOTEL.nombre} ${HOTEL.bajada}`}
+        titulo={
+          <>
             Viví Salta.
             <br />
             Descansá diferente.
-          </h1>
-          <p className="ec-portada__bajada">Una estadía premium en el corazón del Norte Argentino.</p>
-        </div>
-      </section>
+          </>
+        }
+        bajada="Una estadía premium en el corazón del Norte Argentino."
+      />
 
       <div id="buscar" className="ec-contenedor ec-hero__buscador">
         <BuscadorEstadia
@@ -106,15 +68,19 @@ export function InicioPage() {
         />
       </div>
 
+      <div className="ec-contenedor">
+        <FranjaConfianza />
+      </div>
+
       <section className="ec-contenedor ec-seccion" aria-labelledby="ec-titulo-experiencia">
         <h2 id="ec-titulo-experiencia" className="ec-titulo-seccion ec-revelar">
           Elegí tu experiencia
         </h2>
         <div className="ec-grilla-accesos">
           {ACCESOS_INICIO.map((acceso, i) => (
-            <a key={acceso.titulo} href={acceso.destino} className="ec-acceso ec-revelar" style={{ transitionDelay: `${i * 90}ms` }}>
+            <Link key={acceso.titulo} to={acceso.destino} className="ec-acceso ec-revelar" style={{ transitionDelay: `${i * 90}ms` }}>
               <span className="ec-acceso__foto">
-                <Foto nombre={acceso.foto} />
+                <FotoWeb nombre={acceso.foto} />
               </span>
               <span className="ec-acceso__cuerpo">
                 <span>
@@ -125,16 +91,21 @@ export function InicioPage() {
                   <ChevronRight size={14} strokeWidth={2} />
                 </span>
               </span>
-            </a>
+            </Link>
           ))}
         </div>
       </section>
 
       <section id="habitaciones" className="ec-contenedor ec-seccion" aria-labelledby="ec-titulo-habitaciones">
         <p className="ec-sobretitulo ec-revelar">Habitaciones</p>
-        <h2 id="ec-titulo-habitaciones" className="ec-titulo-seccion ec-revelar">
-          Descansá en un entorno único
-        </h2>
+        <div className="ec-seccion__fila ec-revelar">
+          <h2 id="ec-titulo-habitaciones" className="ec-titulo-seccion">
+            Descansá en un entorno único
+          </h2>
+          <Link to="/web/habitaciones" className="ec-ver-todas">
+            Ver todas
+          </Link>
+        </div>
         {tipos.isPending && <CargandoTarjetas className="ec-grilla-habitaciones" texto="Cargando habitaciones…" />}
         {tipos.isError && (
           <ErrorConReintento
@@ -147,28 +118,12 @@ export function InicioPage() {
         )}
         {tipos.data && (
           <div className="ec-grilla-habitaciones">
-            {tipos.data.tipos.map((tipo, i) => {
-              const contenido = contenidoDeTipo(tipo.nombre);
-              return (
-                <article key={tipo.tipoHabitacionId} className="ec-habitacion ec-revelar" style={{ transitionDelay: `${i * 90}ms` }}>
-                  <div className="ec-habitacion__foto">
-                    <Foto src={fotoDeTipo(tipo.nombre)} alt={`Habitación ${tipo.nombre}`} />
-                  </div>
-                  <div className="ec-habitacion__cuerpo">
-                    <h3>{tipo.nombre}</h3>
-                    <p className="ec-habitacion__meta">
-                      <Users size={14} strokeWidth={1.6} aria-hidden="true" /> Hasta {tipo.capacidadMaxima} personas
-                    </p>
-                    <p className="ec-texto-2 ec-chico">{contenido.descripcion}</p>
-                    <Boton to={`/web/habitacion/${tipo.tipoHabitacionId}`} className="ec-habitacion__boton" aria-label={`Ver habitación ${tipo.nombre}`}>
-                      Ver detalles
-                    </Boton>
-                  </div>
-                </article>
-              );
-            })}
+            {tipos.data.tipos.map((tipo, i) => (
+              <TarjetaHabitacionWeb key={tipo.tipoHabitacionId} tipo={tipo} demora={i * 90} desdePorNoche={referencia.precioDe(tipo.tipoHabitacionId)} />
+            ))}
           </div>
         )}
+        {tipos.data && referencia.hayPrecios && <NotaPrecioReferencia fecha={referencia.fecha} />}
       </section>
 
       <section id="servicios" className="ec-contenedor ec-seccion" aria-labelledby="ec-titulo-servicios">
@@ -187,36 +142,36 @@ export function InicioPage() {
             </li>
           ))}
         </ul>
+        <ul className="ec-galeria-servicios" aria-label="Fotos del hotel">
+          {FOTOS_SERVICIOS.map(({ nombre, foto }, i) => (
+            <li key={foto} className="ec-galeria-servicios__foto ec-revelar" style={{ transitionDelay: `${i * 80}ms` }}>
+              <FotoWeb nombre={foto} alt={nombre} />
+              <span className="ec-galeria-servicios__nombre">{nombre}</span>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <section id="promociones" className="ec-contenedor ec-seccion" aria-labelledby="ec-titulo-promociones">
         <p className="ec-sobretitulo ec-revelar">Promociones</p>
-        <h2 id="ec-titulo-promociones" className="ec-titulo-seccion ec-revelar">
-          Beneficios para tu estadía
-        </h2>
+        <div className="ec-seccion__fila ec-revelar">
+          <h2 id="ec-titulo-promociones" className="ec-titulo-seccion">
+            Beneficios para tu estadía
+          </h2>
+          <Link to="/web/promociones" className="ec-ver-todas">
+            Ver todas
+          </Link>
+        </div>
         <div className="ec-grilla-promos">
           {PROMOCIONES_WEB.map((promo, i) => (
-            <article key={promo.titulo} className="ec-promo ec-revelar" style={{ transitionDelay: `${i * 100}ms` }}>
-              <div className="ec-promo__foto">
-                <span className="ec-promo__etiqueta">{promo.etiqueta}</span>
-                <Foto nombre={promo.foto} />
-              </div>
-              <div className="ec-promo__cuerpo">
-                <h3>{promo.titulo}</h3>
-                <p className="ec-promo__beneficio">{promo.beneficio}</p>
-                <p className="ec-texto-2 ec-chico">{promo.detalle}</p>
-                <a href="#buscar" className="ec-boton ec-boton--primario ec-promo__boton">
-                  Ver disponibilidad
-                </a>
-              </div>
-            </article>
+            <TarjetaPromo key={promo.titulo} promo={promo} demora={i * 100} />
           ))}
         </div>
       </section>
 
-      <section id="experiencias" className="ec-contenedor ec-seccion" aria-labelledby="ec-titulo-experiencias">
+      <section id="destino" className="ec-contenedor ec-seccion" aria-labelledby="ec-titulo-experiencias">
         <div className="ec-destino ec-revelar">
-          <Foto nombre="cac" />
+          <FotoWeb nombre="cac" />
           <div className="ec-destino__texto">
             <p className="ec-destino__sobretitulo">Destino Salta</p>
             <h2 id="ec-titulo-experiencias">
@@ -224,19 +179,12 @@ export function InicioPage() {
               <br />y tradición viva
             </h2>
             <p>Excursiones, bodegas, gastronomía regional y paisajes que se quedan con vos.</p>
+            <Boton to="/web/experiencias" className="ec-destino__boton">
+              Descubrir experiencias
+            </Boton>
           </div>
         </div>
-        <ul className="ec-experiencias">
-          {EXPERIENCIAS_SALTA.map(({ nombre, texto, Icono }) => (
-            <li key={nombre} className="ec-experiencia ec-revelar">
-              <Icono size={22} strokeWidth={1.4} aria-hidden="true" />
-              <span>
-                <span className="ec-experiencia__nombre">{nombre}</span>
-                <span className="ec-texto-2 ec-chico">{texto}</span>
-              </span>
-            </li>
-          ))}
-        </ul>
+        <ListaExperiencias />
       </section>
 
       <section id="ubicacion" className="ec-contenedor ec-seccion" aria-labelledby="ec-titulo-ubicacion">
