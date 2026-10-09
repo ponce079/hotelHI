@@ -64,6 +64,7 @@ test("los cuatro casos: web no reembolsable (tarjeta + pago anticipado), tarjeta
   expect(prepagada.garantia).toEqual({ tipo: "TARJETA", marca: "Visa", ultimos4: "4242" });
   expect(prepagada.senia).toEqual({
     registrada: true,
+    concepto: "Pago anticipado",
     importe: 80000,
     medios: [{ medioPago: "Tarjeta crédito", importe: 80000, referencia: "Visa ****4242 · aut. CAP-123456" }],
   });
@@ -72,6 +73,8 @@ test("los cuatro casos: web no reembolsable (tarjeta + pago anticipado), tarjeta
   expect(garantizada.senia.registrada).toBe(false);
 
   expect(conSenia.senia.importe).toBe(24000);
+  expect(conSenia.senia.concepto).toBe("Seña");
+  expect(reservas[3].senia.concepto).toBeNull();
   expect(conSenia.garantia).toBeNull();
 
   expect(sinNada.senia.registrada).toBe(false);

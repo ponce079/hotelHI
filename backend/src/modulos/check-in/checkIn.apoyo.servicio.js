@@ -105,6 +105,8 @@ function armarLlegada(r) {
     totalAlojamiento: habitaciones.reduce((a, h) => a + h.totalAlojamiento, 0),
     senia: {
       registrada: medios.length > 0,
+      // "Pago anticipado" (prepago o tarifa no reembolsable) o "Seña" (histórica): la pantalla las rotula distinto.
+      concepto: r.pagosEstadia.some((p) => p.concepto === CONCEPTO_PAGO_ANTICIPADO) ? CONCEPTO_PAGO_ANTICIPADO : medios.length > 0 ? CONCEPTO_SENIA : null,
       importe: medios.reduce((a, m) => a + Number(m.importe), 0),
       medios: medios.map((m) => ({ medioPago: m.medioPago, importe: Number(m.importe), referencia: m.referencia })),
     },
