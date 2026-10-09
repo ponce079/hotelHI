@@ -17,9 +17,23 @@ const VARIANTES = {
   cerrado: "bg-neutro-300 text-neutro-900",
 };
 
-export function Badge({ variante = "ok", children }) {
+// Chips de estado de Reservas (rediseño): píldora con punto de 6 px, colores en estilos/variables.css.
+// Se piden con `tono`, que tiene prioridad sobre `variante`; "cancelada" es el gris con borde, solo para Reservas.
+const TONOS = {
+  confirmada: "chip-estado chip-confirmada",
+  "en-curso": "chip-estado chip-en-curso",
+  cerrada: "chip-estado chip-cerrada",
+  cancelada: "chip-estado chip-cancelada",
+  "no-presentada": "chip-estado chip-no-presentada",
+};
+
+// Uso: <Badge variante="ok">Recibida</Badge> (como siempre) · <Badge tono="en-curso">En curso</Badge> (chip redondeado
+// con punto) · <Badge variante="alerta" punto>Pendiente</Badge> (la variante de siempre, con un punto delante).
+export function Badge({ variante = "ok", tono, punto = false, children }) {
+  if (tono && TONOS[tono]) return <span className={TONOS[tono]}>{children}</span>;
   return (
     <span className={`inline-flex items-center gap-1 rounded-sm px-2.5 py-0.5 font-body text-xs font-medium tracking-[0.01em] ${VARIANTES[variante]}`}>
+      {punto && <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-current" />}
       {children}
     </span>
   );
