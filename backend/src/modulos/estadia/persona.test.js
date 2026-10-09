@@ -170,3 +170,35 @@ describe("nombre de una ficha existente (regla 2.3)", () => {
     expect(autorizarCambioDeNombre(ficha, { nombre: "Acompanante", apellido: "Diagnostico" }, {})).toBe(false);
   });
 });
+
+// ---- Fichas viejas: el nombre completo en un solo campo, sin nombres ni apellido ----
+describe("ficha vieja con el nombre sin separar", () => {
+  const { sincronizarNombres, separacionDeNombre } = require("./persona.servicio");
+  const vieja = { id: 77, nombre: "Ricardo Ponce", nombres: null, apellido: null };
+
+  test("la separación según el documento (mismo nombre completo) se guarda sin pedir administrador", async () => {
+    const tx = { huesped: { findUnique: jest.fn().mockResolvedValue(vieja), update: jest.fn() }, eventoEstadia: { create: jest.fn() } };
+    await sincronizarNombres(tx, 77, { nombre: "Ricardo", apellido: "Ponce" }, {});
+    expect(tx.huesped.update).toHaveBeenCalledWith({ where: { id: 77 }, data: { nombre: "Ricardo Ponce", nombres: "Ricardo", apellido: "Ponce" } });
+    expect(tx.eventoEstadia.create).not.toHaveBeenCalled();
+  });
+
+  test("nombres compuestos: se respeta la separación que eligió la recepción", () => {
+    const ficha = { nombre: "María José De la Cruz", nombres: "", apellido: "" };
+    expect(separacionDeNombre(ficha, { nombre: "María José", apellido: "De la Cruz" })).toEqual({
+      nombre: "María José De la Cruz", nombres: "María José", apellido: "De la Cruz",
+    });
+  });
+
+  test("otro nombre completo sigue siendo un cambio de nombre (regla 2.3): no es una separación", async () => {
+    expect(separacionDeNombre(vieja, { nombre: "Ricardo", apellido: "Pérez" })).toBeNull();
+    const tx = { huesped: { findUnique: jest.fn().mockResolvedValue(vieja), update: jest.fn() } };
+    await expect(sincronizarNombres(tx, 77, { nombre: "Ricardo", apellido: "Pérez" }, {})).rejects.toMatchObject({ codigo: "NOMBRE_DISTINTO" });
+    expect(tx.huesped.update).not.toHaveBeenCalled();
+  });
+
+  test("una ficha ya separada o una persona sin apellido no producen separación", () => {
+    expect(separacionDeNombre({ nombre: "Ricardo Ponce", nombres: "Ricardo", apellido: "Ponce" }, { nombre: "Ricardo", apellido: "Ponce" })).toBeNull();
+    expect(separacionDeNombre(vieja, { nombre: "Ricardo Ponce", apellido: "" })).toBeNull();
+  });
+});

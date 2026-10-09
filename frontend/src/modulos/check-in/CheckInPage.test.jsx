@@ -189,6 +189,69 @@ describe("Check-in con reserva", () => {
     expect(within(titular).queryByText(/El nombre viene completo desde la reserva/)).not.toBeInTheDocument();
   });
 
+  // Fichas viejas: el titular tiene ficha (se la encuentra por documento) pero con el nombre completo en un solo campo,
+  // y la copia de la reserva también ("Martín Gutiérrez", apellido vacío). Antes los campos quedaban bloqueados por la
+  // ficha y el apellido obligatorio impedía confirmar.
+  function fichaDelTitular({ separada }) {
+    return {
+      tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "30512874",
+      nombre: "Martín Gutiérrez", apellido: null,
+      nombreRegistrado: separada ? { nombres: "Martín", apellido: "Gutiérrez" } : { nombres: "Martín Gutiérrez", apellido: "" },
+      nombreSeparado: separada,
+      fechaNacimiento: haceAnios(42).iso, nacionalidad: "AR", paisResidencia: "AR", localidad: "Córdoba", telefono: "+54 351 555-0182",
+      fechaUltimaEstadia: null, alojadaAhora: false,
+    };
+  }
+  function conFichaDelTitular(ficha) {
+    api.buscarHuespedPorDocumento.mockImplementation(({ numero }) =>
+      numero === "30512874" ? Promise.resolve(ficha) : Promise.reject({ response: { status: 404 } }),
+    );
+  }
+
+  it("ficha vieja del titular: Nombres y Apellido quedan editables para separarlos y se envían separados", async () => {
+    prepararReserva(reservaDe({ habitaciones: [HAB_270] }), [fichaTitular()]);
+    conFichaDelTitular(fichaDelTitular({ separada: false }));
+    api.confirmarCheckInConReserva.mockImplementation(() => new Promise(() => {}));
+    renderizar("/check-in?codigo=C43B1F20");
+    await waitFor(() => expect(filas()).toHaveLength(3));
+    const titular = filas()[0];
+    await within(titular).findByText(/Ficha de/, {}, { timeout: 2000 });
+    expect(within(titular).getByLabelText(rotulo("Nombres"))).toBeEnabled();
+    expect(within(titular).getByLabelText(rotulo("Apellido"))).toBeEnabled();
+    expect(within(titular).getByText(/La ficha tiene el nombre completo en un solo campo/)).toBeInTheDocument();
+    await completarFamilia();
+    await waitFor(() => expect(botonConfirmar()).toBeEnabled());
+    fireEvent.click(botonConfirmar());
+    await waitFor(() => expect(api.confirmarCheckInConReserva).toHaveBeenCalledTimes(1));
+    expect(api.confirmarCheckInConReserva.mock.calls[0][1].personas[0]).toMatchObject({ nombre: "Martín", apellido: "Gutiérrez" });
+  });
+
+  it("ficha vieja del titular: separarlo en OTRO nombre no deja confirmar (lo corrige un administrador)", async () => {
+    prepararReserva(reservaDe({ habitaciones: [HAB_270] }), [fichaTitular()]);
+    conFichaDelTitular(fichaDelTitular({ separada: false }));
+    renderizar("/check-in?codigo=C43B1F20");
+    await waitFor(() => expect(filas()).toHaveLength(3));
+    const titular = filas()[0];
+    await within(titular).findByText(/Ficha de/, {}, { timeout: 2000 });
+    await completarFamilia();
+    cambiar(titular, "Apellido", "Pérez");
+    expect(await screen.findByText(/nombre y apellido que formen «Martín Gutiérrez», como en la ficha/)).toBeInTheDocument();
+    expect(botonConfirmar()).toBeDisabled();
+  });
+
+  it("ficha ya separada y copia vieja en la reserva: la fila toma el nombre de la ficha y queda bloqueado", async () => {
+    prepararReserva(reservaDe({ habitaciones: [HAB_270] }), [fichaTitular()]);
+    conFichaDelTitular(fichaDelTitular({ separada: true }));
+    renderizar("/check-in?codigo=C43B1F20");
+    await waitFor(() => expect(filas()).toHaveLength(3));
+    const titular = filas()[0];
+    await waitFor(() => expect(within(titular).getByLabelText(rotulo("Apellido"))).toHaveValue("Gutiérrez"), { timeout: 2000 });
+    expect(within(titular).getByLabelText(rotulo("Nombres"))).toHaveValue("Martín");
+    expect(within(titular).getByLabelText(rotulo("Nombres"))).toBeDisabled();
+    expect(within(titular).getByLabelText(rotulo("Apellido"))).toBeDisabled();
+    expect(within(titular).queryByText(/separá nombre y apellido/)).not.toBeInTheDocument();
+  });
+
   it("asteriscos según la fila, leyenda y mayúscula inicial al salir del campo", async () => {
     prepararReserva(reservaDe({ habitaciones: [HAB_270] }), [fichaTitular()]);
     renderizar("/check-in?codigo=C43B1F20");

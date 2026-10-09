@@ -33,3 +33,21 @@ test("una ficha sin nombres separados usa las iniciales del nombre completo", as
   const error = await buscarPorDocumento({ tipo: "DNI", pais: "AR", numero: "30111222" }).catch((e) => e);
   expect(error.extra.otrosDocumentos[0].iniciales).toBe("L. P.");
 });
+
+test("ficha vieja (nombre completo sin separar): nombreSeparado en false y el nombre completo en nombres", async () => {
+  prisma.huesped.findUnique.mockResolvedValue({ id: 5, tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "30132852", nombre: "Ricardo Ponce", nombres: null, apellido: null, contacto: null });
+  prisma.ocupanteReserva.findFirst.mockResolvedValue(null);
+  prisma.ocupanteReserva.count.mockResolvedValue(0);
+  const r = await buscarPorDocumento({ tipo: "DNI", pais: "AR", numero: "30132852" });
+  expect(r.nombreSeparado).toBe(false);
+  expect(r.nombreRegistrado).toEqual({ nombres: "Ricardo Ponce", apellido: "" });
+});
+
+test("ficha separada: nombreSeparado en true", async () => {
+  prisma.huesped.findUnique.mockResolvedValue({ id: 5, tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: "30132852", nombre: "Ricardo Ponce", nombres: "Ricardo", apellido: "Ponce", contacto: null });
+  prisma.ocupanteReserva.findFirst.mockResolvedValue(null);
+  prisma.ocupanteReserva.count.mockResolvedValue(0);
+  const r = await buscarPorDocumento({ tipo: "DNI", pais: "AR", numero: "30132852" });
+  expect(r.nombreSeparado).toBe(true);
+  expect(r.nombreRegistrado).toEqual({ nombres: "Ricardo", apellido: "Ponce" });
+});
