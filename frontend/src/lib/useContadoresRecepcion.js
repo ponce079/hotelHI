@@ -15,12 +15,14 @@ const CINCO_MINUTOS = 5 * 60 * 1000;
 // total. Si llegó al tope no se puede saber el número real: no se muestra el contador antes que uno mentiroso.
 export const TOPE_LLEGADAS = 200;
 
-// Confirmadas que ingresan hoy y todavía no ingresaron: el backend ya excluye canceladas, no-show y las de días
-// anteriores (esas vienen aparte en `anterioresPendientes`, que no se cuenta).
+// Pendientes de ingreso: las Confirmadas que llegan hoy MÁS las atrasadas (llegaban ayer y todavía se pueden ingresar,
+// HU-118). El backend ya excluye canceladas y no-show; las de antes de ayer vienen aparte (`pendientesNoShow`) y no se
+// cuentan. Si cualquiera de las dos listas llegó al tope no se sabe el número real y no se muestra ninguno.
 export function contarLlegadas(datos) {
   const reservas = datos?.reservas;
-  if (!Array.isArray(reservas) || reservas.length >= TOPE_LLEGADAS) return 0;
-  return reservas.length;
+  const atrasadas = Array.isArray(datos?.atrasadas) ? datos.atrasadas : [];
+  if (!Array.isArray(reservas) || reservas.length >= TOPE_LLEGADAS || atrasadas.length >= TOPE_LLEGADAS) return 0;
+  return reservas.length + atrasadas.length;
 }
 
 // Estadías En curso cuya salida es hoy o anterior (las anteriores son las vencidas). `hoy` es "YYYY-MM-DD" en hora
@@ -58,9 +60,10 @@ export function resumirEnCasa(reservas) {
 // `puedeVerCheckIn` / `puedeVerCheckOut`: si el rol tiene ese ítem en el menú. Sin acceso no se dispara ningún pedido.
 // `puedeVerReservas` (opcional, lo pasa la pantalla de Reservas): trae también la lista de En curso para un rol que ve
 // Reservas pero no Check-out (el gerente). El menú lateral no lo pasa, así que su badge no cambia.
-// Además de `llegadas`/`salidas`/`vencidas` (lo que usa el menú) devuelve por separado `llegadasHoy`,
-// `llegadasAnteriores`, `salidasHoy` y `salidasVencidas` y `enCasa` ({ habitaciones, huespedes }); cada uno es null si
-// su pedido falló, todavía no llegó o no se puede saber (tope de llegadas).
+// Además de `llegadas`/`salidas`/`vencidas` (lo que usa el menú; `llegadas` incluye las atrasadas) devuelve por separado
+// `llegadasHoy`, `llegadasAnteriores` (< hoy, lo que usa Reservas), `llegadasAtrasadas`, `pendientesNoShow` (< ayer),
+// `salidasHoy` y `salidasVencidas` y `enCasa` ({ habitaciones, huespedes }); cada uno es null si su pedido falló,
+// todavía no llegó o no se puede saber (tope de llegadas).
 export function useContadoresRecepcion({ puedeVerCheckIn, puedeVerCheckOut, puedeVerReservas = false }) {
   const pedirSalidas = Boolean(puedeVerCheckOut || puedeVerReservas);
   const { pathname } = useLocation();
@@ -103,6 +106,7 @@ export function useContadoresRecepcion({ puedeVerCheckIn, puedeVerCheckOut, pued
   // Si un pedido falla no hay data y el contador queda en 0 (sin burbuja ni error visible).
   const { salidas, vencidas } = contarSalidas(salidasQuery.data);
   const llegadasCompletas = Array.isArray(llegadasQuery.data?.reservas) && llegadasQuery.data.reservas.length < TOPE_LLEGADAS;
+  const atrasadasCompletas = llegadasCompletas && Array.isArray(llegadasQuery.data?.atrasadas) && llegadasQuery.data.atrasadas.length < TOPE_LLEGADAS;
   const salidasListas = Array.isArray(salidasQuery.data);
   return {
     llegadas: contarLlegadas(llegadasQuery.data),
@@ -110,6 +114,8 @@ export function useContadoresRecepcion({ puedeVerCheckIn, puedeVerCheckOut, pued
     vencidas,
     llegadasHoy: llegadasCompletas ? llegadasQuery.data.reservas.length : null,
     llegadasAnteriores: llegadasCompletas ? (llegadasQuery.data.anterioresPendientes ?? 0) : null,
+    llegadasAtrasadas: atrasadasCompletas ? llegadasQuery.data.atrasadas.length : null,
+    pendientesNoShow: llegadasQuery.data && llegadasQuery.data.pendientesNoShow !== undefined ? llegadasQuery.data.pendientesNoShow : null,
     salidasHoy: salidasListas ? salidas - vencidas : null,
     salidasVencidas: salidasListas ? vencidas : null,
     enCasa: resumirEnCasa(salidasQuery.data),
