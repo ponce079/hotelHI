@@ -27,6 +27,11 @@ const TIPO_NOTIFICACION_HOUSEKEEPING = 'Housekeeping';
 const AREA_HOUSEKEEPING = 'Housekeeping';
 const CANAL_INTERNO = 'Interno';
 
+// Mismo reparto que frontend/src/lib/sesion.jsx: ver el check-out (verCheckOut) lo hacen admin y recepcionista;
+// operarlo (gestionarCheckOut: verificar y confirmar) solo recepcionista.
+const ROLES_VER_CHECK_OUT = ['admin', 'recepcionista'];
+const ROLES_GESTION_CHECK_OUT = ['recepcionista'];
+
 const LIMITES_VERIFICACION = { descripcion: 500, registradoPor: 120 };
 
 module.exports = {
@@ -38,4 +43,6 @@ module.exports = {
   AREA_HOUSEKEEPING,
   CANAL_INTERNO,
   LIMITES_VERIFICACION,
+  ROLES_VER_CHECK_OUT,
+  ROLES_GESTION_CHECK_OUT,
 };

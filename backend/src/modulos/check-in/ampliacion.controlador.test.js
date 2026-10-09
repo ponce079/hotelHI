@@ -13,7 +13,7 @@ test("la advertencia de estadía llega al cliente como 409 con código y cotizac
   error.detalle = { totalAnterior: 200, totalNuevo: 220, diferencia: 20, token: "vigente" };
   servicio.confirmarCheckInConReserva.mockRejectedValue(error);
   const res = { status: jest.fn().mockReturnThis(), json: jest.fn() };
-  await postConfirmarConReserva({ params: { reservaId: "1" }, body: {} }, res);
+  await postConfirmarConReserva({ params: { reservaId: "1" }, body: {}, usuarioActual: { usuario: "recep1", rol: "recepcionista" } }, res);
   expect(res.status).toHaveBeenCalledWith(409);
   expect(res.json).toHaveBeenCalledWith({ error: error.message, codigo: error.codigo, detalle: error.detalle });
 });

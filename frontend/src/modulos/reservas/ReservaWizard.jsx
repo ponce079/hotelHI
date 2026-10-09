@@ -469,7 +469,8 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
     retry: false,
     mutationFn: async () => {
       if (esEdicion) {
-        return modificarReserva(reserva.id, datosComunes);
+        // totalEsperado = el total de la vista previa que vio quien confirma: si el precio cambió, el backend responde 409.
+        return modificarReserva(reserva.id, { ...datosComunes, totalEsperado: previaQuery.data?.totalNuevo });
       }
 
       const datosAlta = {
@@ -518,7 +519,10 @@ export function ReservaWizard({ reserva = null, valoresIniciales = null, origen 
       // HU-96 (regla 4) — el precio cambió entre la cotización que se
       // mostró y la que el backend volvió a calcular al confirmar (409):
       // se recotiza para que la próxima confirmación use el valor real.
-      if (error?.response?.status === 409) {
+      if (esEdicion && error?.response?.status === 409) {
+        // Modificación con el precio cambiado desde la vista previa: se vuelve a pedir y queda el mensaje del backend.
+        queryClient.invalidateQueries({ queryKey: ["reservas", "modificar-previa"] });
+      } else if (error?.response?.status === 409) {
         queryClient.invalidateQueries({ queryKey: ["reservas", "cotizar"] });
         cotizarQuery.refetch();
         setForm((f) => ({ ...f, paso: PASO_PLAN, planCodigo: "", planTarifarioId: "" }));

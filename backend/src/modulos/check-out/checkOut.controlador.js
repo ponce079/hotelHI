@@ -29,7 +29,11 @@ async function getVerificaciones(req, res) {
 // POST /api/check-out/:reservaId/verificaciones  (HU-87)
 async function postVerificacion(req, res) {
   try {
-    const resultado = await checkOutServicio.registrarVerificacion(req.params.reservaId, req.body);
+    const resultado = await checkOutServicio.registrarVerificacion(req.params.reservaId, {
+      ...req.body,
+      // Quién verificó sale siempre de la sesión; si el cuerpo trae registradoPor se ignora.
+      registradoPor: req.usuarioActual.usuario,
+    });
     return res.status(201).json(resultado);
   } catch (err) {
     return responderError(res, err, 'No se pudo registrar la verificación.', 'Error al registrar verificación');

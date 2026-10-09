@@ -42,7 +42,6 @@ export function CargoVerificacionCheckoutModal({
         tipo: form.tipo,
         descripcion: form.descripcion.trim(),
         monto: Number(form.monto),
-        registradoPor: usuario,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["check-out"] });

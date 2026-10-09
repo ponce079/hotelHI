@@ -45,6 +45,8 @@ function validarOcupacion(habitaciones, personas) {
 }
 
 async function prepararIngreso(tx, reservaId, operador) {
+  // El operador lo pone la sesión en el controlador: si falta es un error de programación, no un dato a inventar.
+  if (!String(operador ?? "").trim()) throw new Error("prepararIngreso: falta el operador de la sesión.");
   const personas = await tx.ocupanteReserva.findMany({
     where: { reservaId, estado: "Previsto" },
     include: s.includePersona,
@@ -81,7 +83,7 @@ async function prepararIngreso(tx, reservaId, operador) {
           autorizacionPresentada: p.autorizacionPresentada === true,
         })),
     },
-    operador || "Recepción",
+    operador,
   );
 }
 
