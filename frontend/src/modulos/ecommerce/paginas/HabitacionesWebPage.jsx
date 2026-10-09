@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { BuscadorEstadia } from "../componentes/BuscadorEstadia";
 import { CargandoTarjetas } from "../componentes/Esqueleto";
 import { ErrorConReintento } from "../componentes/ErrorConReintento";
-import { FranjaConfianza, Portada, TarjetaHabitacionWeb } from "../componentes/PiezasWeb";
+import { FranjaConfianza, Portada, TablaComparativa, TarjetaHabitacionWeb } from "../componentes/PiezasWeb";
 import { VENTANA_VENTA_DIAS, busquedaComoQueryWeb, capacidadMaximaDeTipos } from "../busquedaWeb";
 import { obtenerTipos } from "../ecommerce.api";
 import { useProcesoCompra } from "../ProcesoCompraContext";
@@ -95,6 +95,16 @@ export function HabitacionesWebPage() {
           </div>
         )}
       </section>
+
+      {tipos.data?.tipos.length > 1 && (
+        <section className="ec-contenedor ec-seccion" aria-labelledby="ec-titulo-comparar">
+          <p className="ec-sobretitulo ec-revelar">¿Cuál elegir?</p>
+          <h2 id="ec-titulo-comparar" className="ec-titulo-seccion ec-revelar">
+            Compará las habitaciones
+          </h2>
+          <TablaComparativa tipos={tipos.data.tipos} />
+        </section>
+      )}
     </div>
   );
 }

@@ -12,6 +12,9 @@ export function PromocionesPage() {
   const raiz = useRevelar();
   const [categoria, setCategoria] = useState("Todas");
   const visibles = PROMOCIONES_WEB.filter((p) => categoria === "Todas" || p.categoria === categoria);
+  // En "Todas" la promo destacada va grande arriba y el resto en la grilla.
+  const destacada = categoria === "Todas" ? visibles.find((p) => p.destacada) : undefined;
+  const resto = visibles.filter((p) => p !== destacada);
 
   return (
     <div ref={raiz}>
@@ -34,8 +37,9 @@ export function PromocionesPage() {
       </div>
 
       <section className="ec-contenedor ec-seccion" aria-label={`Promociones: ${categoria}`}>
+        {destacada && <TarjetaPromo promo={destacada} destino="/web/habitaciones#buscar" destacada />}
         <div className="ec-grilla-promos">
-          {visibles.map((promo, i) => (
+          {resto.map((promo, i) => (
             <TarjetaPromo key={promo.titulo} promo={promo} demora={i * 100} destino="/web/habitaciones#buscar" />
           ))}
         </div>

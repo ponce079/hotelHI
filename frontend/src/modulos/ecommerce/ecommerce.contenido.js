@@ -20,6 +20,7 @@ import {
   Waves,
   Wifi,
 } from "lucide-react";
+import { HOTEL } from "./ecommerce.config";
 
 export const CONTENIDO_TIPOS = {
   Simple: {
@@ -115,7 +116,7 @@ export const SERVICIOS_HOTEL = [
 // Promociones del modelo: contenido de difusión. El precio final siempre lo
 // calcula el motor de reservas con la tarifa vigente.
 export const PROMOCIONES_WEB = [
-  { categoria: "Feriados", etiqueta: "Feriado", titulo: "Feriado del 12 de Octubre", beneficio: "15% OFF", detalle: "en estadías de 3 noches o más", foto: "p1", vigencia: "Del 10 al 12 de octubre", condiciones: ["Mínimo 3 noches.", "Aplica a tarifa flexible y no reembolsable.", "Sujeto a disponibilidad."] },
+  { categoria: "Feriados", etiqueta: "Feriado", titulo: "Feriado del 12 de Octubre", beneficio: "15% OFF", detalle: "en estadías de 3 noches o más", foto: "p1", destacada: true, vigencia: "Del 10 al 12 de octubre", condiciones: ["Mínimo 3 noches.", "Aplica a tarifa flexible y no reembolsable.", "Sujeto a disponibilidad."] },
   { categoria: "Fines de semana largos", etiqueta: "Fin de semana largo", titulo: "Puente de noviembre", beneficio: "20% OFF", detalle: "en tarifas reembolsables", foto: "p2", vigencia: "Del 20 al 23 de noviembre", condiciones: ["Solo tarifa flexible (reembolsable).", "Mínimo 2 noches.", "Sujeto a disponibilidad."] },
   { categoria: "Vacaciones", etiqueta: "Vacaciones de invierno", titulo: "Viví Salta en invierno", beneficio: "Hasta 25% OFF", detalle: "+ desayuno incluido", foto: "p3", vigencia: "Julio de 2027", condiciones: ["El descuento varía según la fecha.", "Desayuno incluido en todas las tarifas.", "Sujeto a disponibilidad."] },
 ];
@@ -148,4 +149,86 @@ export const CONFIANZA_WEB = [
   { titulo: "Confirmación inmediata", texto: "Tu código al instante y por email" },
   { titulo: "Cancelación flexible", texto: "Sin cargo hasta 48 h antes" },
   { titulo: "Pago seguro", texto: "Conexión cifrada" },
+];
+
+// Excursiones y paseos (página Experiencias). Fotos libres de Wikimedia Commons: el
+// crédito de autor y licencia se muestra en cada tarjeta, como piden las licencias CC.
+const COMMONS = "https://commons.wikimedia.org/wiki/File:";
+export const EXCURSIONES_SALTA = [
+  {
+    nombre: "Quebrada de las Conchas",
+    tipo: "Excursión",
+    duracion: "Día completo",
+    texto: "Cerros rojizos, la Garganta del Diablo y el Anfiteatro camino a Cafayate.",
+    foto: "x-conchas",
+    credito: { autor: "Bernard Gagnon", licencia: "CC BY-SA 4.0", pagina: `${COMMONS}Quebrada_de_las_Conchas_04.jpg` },
+  },
+  {
+    nombre: "Cafayate y sus bodegas",
+    tipo: "Excursión",
+    duracion: "Día completo",
+    texto: "Viñedos de altura y degustación de torrontés en los Valles Calchaquíes.",
+    foto: "x-cafayate",
+    credito: { autor: "Micah MacAllen", licencia: "CC BY-SA 2.0", pagina: `${COMMONS}Cafayate_vineyard.jpg` },
+  },
+  {
+    nombre: "Tren a las Nubes",
+    tipo: "Excursión",
+    duracion: "Día completo",
+    texto: "Hasta el viaducto La Polvorilla, a más de 4.200 metros de altura.",
+    foto: "x-tren",
+    credito: { autor: "Ministerio de Transporte de la Nación", licencia: "CC BY-SA 2.0", pagina: `${COMMONS}Tren_nubes_trenesarg.jpg` },
+  },
+  {
+    nombre: "Salinas Grandes",
+    tipo: "Excursión",
+    duracion: "Día completo",
+    texto: "Un desierto blanco de sal en plena Puna, entre Salta y Jujuy.",
+    foto: "x-salinas",
+    credito: { autor: "Bernard Gagnon", licencia: "CC BY-SA 4.0", pagina: `${COMMONS}Salinas_Grandes_(Jujuy_and_Salta)_02.jpg` },
+  },
+  {
+    nombre: "Casco histórico y Cabildo",
+    tipo: "En la ciudad",
+    duracion: "Medio día · a pie",
+    texto: "La Plaza 9 de Julio, la Catedral y el Cabildo, hoy Museo Histórico del Norte.",
+    foto: "x-cabildo",
+    credito: { autor: "Fulviusbsas", licencia: "CC BY-SA 3.0", pagina: `${COMMONS}Salta-Cabildo1.jpg` },
+  },
+  {
+    nombre: "Teleférico al San Bernardo",
+    tipo: "En la ciudad",
+    duracion: "2 a 3 horas",
+    texto: "Subí al cerro en teleférico y mirá todo el valle de Lerma desde arriba.",
+    foto: "x-sanbernardo",
+    credito: { autor: "Adam Jones", licencia: "CC BY-SA 3.0", pagina: `${COMMONS}Cable_Car_to_the_Cerro_San_Bernardo_-_Salta_-_Argentina.jpg` },
+  },
+];
+
+// Itinerario sugerido "Tu fin de semana en Salta" (página Experiencias).
+export const ITINERARIO_SALTA = [
+  {
+    dia: "Viernes",
+    titulo: "Llegada y ciudad",
+    momentos: [
+      { hora: "Tarde", texto: `Check-in desde las ${HOTEL.checkIn} y paseo por la Plaza 9 de Julio y el Cabildo.` },
+      { hora: "Noche", texto: "Peña folclórica en la calle Balcarce, con empanadas y vino." },
+    ],
+  },
+  {
+    dia: "Sábado",
+    titulo: "Quebrada y Cafayate",
+    momentos: [
+      { hora: "Mañana", texto: "Salida temprano por la Quebrada de las Conchas." },
+      { hora: "Tarde", texto: "Bodegas de Cafayate y helado de vino antes de volver." },
+    ],
+  },
+  {
+    dia: "Domingo",
+    titulo: "Salta desde arriba",
+    momentos: [
+      { hora: "Mañana", texto: `Desayuno sin apuro y check-out hasta las ${HOTEL.checkOut}.` },
+      { hora: "Mediodía", texto: "Teleférico al San Bernardo y un locro antes de partir." },
+    ],
+  },
 ];

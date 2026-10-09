@@ -248,6 +248,34 @@ describe("páginas del rediseño (Habitaciones, Promociones, Experiencias)", () 
     expect(screen.getByRole("link", { name: "Reservá tu estadía" })).toHaveAttribute("href", "/web/habitaciones#buscar");
   });
 
+  it("/web/habitaciones: tabla comparativa con capacidad y comodidades", async () => {
+    renderRuta("/web/habitaciones");
+    const tabla = await screen.findByRole("table", { name: "Comparación de habitaciones" });
+    expect(within(tabla).getByRole("columnheader", { name: "Simple" })).toBeInTheDocument();
+    expect(within(tabla).getByRole("columnheader", { name: "Doble" })).toBeInTheDocument();
+    const escritorio = within(tabla).getByRole("rowheader", { name: "Escritorio" }).closest("tr");
+    expect(within(escritorio).getAllByText(/^(Sí|No)$/).map((c) => c.textContent)).toContain("No");
+  });
+
+  it("/web/promociones: la promo destacada va grande en Todas", () => {
+    renderRuta("/web/promociones");
+    expect(screen.getByText("Promoción destacada")).toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Feriado del 12 de Octubre" })).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Feriados" }));
+    expect(screen.queryByText("Promoción destacada")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Feriado del 12 de Octubre" })).toBeInTheDocument();
+  });
+
+  it("/web/experiencias: excursiones con foto y crédito, e itinerario de 3 días", () => {
+    renderRuta("/web/experiencias");
+    expect(screen.getByRole("heading", { name: "Tren a las Nubes" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Quebrada de las Conchas" })).toHaveAttribute("src", "/web/fotos/x-conchas.jpg");
+    expect(screen.getAllByRole("link", { name: "Bernard Gagnon" })[0]).toHaveAttribute("href", expect.stringContaining("commons.wikimedia.org"));
+    expect(screen.getByRole("heading", { name: "Tu fin de semana en Salta" })).toBeInTheDocument();
+    expect(screen.getByText("Viernes")).toBeInTheDocument();
+    expect(screen.getByText(/check-out hasta las 11 h/)).toBeInTheDocument();
+  });
+
   it("el menú lleva a las páginas propias y a las secciones del Inicio", () => {
     renderRuta("/web");
     const menu = screen.getByRole("navigation", { name: "Principal" });
