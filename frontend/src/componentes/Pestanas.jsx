@@ -36,7 +36,7 @@ export function Pestanas({ pestanas, activa, onCambiar, etiqueta, idBase = "pest
     <div
       role="tablist"
       aria-label={etiqueta}
-      className={`flex gap-6 overflow-x-auto border-b border-[var(--divisor-fila)] px-5 ${className}`}
+      className={`flex gap-6 overflow-x-auto overflow-y-hidden border-b border-[var(--divisor-fila)] px-5 ${className}`}
     >
       {pestanas.map((p, indice) => {
         const seleccionada = p.valor === activa;

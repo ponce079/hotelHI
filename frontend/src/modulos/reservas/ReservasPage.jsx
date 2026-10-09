@@ -219,9 +219,10 @@ export function ReservasPage() {
       />
 
       <section aria-labelledby="operacion-hoy" className="flex flex-col gap-3">
-        <h2 id="operacion-hoy" className="sobretitulo">
+        {/* <p> y no <h2>: la regla global de h1-h6 (index.css, sin capa) pisaría el peso y el espaciado del sobretítulo. */}
+        <p id="operacion-hoy" className="sobretitulo">
           Operación de hoy
-        </h2>
+        </p>
         <div className="grilla-indicadores">
           <TarjetaIndicador
             color="var(--terracota)"
@@ -293,7 +294,7 @@ export function ReservasPage() {
               aria-label="Buscar reservas"
               value={q}
               onChange={(e) => actualizarFiltro("q", e.target.value)}
-              placeholder="Buscar por código, huésped, documento o habitación…"
+              placeholder="Código, huésped, documento o habitación…"
               className={`${CLASE_CAMPO} w-full pl-8`}
             />
           </div>
