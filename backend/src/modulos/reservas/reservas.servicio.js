@@ -1582,12 +1582,6 @@ async function modificarReserva(id, data, cliente = prisma) {
         : normalizarHabitacionesConOcupacion(data.habitaciones);
     const habitacionIds = habitaciones.map((h) => h.habitacionId);
 
-    // Parche provisorio hasta la HU-118: en una tarifa no reembolsable cada habitación que la reserva tiene hoy
-    // tiene que seguir en la lista nueva (quitar o reemplazar bajaría el total). Agregar sí: se cotiza entera.
-    if (planActualEsNoReembolsable && actual.reservaHabitaciones.some((rh) => !habitacionIds.includes(rh.habitacionId))) {
-      throw new ErrorDeNegocio("Las reservas con tarifa no reembolsable no admiten quitar ni cambiar habitaciones.");
-    }
-
     // El huésped solo se toca si vino en el payload. Si cambia el documento,
     // la reserva pasa a apuntar a otra ficha (un documento distinto es otra
     // persona) en vez de renombrar la del huésped original, que puede tener
@@ -1762,6 +1756,15 @@ async function modificarReserva(id, data, cliente = prisma) {
       (acc, noches) => acc + noches.reduce((a, n) => a + n.precioNoche, 0),
       0
     );
+
+    // Regla provisoria hasta la HU-118 (cambio 1 a 1 con motivo "huésped / hotel"): en una tarifa no reembolsable
+    // la modificación no puede bajar el total de la estadía. Permite cambiar a una habitación igual o mejor y agregar.
+    if (planActualEsNoReembolsable && totalNuevo < totalAnterior - 0.01) {
+      const monto = (n) => n.toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      throw new ErrorDeNegocio(
+        `Con tarifa no reembolsable el total de la estadía no puede bajar (antes $${monto(totalAnterior)}, ahora $${monto(totalNuevo)}). Elegí una habitación de igual o mayor valor. Si el cambio lo causa el hotel, el gerente puede ajustar el precio.`
+      );
+    }
 
     if (soloPrevia) {
       // Rediseño del check-in (aditivo): detalle por habitación y por noche para la vista previa.
