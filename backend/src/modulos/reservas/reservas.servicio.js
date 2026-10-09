@@ -1544,63 +1544,113 @@ async function modificarReserva(id, data, cliente = prisma) {
   if (!actual) throw new ErrorDeNegocio("La reserva no existe.", 404);
   exigirModificable(actual);
 
-  const planActualId = actual.planTarifarioId;
-  const planActualEsNoReembolsable = actual.planTarifario?.reembolsable === false;
-
-  const nuevoFechaDesde =
-    data?.fechaDesde === undefined ? null : parsearFechaSinHora(data.fechaDesde, "La fecha de entrada");
-  const nuevoFechaHasta =
-    data?.fechaHasta === undefined ? null : parsearFechaSinHora(data.fechaHasta, "La fecha de salida");
-  const nuevoPlanTarifarioId =
-    data?.planTarifarioId === undefined ? planActualId : enteroPositivo(data.planTarifarioId, "planTarifarioId");
-
-  const cambiaFechaDesde = nuevoFechaDesde !== null && !mismaFecha(nuevoFechaDesde, new Date(actual.fechaDesde));
-  const cambiaFechaHasta = nuevoFechaHasta !== null && !mismaFecha(nuevoFechaHasta, new Date(actual.fechaHasta));
-  const cambiaPlan = nuevoPlanTarifarioId !== planActualId;
-
-  // Regla 9 — un plan no reembolsable no admite cambiar fechas ni plan: no
-  // hay margen para recotizar más barato una tarifa que ya se vendió sin
-  // devolución.
-  if (planActualEsNoReembolsable && (cambiaFechaDesde || cambiaFechaHasta || cambiaPlan)) {
-    throw new ErrorDeNegocio("Las reservas con tarifa no reembolsable no admiten cambios de fechas ni de plan.");
-  }
-
-  const fechaDesde = nuevoFechaDesde ?? new Date(actual.fechaDesde);
-  const fechaHasta = nuevoFechaHasta ?? new Date(actual.fechaHasta);
-  validarRango(fechaDesde, fechaHasta, new Date(actual.fechaDesde));
-
-  const habitaciones =
-    data?.habitaciones === undefined
-      ? actual.reservaHabitaciones.map((rh) => ({ habitacionId: rh.habitacionId, adultos: rh.adultos, menores: rh.menores }))
-      : normalizarHabitacionesConOcupacion(data.habitaciones);
-  const habitacionIds = habitaciones.map((h) => h.habitacionId);
-
-  // El huésped solo se toca si vino en el payload. Si cambia el documento,
-  // la reserva pasa a apuntar a otra ficha (un documento distinto es otra
-  // persona) en vez de renombrar la del huésped original, que puede tener
-  // otras reservas colgando.
-  const huesped = data?.huesped === undefined ? null : normalizarHuesped(data.huesped, fechaDesde);
   const soloPrevia = data?.soloPrevia === true;
+  const totalEsperado = data?.totalEsperado === undefined || data.totalEsperado === null ? null : Number(data.totalEsperado);
+  if (totalEsperado !== null && !Number.isFinite(totalEsperado)) throw new ErrorDeNegocio("totalEsperado debe ser un número.");
 
-  // Snapshot de lo que la reserva YA tenía congelado (por habitación y por
-  // noche), para decidir noche por noche qué conserva precio y qué se
-  // recotiza.
-  const snapshotPorHabitacion = new Map(
-    actual.reservaHabitaciones.map((rh) => [
-      rh.habitacionId,
-      {
-        adultos: rh.adultos,
-        menores: rh.menores,
-        noches: new Map(rh.reservaNoches.map((n) => [isoDeFecha(n.fecha), n])),
-      },
-    ])
-  );
-  const totalAnterior = actual.reservaHabitaciones.reduce(
-    (acc, rh) => acc + rh.reservaNoches.reduce((a, n) => a + Number(n.precioNoche), 0),
-    0
-  );
+  // Todo lo que depende de la reserva leída (plan, fechas, habitaciones y precios congelados). Se calcula una vez con la
+  // lectura de afuera (validación rápida y vista previa) y, al confirmar, de nuevo con la reserva releída bajo bloqueo.
+  const derivar = (actual) => {
+    const planActualId = actual.planTarifarioId;
+    const planActualEsNoReembolsable = actual.planTarifario?.reembolsable === false;
+
+    const nuevoFechaDesde =
+      data?.fechaDesde === undefined ? null : parsearFechaSinHora(data.fechaDesde, "La fecha de entrada");
+    const nuevoFechaHasta =
+      data?.fechaHasta === undefined ? null : parsearFechaSinHora(data.fechaHasta, "La fecha de salida");
+    const nuevoPlanTarifarioId =
+      data?.planTarifarioId === undefined ? planActualId : enteroPositivo(data.planTarifarioId, "planTarifarioId");
+
+    const cambiaFechaDesde = nuevoFechaDesde !== null && !mismaFecha(nuevoFechaDesde, new Date(actual.fechaDesde));
+    const cambiaFechaHasta = nuevoFechaHasta !== null && !mismaFecha(nuevoFechaHasta, new Date(actual.fechaHasta));
+    const cambiaPlan = nuevoPlanTarifarioId !== planActualId;
+
+    // Regla 9 — un plan no reembolsable no admite cambiar fechas ni plan: no
+    // hay margen para recotizar más barato una tarifa que ya se vendió sin
+    // devolución.
+    if (planActualEsNoReembolsable && (cambiaFechaDesde || cambiaFechaHasta || cambiaPlan)) {
+      throw new ErrorDeNegocio("Las reservas con tarifa no reembolsable no admiten cambios de fechas ni de plan.");
+    }
+
+    const fechaDesde = nuevoFechaDesde ?? new Date(actual.fechaDesde);
+    const fechaHasta = nuevoFechaHasta ?? new Date(actual.fechaHasta);
+    validarRango(fechaDesde, fechaHasta, new Date(actual.fechaDesde));
+
+    const habitaciones =
+      data?.habitaciones === undefined
+        ? actual.reservaHabitaciones.map((rh) => ({ habitacionId: rh.habitacionId, adultos: rh.adultos, menores: rh.menores }))
+        : normalizarHabitacionesConOcupacion(data.habitaciones);
+    const habitacionIds = habitaciones.map((h) => h.habitacionId);
+
+    // Parche provisorio hasta la HU-117: en una tarifa no reembolsable cada habitación que la reserva tiene hoy
+    // tiene que seguir en la lista nueva (quitar o reemplazar bajaría el total). Agregar sí: se cotiza entera.
+    if (planActualEsNoReembolsable && actual.reservaHabitaciones.some((rh) => !habitacionIds.includes(rh.habitacionId))) {
+      throw new ErrorDeNegocio("Las reservas con tarifa no reembolsable no admiten quitar ni cambiar habitaciones.");
+    }
+
+    // El huésped solo se toca si vino en el payload. Si cambia el documento,
+    // la reserva pasa a apuntar a otra ficha (un documento distinto es otra
+    // persona) en vez de renombrar la del huésped original, que puede tener
+    // otras reservas colgando.
+    const huesped = data?.huesped === undefined ? null : normalizarHuesped(data.huesped, fechaDesde);
+
+    // Snapshot de lo que la reserva YA tenía congelado (por habitación y por
+    // noche), para decidir noche por noche qué conserva precio y qué se
+    // recotiza.
+    const snapshotPorHabitacion = new Map(
+      actual.reservaHabitaciones.map((rh) => [
+        rh.habitacionId,
+        {
+          adultos: rh.adultos,
+          menores: rh.menores,
+          noches: new Map(rh.reservaNoches.map((n) => [isoDeFecha(n.fecha), n])),
+        },
+      ])
+    );
+    const totalAnterior = actual.reservaHabitaciones.reduce(
+      (acc, rh) => acc + rh.reservaNoches.reduce((a, n) => a + Number(n.precioNoche), 0),
+      0
+    );
+
+    return {
+      actual,
+      planActualEsNoReembolsable,
+      nuevoPlanTarifarioId,
+      cambiaPlan,
+      fechaDesde,
+      fechaHasta,
+      habitaciones,
+      habitacionIds,
+      huesped,
+      snapshotPorHabitacion,
+      totalAnterior,
+    };
+  };
+  const derivadoAfuera = derivar(actual);
 
   const ejecutar = async (tx) => {
+    let derivado = derivadoAfuera;
+    if (!soloPrevia) {
+      // Orden de bloqueos: primero reservas, después reservas_habitaciones (más abajo), igual que el check-in.
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM reservas WHERE id = ${reservaId} FOR UPDATE`);
+      const releida = await tx.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
+      if (!releida) throw new ErrorDeNegocio("La reserva no existe.", 404);
+      exigirModificable(releida);
+      derivado = derivar(releida);
+    }
+    const {
+      actual,
+      planActualEsNoReembolsable,
+      nuevoPlanTarifarioId,
+      cambiaPlan,
+      fechaDesde,
+      fechaHasta,
+      habitaciones,
+      habitacionIds,
+      huesped,
+      snapshotPorHabitacion,
+      totalAnterior,
+    } = derivado;
     const habitacionesDb = await tx.habitacion.findMany({ where: { id: { in: habitacionIds } } });
     if (habitacionesDb.length !== habitacionIds.length) {
       throw new ErrorDeNegocio("Alguna de las habitaciones elegidas no existe.", 404);
@@ -1770,6 +1820,11 @@ async function modificarReserva(id, data, cliente = prisma) {
       };
     }
 
+    // Control opcional del precio contra la vista previa que vio quien confirma (check-in y ampliación no lo mandan).
+    if (totalEsperado !== null && Math.abs(totalNuevo - totalEsperado) > 0.01) {
+      throw new ErrorDeNegocio("El precio cambió desde la vista previa. Revisá el nuevo total y confirmá de nuevo.", 409);
+    }
+
     const huespedGuardado = huesped ? await resolverHuesped(tx, huesped) : null;
 
     // Conservamos los IDs de las habitaciones que siguen en la reserva.
@@ -1847,9 +1902,20 @@ async function modificarReserva(id, data, cliente = prisma) {
     return tx.reserva.findUnique({ where: { id: reservaId }, include: INCLUDE_RESERVA });
   };
 
-  const resultado = cliente === prisma
-    ? await prisma.$transaction(ejecutar, OPCIONES_TRANSACCION)
-    : await ejecutar(cliente);
+  let resultado;
+  if (cliente === prisma) {
+    try {
+      resultado = await prisma.$transaction(ejecutar, OPCIONES_TRANSACCION);
+    } catch (err) {
+      // Deadlock o conflicto de escritura (P2034) con otra operación sobre la misma reserva: 409, como en el check-in.
+      if (err?.code === "P2034") {
+        throw new ErrorDeNegocio("Otra operación modificó la reserva al mismo tiempo. Actualizá la pantalla y volvé a intentar.", 409);
+      }
+      throw err;
+    }
+  } else {
+    resultado = await ejecutar(cliente);
+  }
   return soloPrevia ? resultado : formatearReserva(resultado);
 }
 
