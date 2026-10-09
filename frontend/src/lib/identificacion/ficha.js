@@ -33,6 +33,21 @@ function fechaISO(valor) {
 }
 
 const vacio = (v) => v === null || v === undefined || String(v).trim() === "";
+
+// Mismo criterio que el backend (lib/documento.js, claveNombre): sin tildes, mayúsculas ni espacios de más.
+export function claveNombre(valor) {
+  return String(valor ?? "")
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// ¿Nombres + apellido forman el mismo nombre completo? (separar el nombre de una ficha vieja no es cambiarlo)
+export function mismoNombreCompleto(nombres, apellido, nombreCompleto) {
+  return claveNombre(`${nombres ?? ""} ${apellido ?? ""}`) === claveNombre(nombreCompleto);
+}
 const norm = (v) => String(v ?? "").trim().toLowerCase();
 
 // Respuesta de GET /huespedes/por-documento → la ficha que usan las pantallas.
@@ -47,6 +62,8 @@ export function fichaDesdeRespuesta(datos) {
     nombres,
     apellido,
     nombreCompleto: `${nombres} ${apellido}`.trim(),
+    // Ficha vieja: el nombre completo en un solo campo. La recepción lo separa según el documento y se guarda al confirmar.
+    nombreSeparado: datos.nombreSeparado ?? Boolean(String(apellido).trim()),
     fechaNacimiento: datos.fechaNacimiento ?? "",
     nacionalidad: datos.nacionalidad ?? "",
     paisResidencia: datos.paisResidencia ?? "",

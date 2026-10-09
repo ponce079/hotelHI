@@ -17,7 +17,10 @@ import { VINCULOS_RESPONSABLE, requiereAutorizacion } from "../../../lib/vinculo
 import { CONTENEDOR_FICHA, FILA_FICHA, Rotulo } from "../../../componentes/FilaFicha";
 import {
   AVISO_NOMBRE_COMPLETO,
+  AVISO_NOMBRE_FICHA,
   avisosDeFila,
+  fichaSinNombreSeparado,
+  nombreEditable,
   camposObligatorios,
   edadDeFila,
   etiquetaFila,
@@ -71,8 +74,11 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
   const { heredados } = resolverCampos(estado, fila);
   // El aviso de separar nombre y apellido va debajo de esos campos; los demás, al final de la fila.
   const todosLosAvisos = avisosDeFila(fila);
-  const avisoNombre = todosLosAvisos.includes(AVISO_NOMBRE_COMPLETO);
-  const avisos = todosLosAvisos.filter((a) => a !== AVISO_NOMBRE_COMPLETO);
+  const esAvisoNombre = (a) => a === AVISO_NOMBRE_COMPLETO || a === AVISO_NOMBRE_FICHA;
+  const avisoNombre = todosLosAvisos.find(esAvisoNombre);
+  const avisos = todosLosAvisos.filter((a) => !esAvisoNombre(a));
+  // Nombres y Apellido son de la ficha (bloqueados), salvo en una ficha vieja sin el nombre separado.
+  const nombreBloqueado = !nombreEditable(fila);
   const edad = edadDeFila(fila, contexto);
   const etiqueta = etiquetaFila(estado, fila);
   const esTitularReserva = titularDeLaReserva(estado, contexto).fila?.id === fila.id;
@@ -163,7 +169,7 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
       </div>
   );
   const avisoSepararNombre = avisoNombre && (
-    <p className="mt-2 rounded-md bg-laton-100 px-2.5 py-1.5 text-[13.5px] text-laton-700">{AVISO_NOMBRE_COMPLETO}</p>
+    <p className="mt-2 rounded-md bg-laton-100 px-2.5 py-1.5 text-[13.5px] text-laton-700">{avisoNombre}</p>
   );
 
   return (
@@ -199,7 +205,10 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
 
       {fila.ficha && (
         <p className="mb-1 text-[13.5px] text-pino-700">
-          {fila.ficha.soloReferencia ? <>Ficha de <b>{fila.ficha.nombre}</b>: lo que cambies se compara con sus datos guardados. El nombre es de la ficha; solo un administrador lo corrige, desde la ficha del huésped.</> : <>Ficha de <b>{fila.ficha.nombre}</b>: se completaron todos sus datos. El nombre es de la ficha; solo un administrador lo corrige, desde la ficha del huésped.</>}
+          {fila.ficha.soloReferencia ? <>Ficha de <b>{fila.ficha.nombre}</b>: lo que cambies se compara con sus datos guardados. </> : <>Ficha de <b>{fila.ficha.nombre}</b>: se completaron todos sus datos. </>}
+          {fichaSinNombreSeparado(fila)
+            ? "Separá nombre y apellido según el documento (tienen que formar el mismo nombre); al confirmar se guarda en la ficha."
+            : "El nombre es de la ficha; solo un administrador lo corrige, desde la ficha del huésped."}
         </p>
       )}
       <EstadoIdentificacion identificacion={identificacion} className="mb-2.5" />
@@ -222,8 +231,8 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
             </div>
           )}
           <div className={`${FILA_IDENTIDAD} mt-2.5`}>
-            {campo("nombre", "Nombres", { disabled: Boolean(fila.ficha) })}
-            {campo("apellido", "Apellido", { disabled: Boolean(fila.ficha) })}
+            {campo("nombre", "Nombres", { disabled: nombreBloqueado })}
+            {campo("apellido", "Apellido", { disabled: nombreBloqueado })}
             {campo("fechaNacimiento", "Nacimiento", { placeholder: "dd/mm/aaaa", inputMode: "numeric" })}
             <SelectorPais id={idCampo(fila.id, "nacionalidad")} label={rotulo("nacionalidad", "Nacionalidad")} valor={fila.campos.nacionalidad} onCambiar={cambiar("nacionalidad")} />
           </div>
@@ -256,8 +265,8 @@ export function FilaHuesped({ estado, contexto, fila, dispatch, puedeQuitar }) {
       ) : (
         <div className={CONTENEDOR_FICHA}>
           <div className={FILA_MENOR}>
-            {campo("nombre", "Nombres", { disabled: Boolean(fila.ficha) })}
-            {campo("apellido", "Apellido", { disabled: Boolean(fila.ficha) })}
+            {campo("nombre", "Nombres", { disabled: nombreBloqueado })}
+            {campo("apellido", "Apellido", { disabled: nombreBloqueado })}
             {campo("fechaNacimiento", "Nacimiento", { placeholder: "dd/mm/aaaa", inputMode: "numeric" })}
             {selectResponsable}
             {selectVinculo}

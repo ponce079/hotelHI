@@ -189,6 +189,7 @@ async function resolverFichas(tx, { reserva, reservaId, fichas, identidades, hue
   const huespedes = new Map(); // ficha.id -> huespedId
   const nuevos = [];
   const identidadNueva = new Map(); // ficha.id -> identidad (de las que se crean ahora)
+  const nombreResuelto = new Set(); // huespedId cuyo nombre ya se escribió en esta transacción
 
   for (const ficha of fichas) {
     const identidad = identidades.get(ficha.id);
@@ -242,10 +243,13 @@ async function resolverFichas(tx, { reserva, reservaId, fichas, identidades, hue
         // Se completa la identidad del titular; su nombre solo cambia si un administrador lo autorizó.
         const { nombre, nombres, apellido, ...sinNombre } = datos;
         const conNombre = renombres.some((r) => r.ficha.id === delTitular.id);
+        // Ficha vieja con el nombre completo en un solo campo: se guarda la separación que hizo la recepción.
+        const separacion = conNombre ? null : personasServicio.separacionDeNombre(titular, delTitular);
         await tx.huesped.update({
           where: { id: titular.id },
-          data: { ...sinNombre, ...(conNombre ? { nombre, nombres, apellido } : {}), contacto, identidadDocumento: identidades.get(delTitular.id) },
+          data: { ...sinNombre, ...(conNombre ? { nombre, nombres, apellido } : (separacion ?? {})), contacto, identidadDocumento: identidades.get(delTitular.id) },
         });
+        nombreResuelto.add(titular.id);
         if (conNombre) await personasServicio.registrarCambioDeNombre(tx, titular, delTitular, { ...permisoNombre, motivo: extras.get(delTitular.id)?.motivoCambioNombre, reservaId });
         huespedes.set(delTitular.id, titular.id);
         const idx = nuevos.findIndex((n) => n.identidadDocumento === identidades.get(delTitular.id));
@@ -299,7 +303,27 @@ async function resolverFichas(tx, { reserva, reservaId, fichas, identidades, hue
     );
     for (const r of aRenombrar) {
       await personasServicio.registrarCambioDeNombre(tx, r.existente, r.ficha, { ...permisoNombre, motivo: extras.get(r.ficha.id)?.motivoCambioNombre, reservaId });
+      nombreResuelto.add(huespedes.get(r.ficha.id));
     }
+  }
+
+  // Fichas viejas (nombre completo en un solo campo) que la recepción separó según el documento: se guardan nombres y
+  // apellido. No es un cambio de nombre (el nombre completo es el mismo), así que no pide administrador ni motivo.
+  // Una sola sentencia, sin importar cuántas sean.
+  const previoPorId = new Map(huespedesExistentes.map((h) => [h.id, h]));
+  if (titular?.id) previoPorId.set(titular.id, titular);
+  const separaciones = new Map(); // huespedId -> datos
+  for (const ficha of fichas) {
+    const huespedId = huespedes.get(ficha.id);
+    if (!huespedId || identidadNueva.has(ficha.id) || nombreResuelto.has(huespedId) || separaciones.has(huespedId)) continue;
+    const datos = personasServicio.separacionDeNombre(previoPorId.get(huespedId), ficha);
+    if (datos) separaciones.set(huespedId, datos);
+  }
+  if (separaciones.size) {
+    await personasServicio.renombrarFichasEnLote(
+      tx,
+      [...separaciones].map(([huespedId, datos]) => ({ huespedId, datos })),
+    );
   }
   return huespedes;
 }

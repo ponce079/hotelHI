@@ -89,9 +89,12 @@ async function buscarPorDocumento({ tipo, pais, numero } = {}) {
     // Nombre tal como está guardado en la ficha del huésped: es el que protege el alta de reservas
     // (reservas.servicio.js, resolverHuesped), así que el mostrador autocompleta con este.
     nombreRegistrado: {
-      nombres: huesped.nombres || huesped.nombre,
+      nombres: huesped.nombres && huesped.apellido ? huesped.nombres : huesped.nombre,
       apellido: huesped.nombres && huesped.apellido ? huesped.apellido : "",
     },
+    // Ficha vieja: el nombre completo está en un solo campo. La pantalla deja que la recepción lo separe según el
+    // documento (nombres + apellido tienen que formar el mismo nombre) y al confirmar se guarda la separación.
+    nombreSeparado: Boolean(huesped.nombres && huesped.apellido),
     fechaNacimiento: soloFecha(huesped.fechaNacimiento),
     nacionalidad: huesped.nacionalidad,
     paisResidencia: huesped.paisResidencia,

@@ -3,7 +3,7 @@
 //
 // Invariante: las filas de cada habitación son exactamente su ocupación (adultos primero,
 // después menores). Agregar o quitar a alguien cambia la ocupación y las filas a la vez.
-import { valoresDeLaFicha } from "../../lib/identificacion/ficha";
+import { valoresDeLaFicha, mismoNombreCompleto } from "../../lib/identificacion/ficha";
 import { codigoPais } from "../../lib/paises";
 import { normalizarTipoDocumento } from "../../lib/tiposDocumento";
 import { edadEnFecha, formatearFechaDdMmAaaa, ddMmAaaaAISO } from "../../lib/fechas";
@@ -285,6 +285,17 @@ function liberarResponsables(filas) {
   return filas.map((f) => (f.responsableId != null && !ids.has(f.responsableId) ? { ...f, responsableId: null } : f));
 }
 
+// Nombre y apellido de la fila al encontrar la ficha. Ficha separada: los suyos. Ficha vieja (nombre completo en un solo
+// campo): si la fila ya los tiene separados y forman el mismo nombre, se respetan; si no, el nombre completo va en
+// Nombres y el Apellido queda vacío, para que la recepción lo separe según el documento (nunca se parte solo).
+export function nombreDesdeFicha(ficha, campos) {
+  if (ficha.nombreSeparado !== false && ficha.nombres && ficha.apellido) return { nombre: ficha.nombres, apellido: ficha.apellido };
+  const completo = ficha.nombreCompleto || ficha.nombres || "";
+  if (!completo) return { nombre: campos.nombre, apellido: campos.apellido };
+  if (String(campos.apellido ?? "").trim() && mismoNombreCompleto(campos.nombre, campos.apellido, completo)) return { nombre: campos.nombre, apellido: campos.apellido };
+  return { nombre: completo, apellido: "" };
+}
+
 function actualizarFila(estado, filaId, cambio) {
   return { ...estado, filas: estado.filas.map((f) => (f.id === filaId ? { ...f, ...cambio(f) } : f)) };
 }
@@ -331,7 +342,7 @@ export function reducer(estado, accion) {
       // se guarda en ella con la casilla "Actualizar la ficha del huésped con estos datos" (sin tildar al empezar).
       const { filaId, ficha, clave } = accion;
       return actualizarFila(estado, filaId, (f) => {
-        const campos = { ...f.campos, nombre: ficha.nombres || f.campos.nombre, apellido: ficha.apellido || f.campos.apellido };
+        const campos = { ...f.campos, ...nombreDesdeFicha(ficha, f.campos) };
         const traidos = [];
         for (const [k, v] of Object.entries(valoresDeLaFicha(ficha))) {
           campos[k] = v;
@@ -350,6 +361,8 @@ export function reducer(estado, accion) {
     case "fijarFicha": {
       const { filaId, ficha, clave } = accion;
       return actualizarFila(estado, filaId, (f) => ({
+        // El nombre es el de la ficha: si ya está separado, manda sobre la copia de la reserva (que puede ser vieja).
+        campos: { ...f.campos, ...nombreDesdeFicha(ficha, f.campos) },
         ficha: { clave, nombre: ficha.nombreCompleto, ultimaEstadia: ficha.fechaUltimaEstadia, original: ficha, soloReferencia: true },
         actualizarFicha: f.actualizarFicha === true,
         alojadaEnOtra: Boolean(ficha.alojadaAhora),
