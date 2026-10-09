@@ -71,7 +71,7 @@ afterEach(() => vi.unstubAllEnvs());
 describe("las siete rutas /web renderizan", () => {
   it("/web: inicio con buscador y los tipos del mock", async () => {
     renderRuta("/web");
-    expect(screen.getByRole("heading", { level: 1, name: /tu estadía, resuelta en minutos/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /viví salta/i })).toBeInTheDocument();
     expect(screen.getByRole("form", { name: /buscar disponibilidad/i })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Simple" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Doble" })).toBeInTheDocument();

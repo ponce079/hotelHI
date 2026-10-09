@@ -5,12 +5,12 @@ const { HORA_CHECKIN } = require("../tarifas/tarifas.constantes");
 
 const HOTEL = {
   nombre: "Holiday Inn",
-  bajada: "Hotel · Reservas online",
-  direccion: "Av. Belgrano 1450, A4400 Salta Capital, Salta",
-  telefono: "+54 387 421-0000",
-  email: "hotelhi.notificaciones@gmail.com",
+  bajada: "Salta",
+  direccion: "Av. Bicentenario de la Batalla de Salta 1250, A4400 Salta Capital, Argentina",
+  telefono: "+54 387 400-0000",
+  email: "reservas@holidayinnsalta.com.ar",
   checkIn: `${HORA_CHECKIN.hora} h`,
-  checkOut: "10 h",
+  checkOut: "11 h",
 };
 
 module.exports = { HOTEL };

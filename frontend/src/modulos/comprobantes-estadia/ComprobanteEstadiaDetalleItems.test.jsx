@@ -85,7 +85,7 @@ describe("ComprobanteEstadiaDetallePage — detalle de cargos", () => {
     expect(screen.getByText("Holiday Inn")).toBeInTheDocument();
     expect(screen.getByText("Hotel de demostración")).toBeInTheDocument();
     expect(screen.getByText("CUIT: no aplica — proyecto académico")).toBeInTheDocument();
-    expect(screen.getByText(/Av\. Belgrano 1450/)).toBeInTheDocument();
+    expect(screen.getByText(/Av\. Bicentenario de la Batalla de Salta 1250/)).toBeInTheDocument();
     expect(screen.getByText("Medios de pago")).toBeInTheDocument();
     expect(screen.getByText(/Tarjeta crédito/)).toBeInTheDocument();
     expect(screen.getByText(/Comprobante interno\. No válido como factura\./)).toBeInTheDocument();

@@ -106,7 +106,7 @@ describe("Inicio", () => {
     expect(screen.getByLabelText("Menores (0 a 12 años)")).toBeInTheDocument();
     await waitFor(() => expect(within(screen.getByLabelText("Adultos")).getAllByRole("option")).toHaveLength(4));
     expect(screen.getByRole("link", { name: "Ver habitación Doble" })).toHaveAttribute("href", "/web/habitacion/2");
-    expect(screen.getByText("Hasta las 10 h")).toBeInTheDocument();
+    expect(screen.getByText("Hasta las 11 h")).toBeInTheDocument();
   });
 
   it("si /tipos falla, error con 'Reintentar' solo en las tarjetas", async () => {
@@ -115,7 +115,7 @@ describe("Inicio", () => {
     fireEvent.click(await screen.findByRole("button", { name: /reintentar/i }));
     expect(await screen.findByRole("heading", { name: "Simple" })).toBeInTheDocument();
     expect(obtenerTipos).toHaveBeenCalledTimes(2);
-    expect(screen.getByRole("heading", { level: 1, name: /tu estadía/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: /viví salta/i })).toBeInTheDocument();
   });
 
   it("buscar lleva a /web/resultados con la búsqueda en la URL", async () => {
@@ -255,7 +255,7 @@ describe("Detalle del tipo", () => {
     const politicas = within(screen.getByRole("heading", { name: "Políticas de la estadía" }).closest("section"));
     expect(politicas.getByText(/se cobra la primera noche/)).toBeInTheDocument();
     expect(politicas.getByText(/se cobra el total de la estadía/)).toBeInTheDocument();
-    expect(politicas.getByText(/salida hasta las 10 h/)).toBeInTheDocument();
+    expect(politicas.getByText(/salida hasta las 11 h/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /volver a resultados/i })).toHaveAttribute("href", `/web/resultados?${QUERY}`);
     expect(document.title).toBe("Habitación Doble · Holiday Inn Salta");
   });

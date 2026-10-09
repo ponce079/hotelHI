@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Images, X } from "lucide-react";
 import { FotoEjemplo } from "./FotoEjemplo";
+import { imagenesDeTipo } from "../ecommerce.contenido";
 
 // Galería del detalle del tipo (etapa 2): foto principal + 4 en escritorio;
 // en móvil, solo la principal con el contador "1/5" superpuesto. "Ver las N
 // fotos" abre una vista ampliada accesible: diálogo modal con foco inicial en
 // "Cerrar", flechas ← → (y botones) para recorrer, Esc para cerrar y el foco
-// vuelve al botón que la abrió. Las fotos son placeholders (FotoEjemplo).
+// vuelve al botón que la abrió. Las fotos son las del rediseño (imagenesDeTipo).
 export function GaleriaTipo({ fotos, nombreTipo }) {
   const lista = fotos.length > 0 ? fotos : ["Foto · Habitación"];
   const [abierta, setAbierta] = useState(false);
@@ -56,13 +57,15 @@ export function GaleriaTipo({ fotos, nombreTipo }) {
     }
   }
 
+  const imagenes = imagenesDeTipo(nombreTipo);
+  const fotoDe = (i) => imagenes[i % imagenes.length];
   const textoFoto = (i) => (i === 0 ? `Foto principal · Habitación ${nombreTipo}` : lista[i]);
 
   return (
     <div className="ec-galeria-tipo">
       <div className="ec-galeria">
         {lista.slice(0, 5).map((texto, i) => (
-          <FotoEjemplo key={`${texto}-${i}`} texto={textoFoto(i)} />
+          <FotoEjemplo key={`${texto}-${i}`} texto={textoFoto(i)} src={fotoDe(i)} />
         ))}
       </div>
       <span className="ec-galeria-tipo__contador" aria-hidden="true">
@@ -89,7 +92,7 @@ export function GaleriaTipo({ fotos, nombreTipo }) {
                 <X size={22} strokeWidth={1.8} aria-hidden="true" />
               </button>
             </div>
-            <FotoEjemplo texto={textoFoto(actual)} className="ec-visor__foto" />
+            <FotoEjemplo texto={textoFoto(actual)} src={fotoDe(actual)} className="ec-visor__foto" />
             <div className="ec-visor__navegacion">
               <button type="button" className="ec-visor__boton" onClick={() => mover(-1)} aria-label="Foto anterior">
                 <ChevronLeft size={24} strokeWidth={1.8} aria-hidden="true" />

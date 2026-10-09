@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Clock, Users } from "lucide-react";
 import { FotoEjemplo } from "./FotoEjemplo";
 import { HOTEL } from "../ecommerce.config";
-import { contenidoDeTipo } from "../ecommerce.contenido";
+import { contenidoDeTipo, fotoDeTipo } from "../ecommerce.contenido";
 import { useDesgloseNoches } from "../ProcesoCompraContext";
 import {
   LEYENDA_PRECIO_FINAL,
@@ -64,7 +64,7 @@ export function ResumenReserva({ tipo, fechaDesde, fechaHasta, ocupacion, plan, 
 
   return (
     <aside className="ec-tarjeta ec-resumen" aria-label="Resumen de tu reserva">
-      <FotoEjemplo texto={contenido.fotos[0]} />
+      <FotoEjemplo texto={contenido.fotos[0]} src={fotoDeTipo(tipo?.nombre)} />
       <div className="ec-resumen__cuerpo">
         <div className="ec-resumen__encabezado">
           <div>

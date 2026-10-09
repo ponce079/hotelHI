@@ -18,6 +18,7 @@ import {
 } from "../busquedaWeb";
 import { consultarDisponibilidad, obtenerTipos } from "../ecommerce.api";
 import { HOTEL } from "../ecommerce.config";
+import { fotoWeb } from "../ecommerce.contenido";
 import { CODIGO_ERROR } from "../ecommerce.constantes";
 import { formatearRangoFechas } from "../formato";
 import { useProcesoCompra } from "../ProcesoCompraContext";
@@ -95,88 +96,95 @@ export function ResultadosPage() {
   const ningunoDisponible = Boolean(disponibilidad.data) && !hayDisponibles(disponibilidad.data.tipos);
 
   return (
-    <div className="ec-contenedor">
-      <section className="ec-banda" aria-labelledby="ec-titulo-resultados">
-        <h1 id="ec-titulo-resultados">Habitaciones disponibles</h1>
-        <p className="ec-banda__bajada">Elegí la que mejor se adapte a tu viaje. Los precios son el total de tu estadía, IVA incluido.</p>
-        <BuscadorEstadia
-          key={`${claveBusqueda}|${capacidadMaxima ?? ""}|${avisoUrl ? "aviso" : ""}`}
-          valoresIniciales={busqueda ?? desdeContexto ?? undefined}
-          onBuscar={buscar}
-          etiquetaBoton="Actualizar"
-          capacidadMaxima={capacidadMaxima}
-          ventanaVentaDias={VENTANA_VENTA_DIAS}
-          menoresConEdad
-          fechasLegibles
-          erroresExternos={avisoUrl ? deUrl.errores : erroresExternos}
-        />
+    <>
+      <section className="ec-portada ec-portada--chica" aria-labelledby="ec-titulo-resultados">
+        <img className="ec-portada__foto" src={fotoWeb("hab")} alt="" />
+        <div className="ec-contenedor ec-portada__texto">
+          <h1 id="ec-titulo-resultados">Habitaciones disponibles</h1>
+          <p className="ec-portada__bajada">Descansá en un entorno único. Los precios son el total de tu estadía, IVA incluido.</p>
+        </div>
       </section>
+      <div className="ec-contenedor">
+        <section className="ec-banda" aria-label="Tu búsqueda">
+          <BuscadorEstadia
+            key={`${claveBusqueda}|${capacidadMaxima ?? ""}|${avisoUrl ? "aviso" : ""}`}
+            valoresIniciales={busqueda ?? desdeContexto ?? undefined}
+            onBuscar={buscar}
+            etiquetaBoton="Actualizar"
+            capacidadMaxima={capacidadMaxima}
+            ventanaVentaDias={VENTANA_VENTA_DIAS}
+            menoresConEdad
+            fechasLegibles
+            erroresExternos={avisoUrl ? deUrl.errores : erroresExternos}
+          />
+        </section>
 
-      {avisoUrl && (
-        <p className="ec-alerta ec-alerta--aviso ec-resultados__aviso" role="alert">
-          <CircleAlert size={20} strokeWidth={1.7} aria-hidden="true" />
-          La búsqueda del link no es válida. Revisá las fechas y los huéspedes marcados y buscá de nuevo.
-        </p>
-      )}
-
-      {!busqueda && !desdeContexto && (
-        <p className="ec-resultados__resumen ec-texto-2">Elegí tus fechas y la cantidad de huéspedes para ver las habitaciones y sus precios.</p>
-      )}
-
-      {valida && (
-        <p className="ec-resultados__resumen">
-          <strong>{formatearRangoFechas(busqueda.fechaDesde, busqueda.fechaHasta)}</strong>
-          <span className="ec-texto-2"> · {textoResumenBusqueda(busqueda)}</span>
-        </p>
-      )}
-
-      {agotado && (
-        <p className="ec-alerta ec-alerta--aviso ec-resultados__aviso" role="alert">
-          <CircleAlert size={20} strokeWidth={1.7} aria-hidden="true" />
-          Ese tipo se agotó para tus fechas. Actualizamos los resultados.
-        </p>
-      )}
-      <ErrorConReintento error={errorGeneral} />
-
-      {valida && disponibilidad.isPending && <CargandoTarjetas conPlanes texto="Buscando disponibilidad…" className="ec-resultados__lista" />}
-      {disponibilidad.isError && !erroresExternos && (
-        <ErrorConReintento
-          error={disponibilidad.error}
-          onReintentar={() => disponibilidad.refetch()}
-          reintentando={disponibilidad.isFetching}
-        />
-      )}
-      {disponibilidad.isError && erroresExternos && (
-        <p className="ec-alerta ec-alerta--error" role="alert">
-          <CircleAlert size={20} strokeWidth={1.7} aria-hidden="true" /> {errorApi.mensaje}
-        </p>
-      )}
-
-      {ningunoDisponible && (
-        <div className="ec-vacio" role="status">
-          <h2 className="ec-titulo-seccion">{motivoMasRelevante(disponibilidad.data.tipos) ?? "Sin disponibilidad para estas fechas"}</h2>
-          <p className="ec-texto-2">Probá con otras fechas o con menos huéspedes.</p>
-          <p className="ec-fila ec-texto-2">
-            <Phone size={18} strokeWidth={1.7} aria-hidden="true" /> ¿Necesitás ayuda? Recepción: {HOTEL.telefono}
+        {avisoUrl && (
+          <p className="ec-alerta ec-alerta--aviso ec-resultados__aviso" role="alert">
+            <CircleAlert size={20} strokeWidth={1.7} aria-hidden="true" />
+            La búsqueda del link no es válida. Revisá las fechas y los huéspedes marcados y buscá de nuevo.
           </p>
-        </div>
-      )}
+        )}
 
-      {disponibilidad.data && (
-        <div className="ec-resultados__lista">
-          {tiposOrdenados.map((tipo) => (
-            <TarjetaTipoResultado
-              key={tipo.tipoHabitacionId}
-              tipo={tipo}
-              noches={disponibilidad.data.noches}
-              onElegir={elegir}
-              cotizando={cotizando}
-              bloqueado={Boolean(cotizando)}
-              error={errorPorTipo[tipo.tipoHabitacionId] ?? null}
-            />
-          ))}
-        </div>
-      )}
-    </div>
+        {!busqueda && !desdeContexto && (
+          <p className="ec-resultados__resumen ec-texto-2">Elegí tus fechas y la cantidad de huéspedes para ver las habitaciones y sus precios.</p>
+        )}
+
+        {valida && (
+          <p className="ec-resultados__resumen">
+            <strong>{formatearRangoFechas(busqueda.fechaDesde, busqueda.fechaHasta)}</strong>
+            <span className="ec-texto-2"> · {textoResumenBusqueda(busqueda)}</span>
+          </p>
+        )}
+
+        {agotado && (
+          <p className="ec-alerta ec-alerta--aviso ec-resultados__aviso" role="alert">
+            <CircleAlert size={20} strokeWidth={1.7} aria-hidden="true" />
+            Ese tipo se agotó para tus fechas. Actualizamos los resultados.
+          </p>
+        )}
+        <ErrorConReintento error={errorGeneral} />
+
+        {valida && disponibilidad.isPending && <CargandoTarjetas conPlanes texto="Buscando disponibilidad…" className="ec-resultados__lista" />}
+        {disponibilidad.isError && !erroresExternos && (
+          <ErrorConReintento
+            error={disponibilidad.error}
+            onReintentar={() => disponibilidad.refetch()}
+            reintentando={disponibilidad.isFetching}
+          />
+        )}
+        {disponibilidad.isError && erroresExternos && (
+          <p className="ec-alerta ec-alerta--error" role="alert">
+            <CircleAlert size={20} strokeWidth={1.7} aria-hidden="true" /> {errorApi.mensaje}
+          </p>
+        )}
+
+        {ningunoDisponible && (
+          <div className="ec-vacio" role="status">
+            <h2 className="ec-titulo-seccion">{motivoMasRelevante(disponibilidad.data.tipos) ?? "Sin disponibilidad para estas fechas"}</h2>
+            <p className="ec-texto-2">Probá con otras fechas o con menos huéspedes.</p>
+            <p className="ec-fila ec-texto-2">
+              <Phone size={18} strokeWidth={1.7} aria-hidden="true" /> ¿Necesitás ayuda? Recepción: {HOTEL.telefono}
+            </p>
+          </div>
+        )}
+
+        {disponibilidad.data && (
+          <div className="ec-resultados__lista">
+            {tiposOrdenados.map((tipo) => (
+              <TarjetaTipoResultado
+                key={tipo.tipoHabitacionId}
+                tipo={tipo}
+                noches={disponibilidad.data.noches}
+                onElegir={elegir}
+                cotizando={cotizando}
+                bloqueado={Boolean(cotizando)}
+                error={errorPorTipo[tipo.tipoHabitacionId] ?? null}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   );
 }

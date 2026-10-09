@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Fraunces:wght@600;700&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;1,400;1,600&family=Inter:wght@300;400;500;600;700&display=swap");
 
 /* ==========================================================================
    E-commerce (motor de reservas web) — guía de estilo, página 15 de
@@ -13,39 +13,43 @@
    ========================================================================== */
 
 .ec-raiz {
-  /* Colores */
-  --ec-verde-profundo: #0e3326;
-  --ec-verde: #1f4d3a;
-  --ec-verde-claro: #e4eee6;
-  --ec-crema: #f5f2ea;
-  --ec-papel: #fdfcf8;
-  --ec-linea: #e4ded0;
-  --ec-tinta: #1b2620;
-  --ec-texto-2: #56605a;
-  --ec-dorado: #c9a968;
-  --ec-dorado-texto: #7d5e26;
-  --ec-dorado-claro: #f4ecda;
-  --ec-rojo: #8e2c22;
+  /* Colores — paleta del rediseño "Holiday Inn Salta" (modelo HTML del equipo). */
+  --ec-verde-profundo: #12392e;
+  --ec-verde: #1c5242;
+  --ec-verde-claro: #eceddc;
+  --ec-crema: #f7f1e3;
+  --ec-papel: #fbf7ec;
+  --ec-arena: #e6dcc4;
+  --ec-pie: #eadfc6;
+  --ec-linea: #e3d8c0;
+  --ec-tinta: #2a2118;
+  --ec-texto-2: #7a6d5c;
+  --ec-terracota: #b5603a;
+  --ec-vino: #7a2020;
+  --ec-dorado: #b8893c;
+  --ec-dorado-texto: #8a6424;
+  --ec-dorado-claro: #f3e8d0;
+  --ec-rojo: #7a2020;
   --ec-rojo-claro: #f6e3df;
-  --ec-borde-campo: #d3cbb9;
-  --ec-neutro-claro: #ebe7dc;
-  --ec-foto: #e2dccb;
-  --ec-halo: rgba(31, 77, 58, 0.22);
+  --ec-borde-campo: #d9ccb0;
+  --ec-neutro-claro: #ece4d2;
+  --ec-foto: #e6dcc4;
+  --ec-halo: rgba(18, 57, 46, 0.18);
 
   /* Tipografía */
-  --ec-fuente-titulo: "Fraunces", Georgia, "Times New Roman", serif;
-  --ec-fuente-texto: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --ec-fuente-titulo: "Playfair Display", Georgia, "Times New Roman", serif;
+  --ec-fuente-texto: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
 
   /* Medidas */
-  --ec-radio-campo: 10px;
-  --ec-radio-boton: 12px;
-  --ec-radio-tarjeta: 20px;
-  --ec-radio-tarjeta-chica: 16px;
+  --ec-radio-campo: 8px;
+  --ec-radio-boton: 7px;
+  --ec-radio-tarjeta: 12px;
+  --ec-radio-tarjeta-chica: 10px;
   --ec-radio-badge: 999px;
   --ec-ancho-max: 1440px;
   --ec-margen: 80px;
   --ec-gap: 32px;
-  --ec-sombra: 0 18px 40px -24px rgba(14, 51, 38, 0.35);
+  --ec-sombra: 0 10px 30px rgba(60, 35, 15, 0.12);
 
   min-height: 100vh;
   display: flex;
@@ -434,92 +438,118 @@
 }
 
 /* --- Header ---------------------------------------------------------------- */
+/* Rediseño (modelo "Holiday Inn Salta"): fijo arriba, crema translúcido con desenfoque;
+   al bajar gana sombra (.ec-header--scroll). */
 .ec-header {
-  background: var(--ec-papel);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(247, 241, 227, 0.88);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--ec-linea);
+  transition: box-shadow 0.3s;
 }
-.ec-header--oscuro {
-  background: var(--ec-verde-profundo);
-  border-bottom-color: transparent;
-  color: var(--ec-papel);
+.ec-header--scroll {
+  box-shadow: var(--ec-sombra);
 }
 .ec-header__interior {
   display: flex;
   align-items: center;
-  gap: 32px;
-  min-height: 96px;
+  gap: 28px;
+  min-height: 68px;
 }
+/* Logo: cerros dorados arriba, "Holiday Inn" en Playfair y "SALTA" espaciado debajo. */
 .ec-logo {
   display: inline-flex;
+  flex-direction: column;
   align-items: center;
-  gap: 14px;
+  line-height: 1;
   text-decoration: none;
   color: inherit;
 }
-.ec-raiz .ec-logo {
+.ec-logo__cerros {
+  width: 34px;
+  height: 12px;
+  margin-bottom: 2px;
+  color: var(--ec-dorado);
+}
+.ec-raiz .ec-logo__nombre {
+  font-family: var(--ec-fuente-titulo);
+  font-size: 22px;
+  font-weight: 500;
   color: var(--ec-verde-profundo);
 }
-.ec-raiz .ec-header--oscuro .ec-logo,
-.ec-raiz .ec-footer .ec-logo {
-  color: var(--ec-papel);
-}
-.ec-logo__marca {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  border-radius: 999px;
-  background: var(--ec-verde);
-  color: var(--ec-papel);
-}
-.ec-header--oscuro .ec-logo__marca,
-.ec-footer .ec-logo__marca {
-  background: rgba(253, 252, 248, 0.12);
-}
-.ec-logo__nombre {
-  display: block;
-  font-family: var(--ec-fuente-titulo);
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1.1;
-}
-.ec-logo__bajada {
-  display: block;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.08em;
+.ec-raiz .ec-logo__bajada {
+  margin-top: 2px;
+  padding-left: 0.35em;
+  font-size: 8px;
+  letter-spacing: 0.35em;
   text-transform: uppercase;
-  opacity: 0.8;
+  color: var(--ec-texto-2);
 }
 .ec-nav {
   display: flex;
   align-items: center;
-  gap: 32px;
-  margin: 0 auto;
+  gap: 26px;
+  margin-left: auto;
 }
 .ec-raiz .ec-nav__link {
-  color: inherit;
-  font-size: 17px;
-  font-weight: 500;
+  position: relative;
+  padding: 4px 0;
+  color: var(--ec-tinta);
+  font-size: 12.5px;
   text-decoration: none;
-  padding: 6px 0;
-  border-bottom: 2px solid transparent;
 }
-.ec-raiz .ec-nav__link:hover {
-  border-bottom-color: currentColor;
+.ec-raiz .ec-nav__link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0;
+  height: 1.5px;
+  background: var(--ec-terracota);
+  transition: width 0.3s;
+}
+.ec-raiz .ec-nav__link:hover::after,
+.ec-raiz .ec-nav__link:focus-visible::after {
+  width: 100%;
 }
 .ec-header__acciones {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 18px;
+}
+.ec-raiz .ec-header__mi-reserva {
+  color: var(--ec-verde);
+  font-size: 12.5px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.ec-raiz .ec-header__mi-reserva:hover {
+  color: var(--ec-terracota);
+}
+.ec-raiz .ec-header__reservar {
+  min-height: 40px;
+  padding: 0 20px;
+  border-radius: var(--ec-radio-boton);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  transition: background 0.25s, transform 0.25s, box-shadow 0.25s;
+}
+.ec-raiz .ec-header__reservar:hover {
+  background: var(--ec-verde);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(18, 57, 46, 0.3);
 }
 .ec-header__seguro {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   margin-left: auto;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 600;
   color: var(--ec-verde);
 }
@@ -536,65 +566,71 @@
   color: inherit;
   cursor: pointer;
 }
-.ec-header--oscuro .ec-boton--secundario {
-  border-color: rgba(253, 252, 248, 0.7);
-  color: var(--ec-papel);
-}
-.ec-header--oscuro .ec-boton--secundario:hover:not(:disabled) {
-  background: rgba(253, 252, 248, 0.12);
-}
-
-/* --- Footer ---------------------------------------------------------------- */
+/* --- Footer (modelo: arena, columnas Hotel / Contacto / Información) -------- */
 .ec-footer {
-  margin-top: 96px;
-  background: var(--ec-verde-profundo);
-  color: rgba(253, 252, 248, 0.86);
-  padding: 64px 0 32px;
+  margin-top: 64px;
+  background: var(--ec-pie);
+  color: var(--ec-tinta);
+  border-top: 1px solid var(--ec-linea);
+  padding: 44px 0 20px;
 }
 .ec-footer__grilla {
   display: grid;
-  grid-template-columns: 1.4fr 1fr 1fr 1.2fr;
-  gap: var(--ec-gap);
+  grid-template-columns: 1.3fr 1fr 1.4fr 1.2fr;
+  gap: 30px;
 }
-.ec-footer__texto {
-  margin-top: 16px;
-  max-width: 380px;
+.ec-footer__marca {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+.ec-raiz .ec-footer__lema {
+  font-family: var(--ec-fuente-titulo);
+  font-style: italic;
   font-size: 16px;
+  line-height: 1.3;
+  color: var(--ec-terracota);
 }
-.ec-footer__titulo {
+.ec-raiz .ec-footer__titulo {
   margin-bottom: 12px;
+  font-family: var(--ec-fuente-texto);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(253, 252, 248, 0.7);
+  color: var(--ec-verde-profundo);
 }
 .ec-footer__lista {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
-  font-size: 16px;
+  font-size: 12.5px;
+  color: var(--ec-texto-2);
 }
-.ec-raiz .ec-footer a {
-  color: inherit;
+.ec-raiz .ec-footer__lista a {
+  display: inline-block;
+  color: var(--ec-texto-2);
   text-decoration: none;
+  transition: color 0.25s, transform 0.25s;
 }
-.ec-raiz .ec-footer a:hover {
-  text-decoration: underline;
+.ec-raiz .ec-footer__lista a:hover {
+  color: var(--ec-terracota);
+  transform: translateX(4px);
 }
 .ec-footer__pie {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: 10px;
   flex-wrap: wrap;
-  margin-top: 48px;
-  padding-top: 24px;
-  border-top: 1px solid rgba(253, 252, 248, 0.14);
-  font-size: 14px;
-  color: rgba(253, 252, 248, 0.7);
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #d4c7a8;
+  font-size: 11.5px;
+  color: var(--ec-texto-2);
 }
 
 /* Desglose por noche del resumen "Tu reserva". */
@@ -636,9 +672,9 @@
 /* Leyenda de sitio de demostración (proyecto académico), debajo de la línea del ©. */
 .ec-footer__demo {
   margin: 12px 0 0;
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 1.4;
-  color: rgba(253, 252, 248, 0.6);
+  color: var(--ec-texto-2);
 }
 
 /* Aviso de espera mientras se procesa la reserva (PagoPage). */
@@ -1350,15 +1386,11 @@
     min-height: 72px;
     gap: 12px;
   }
-  .ec-logo__marca {
-    width: 40px;
-    height: 40px;
-  }
   .ec-logo__nombre {
     font-size: 22px;
   }
   .ec-logo__bajada {
-    display: none;
+    font-size: 10px;
   }
   .ec-menu-boton {
     display: inline-flex;
@@ -1959,4 +1991,818 @@
 }
 .ec-resultado__desde strong {
   color: var(--ec-verde-profundo);
+}
+
+/* ==========================================================================
+   Rediseño (feature/rediseno-ecommerce) — encabezado fijo y pie nuevos.
+   ========================================================================== */
+
+/* Los links a secciones (#habitaciones, #buscar…) no quedan tapados por el encabezado fijo. */
+.ec-raiz [id] {
+  scroll-margin-top: 100px;
+}
+
+/* Con 5 ítems de menú, el menú hamburguesa entra antes que en el resto del sitio. */
+@media (max-width: 1180px) {
+  .ec-menu-boton {
+    display: inline-flex;
+  }
+  .ec-nav,
+  .ec-header__acciones {
+    display: none;
+  }
+  .ec-header--menu-abierto .ec-header__interior {
+    flex-wrap: wrap;
+  }
+  .ec-header--menu-abierto .ec-nav,
+  .ec-header--menu-abierto .ec-header__acciones {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: 100%;
+    gap: 4px;
+    margin: 0;
+  }
+  .ec-header--menu-abierto .ec-nav__link {
+    padding: 12px 0;
+    border-bottom: 1px solid var(--ec-linea);
+  }
+  .ec-header--menu-abierto .ec-header__acciones {
+    gap: 12px;
+    padding: 12px 0 20px;
+  }
+  .ec-header--menu-abierto .ec-header__mi-reserva {
+    padding: 8px 0;
+  }
+  .ec-footer__grilla {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+@media (max-width: 767px) {
+  .ec-footer__grilla {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ==========================================================================
+   Rediseño — Inicio (modelo "Holiday Inn Salta").
+   ========================================================================== */
+
+/* Foto real que llena su contenedor (el contenedor define alto y recorte). */
+.ec-foto-real {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 1.2s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* Aparición al entrar en pantalla. */
+.ec-revelar {
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.ec-revelar--visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* Portada: foto a todo el ancho con un velo cálido a la izquierda y zoom lento. */
+.ec-portada {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: min(68vh, 540px);
+  overflow: hidden;
+  color: #fff;
+}
+.ec-portada__foto {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  animation: ec-zoom-lento 22s ease-in-out infinite alternate;
+}
+.ec-portada::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(30, 12, 5, 0.55), transparent 65%);
+}
+.ec-portada__texto {
+  position: relative;
+  z-index: 2;
+  animation: ec-subir 0.8s both cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+.ec-raiz .ec-portada h1 {
+  max-width: 760px;
+  font-size: clamp(34px, 5.5vw, 62px);
+  font-weight: 500;
+  line-height: 1.08;
+  color: #fff;
+  text-shadow: 0 3px 20px rgba(0, 0, 0, 0.4);
+}
+.ec-portada__sobretitulo {
+  margin-bottom: 12px;
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+.ec-raiz .ec-portada__bajada {
+  margin-top: 12px;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.95);
+}
+@keyframes ec-zoom-lento {
+  to {
+    transform: scale(1.12) translate(-1.5%, 1%);
+  }
+}
+@keyframes ec-subir {
+  from {
+    opacity: 0;
+    transform: translateY(24px);
+  }
+}
+
+/* Buscador flotando sobre la portada. */
+.ec-raiz .ec-hero__buscador {
+  position: relative;
+  z-index: 6;
+  margin-top: -52px;
+}
+.ec-hero__buscador .ec-buscador {
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(60, 35, 15, 0.2);
+  transition: box-shadow 0.4s, transform 0.4s;
+}
+.ec-hero__buscador .ec-buscador:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 24px 60px rgba(60, 35, 15, 0.26);
+}
+
+/* Secciones. */
+.ec-raiz .ec-seccion {
+  padding-top: 72px;
+}
+.ec-raiz .ec-sobretitulo {
+  margin-bottom: 6px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  color: var(--ec-terracota);
+}
+.ec-raiz .ec-titulo-seccion {
+  margin-bottom: 22px;
+  font-size: 26px;
+  font-weight: 500;
+}
+
+/* Tarjetas con foto (accesos, habitaciones, promos). */
+.ec-acceso,
+.ec-habitacion,
+.ec-promo {
+  overflow: hidden;
+  border: 1px solid var(--ec-linea);
+  border-radius: var(--ec-radio-tarjeta-chica);
+  background: var(--ec-papel);
+  box-shadow: 0 2px 10px rgba(60, 35, 15, 0.08);
+  transition: opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.35s, box-shadow 0.35s;
+}
+.ec-acceso:hover,
+.ec-habitacion:hover,
+.ec-promo:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--ec-sombra);
+}
+.ec-acceso:hover .ec-foto-real,
+.ec-habitacion:hover .ec-foto-real,
+.ec-promo:hover .ec-foto-real {
+  transform: scale(1.1);
+}
+
+.ec-grilla-accesos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 18px;
+}
+.ec-raiz .ec-acceso {
+  display: flex;
+  flex-direction: column;
+  color: var(--ec-tinta);
+  text-decoration: none;
+}
+.ec-acceso__foto {
+  position: relative;
+  display: block;
+  height: 150px;
+  overflow: hidden;
+}
+.ec-acceso__cuerpo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.ec-acceso__titulo {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+}
+.ec-acceso__texto {
+  display: block;
+  font-size: 11px;
+  color: var(--ec-texto-2);
+}
+.ec-flecha {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid var(--ec-linea);
+  border-radius: 50%;
+  transition: background 0.3s, color 0.3s;
+}
+.ec-acceso:hover .ec-flecha {
+  background: var(--ec-verde-profundo);
+  color: #fff;
+}
+
+.ec-grilla-habitaciones {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: 18px;
+}
+.ec-habitacion__foto {
+  position: relative;
+  height: 190px;
+  overflow: hidden;
+}
+.ec-habitacion__cuerpo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 14px 16px 18px;
+}
+.ec-raiz .ec-habitacion h3 {
+  font-family: var(--ec-fuente-texto);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ec-tinta);
+}
+.ec-habitacion__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--ec-texto-2);
+}
+.ec-raiz .ec-habitacion__boton {
+  margin-top: 6px;
+  min-height: 38px;
+  padding: 0 22px;
+  font-size: 12.5px;
+}
+
+.ec-grilla-servicios {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ec-servicio {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 22px 14px;
+  border: 1px solid var(--ec-linea);
+  border-radius: 12px;
+  background: var(--ec-papel);
+  text-align: center;
+  transition: opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.35s, box-shadow 0.35s;
+}
+.ec-servicio:hover {
+  transform: translateY(-6px);
+  box-shadow: var(--ec-sombra);
+}
+.ec-servicio__icono {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 6px;
+  border-radius: 50%;
+  background: var(--ec-arena);
+  color: var(--ec-verde-profundo);
+  transition: background 0.35s, color 0.35s, transform 0.35s;
+}
+.ec-servicio:hover .ec-servicio__icono {
+  background: var(--ec-verde-profundo);
+  color: #f3ead2;
+  transform: rotateY(180deg);
+}
+.ec-servicio__nombre {
+  font-size: 13px;
+  font-weight: 600;
+}
+.ec-servicio__texto {
+  font-size: 11px;
+  color: var(--ec-texto-2);
+}
+
+.ec-grilla-promos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 18px;
+}
+.ec-promo__foto {
+  position: relative;
+  height: 140px;
+  overflow: hidden;
+}
+.ec-promo__etiqueta {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  left: 10px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  background: var(--ec-terracota);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.ec-promo__cuerpo {
+  padding: 12px 14px 16px;
+}
+.ec-raiz .ec-promo h3 {
+  font-size: 15px;
+  font-weight: 500;
+}
+.ec-promo__beneficio {
+  font-family: var(--ec-fuente-titulo);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--ec-verde-profundo);
+}
+.ec-raiz .ec-promo__boton {
+  margin-top: 10px;
+  min-height: 36px;
+  padding: 0 18px;
+  font-size: 12px;
+}
+
+/* Destino Salta: banner con foto y velo verde, más la lista de experiencias. */
+.ec-destino {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 300px;
+  overflow: hidden;
+  border-radius: 16px;
+  color: #fff;
+}
+.ec-destino::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(18, 57, 46, 0.92), rgba(18, 57, 46, 0.2) 70%);
+}
+.ec-destino:hover .ec-foto-real {
+  transform: scale(1.08);
+}
+.ec-destino__texto {
+  position: relative;
+  z-index: 2;
+  max-width: 420px;
+  padding: 36px 5%;
+}
+.ec-destino__sobretitulo {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #e9c98a;
+}
+.ec-raiz .ec-destino h2 {
+  margin: 8px 0;
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.15;
+  color: #fff;
+}
+.ec-raiz .ec-destino p:last-child {
+  color: rgba(255, 255, 255, 0.85);
+}
+.ec-experiencias {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  margin: 18px 0 0;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--ec-linea);
+  border-radius: 12px;
+  background: var(--ec-papel);
+  list-style: none;
+}
+.ec-experiencia {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 16px;
+  border-bottom: 1px solid var(--ec-linea);
+  color: var(--ec-verde-profundo);
+  transition: opacity 0.8s cubic-bezier(0.2, 0.7, 0.2, 1), transform 0.8s, background 0.2s;
+}
+.ec-experiencia:hover {
+  background: var(--ec-arena);
+}
+.ec-experiencia__nombre {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--ec-tinta);
+}
+
+/* Ubicación: mapa ilustrativo con pin animado y datos del hotel. */
+.ec-ubicacion-nueva {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 18px;
+}
+.ec-mapa {
+  position: relative;
+  min-height: 260px;
+  overflow: hidden;
+  border: 1px solid var(--ec-linea);
+  border-radius: 14px;
+}
+.ec-mapa svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.ec-mapa__pin {
+  animation: ec-rebote 1.6s ease-in-out infinite;
+}
+@keyframes ec-rebote {
+  50% {
+    transform: translateY(-8px);
+  }
+}
+.ec-ubicacion-nueva__datos {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--ec-linea);
+  border-radius: 12px;
+  background: var(--ec-papel);
+  box-shadow: 0 2px 10px rgba(60, 35, 15, 0.06);
+}
+.ec-raiz .ec-ubicacion-nueva__datos h3 {
+  font-size: 20px;
+  font-weight: 500;
+}
+.ec-distancias {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+  color: var(--ec-texto-2);
+}
+.ec-distancias li,
+.ec-ubicacion-nueva__datos .ec-texto-2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 860px) {
+  .ec-portada {
+    height: 430px;
+  }
+  .ec-raiz .ec-hero__buscador {
+    margin-top: -80px;
+  }
+  .ec-ubicacion-nueva {
+    grid-template-columns: 1fr;
+  }
+  .ec-destino__texto {
+    padding: 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-portada__foto,
+  .ec-mapa__pin,
+  .ec-portada__texto {
+    animation: none;
+  }
+  .ec-revelar {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Horarios del bloque de ubicación. */
+.ec-horarios {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+}
+.ec-horarios dt {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--ec-texto-2);
+}
+.ec-horarios dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+
+/* ==========================================================================
+   Rediseño — Habitaciones, detalle, compra y menú móvil.
+   ========================================================================== */
+
+/* Fotos reales dentro de .ec-foto (galería, resultados, resumen). */
+.ec-foto--real {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+  background: var(--ec-arena);
+}
+.ec-galeria .ec-foto--real:hover .ec-foto-real,
+.ec-resultado:hover .ec-foto--real .ec-foto-real {
+  transform: scale(1.06);
+}
+
+/* Portada chica de las páginas internas (Habitaciones). */
+.ec-portada--chica {
+  height: 230px;
+}
+.ec-raiz .ec-portada--chica h1 {
+  font-size: 36px;
+}
+
+/* Buscador de resultados: barra clara flotando sobre la portada. */
+.ec-raiz .ec-banda {
+  position: relative;
+  z-index: 6;
+  margin-top: -40px;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ec-tinta);
+}
+.ec-raiz .ec-banda .ec-buscador {
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(60, 35, 15, 0.2);
+}
+.ec-raiz .ec-resultados__resumen {
+  margin: 28px 0 18px;
+  font-size: 14px;
+}
+
+/* Tarjeta de un tipo en resultados. */
+.ec-raiz .ec-resultado {
+  grid-template-columns: 300px 1fr;
+  overflow: hidden;
+  border: 1px solid var(--ec-linea);
+  border-radius: var(--ec-radio-tarjeta-chica);
+  background: var(--ec-papel);
+  box-shadow: 0 2px 10px rgba(60, 35, 15, 0.08);
+  transition: box-shadow 0.35s, transform 0.35s;
+}
+.ec-raiz .ec-resultado:hover {
+  box-shadow: var(--ec-sombra);
+}
+.ec-raiz .ec-resultado__cuerpo {
+  gap: 12px;
+  padding: 20px 22px;
+}
+.ec-raiz .ec-resultado__titulo h2 {
+  font-size: 24px;
+  font-weight: 500;
+}
+
+/* Tarifas: tarjeta clara con borde que se marca al pasar (como "Seleccioná tu tarifa"). */
+.ec-raiz .ec-plan {
+  gap: 18px;
+  padding: 16px;
+  border: 1.5px solid var(--ec-linea);
+  border-radius: 10px;
+  background: var(--ec-papel);
+  transition: border-color 0.25s, background 0.25s;
+}
+.ec-raiz .ec-plan:hover {
+  border-color: var(--ec-dorado);
+}
+.ec-raiz .ec-plan--elegido {
+  border-color: var(--ec-verde-profundo);
+  box-shadow: none;
+  background: var(--ec-verde-claro);
+}
+.ec-raiz .ec-plan__nombre {
+  font-size: 14px;
+  font-weight: 600;
+}
+.ec-raiz .ec-plan__condiciones {
+  font-size: 12px;
+}
+.ec-raiz .ec-plan__total {
+  font-size: 22px;
+}
+.ec-raiz .ec-plan__detalle {
+  font-size: 11.5px;
+}
+
+/* Detalle del tipo: galería con bordes redondeados como el modelo. */
+.ec-raiz .ec-galeria {
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+/* Indicador de pasos (modelo): texto con el paso actual en Playfair itálica y
+   una línea dorado-terracota debajo. */
+.ec-raiz .ec-pasos {
+  justify-content: flex-start;
+  gap: 40px;
+  padding: 18px 0 14px;
+  border-bottom: 1px solid var(--ec-linea);
+}
+.ec-raiz .ec-paso__linea {
+  display: none;
+}
+.ec-raiz .ec-paso {
+  position: relative;
+  padding: 6px 2px;
+  color: var(--ec-texto-2);
+  font-size: 12.5px;
+  transition: color 0.5s, transform 0.5s;
+}
+.ec-raiz .ec-paso__circulo {
+  display: none;
+}
+.ec-raiz .ec-paso--hecho {
+  color: var(--ec-terracota);
+}
+.ec-raiz .ec-paso--actual {
+  transform: translateY(-3px);
+  color: var(--ec-verde-profundo);
+  font-family: var(--ec-fuente-titulo);
+  font-size: 16px;
+  font-style: italic;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+.ec-raiz .ec-paso--actual::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -2px;
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--ec-dorado), var(--ec-terracota));
+  animation: ec-crecer 0.7s cubic-bezier(0.7, 0, 0.2, 1);
+}
+@keyframes ec-crecer {
+  from {
+    transform: scaleX(0);
+    transform-origin: left;
+  }
+}
+
+/* El resumen lateral queda debajo del encabezado fijo. */
+.ec-raiz .ec-compra__lateral {
+  top: 92px;
+}
+
+/* Campos de formulario del modelo: blancos, borde suave y halo verde al enfocar. */
+.ec-raiz .ec-campo__control {
+  background: #fff;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.ec-raiz .ec-campo:not(.ec-campo--error) .ec-campo__control:focus {
+  border-color: var(--ec-verde-profundo);
+  box-shadow: 0 0 0 3px rgba(18, 57, 46, 0.12);
+}
+
+/* Botones del modelo: verde que se eleva al pasar y se achica al apretar. */
+.ec-raiz .ec-boton--primario {
+  transition: background 0.25s, transform 0.25s, box-shadow 0.25s;
+}
+.ec-raiz .ec-boton--primario:hover:not(:disabled) {
+  background: var(--ec-verde);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 18px rgba(18, 57, 46, 0.3);
+}
+.ec-raiz .ec-boton--primario:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* Menú móvil a pantalla completa (modelo), debajo del encabezado. */
+@media (max-width: 1180px) {
+  .ec-header--menu-abierto .ec-nav {
+    position: fixed;
+    inset: 68px 0 0 0;
+    z-index: 99;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+    padding: 24px 24px 120px;
+    background: var(--ec-crema);
+    animation: ec-entrar-menu 0.45s cubic-bezier(0.7, 0, 0.2, 1);
+  }
+  .ec-raiz .ec-header--menu-abierto .ec-nav__link {
+    padding: 14px 4px;
+    border-bottom: 1px solid var(--ec-linea);
+    font-size: 15px;
+  }
+  .ec-header--menu-abierto .ec-header__acciones {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    padding: 16px 24px 24px;
+    background: var(--ec-crema);
+  }
+  .ec-raiz .ec-header--menu-abierto .ec-header__reservar {
+    width: 100%;
+  }
+}
+@keyframes ec-entrar-menu {
+  from {
+    transform: translateX(100%);
+  }
+}
+
+@media (max-width: 767px) {
+  .ec-raiz .ec-resultado {
+    grid-template-columns: 1fr;
+  }
+  .ec-raiz .ec-resultado .ec-foto {
+    min-height: 190px;
+  }
+  .ec-raiz .ec-pasos {
+    gap: 14px;
+    overflow-x: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-raiz .ec-paso--actual::after,
+  .ec-header--menu-abierto .ec-nav {
+    animation: none;
+  }
+}
+
+/* Confirmación (modelo "¡Listo!"): tilde con borde verde que aparece con un rebote. */
+.ec-raiz .ec-confirmacion__icono {
+  width: 72px;
+  height: 72px;
+  border: 2px solid var(--ec-verde-profundo);
+  background: var(--ec-papel);
+  color: var(--ec-verde-profundo);
+  animation: ec-pop 0.6s both cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+@keyframes ec-pop {
+  from {
+    transform: scale(0);
+  }
+}
+.ec-raiz .ec-codigo {
+  border-radius: 12px;
+  box-shadow: var(--ec-sombra);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ec-raiz .ec-confirmacion__icono {
+    animation: none;
+  }
 }
