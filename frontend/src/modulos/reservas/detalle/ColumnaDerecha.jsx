@@ -89,6 +89,7 @@ const TEXTO_ESTADO_GARANTIA_ESTADIA = {
   Liberada: "liberada: el monto retenido volvió al huésped",
   Aplicada: "aplicada al saldo de la cuenta",
   Devuelta: "devuelta al huésped",
+  "Revisión manual": "No se pudo cerrar al hacer el check-out: hay que liberarla o devolverla a mano",
 };
 
 // Garantía para consumos (no es un pago de la cuenta): sale de GarantiaEstadia (GET /api/reservas/:id/garantia,

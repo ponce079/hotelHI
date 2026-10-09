@@ -9,6 +9,9 @@ jest.mock("./check-out/checkOut.servicio", () => ({
   registrarVerificacion: jest.fn().mockResolvedValue({}),
   confirmarCheckOut: jest.fn().mockResolvedValue({}),
 }));
+jest.mock("./garantias/garantiaEstadiaCheckOut.servicio", () => ({
+  listarGarantiasARevisar: jest.fn().mockResolvedValue([]),
+}));
 jest.mock("./check-in/checkIn.servicio", () => ({
   ErrorDeNegocio: class extends Error {},
   buscarReservaParaCheckIn: jest.fn().mockResolvedValue({}),
@@ -58,6 +61,7 @@ async function pedir(metodo, ruta, sesion, cuerpo) {
 
 // sesión → [admin 4, recepcionista 1, gerente 2, housekeeping 3]; ver = admin+recepcionista, gestionar = solo recepcionista.
 const VER = [
+  ["GET", "/api/check-out/garantias-a-revisar"],
   ["GET", "/api/check-out/5/cuenta"],
   ["GET", "/api/check-out/5/verificaciones"],
   ["GET", "/api/check-in/buscar-reserva?codigo=X"],

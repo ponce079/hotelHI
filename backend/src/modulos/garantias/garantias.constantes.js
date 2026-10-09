@@ -89,7 +89,13 @@ const ESTADO_GARANTIA_ESTADIA = {
   LIBERADA: "Liberada",
   APLICADA: "Aplicada",
   DEVUELTA: "Devuelta",
+  // El cierre del check-out falló: recepción la libera o la devuelve a mano.
+  REVISION_MANUAL: "Revisión manual",
 };
+
+// Prefijo del mensaje de la notificación que se crea al pasar una garantía a revisión manual: se usa al crearla
+// y al buscar el motivo en el listado "Garantías a revisar".
+const PREFIJO_NOTIFICACION_GARANTIA_SIN_CERRAR = "Garantía sin cerrar en el check-out";
 
 // Medios que se ofrecen como garantía en el check-in. Débito NO: el dinero
 // sale de la cuenta del huésped, no se puede "retener". Transferencia tampoco
@@ -102,6 +108,7 @@ module.exports = {
   MONTO_PREAUTORIZACION_CHECKIN,
   TIPO_GARANTIA_ESTADIA,
   ESTADO_GARANTIA_ESTADIA,
+  PREFIJO_NOTIFICACION_GARANTIA_SIN_CERRAR,
   MEDIO_GARANTIA_TARJETA,
   MEDIO_GARANTIA_EFECTIVO,
   MEDIOS_GARANTIA_CHECKIN,

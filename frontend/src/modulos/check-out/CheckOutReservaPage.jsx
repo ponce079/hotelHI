@@ -255,7 +255,14 @@ export function CheckOutReservaPage() {
               </li>
             ))}
           </ul>
-          {resultado.garantia?.mensaje && <p className="text-[12.5px] text-pino-700">Garantía: {resultado.garantia.mensaje}</p>}
+          {resultado.garantia?.mensaje &&
+            (resultado.garantia.estado === "Revisión manual" ? (
+              <p className="rounded-md border border-laton-300 bg-laton-100 px-3 py-2 text-[12.5px] font-medium text-laton-700">
+                {resultado.garantia.mensaje}
+              </p>
+            ) : (
+              <p className="text-[12.5px] text-pino-700">Garantía: {resultado.garantia.mensaje}</p>
+            ))}
           {resultado.devolucionSaldoAFavor > 0 && (
             <p className="text-[12.5px] text-pino-700">Saldo a favor devuelto al huésped: {moneda(resultado.devolucionSaldoAFavor)}.</p>
           )}

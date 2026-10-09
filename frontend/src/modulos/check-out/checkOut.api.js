@@ -1,6 +1,12 @@
 import { api } from "../../lib/api";
 import { TIMEOUT_OPERACION_MS } from "../../lib/tiempos";
 
+// Garantías de estadía que el check-out no pudo cerrar (estado "Revisión manual").
+export async function listarGarantiasARevisar() {
+  const { data } = await api.get("/check-out/garantias-a-revisar");
+  return data;
+}
+
 // HU-48 — cuenta consolidada de la reserva (alojamiento + servicios
 // adicionales + cargos de verificación − pagos). Solo lectura.
 export async function obtenerCuenta(reservaId) {

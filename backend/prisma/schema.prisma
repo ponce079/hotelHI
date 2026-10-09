@@ -1175,7 +1175,7 @@ model GarantiaEstadia {
   referencia   String?  @db.VarChar(191)
   marca        String?  @db.VarChar(40)
   ultimos4     String?  @db.VarChar(4)
-  // Pendiente | Capturada | Liberada | Aplicada | Devuelta
+  // Pendiente | Capturada | Liberada | Aplicada | Devuelta | Revisión manual
   estado       String   @default("Pendiente")
   creadoEn     DateTime @default(now())
   actualizadoEn DateTime @updatedAt
