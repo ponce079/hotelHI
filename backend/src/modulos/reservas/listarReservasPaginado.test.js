@@ -35,3 +35,23 @@ test("el límite se acota (1 a 200) y una página inválida vuelve a la 1", asyn
   await listarReservas({ limite: "abc" });
   expect(mockFindMany.mock.calls[0][0]).toMatchObject({ skip: 0, take: 50 });
 });
+
+test("estado admite varios valores separados por coma; uno solo se comporta como siempre", async () => {
+  await listarReservas({ estado: "Confirmada" });
+  expect(mockFindMany.mock.calls[0][0].where.estado).toBe("Confirmada");
+  mockFindMany.mockClear();
+  await listarReservas({ estado: "Confirmada, En curso ,Cerrada", pagina: "1" });
+  const consulta = mockFindMany.mock.calls[0][0];
+  expect(consulta.where.estado).toEqual({ in: ["Confirmada", "En curso", "Cerrada"] });
+  expect(mockCount.mock.calls[0][0].where).toEqual(consulta.where);
+  expect(consulta.orderBy).toEqual([{ id: "desc" }]);
+  // El conteo por estado sigue siendo histórico y sin filtros.
+  expect(mockGroupBy.mock.calls[0][0]).toEqual({ by: ["estado"], _count: { _all: true } });
+});
+
+test("un estado desconocido (solo o dentro de la lista) devuelve 400 y no consulta", async () => {
+  for (const estado of ["Foo", "Confirmada,Foo"]) {
+    await expect(listarReservas({ estado })).rejects.toMatchObject({ statusCode: 400 });
+  }
+  expect(mockFindMany).not.toHaveBeenCalled();
+});
