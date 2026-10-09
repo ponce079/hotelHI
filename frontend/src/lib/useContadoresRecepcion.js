@@ -40,8 +40,29 @@ export function contarSalidas(reservas, hoy = hoyEnHoraLocal()) {
   return { salidas, vencidas };
 }
 
+// Habitaciones y huéspedes (adultos + menores) de las estadías En curso, sumados de la lista que ya trae el hook.
+export function resumirEnCasa(reservas) {
+  if (!Array.isArray(reservas)) return null;
+  let habitaciones = 0;
+  let huespedes = 0;
+  for (const r of reservas) {
+    if (r.estado !== ESTADO_RESERVA.EN_CURSO) continue;
+    for (const h of r.habitaciones ?? []) {
+      habitaciones += 1;
+      huespedes += (h.adultos ?? 0) + (h.menores ?? 0);
+    }
+  }
+  return { habitaciones, huespedes };
+}
+
 // `puedeVerCheckIn` / `puedeVerCheckOut`: si el rol tiene ese ítem en el menú. Sin acceso no se dispara ningún pedido.
-export function useContadoresRecepcion({ puedeVerCheckIn, puedeVerCheckOut }) {
+// `puedeVerReservas` (opcional, lo pasa la pantalla de Reservas): trae también la lista de En curso para un rol que ve
+// Reservas pero no Check-out (el gerente). El menú lateral no lo pasa, así que su badge no cambia.
+// Además de `llegadas`/`salidas`/`vencidas` (lo que usa el menú) devuelve por separado `llegadasHoy`,
+// `llegadasAnteriores`, `salidasHoy` y `salidasVencidas` y `enCasa` ({ habitaciones, huespedes }); cada uno es null si
+// su pedido falló, todavía no llegó o no se puede saber (tope de llegadas).
+export function useContadoresRecepcion({ puedeVerCheckIn, puedeVerCheckOut, puedeVerReservas = false }) {
+  const pedirSalidas = Boolean(puedeVerCheckOut || puedeVerReservas);
   const { pathname } = useLocation();
   // Mismas claves y mismos pedidos que las listas por defecto de Check-in y Check-out (sin búsqueda): al estar en
   // esas pantallas comparten el pedido en vez de duplicarlo, y las invalidaciones que ya hacen al confirmar
@@ -61,7 +82,7 @@ export function useContadoresRecepcion({ puedeVerCheckIn, puedeVerCheckOut }) {
   const salidasQuery = useQuery({
     queryKey: ["reservas", "check-out", ""],
     queryFn: () => listarReservas({ estado: ESTADO_RESERVA.EN_CURSO }),
-    enabled: puedeVerCheckOut,
+    enabled: pedirSalidas,
     ...opciones,
   });
 
@@ -72,9 +93,25 @@ export function useContadoresRecepcion({ puedeVerCheckIn, puedeVerCheckOut }) {
     const aca = (ruta) => pathname === ruta || pathname.startsWith(`${ruta}/`);
     if (puedeVerCheckIn && aca("/check-in")) refrescarLlegadas({ cancelRefetch: false });
     if (puedeVerCheckOut && aca("/check-out")) refrescarSalidas({ cancelRefetch: false });
-  }, [pathname, puedeVerCheckIn, puedeVerCheckOut, refrescarLlegadas, refrescarSalidas]);
+    // Al entrar a la lista de Reservas (no a su detalle) se refrescan las llegadas y las salidas de las tarjetas.
+    if (pathname === "/reservas") {
+      if (puedeVerCheckIn) refrescarLlegadas({ cancelRefetch: false });
+      if (pedirSalidas) refrescarSalidas({ cancelRefetch: false });
+    }
+  }, [pathname, puedeVerCheckIn, puedeVerCheckOut, pedirSalidas, refrescarLlegadas, refrescarSalidas]);
 
   // Si un pedido falla no hay data y el contador queda en 0 (sin burbuja ni error visible).
   const { salidas, vencidas } = contarSalidas(salidasQuery.data);
-  return { llegadas: contarLlegadas(llegadasQuery.data), salidas, vencidas };
+  const llegadasCompletas = Array.isArray(llegadasQuery.data?.reservas) && llegadasQuery.data.reservas.length < TOPE_LLEGADAS;
+  const salidasListas = Array.isArray(salidasQuery.data);
+  return {
+    llegadas: contarLlegadas(llegadasQuery.data),
+    salidas,
+    vencidas,
+    llegadasHoy: llegadasCompletas ? llegadasQuery.data.reservas.length : null,
+    llegadasAnteriores: llegadasCompletas ? (llegadasQuery.data.anterioresPendientes ?? 0) : null,
+    salidasHoy: salidasListas ? salidas - vencidas : null,
+    salidasVencidas: salidasListas ? vencidas : null,
+    enCasa: resumirEnCasa(salidasQuery.data),
+  };
 }

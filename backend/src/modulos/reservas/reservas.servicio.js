@@ -1441,9 +1441,13 @@ async function obtenerPorCodigoODocumento(termino) {
 const LIMITE_PAGINA_DEFECTO = 50;
 const LIMITE_PAGINA_MAXIMO = 200;
 async function listarReservas({ q, estado, desde, hasta, habitacionId, pagina, limite } = {}) {
-  if (estado && !ESTADOS_RESERVA.includes(estado)) {
+  // `estado` admite uno o varios valores separados por coma ("Confirmada,En curso,Cerrada"). Un solo valor
+  // se comporta como siempre; cada valor se valida contra los estados existentes.
+  const estados = typeof estado === "string" ? estado.split(",").map((e) => e.trim()).filter(Boolean) : [];
+  if (estados.some((e) => !ESTADOS_RESERVA.includes(e))) {
     throw new ErrorDeNegocio(`estado debe ser uno de: ${ESTADOS_RESERVA.join(", ")}.`);
   }
+  const filtroEstado = estados.length === 0 ? {} : { estado: estados.length === 1 ? estados[0] : { in: [...new Set(estados)] } };
   const texto = typeof q === "string" ? q.trim() : "";
   // Filtro por período: trae las reservas que se pisan con el rango
   // pedido, no solo las que empiezan adentro — si no, una estadía larga
@@ -1452,7 +1456,7 @@ async function listarReservas({ q, estado, desde, hasta, habitacionId, pagina, l
   const fechaHastaFiltro = hasta ? parsearFechaSinHora(hasta, "El filtro de fecha hasta") : null;
 
   const where = {
-    ...(estado ? { estado } : {}),
+    ...filtroEstado,
     ...(fechaHastaFiltro ? { fechaDesde: { lte: fechaHastaFiltro } } : {}),
     ...(fechaDesdeFiltro ? { fechaHasta: { gte: fechaDesdeFiltro } } : {}),
     ...(habitacionId

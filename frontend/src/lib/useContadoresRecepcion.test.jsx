@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { contarLlegadas, contarSalidas, TOPE_LLEGADAS, useContadoresRecepcion } from "./useContadoresRecepcion";
+import { contarLlegadas, contarSalidas, resumirEnCasa, TOPE_LLEGADAS, useContadoresRecepcion } from "./useContadoresRecepcion";
 import { hoyEnHoraLocal } from "./fechas";
 import { listarLlegadas } from "../modulos/check-in/checkIn.api";
 import { listarReservas } from "../modulos/reservas/reservas.api";
@@ -100,7 +100,7 @@ describe("useContadoresRecepcion", () => {
     const { result } = renderHook(() => useContadoresRecepcion({ puedeVerCheckIn: true, puedeVerCheckOut: true }), {
       wrapper: Envoltorio,
     });
-    await waitFor(() => expect(result.current).toEqual({ llegadas: 1, salidas: 2, vencidas: 1 }));
+    await waitFor(() => expect(result.current).toMatchObject({ llegadas: 1, salidas: 2, vencidas: 1 }));
     expect(listarLlegadas).toHaveBeenCalledTimes(1);
     expect(listarReservas).toHaveBeenCalledWith({ estado: "En curso" });
   });
@@ -113,7 +113,7 @@ describe("useContadoresRecepcion", () => {
     await act(async () => {});
     expect(listarLlegadas).not.toHaveBeenCalled();
     expect(listarReservas).not.toHaveBeenCalled();
-    expect(result.current).toEqual({ llegadas: 0, salidas: 0, vencidas: 0 });
+    expect(result.current).toMatchObject({ llegadas: 0, salidas: 0, vencidas: 0 });
   });
 
   it("solo pide lo que el rol puede ver", async () => {
@@ -133,7 +133,7 @@ describe("useContadoresRecepcion", () => {
     await waitFor(() => expect(listarLlegadas).toHaveBeenCalled());
     await waitFor(() => expect(listarReservas).toHaveBeenCalled());
     await act(async () => {});
-    expect(result.current).toEqual({ llegadas: 0, salidas: 0, vencidas: 0 });
+    expect(result.current).toMatchObject({ llegadas: 0, salidas: 0, vencidas: 0 });
   });
 
   it("se actualiza al invalidar las claves que invalidan las pantallas al confirmar un check-in o un check-out", async () => {
@@ -175,5 +175,76 @@ describe("useContadoresRecepcion", () => {
     document.dispatchEvent(new Event("visibilitychange"));
     await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
     expect(listarLlegadas).toHaveBeenCalledTimes(2);
+  });
+
+  it("expone por separado llegadas de hoy y anteriores, salidas de hoy y vencidas, y lo que hay en casa", async () => {
+    listarLlegadas.mockResolvedValue({ reservas: [llegada(1), llegada(2)], anterioresPendientes: 4 });
+    listarReservas.mockResolvedValue([
+      { ...enCurso(1, 0, 2), habitaciones: [{ adultos: 2, menores: 1 }, { adultos: 1, menores: 0 }] },
+      enCurso(2, -2),
+      enCurso(3, 2),
+    ]);
+    const { Envoltorio } = envoltorio();
+    const { result } = renderHook(() => useContadoresRecepcion({ puedeVerCheckIn: true, puedeVerCheckOut: true }), {
+      wrapper: Envoltorio,
+    });
+    await waitFor(() => expect(result.current.salidasHoy).toBe(1));
+    expect(result.current).toMatchObject({
+      llegadas: 2,
+      llegadasHoy: 2,
+      llegadasAnteriores: 4,
+      salidas: 2,
+      salidasHoy: 1,
+      salidasVencidas: 1,
+      vencidas: 1,
+    });
+    expect(result.current.enCasa).toEqual({ habitaciones: 4, huespedes: 4 });
+  });
+
+  it("si un pedido falla, sus valores quedan en null (la tarjeta muestra —) y el badge en 0", async () => {
+    listarLlegadas.mockRejectedValue(new Error("sin red"));
+    listarReservas.mockRejectedValue(new Error("sin red"));
+    const { Envoltorio } = envoltorio();
+    const { result } = renderHook(() => useContadoresRecepcion({ puedeVerCheckIn: true, puedeVerCheckOut: true }), {
+      wrapper: Envoltorio,
+    });
+    await waitFor(() => expect(listarReservas).toHaveBeenCalled());
+    await act(async () => {});
+    expect(result.current).toMatchObject({
+      llegadasHoy: null,
+      llegadasAnteriores: null,
+      salidasHoy: null,
+      salidasVencidas: null,
+      enCasa: null,
+      llegadas: 0,
+      salidas: 0,
+    });
+  });
+
+  it("puedeVerReservas trae la lista de En curso para un rol sin Check-out, sin pedir las llegadas", async () => {
+    const { Envoltorio } = envoltorio();
+    const { result } = renderHook(
+      () => useContadoresRecepcion({ puedeVerCheckIn: false, puedeVerCheckOut: false, puedeVerReservas: true }),
+      { wrapper: Envoltorio },
+    );
+    await waitFor(() => expect(result.current.salidasHoy).toBe(1));
+    expect(listarLlegadas).not.toHaveBeenCalled();
+    expect(result.current.llegadasHoy).toBeNull();
+  });
+
+  it("se refresca al entrar a /reservas, y no al entrar a su detalle", async () => {
+    const { Envoltorio } = envoltorio("/reservas");
+    renderHook(() => useContadoresRecepcion({ puedeVerCheckIn: true, puedeVerCheckOut: true }), { wrapper: Envoltorio });
+    await waitFor(() => expect(listarLlegadas).toHaveBeenCalled());
+    expect(listarLlegadas).toHaveBeenCalledTimes(1);
+    expect(listarReservas).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("resumirEnCasa", () => {
+  it("suma habitaciones y personas (adultos y menores) solo de las En curso", () => {
+    const r = { estado: "En curso", habitaciones: [{ adultos: 2, menores: 1 }, { adultos: 1 }] };
+    expect(resumirEnCasa([r, { ...r, estado: "Cerrada" }])).toEqual({ habitaciones: 2, huespedes: 4 });
+    expect(resumirEnCasa(undefined)).toBeNull();
   });
 });
