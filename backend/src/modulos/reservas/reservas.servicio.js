@@ -1582,7 +1582,7 @@ async function modificarReserva(id, data, cliente = prisma) {
         : normalizarHabitacionesConOcupacion(data.habitaciones);
     const habitacionIds = habitaciones.map((h) => h.habitacionId);
 
-    // Parche provisorio hasta la HU-117: en una tarifa no reembolsable cada habitación que la reserva tiene hoy
+    // Parche provisorio hasta la HU-118: en una tarifa no reembolsable cada habitación que la reserva tiene hoy
     // tiene que seguir en la lista nueva (quitar o reemplazar bajaría el total). Agregar sí: se cotiza entera.
     if (planActualEsNoReembolsable && actual.reservaHabitaciones.some((rh) => !habitacionIds.includes(rh.habitacionId))) {
       throw new ErrorDeNegocio("Las reservas con tarifa no reembolsable no admiten quitar ni cambiar habitaciones.");
