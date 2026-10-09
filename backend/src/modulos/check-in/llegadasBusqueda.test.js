@@ -1,5 +1,5 @@
 // Llegadas de hoy: la búsqueda por documento ignora puntos, guiones y espacios (el número se guarda normalizado).
-jest.mock("../../lib/prisma", () => ({ reserva: { findMany: jest.fn(), count: jest.fn() } }));
+jest.mock("../../lib/prisma", () => ({ reserva: { findMany: jest.fn(), count: jest.fn() }, ocupanteReserva: { groupBy: jest.fn() } }));
 const prisma = require("../../lib/prisma");
 const { listarLlegadas } = require("./checkIn.apoyo.servicio");
 
