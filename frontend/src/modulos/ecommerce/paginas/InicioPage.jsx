@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Bus, Church, ChevronRight, MapPin, Plane } from "lucide-react";
 import { BuscadorEstadia } from "../componentes/BuscadorEstadia";
 import { Boton } from "../componentes/Boton";
-import { FotoWeb, FranjaConfianza, ListaExperiencias, Portada, TarjetaHabitacionWeb, TarjetaPromo } from "../componentes/PiezasWeb";
+import { FotoWeb, FranjaConfianza, ListaExperiencias, NotaPrecioReferencia, Portada, TarjetaHabitacionWeb, TarjetaPromo } from "../componentes/PiezasWeb";
 import { CargandoTarjetas } from "../componentes/Esqueleto";
 import { ErrorConReintento } from "../componentes/ErrorConReintento";
 import { VENTANA_VENTA_DIAS, busquedaComoQueryWeb, capacidadMaximaDeTipos } from "../busquedaWeb";
@@ -11,12 +11,14 @@ import { obtenerTipos } from "../ecommerce.api";
 import { HOTEL } from "../ecommerce.config";
 import { ACCESOS_INICIO, DISTANCIAS_HOTEL, PROMOCIONES_WEB, SERVICIOS_HOTEL } from "../ecommerce.contenido";
 import { useProcesoCompra } from "../ProcesoCompraContext";
+import { usePrecioReferencia } from "../usePrecioReferencia";
 import { useRevelar } from "../useRevelar";
 import { useTituloPagina } from "../useTituloPagina";
 
 // /web — Rediseño "Holiday Inn Salta" (modelo HTML del equipo): portada con foto,
 // buscador flotante, accesos, habitaciones (de /api/web/tipos), servicios,
-// promociones, experiencias y ubicación. Sin precios hasta buscar.
+// promociones, experiencias y ubicación. Las habitaciones muestran un precio orientativo
+// (usePrecioReferencia); el exacto aparece al buscar.
 
 const ICONOS_DISTANCIA = [Plane, Church, Bus];
 
@@ -27,6 +29,7 @@ export function InicioPage() {
   const { fechaDesde, fechaHasta, ocupacion, definirBusqueda } = useProcesoCompra();
   const tipos = useQuery({ queryKey: ["ecommerce", "tipos"], queryFn: obtenerTipos, retry: false });
   const capacidadMaxima = capacidadMaximaDeTipos(tipos.data?.tipos);
+  const referencia = usePrecioReferencia();
 
   function buscar(valores) {
     definirBusqueda({
@@ -116,10 +119,11 @@ export function InicioPage() {
         {tipos.data && (
           <div className="ec-grilla-habitaciones">
             {tipos.data.tipos.map((tipo, i) => (
-              <TarjetaHabitacionWeb key={tipo.tipoHabitacionId} tipo={tipo} demora={i * 90} />
+              <TarjetaHabitacionWeb key={tipo.tipoHabitacionId} tipo={tipo} demora={i * 90} desdePorNoche={referencia.precioDe(tipo.tipoHabitacionId)} />
             ))}
           </div>
         )}
+        {tipos.data && referencia.hayPrecios && <NotaPrecioReferencia fecha={referencia.fecha} />}
       </section>
 
       <section id="servicios" className="ec-contenedor ec-seccion" aria-labelledby="ec-titulo-servicios">

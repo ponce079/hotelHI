@@ -4,16 +4,17 @@ import { useQuery } from "@tanstack/react-query";
 import { BuscadorEstadia } from "../componentes/BuscadorEstadia";
 import { CargandoTarjetas } from "../componentes/Esqueleto";
 import { ErrorConReintento } from "../componentes/ErrorConReintento";
-import { FranjaConfianza, Portada, TablaComparativa, TarjetaHabitacionWeb } from "../componentes/PiezasWeb";
+import { FranjaConfianza, NotaPrecioReferencia, Portada, TablaComparativa, TarjetaHabitacionWeb } from "../componentes/PiezasWeb";
 import { VENTANA_VENTA_DIAS, busquedaComoQueryWeb, capacidadMaximaDeTipos } from "../busquedaWeb";
 import { obtenerTipos } from "../ecommerce.api";
 import { useProcesoCompra } from "../ProcesoCompraContext";
+import { usePrecioReferencia } from "../usePrecioReferencia";
 import { useRevelar } from "../useRevelar";
 import { useTituloPagina } from "../useTituloPagina";
 
 // /web/habitaciones — todas las categorías del hotel (de /api/web/tipos), con filtro por
-// cantidad de huéspedes. Sin precios: dependen de las fechas, por eso arriba va el buscador
-// que lleva a /web/resultados.
+// cantidad de huéspedes. El precio de las tarjetas es orientativo (usePrecioReferencia): el
+// real depende de las fechas, por eso arriba va el buscador que lleva a /web/resultados.
 const FILTROS = [
   { clave: "todas", texto: "Todas las habitaciones", cumple: () => true },
   { clave: "1-2", texto: "1 a 2 personas", cumple: (tipo) => tipo.capacidadMaxima <= 2 },
@@ -27,6 +28,7 @@ export function HabitacionesWebPage() {
   const [filtro, setFiltro] = useState("todas");
   const { fechaDesde, fechaHasta, ocupacion, definirBusqueda } = useProcesoCompra();
   const tipos = useQuery({ queryKey: ["ecommerce", "tipos"], queryFn: obtenerTipos, retry: false });
+  const referencia = usePrecioReferencia();
   const capacidadMaxima = capacidadMaximaDeTipos(tipos.data?.tipos);
   const elegido = FILTROS.find((f) => f.clave === filtro);
   const visibles = (tipos.data?.tipos ?? []).filter(elegido.cumple);
@@ -74,7 +76,7 @@ export function HabitacionesWebPage() {
             </button>
           ))}
         </div>
-        <p className="ec-texto-2 ec-chico ec-filtros__nota">Elegí tus fechas arriba para ver precios y disponibilidad.</p>
+        <p className="ec-texto-2 ec-chico ec-filtros__nota">Elegí tus fechas arriba para ver el precio exacto y la disponibilidad.</p>
 
         {tipos.isPending && <CargandoTarjetas className="ec-grilla-habitaciones" texto="Cargando habitaciones…" />}
         {tipos.isError && (
@@ -90,10 +92,11 @@ export function HabitacionesWebPage() {
         {tipos.data && visibles.length > 0 && (
           <div className="ec-grilla-habitaciones">
             {visibles.map((tipo, i) => (
-              <TarjetaHabitacionWeb key={tipo.tipoHabitacionId} tipo={tipo} demora={i * 90} />
+              <TarjetaHabitacionWeb key={tipo.tipoHabitacionId} tipo={tipo} demora={i * 90} desdePorNoche={referencia.precioDe(tipo.tipoHabitacionId)} />
             ))}
           </div>
         )}
+        {tipos.data && visibles.length > 0 && referencia.hayPrecios && <NotaPrecioReferencia fecha={referencia.fecha} />}
       </section>
 
       {tipos.data?.tipos.length > 1 && (

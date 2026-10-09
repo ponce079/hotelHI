@@ -3366,3 +3366,19 @@
     padding: 18px 18px 22px;
   }
 }
+
+/* Rediseño — tanda 3: precio orientativo en las tarjetas de habitación. */
+.ec-habitacion__precio {
+  font-size: 12px;
+  color: var(--ec-texto-2);
+}
+.ec-habitacion__precio strong {
+  font-family: var(--ec-fuente-titulo);
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--ec-verde-profundo);
+}
+.ec-raiz .ec-nota-precio {
+  margin-top: 14px;
+  font-size: 11px;
+}

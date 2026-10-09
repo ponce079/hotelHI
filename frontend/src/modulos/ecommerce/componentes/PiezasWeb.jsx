@@ -1,5 +1,6 @@
 import { CalendarCheck, CalendarDays, Check, Clock, Lock, Minus, Receipt, ShieldCheck, Users } from "lucide-react";
 import { Boton } from "./Boton";
+import { formatearFecha, formatearPrecio } from "../formato";
 import { CONFIANZA_WEB, EXPERIENCIAS_SALTA, ITINERARIO_SALTA, contenidoDeTipo, fotoDeTipo, fotoWeb } from "../ecommerce.contenido";
 
 // Piezas compartidas del rediseño "Holiday Inn Salta" (Inicio, Habitaciones,
@@ -25,8 +26,9 @@ export function Portada({ foto, titulo, bajada, sobretitulo, idTitulo, chica = f
   );
 }
 
-// Tarjeta de un tipo de habitación (de /api/web/tipos): sin precio, que depende de las fechas.
-export function TarjetaHabitacionWeb({ tipo, demora = 0 }) {
+// Tarjeta de un tipo de habitación (de /api/web/tipos). `desdePorNoche` es el precio
+// orientativo (usePrecioReferencia), opcional: va con asterisco y NotaPrecioReferencia.
+export function TarjetaHabitacionWeb({ tipo, demora = 0, desdePorNoche }) {
   const contenido = contenidoDeTipo(tipo.nombre);
   return (
     <article className="ec-habitacion ec-revelar" style={{ transitionDelay: `${demora}ms` }}>
@@ -40,6 +42,11 @@ export function TarjetaHabitacionWeb({ tipo, demora = 0 }) {
           <Users size={14} strokeWidth={1.6} aria-hidden="true" /> Hasta {tipo.capacidadMaxima} personas
         </p>
         <p className="ec-texto-2 ec-chico">{contenido.descripcion}</p>
+        {desdePorNoche != null && (
+          <p className="ec-habitacion__precio">
+            Desde <strong>{formatearPrecio(desdePorNoche)}</strong> / noche<span aria-hidden="true">*</span>
+          </p>
+        )}
         <ul className="ec-comodidades" aria-label="Comodidades">
           {contenido.comodidades.map(({ nombre, Icono }) => (
             <li key={nombre} title={nombre}>
@@ -229,5 +236,15 @@ export function TablaComparativa({ tipos }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+// Aclaración del precio orientativo de las tarjetas de habitación.
+export function NotaPrecioReferencia({ fecha }) {
+  return (
+    <p className="ec-texto-2 ec-chico ec-nota-precio">
+      * Tarifa más baja para 1 persona la noche del {formatearFecha(fecha)}, precio final con IVA incluido. Varía según
+      las fechas y la cantidad de huéspedes: elegí las tuyas para ver el precio exacto.
+    </p>
   );
 }

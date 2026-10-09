@@ -76,8 +76,9 @@ describe("las siete rutas /web renderizan", () => {
     expect(await screen.findByRole("heading", { name: "Simple" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Doble" })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: /mi reserva/i })[0]).toHaveAttribute("href", "/web/mi-reserva");
-    // Sin precio antes de buscar, sin cuentas ni medios de pago descartados.
-    expect(screen.queryByText(/\$ \d/)).not.toBeInTheDocument();
+    // Antes de buscar, solo el precio orientativo con su aclaración; sin cuentas ni medios de pago descartados.
+    expect(await screen.findByText(/tarifa más baja para 1 persona/i)).toBeInTheDocument();
+    for (const precio of screen.queryAllByText(/\$ \d/)) expect(precio.closest(".ec-habitacion__precio")).not.toBeNull();
     expect(screen.queryByText(/ingresar|crear una cuenta|mercado pago|transferencia/i)).not.toBeInTheDocument();
   });
 
@@ -219,13 +220,14 @@ describe("pago con el formulario de tarjeta (mock)", () => {
 });
 
 describe("páginas del rediseño (Habitaciones, Promociones, Experiencias)", () => {
-  it("/web/habitaciones: todas las categorías sin precio y filtro por huéspedes", async () => {
+  it("/web/habitaciones: todas las categorías con precio orientativo y filtro por huéspedes", async () => {
     renderRuta("/web/habitaciones");
     expect(screen.getByRole("heading", { level: 1, name: "Habitaciones" })).toBeInTheDocument();
     expect(screen.getByRole("form", { name: /buscar disponibilidad/i })).toBeInTheDocument();
     expect(await screen.findByRole("heading", { name: "Simple" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Doble" })).toBeInTheDocument();
-    expect(screen.queryByText(/\$ \d/)).not.toBeInTheDocument();
+    expect(await screen.findByText(/tarifa más baja para 1 persona/i)).toBeInTheDocument();
+    for (const precio of screen.queryAllByText(/\$ \d/)) expect(precio.closest(".ec-habitacion__precio")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "3 o más personas" }));
     expect(screen.queryByRole("heading", { name: "Simple" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Ver habitación Doble" })).toHaveAttribute("href", "/web/habitacion/2");

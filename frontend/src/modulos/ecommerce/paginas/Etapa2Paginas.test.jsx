@@ -98,15 +98,28 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("Inicio", () => {
-  it("tipos reales sin precio, título de la pestaña y buscador con la capacidad de /tipos", async () => {
+  it("tipos reales con precio orientativo aclarado, título de la pestaña y buscador con la capacidad de /tipos", async () => {
     renderRuta("/web");
     expect(await screen.findByRole("heading", { name: "Doble" })).toBeInTheDocument();
-    expect(screen.queryByText(/\$\s?\d/)).not.toBeInTheDocument();
+    // Precio orientativo: 1 persona, una noche dentro de 7 días, siempre con su aclaración.
+    const doble = screen.getByRole("heading", { name: "Doble" }).closest("article");
+    expect(await within(doble).findByText((_, el) => el?.textContent === "Desde $ 21.250 / noche*")).toBeInTheDocument();
+    expect(consultarDisponibilidad).toHaveBeenCalledWith({ fechaDesde: dia(7), fechaHasta: dia(8), adultos: 1, menores: 0 });
+    expect(screen.getByText(/tarifa más baja para 1 persona la noche del/i)).toBeInTheDocument();
     expect(document.title).toBe("Reservá directo · Holiday Inn Salta");
     expect(screen.getByLabelText("Menores (0 a 12 años)")).toBeInTheDocument();
     await waitFor(() => expect(within(screen.getByLabelText("Adultos")).getAllByRole("option")).toHaveLength(4));
     expect(screen.getByRole("link", { name: "Ver habitación Doble" })).toHaveAttribute("href", "/web/habitacion/2");
     expect(screen.getByText("Hasta las 11 h")).toBeInTheDocument();
+  });
+
+  it("si la consulta del precio orientativo falla, las tarjetas quedan sin precio", async () => {
+    consultarDisponibilidad.mockRejectedValue({ codigo: "ERROR_RED", mensaje: "x", status: 0 });
+    renderRuta("/web");
+    expect(await screen.findByRole("heading", { name: "Doble" })).toBeInTheDocument();
+    await waitFor(() => expect(consultarDisponibilidad).toHaveBeenCalled());
+    expect(screen.queryByText(/\$\s?\d/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/tarifa más baja/i)).not.toBeInTheDocument();
   });
 
   it("si /tipos falla, error con 'Reintentar' solo en las tarjetas", async () => {
