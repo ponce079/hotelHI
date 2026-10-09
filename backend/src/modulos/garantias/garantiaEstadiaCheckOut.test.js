@@ -8,6 +8,8 @@ let mockPagos;
 let mockCuenta;
 let mockForzar;
 let mockSinGuarda;
+let mockNotificaciones;
+let mockFallaEscritura;
 
 jest.mock("../../lib/prisma", () => {
   const api = {
@@ -15,11 +17,24 @@ jest.mock("../../lib/prisma", () => {
       findUnique: async () => (mockGarantia ? { ...mockGarantia } : null),
       update: async ({ data }) => Object.assign(mockGarantia, data),
       updateMany: async ({ where, data }) => {
+        if (mockFallaEscritura) throw new Error("base caída");
+        if (where.montoUsado === undefined) {
+          if (!mockGarantia || mockGarantia.estado !== where.estado) return { count: 0 };
+          Object.assign(mockGarantia, data);
+          return { count: 1 };
+        }
         if (mockSinGuarda || !mockGarantia || mockGarantia.estado !== where.estado || Number(mockGarantia.montoUsado) !== where.montoUsado) {
           return { count: 0 };
         }
         Object.assign(mockGarantia, data);
         return { count: 1 };
+      },
+    },
+    notificacion: {
+      createMany: async ({ data }) => {
+        if (mockFallaEscritura) throw new Error("base caída");
+        mockNotificaciones.push(...data);
+        return { count: data.length };
       },
     },
     pagoEstadia: {
@@ -62,6 +77,8 @@ beforeEach(() => {
   mockCuenta = { estadoReserva: "En curso", saldo: 20000 };
   mockForzar = undefined;
   mockSinGuarda = false;
+  mockNotificaciones = [];
+  mockFallaEscritura = false;
 });
 
 describe("aplicarGarantiaAlSaldo", () => {
@@ -163,15 +180,55 @@ describe("cerrarGarantiaDeEstadia (al confirmar el check-out)", () => {
     expect(await cerrarGarantiaDeEstadia(7)).toBeNull();
   });
 
-  test("si la pasarela falla NO tira error (el check-out ya está hecho): queda Pendiente y avisa", async () => {
-    mockForzar = () => {
-      throw new Error("timeout");
+  describe("si el cierre falla (el check-out ya está hecho)", () => {
+    const rechazaLiberacion = () => {
+      mockForzar = (p) => (p.operacion === "LIBERACION" ? { aprobado: false, motivoRechazo: "Pasarela caída." } : null);
     };
-    const espiar = jest.spyOn(console, "error").mockImplementation(() => {});
-    const r = await cerrarGarantiaDeEstadia(7);
-    espiar.mockRestore();
-    expect(mockGarantia.estado).toBe("Pendiente");
-    expect(r.mensaje).toMatch(/quedó pendiente de cerrar/);
+    let espiar;
+    beforeEach(() => {
+      espiar = jest.spyOn(console, "error").mockImplementation(() => {});
+    });
+    afterEach(() => espiar.mockRestore());
+
+    test("la pasarela rechaza la liberación: queda en Revisión manual, avisa a recepción con el motivo y devuelve el mensaje", async () => {
+      rechazaLiberacion();
+      const r = await cerrarGarantiaDeEstadia(7);
+      expect(mockGarantia.estado).toBe("Revisión manual");
+      expect(mockNotificaciones).toHaveLength(1);
+      expect(mockNotificaciones[0]).toMatchObject({ tipo: "Reserva", reservaId: 7, canal: "Interno", destinatarioArea: "Recepción" });
+      expect(mockNotificaciones[0].mensaje).toMatch(/^Garantía sin cerrar en el check-out \(PREAUTORIZACION, .*30\.000.*\): Pasarela caída\. Liberarla o devolverla a mano\.$/);
+      expect(r).toEqual({ estado: "Revisión manual", mensaje: "No se pudo cerrar la garantía: quedó en Revisión manual. Liberala o devolvela a mano." });
+    });
+
+    test("el motivo se trunca a 500 caracteres", async () => {
+      mockForzar = () => {
+        throw new Error("x".repeat(900));
+      };
+      await cerrarGarantiaDeEstadia(7);
+      expect(mockNotificaciones[0].mensaje).toContain("x".repeat(500));
+      expect(mockNotificaciones[0].mensaje).not.toContain("x".repeat(501));
+    });
+
+    test("si la garantía ya no estaba Pendiente no se pisa su estado, no hay notificación y el mensaje trae el estado real", async () => {
+      mockForzar = () => {
+        // Otro proceso la cambia mientras la pasarela responde.
+        mockGarantia.estado = "Capturada";
+        throw new Error("timeout");
+      };
+      const r = await cerrarGarantiaDeEstadia(7);
+      expect(mockGarantia.estado).toBe("Capturada");
+      expect(mockNotificaciones).toHaveLength(0);
+      expect(r).toEqual({ estado: "Capturada", mensaje: "La garantía no se pudo cerrar; su estado actual es Capturada." });
+    });
+
+    test("si falla también la escritura del estado o de la notificación, no lanza: responde igual", async () => {
+      rechazaLiberacion();
+      mockFallaEscritura = true;
+      const r = await cerrarGarantiaDeEstadia(7);
+      expect(mockGarantia.estado).toBe("Pendiente");
+      expect(mockNotificaciones).toHaveLength(0);
+      expect(r.mensaje).toMatch(/quedó pendiente de cerrar/);
+    });
   });
 });
 

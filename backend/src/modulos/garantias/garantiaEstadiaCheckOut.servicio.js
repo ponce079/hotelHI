@@ -22,9 +22,11 @@ const prisma = require("../../lib/prisma");
 const { OPCIONES_TRANSACCION } = require("../../lib/constantes");
 const { procesarTarjeta } = require("./pasarela.servicio");
 const { ErrorDeNegocio } = require("./garantias.servicio");
+const { DESTINATARIO_RECEPCION, TIPO_NOTIFICACION_RESERVA } = require("../reservas/reservas.constantes");
 const {
   TIPO_GARANTIA_ESTADIA,
   ESTADO_GARANTIA_ESTADIA,
+  PREFIJO_NOTIFICACION_GARANTIA_SIN_CERRAR,
   OPERACION_TARJETA,
   CONCEPTO_DEVOLUCION,
 } = require("./garantias.constantes");
@@ -105,7 +107,7 @@ async function aplicarGarantiaAlSaldo(reservaId) {
 
 // Al confirmar el check-out: lo que no se usó se libera o se devuelve. Es un
 // paso POSTERIOR al cierre y no lo bloquea: si falla, el check-out ya está
-// hecho y la garantía queda "Pendiente" (visible) para resolverla a mano.
+// hecho y la garantía pasa a "Revisión manual" (con aviso a recepción) para resolverla a mano.
 async function cerrarGarantiaDeEstadia(reservaId) {
   try {
     const garantia = await prisma.garantiaEstadia.findUnique({ where: { reservaId } });
@@ -146,8 +148,71 @@ async function cerrarGarantiaDeEstadia(reservaId) {
     };
   } catch (err) {
     console.error("[garantias] No se pudo cerrar la garantía de la estadía:", err.message);
+    return marcarRevisionManual(reservaId, err);
+  }
+}
+
+// Deja la garantía en "Revisión manual" y avisa a recepción. Solo si seguía "Pendiente" (si otro proceso ya la
+// cambió, no la pisa). Nunca lanza: el check-out ya está confirmado.
+async function marcarRevisionManual(reservaId, err) {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const { count } = await tx.garantiaEstadia.updateMany({
+        where: { reservaId, estado: ESTADO_GARANTIA_ESTADIA.PENDIENTE },
+        data: { estado: ESTADO_GARANTIA_ESTADIA.REVISION_MANUAL },
+      });
+      const g = await tx.garantiaEstadia.findUnique({ where: { reservaId } });
+      if (count !== 1) {
+        return { estado: g?.estado ?? null, mensaje: `La garantía no se pudo cerrar; su estado actual es ${g?.estado ?? "desconocido"}.` };
+      }
+      const restante = pesos(centavos(g.monto) - centavos(g.montoUsado));
+      const motivo = String(err?.message ?? err).slice(0, 500).replace(/[. ]+$/, "");
+      await tx.notificacion.createMany({
+        data: [
+          {
+            tipo: TIPO_NOTIFICACION_RESERVA,
+            reservaId,
+            canal: "Interno",
+            destinatarioArea: DESTINATARIO_RECEPCION,
+            mensaje: `${PREFIJO_NOTIFICACION_GARANTIA_SIN_CERRAR} (${g.tipo}, ${FORMATO.format(restante)}): ${motivo}. Liberarla o devolverla a mano.`,
+          },
+        ],
+      });
+      return { estado: ESTADO_GARANTIA_ESTADIA.REVISION_MANUAL, mensaje: "No se pudo cerrar la garantía: quedó en Revisión manual. Liberala o devolvela a mano." };
+    }, OPCIONES_TRANSACCION);
+  } catch (errEscritura) {
+    console.error("[garantias] No se pudo dejar la garantía en revisión manual:", errEscritura.message);
     return { estado: ESTADO_GARANTIA_ESTADIA.PENDIENTE, mensaje: "La garantía quedó pendiente de cerrar: revisala a mano." };
   }
+}
+
+// Garantías de estadía que el check-out no pudo cerrar, con el motivo de la última notificación de aviso.
+async function listarGarantiasARevisar() {
+  const garantias = await prisma.garantiaEstadia.findMany({
+    where: { estado: ESTADO_GARANTIA_ESTADIA.REVISION_MANUAL },
+    include: { reserva: { select: { codigoConfirmacion: true, huesped: { select: { nombre: true } } } } },
+    orderBy: { actualizadoEn: "desc" },
+  });
+  if (garantias.length === 0) return [];
+  const notificaciones = await prisma.notificacion.findMany({
+    where: {
+      reservaId: { in: garantias.map((g) => g.reservaId) },
+      mensaje: { startsWith: PREFIJO_NOTIFICACION_GARANTIA_SIN_CERRAR },
+    },
+    orderBy: [{ fechaEnvio: "desc" }, { id: "desc" }],
+    select: { reservaId: true, mensaje: true },
+  });
+  const motivoPorReserva = new Map();
+  for (const n of notificaciones) if (!motivoPorReserva.has(n.reservaId)) motivoPorReserva.set(n.reservaId, n.mensaje);
+  return garantias.map((g) => ({
+    reservaId: g.reservaId,
+    codigoConfirmacion: g.reserva?.codigoConfirmacion ?? null,
+    huesped: g.reserva?.huesped?.nombre ?? null,
+    tipo: g.tipo,
+    montoRestante: pesos(centavos(g.monto) - centavos(g.montoUsado)),
+    referencia: g.referencia,
+    mensaje: motivoPorReserva.get(g.reservaId) ?? null,
+  }));
 }
 
 // Dentro de la transacción del check-out: devuelve lo que sobra pagado.
@@ -167,4 +232,4 @@ async function registrarDevolucionSaldoAFavor(tx, { reservaId, monto, medioPago 
   });
 }
 
-module.exports = { aplicarGarantiaAlSaldo, cerrarGarantiaDeEstadia, registrarDevolucionSaldoAFavor, ErrorDeNegocio };
+module.exports = { aplicarGarantiaAlSaldo, cerrarGarantiaDeEstadia, listarGarantiasARevisar, registrarDevolucionSaldoAFavor, ErrorDeNegocio };
