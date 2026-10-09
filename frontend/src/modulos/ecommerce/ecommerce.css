@@ -2403,9 +2403,6 @@
   line-height: 1.15;
   color: #fff;
 }
-.ec-raiz .ec-destino p:last-child {
-  color: rgba(255, 255, 255, 0.85);
-}
 .ec-experiencias {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
@@ -2804,5 +2801,334 @@
 @media (prefers-reduced-motion: reduce) {
   .ec-raiz .ec-confirmacion__icono {
     animation: none;
+  }
+}
+
+/* ==========================================================================
+   Rediseño — páginas Habitaciones, Promociones y Experiencias.
+   ========================================================================== */
+
+/* Título de sección con "Ver todas" a la derecha. */
+.ec-seccion__fila {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.ec-raiz .ec-ver-todas {
+  font-size: 12px;
+  color: var(--ec-tinta);
+  text-decoration: underline;
+}
+.ec-raiz .ec-ver-todas:hover {
+  color: var(--ec-terracota);
+}
+.ec-raiz .ec-destino__texto p {
+  color: rgba(255, 255, 255, 0.85);
+}
+.ec-raiz .ec-destino__boton {
+  margin-top: 16px;
+  background: var(--ec-dorado);
+}
+
+/* Filtros de Habitaciones (chips como en el modelo). */
+.ec-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.ec-raiz .ec-filtro {
+  min-height: 36px;
+  padding: 0 14px;
+  border: 1px solid var(--ec-linea);
+  border-radius: 5px;
+  background: var(--ec-papel);
+  color: var(--ec-tinta);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, color 0.2s;
+}
+.ec-raiz .ec-filtro:hover {
+  border-color: var(--ec-verde-profundo);
+}
+.ec-raiz .ec-filtro--activo {
+  border-color: var(--ec-verde-profundo);
+  background: var(--ec-verde-profundo);
+  color: #fff;
+}
+.ec-raiz .ec-filtros__nota {
+  margin: 12px 0 20px;
+}
+
+/* Solapas de Promociones. */
+.ec-solapas {
+  border-bottom: 1px solid var(--ec-linea);
+  background: var(--ec-papel);
+}
+.ec-solapas__interior {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+  padding-top: 12px;
+}
+.ec-raiz .ec-solapa {
+  padding: 0 0 10px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--ec-texto-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.ec-raiz .ec-solapa:hover {
+  color: var(--ec-tinta);
+}
+.ec-raiz .ec-solapa--activa {
+  border-bottom-color: var(--ec-verde-profundo);
+  color: var(--ec-tinta);
+  font-weight: 600;
+}
+
+/* Banner "Feriado Largo". */
+.ec-banner-promo {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 220px;
+  margin-top: 36px;
+  overflow: hidden;
+  border-radius: 14px;
+  color: #fff;
+}
+.ec-banner-promo::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(30, 12, 5, 0.6), transparent 70%);
+}
+.ec-banner-promo__texto {
+  position: relative;
+  z-index: 2;
+  padding: 28px 5%;
+}
+.ec-banner-promo__sobretitulo {
+  font-family: var(--ec-fuente-titulo);
+  font-size: 17px;
+  font-style: italic;
+  opacity: 0.85;
+}
+.ec-raiz .ec-banner-promo h2 {
+  margin: 4px 0 6px;
+  font-size: 36px;
+  font-style: italic;
+  font-weight: 400;
+  color: #fff;
+}
+.ec-raiz .ec-banner-promo p {
+  color: rgba(255, 255, 255, 0.92);
+}
+.ec-banner-promo .ec-boton {
+  margin-top: 14px;
+}
+
+/* Experiencias: foto grande a la izquierda y la lista a la derecha. */
+.ec-experiencias-pagina {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 28px;
+  align-items: start;
+}
+.ec-experiencias-pagina__foto {
+  position: relative;
+  min-height: 380px;
+  overflow: hidden;
+  border-radius: 12px;
+}
+.ec-experiencias--columna {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 860px) {
+  .ec-experiencias-pagina {
+    grid-template-columns: 1fr;
+  }
+  .ec-experiencias-pagina__foto {
+    min-height: 240px;
+  }
+}
+
+/* ==========================================================================
+   Rediseño — tanda 1: comodidades, "Más elegida", vigencia y condiciones de
+   promos, franja de confianza y botón "Consultanos".
+   ========================================================================== */
+
+.ec-habitacion__etiqueta {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  right: 10px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  background: var(--ec-verde-profundo);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.ec-comodidades {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 2px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ec-comodidades li {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 8px;
+  border: 1px solid var(--ec-linea);
+  border-radius: 999px;
+  background: var(--ec-crema);
+  color: var(--ec-tinta);
+  font-size: 10.5px;
+}
+.ec-comodidades svg {
+  color: var(--ec-verde-profundo);
+}
+
+.ec-promo__vigencia {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ec-terracota);
+}
+.ec-promo__condiciones {
+  margin-top: 6px;
+  font-size: 11.5px;
+  color: var(--ec-texto-2);
+}
+.ec-promo__condiciones summary {
+  cursor: pointer;
+  text-decoration: underline;
+}
+.ec-promo__condiciones ul {
+  margin: 6px 0 0;
+  padding-left: 16px;
+}
+
+.ec-confianza {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0;
+  margin: 28px 0 0;
+  padding: 18px 8px;
+  border: 1px solid var(--ec-linea);
+  border-radius: 12px;
+  background: var(--ec-papel);
+  list-style: none;
+}
+.ec-confianza li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  color: var(--ec-verde-profundo);
+}
+.ec-confianza li + li {
+  border-left: 1px solid var(--ec-linea);
+}
+.ec-confianza__titulo {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ec-tinta);
+}
+.ec-confianza__texto {
+  display: block;
+  font-size: 11.5px;
+  color: var(--ec-texto-2);
+}
+
+.ec-consulta {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+.ec-raiz .ec-consulta__boton {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 50px;
+  padding: 0 20px 0 16px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--ec-verde-profundo);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 10px 26px rgba(18, 57, 46, 0.35);
+  cursor: pointer;
+  transition: transform 0.25s, background 0.25s;
+}
+.ec-raiz .ec-consulta__boton:hover {
+  background: var(--ec-verde);
+  transform: translateY(-2px);
+}
+.ec-consulta__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(300px, calc(100vw - 40px));
+  padding: 16px;
+  border: 1px solid var(--ec-linea);
+  border-radius: 12px;
+  background: var(--ec-papel);
+  box-shadow: var(--ec-sombra);
+  animation: ec-subir 0.3s both;
+}
+.ec-consulta__titulo {
+  font-family: var(--ec-fuente-titulo);
+  font-size: 16px;
+  font-weight: 600;
+}
+.ec-raiz .ec-consulta__opcion {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--ec-linea);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--ec-tinta);
+  font-size: 12.5px;
+  text-decoration: none;
+  word-break: break-all;
+}
+.ec-raiz .ec-consulta__opcion:hover {
+  border-color: var(--ec-verde-profundo);
+}
+
+@media (max-width: 767px) {
+  .ec-confianza li + li {
+    border-left: 0;
+    border-top: 1px solid var(--ec-linea);
+  }
+  .ec-raiz .ec-consulta__boton span {
+    display: none;
+  }
+  .ec-raiz .ec-consulta__boton {
+    padding: 0 14px;
   }
 }

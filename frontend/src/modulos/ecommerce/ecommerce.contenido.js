@@ -3,6 +3,7 @@
 // mockup, hasta tener fotos reales. Sin número de habitación ni piso.
 import {
   AirVent,
+  Bath,
   BedDouble,
   BedSingle,
   Dumbbell,
@@ -12,6 +13,7 @@ import {
   Monitor,
   Mountain,
   Refrigerator,
+  Sofa,
   SquareParking,
   Table2,
   UtensilsCrossed,
@@ -47,6 +49,23 @@ export const CONTENIDO_TIPOS = {
       { nombre: "Cama doble", Icono: BedDouble },
     ],
     fotos: ["Foto · Habitación doble", "Foto · Baño", "Foto · Vista", "Foto · Detalle cama", "Foto · Escritorio"],
+    // Etiqueta del rediseño en las tarjetas de habitación.
+    destacada: "Más elegida",
+  },
+  Suite: {
+    descripcion: "Nuestra categoría más amplia, con living integrado, para viajar en familia o con amigos.",
+    descripcionAmpliada:
+      "La habitación más espaciosa del hotel, con living integrado y capacidad para hasta cuatro personas. Tiene Wi-Fi, aire acondicionado, TV, frigobar y baño completo. Ideal para quedarse varios días y descansar entre excursión y excursión.",
+    comodidades: [
+      { nombre: "Wi-Fi", Icono: Wifi },
+      { nombre: "TV", Icono: Monitor },
+      { nombre: "Aire acondicionado", Icono: AirVent },
+      { nombre: "Frigobar", Icono: Refrigerator },
+      { nombre: "Living", Icono: Sofa },
+      { nombre: "Baño completo", Icono: Bath },
+      { nombre: "Cama doble", Icono: BedDouble },
+    ],
+    fotos: ["Foto · Suite", "Foto · Living", "Foto · Baño", "Foto · Vista", "Foto · Detalle cama"],
   },
 };
 
@@ -74,12 +93,12 @@ export function fotoDeTipo(nombre) {
   return fotoWeb(clave ? FOTO_TIPO[clave] : "hab");
 }
 
-// "Elegí tu experiencia": accesos a las secciones del Inicio.
+// "Elegí tu experiencia": accesos a las páginas del sitio.
 export const ACCESOS_INICIO = [
-  { titulo: "Habitaciones", texto: "Confort y calidez en cada detalle", foto: "e1", destino: "#habitaciones" },
-  { titulo: "Promociones", texto: "Viví más por menos", foto: "e2", destino: "#promociones" },
-  { titulo: "Experiencias en Salta", texto: "Paisajes, cultura y tradición", foto: "e3", destino: "#experiencias" },
-  { titulo: "Gastronomía", texto: "Sabores de nuestra tierra", foto: "e4", destino: "#experiencias" },
+  { titulo: "Habitaciones", texto: "Confort y calidez en cada detalle", foto: "e1", destino: "/web/habitaciones" },
+  { titulo: "Promociones", texto: "Viví más por menos", foto: "e2", destino: "/web/promociones" },
+  { titulo: "Experiencias en Salta", texto: "Paisajes, cultura y tradición", foto: "e3", destino: "/web/experiencias" },
+  { titulo: "Gastronomía", texto: "Sabores de nuestra tierra", foto: "e4", destino: "/web/experiencias" },
 ];
 
 export const SERVICIOS_HOTEL = [
@@ -96,10 +115,12 @@ export const SERVICIOS_HOTEL = [
 // Promociones del modelo: contenido de difusión. El precio final siempre lo
 // calcula el motor de reservas con la tarifa vigente.
 export const PROMOCIONES_WEB = [
-  { etiqueta: "Feriado", titulo: "Feriado del 12 de Octubre", beneficio: "15% OFF", detalle: "en estadías de 3 noches o más", foto: "p1" },
-  { etiqueta: "Fin de semana largo", titulo: "Puente de noviembre", beneficio: "20% OFF", detalle: "en tarifas reembolsables", foto: "p2" },
-  { etiqueta: "Vacaciones de invierno", titulo: "Viví Salta en invierno", beneficio: "Hasta 25% OFF", detalle: "+ desayuno incluido", foto: "p3" },
+  { categoria: "Feriados", etiqueta: "Feriado", titulo: "Feriado del 12 de Octubre", beneficio: "15% OFF", detalle: "en estadías de 3 noches o más", foto: "p1", vigencia: "Del 10 al 12 de octubre", condiciones: ["Mínimo 3 noches.", "Aplica a tarifa flexible y no reembolsable.", "Sujeto a disponibilidad."] },
+  { categoria: "Fines de semana largos", etiqueta: "Fin de semana largo", titulo: "Puente de noviembre", beneficio: "20% OFF", detalle: "en tarifas reembolsables", foto: "p2", vigencia: "Del 20 al 23 de noviembre", condiciones: ["Solo tarifa flexible (reembolsable).", "Mínimo 2 noches.", "Sujeto a disponibilidad."] },
+  { categoria: "Vacaciones", etiqueta: "Vacaciones de invierno", titulo: "Viví Salta en invierno", beneficio: "Hasta 25% OFF", detalle: "+ desayuno incluido", foto: "p3", vigencia: "Julio de 2027", condiciones: ["El descuento varía según la fecha.", "Desayuno incluido en todas las tarifas.", "Sujeto a disponibilidad."] },
 ];
+
+export const CATEGORIAS_PROMOCIONES = ["Todas", "Feriados", "Fines de semana largos", "Vacaciones"];
 
 export const EXPERIENCIAS_SALTA = [
   { nombre: "Excursiones", texto: "Quebrada de Humahuaca, Cafayate y los Valles Calchaquíes.", Icono: Mountain },
@@ -119,3 +140,12 @@ export function imagenesDeTipo(nombre) {
   const principal = fotoDeTipo(nombre);
   return [principal, ...["det", "pre", "std", "sui", "hab"].map(fotoWeb).filter((src) => src !== principal)];
 }
+
+// Franja de confianza: lo que el sitio realmente ofrece (precio final, confirmación,
+// cancelación de la tarifa flexible y pago con tarjeta cifrado).
+export const CONFIANZA_WEB = [
+  { titulo: "Precio final", texto: "En pesos, IVA incluido" },
+  { titulo: "Confirmación inmediata", texto: "Tu código al instante y por email" },
+  { titulo: "Cancelación flexible", texto: "Sin cargo hasta 48 h antes" },
+  { titulo: "Pago seguro", texto: "Conexión cifrada" },
+];

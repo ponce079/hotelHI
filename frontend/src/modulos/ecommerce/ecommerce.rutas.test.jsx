@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import App from "../../App";
@@ -215,5 +215,45 @@ describe("pago con el formulario de tarjeta (mock)", () => {
     const guardado = sessionStorage.getItem(CLAVE_STORAGE);
     expect(JSON.parse(guardado).claveIdempotencia).toBeNull();
     expect(guardado).not.toMatch(/4242424242424242|"cvv"|"numero"|"tarjeta"/);
+  });
+});
+
+describe("páginas del rediseño (Habitaciones, Promociones, Experiencias)", () => {
+  it("/web/habitaciones: todas las categorías sin precio y filtro por huéspedes", async () => {
+    renderRuta("/web/habitaciones");
+    expect(screen.getByRole("heading", { level: 1, name: "Habitaciones" })).toBeInTheDocument();
+    expect(screen.getByRole("form", { name: /buscar disponibilidad/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Simple" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Doble" })).toBeInTheDocument();
+    expect(screen.queryByText(/\$ \d/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "3 o más personas" }));
+    expect(screen.queryByRole("heading", { name: "Simple" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Ver habitación Doble" })).toHaveAttribute("href", "/web/habitacion/2");
+  });
+
+  it("/web/promociones: las solapas filtran por categoría", () => {
+    renderRuta("/web/promociones");
+    expect(screen.getByRole("heading", { level: 1, name: "Promociones" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Feriado del 12 de Octubre" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Vacaciones" }));
+    expect(screen.getByRole("heading", { name: "Viví Salta en invierno" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Feriado del 12 de Octubre" })).not.toBeInTheDocument();
+  });
+
+  it("/web/experiencias: lista de experiencias y acceso a reservar", () => {
+    renderRuta("/web/experiencias");
+    expect(screen.getByRole("heading", { level: 1, name: "Experiencias en Salta" })).toBeInTheDocument();
+    expect(screen.getByText("Excursiones")).toBeInTheDocument();
+    expect(screen.getByText("Naturaleza")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Reservá tu estadía" })).toHaveAttribute("href", "/web/habitaciones#buscar");
+  });
+
+  it("el menú lleva a las páginas propias y a las secciones del Inicio", () => {
+    renderRuta("/web");
+    const menu = screen.getByRole("navigation", { name: "Principal" });
+    expect(within(menu).getByRole("link", { name: "Habitaciones" })).toHaveAttribute("href", "/web/habitaciones");
+    expect(within(menu).getByRole("link", { name: "Promociones" })).toHaveAttribute("href", "/web/promociones");
+    expect(within(menu).getByRole("link", { name: "Experiencias" })).toHaveAttribute("href", "/web/experiencias");
+    expect(within(menu).getByRole("link", { name: "Destino Salta" })).toHaveAttribute("href", "/web#destino");
   });
 });
