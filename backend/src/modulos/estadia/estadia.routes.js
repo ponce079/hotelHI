@@ -29,8 +29,8 @@ const handler = (fn) => async (req, res) => {
 // Todas las rutas de estadía exigen sesión. Roles mínimos según las pantallas que las usan:
 //   - Lectura de fichas e historial: "Personas de la estadía" en el detalle de la reserva, que
 //     también ve el gerente (verReservas), y la pantalla de check-in.
-//   - "Personas alojadas" y todo lo que escribe: admin y recepcionista
-//     (gestionarReservas / gestionarCheckIn del frontend).
+//   - "Huéspedes en casa" (GET /alojados, solo lectura): también el gerente.
+//   - Todo lo que escribe: admin y recepcionista (gestionarReservas / gestionarCheckIn del frontend).
 const ROLES_LECTURA = ["admin", "recepcionista", "gerente"];
 const ROLES_OPERACION = ["admin", "recepcionista"];
 const lectura = [requiereSesion, requiereRol(...ROLES_LECTURA)];
@@ -42,7 +42,7 @@ const conOperador = (r) => ({ ...r.body, operador: r.usuarioActual.usuario, corr
 
 router.get(
   "/alojados",
-  ...operacion,
+  ...lectura,
   handler((r) => s.alojados(String(r.query.q || "").slice(0, 100))),
 );
 router.get(
