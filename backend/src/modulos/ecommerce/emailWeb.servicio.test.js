@@ -160,7 +160,7 @@ describe("email definitivo: datos del alta que no vienen en la respuesta", () =>
     for (const parte of [
       "Hola, María <José>:",
       "Estado: Confirmada · garantizada con tarjeta",
-      "check-out hasta las 10 h",
+      "check-out hasta las 11 h",
       "Llegada estimada: entre las 20 y las 22 h",
       "Solicitudes especiales: Cuna <script>alert(1)</script>",
       "Si no te presentás, se cobra la primera noche.",

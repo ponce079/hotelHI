@@ -4,7 +4,7 @@ import { FotoEjemplo } from "./FotoEjemplo";
 import { Insignia } from "./Insignia";
 import { Tarjeta } from "./Tarjeta";
 import { ahorroContraFlexible, textoNoShow } from "../busquedaWeb";
-import { contenidoDeTipo } from "../ecommerce.contenido";
+import { contenidoDeTipo, fotoDeTipo } from "../ecommerce.contenido";
 import { LEYENDA_PRECIO_FINAL, formatearPrecio, nombreComercialPlan, textoCondicionesPlan, textoNoches } from "../formato";
 
 // Una fila por plan de un tipo (etapa 2): nombre comercial, condiciones,
@@ -66,7 +66,7 @@ export function TarjetaTipoResultado({ tipo, noches, onElegir, cotizando = null,
       aria-disabled={!disponible || undefined}
       aria-labelledby={idTitulo}
     >
-      <FotoEjemplo texto={contenido.fotos[0]} />
+      <FotoEjemplo texto={contenido.fotos[0]} src={fotoDeTipo(tipo.nombre)} />
       <div className="ec-resultado__cuerpo">
         <div className="ec-resultado__titulo">
           <h2 id={idTitulo}>{tipo.nombre}</h2>
