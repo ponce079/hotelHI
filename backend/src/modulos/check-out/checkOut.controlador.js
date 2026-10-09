@@ -1,4 +1,5 @@
 const checkOutServicio = require('./checkOut.servicio');
+const { listarGarantiasARevisar } = require('../garantias/garantiaEstadiaCheckOut.servicio');
 
 function responderError(res, err, mensajeGenerico, contexto) {
   if (err instanceof checkOutServicio.ErrorDeNegocio) {
@@ -49,4 +50,13 @@ async function postConfirmar(req, res) {
   }
 }
 
-module.exports = { getCuenta, getVerificaciones, postVerificacion, postConfirmar };
+// GET /api/check-out/garantias-a-revisar — garantías que el check-out no pudo cerrar (estado "Revisión manual")
+async function getGarantiasARevisar(req, res) {
+  try {
+    return res.json(await listarGarantiasARevisar());
+  } catch (err) {
+    return responderError(res, err, 'No se pudieron cargar las garantías a revisar.', 'Error al listar garantías a revisar');
+  }
+}
+
+module.exports = { getGarantiasARevisar, getCuenta, getVerificaciones, postVerificacion, postConfirmar };
