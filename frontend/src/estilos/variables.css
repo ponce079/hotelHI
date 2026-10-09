@@ -51,6 +51,20 @@
   --chip-no-presentada-bg: #f6e7df;
   --chip-no-presentada-texto: #8f4424;
 
+  /* Niveles de temporada (matriz de Tarifas): un solo matiz cálido que gana intensidad con la demanda. No usa los
+     tonos ok/alerta/error porque esos comunican éxito o problema. Todos con contraste >= 4.5:1. */
+  --nivel-base-bg: #ece9e1;
+  --nivel-base-texto: #4f4a3d;
+  --nivel-baja-bg: #f7ecd5;
+  --nivel-baja-texto: #6b4a12;
+  --nivel-media-bg: #edcd8c;
+  --nivel-media-texto: #4d3206;
+  --nivel-alta-bg: #a8651c;
+  --nivel-alta-texto: #ffffff;
+  --nivel-evento-bg: #4a2c0a;
+  --nivel-evento-texto: #ffffff;
+  --fila-hoy-bg: #f3f6f1;
+
   /* Radios */
   --radius-control: 8px;
   --radius-card: 12px;

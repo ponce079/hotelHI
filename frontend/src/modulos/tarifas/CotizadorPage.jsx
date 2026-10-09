@@ -23,9 +23,9 @@ export function CotizadorPage() {
   const [planAbierto, setPlanAbierto] = useState(null);
   const hoy = hoyEnHoraLocal();
 
-  if (!puede("verTarifas")) return <SinPermiso />;
 
   const { data: tipos } = useQuery({
+    enabled: puede("verTarifas"),
     queryKey: ["tipos-habitacion", "activos"],
     queryFn: () => listarTiposHabitacion({ activo: "true" }),
   });
@@ -75,6 +75,7 @@ export function CotizadorPage() {
 
   const resultado = mutacion.data;
 
+  if (!puede("verTarifas")) return <SinPermiso />;
   return (
     <div className="flex flex-col gap-6">
       <TarifasTabs activa="/tarifas/cotizador" />

@@ -22,10 +22,10 @@ export function PlanesPage() {
   const [cambioActivo, setCambioActivo] = useState(null);
   const [motivoBaja, setMotivoBaja] = useState("");
 
-  if (!puede("verTarifas")) return <SinPermiso />;
   const puedeGestionar = puede("gestionarTarifas");
 
   const { data: planes, isLoading, isError } = useQuery({
+    enabled: puede("verTarifas"),
     queryKey: ["tarifas", "planes", "todos"],
     queryFn: () => listarPlanesTarifarios({ activo: "todos" }),
   });
@@ -47,6 +47,7 @@ export function PlanesPage() {
     mostrarToast(mensaje);
   }
 
+  if (!puede("verTarifas")) return <SinPermiso />;
   return (
     <div className="flex flex-col gap-6">
       <TarifasTabs activa="/tarifas/planes" />
