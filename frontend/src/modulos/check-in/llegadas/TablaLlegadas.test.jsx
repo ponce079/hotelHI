@@ -188,6 +188,8 @@ describe("TablaLlegadas — atrasadas e ingresadas", () => {
     expect(screen.getByRole("link", { name: "Ver reserva" })).toHaveAttribute("href", "/reservas/1");
     expect(screen.getByText("Ocupada")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Iniciar check-in/ })).not.toBeInTheDocument();
+    // Ya ingresó: sin garantía de la reserva no hay nada que "tomar al ingreso".
+    expect(screen.queryByText("tomar tarjeta al ingreso")).not.toBeInTheDocument();
   });
 
   it("vacíos por pestaña", () => {

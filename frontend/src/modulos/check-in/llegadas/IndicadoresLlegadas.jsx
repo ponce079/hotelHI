@@ -48,8 +48,10 @@ export function IndicadoresLlegadas({ indicadores }) {
               {i.noListasVisibles.map((h) => h.texto).join(" · ")}
               {i.noListasExtra > 0 && ` · +${i.noListasExtra}`}
             </span>
-          ) : (
+          ) : i ? (
             "las habitaciones de las llegadas están listas"
+          ) : (
+            "de las llegadas pendientes y atrasadas"
           )
         }
       />

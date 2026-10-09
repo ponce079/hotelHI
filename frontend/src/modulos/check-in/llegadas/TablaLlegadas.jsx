@@ -27,8 +27,8 @@ const VACIOS = {
 
 // Tonos del chip de estado de la habitación (los colores salen de las variables del tema).
 const CLASE_TONO = {
-  limpieza: "inline-flex items-center rounded-full bg-[var(--aviso-bg)] px-2.5 py-0.5 text-[12px] font-semibold text-[var(--aviso-texto)]",
-  bloqueada: "inline-flex items-center rounded-full bg-[var(--aviso-texto)] px-2.5 py-0.5 text-[12px] font-semibold text-white",
+  limpieza: "inline-flex items-center whitespace-nowrap rounded-full bg-[var(--aviso-bg)] px-2.5 py-0.5 text-[12px] font-semibold text-[var(--aviso-texto)]",
+  bloqueada: "inline-flex items-center whitespace-nowrap rounded-full bg-[var(--aviso-texto)] px-2.5 py-0.5 text-[12px] font-semibold text-white",
 };
 
 function ChipHabitacion({ chip }) {
@@ -89,8 +89,13 @@ function CeldaTitular({ r }) {
   );
 }
 
-function CeldaGarantia({ r }) {
+// En Ingresadas hoy la garantía de la reserva ya cumplió su papel en el check-in: sin ninguna, no hay nada que tomar al
+// ingreso y se muestra un guion (con tarjeta o pago anticipado se muestra igual que antes).
+function CeldaGarantia({ r, ingresada }) {
   const { sinGarantia, bloques } = garantiaDeLlegada(r);
+  if (ingresada && sinGarantia) return <span className="relative text-piedra" title="Sin garantía de la reserva">
+        —<span className="sr-only">Sin garantía de la reserva</span>
+      </span>;
   return (
     <div className="flex flex-col gap-1.5">
       {bloques.map((b) => (
@@ -183,7 +188,7 @@ export function TablaLlegadas({ vista, filas, cargando, hoy, busqueda = "", sele
             </td>
             <td className="whitespace-nowrap px-3 py-4 text-[13px] text-tinta">{etiquetaPax(r)}</td>
             <td className="px-3 py-4">
-              <CeldaGarantia r={r} />
+              <CeldaGarantia r={r} ingresada={ingresadas} />
             </td>
             <td className="px-3 py-4 text-right">
               {ingresadas ? (
