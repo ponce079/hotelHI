@@ -577,3 +577,191 @@
     padding: 0;
   }
 }
+
+/* ---------- Tablas y listados (rediseño de Reservas) ----------
+   Dentro de @layer components a propósito: las utilidades de Tailwind que cada pantalla ya pone en sus td/tr
+   (padding, alineación, bordes) siguen teniendo prioridad sobre estos valores por defecto. */
+@layer components {
+  .tabla-sgh th {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-3);
+    white-space: nowrap;
+  }
+  .tabla-sgh tbody tr {
+    border-bottom: 1px solid var(--divisor-fila);
+  }
+  .tabla-sgh tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .tabla-sgh tbody td {
+    vertical-align: middle;
+  }
+  .tabla-sgh-fila-click {
+    cursor: pointer;
+  }
+  .tabla-sgh tbody tr:hover {
+    background: color-mix(in srgb, var(--bg-content) 55%, transparent);
+  }
+  .tabla-sgh-fila-atenuada {
+    opacity: 0.72;
+  }
+  .tabla-sgh-fila-atenuada:hover {
+    opacity: 1;
+  }
+
+  /* Chip de estado (Badge con tono): píldora con punto de 6 px */
+  .chip-estado {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid transparent;
+    border-radius: 999px;
+    padding: 3px 10px 3px 8px;
+    font-size: 12.5px;
+    font-weight: 600;
+    line-height: 1.3;
+    white-space: nowrap;
+  }
+  .chip-estado::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 999px;
+    background: currentColor;
+  }
+  .chip-confirmada {
+    background: var(--chip-confirmada-bg);
+    color: var(--chip-confirmada-texto);
+  }
+  .chip-en-curso {
+    background: var(--chip-en-curso-bg);
+    color: var(--chip-en-curso-texto);
+  }
+  .chip-cerrada {
+    background: var(--chip-cerrada-bg);
+    color: var(--chip-cerrada-texto);
+  }
+  .chip-cancelada {
+    background: transparent;
+    border-color: var(--chip-cancelada-borde);
+    color: var(--chip-cancelada-texto);
+  }
+  .chip-no-presentada {
+    background: var(--chip-no-presentada-bg);
+    color: var(--chip-no-presentada-texto);
+  }
+
+  /* Píldora de aviso (Llega hoy, Salida vencida...) y etiqueta de plan */
+  .aviso-pildora {
+    display: inline-block;
+    border-radius: 999px;
+    background: var(--aviso-bg);
+    padding: 1px 8px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--aviso-texto);
+    white-space: nowrap;
+  }
+  .etiqueta-plan {
+    display: inline-block;
+    border: 1px solid var(--etiqueta-borde);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--etiqueta-texto);
+    white-space: nowrap;
+  }
+
+  .avatar-iniciales {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 999px;
+    background: var(--avatar-bg);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--primary);
+  }
+
+  .sobretitulo {
+    margin: 0;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-3);
+  }
+
+  /* Pestañas con contador */
+  .pestana {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: -1px;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    background: transparent;
+    padding: 12px 4px;
+    font-family: var(--font-ui);
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-2);
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .pestana:hover {
+    color: var(--text);
+  }
+  .pestana[aria-selected="true"] {
+    border-bottom-color: var(--primary);
+    font-weight: 700;
+    color: var(--text);
+  }
+  .pestana-contador {
+    min-width: 24px;
+    border-radius: 999px;
+    background: var(--chip-cerrada-bg);
+    padding: 1px 8px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--chip-cerrada-texto);
+  }
+  .pestana[aria-selected="true"] .pestana-contador {
+    background: var(--primary);
+    color: var(--on-color);
+  }
+
+  .enlace-discreto {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: var(--radius-control);
+    padding: 8px 10px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--text-2);
+    text-decoration: none;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+  }
+  .grilla-indicadores {
+    display: grid;
+    gap: 16px;
+    grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+  }
+  .enlace-discreto:hover {
+    background: var(--bg-content);
+    color: var(--text);
+  }
+}

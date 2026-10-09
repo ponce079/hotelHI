@@ -28,6 +28,29 @@
   --on-color: #ffffff;
   --scrim: rgb(23 53 42 / 0.55);
 
+  /* Tablas y listados (rediseño de Reservas). --text-3 es el gris de encabezados y códigos: #66726b da 5:1 sobre
+     blanco (el #7a857e del mockup daba 3.8:1, bajo el mínimo de 4.5:1 para texto chico). */
+  --text-3: #66726b;
+  --divisor-fila: #f1ece2;
+  --banda-filtros: #fcfaf6;
+  --avatar-bg: #eef1ec;
+  --aviso-bg: #f8e9e0;
+  --aviso-texto: #8f4424;
+  --etiqueta-borde: #d9c9a6;
+  --etiqueta-texto: #6f5a2a;
+
+  /* Chips de estado de reserva */
+  --chip-confirmada-bg: #e9f0f5;
+  --chip-confirmada-texto: #244a63;
+  --chip-en-curso-bg: #e4eee8;
+  --chip-en-curso-texto: var(--primary);
+  --chip-cerrada-bg: #efebe3;
+  --chip-cerrada-texto: #4d574f;
+  --chip-cancelada-borde: #e0d9cc;
+  --chip-cancelada-texto: #6b7069;
+  --chip-no-presentada-bg: #f6e7df;
+  --chip-no-presentada-texto: #8f4424;
+
   /* Radios */
   --radius-control: 8px;
   --radius-card: 12px;

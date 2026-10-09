@@ -59,9 +59,9 @@ export function MenuAcciones({ acciones, etiqueta = "Más acciones" }) {
           setAbierto((v) => !v);
         }}
         aria-label={etiqueta}
-        className="flex h-7 w-7 flex-none cursor-pointer items-center justify-center rounded-md text-piedra transition-colors hover:bg-hueso hover:text-tinta"
+        className="flex h-9 w-9 flex-none cursor-pointer items-center justify-center rounded-md text-piedra transition-colors hover:bg-hueso hover:text-tinta"
       >
-        <MoreVertical size={16} />
+        <MoreVertical size={18} strokeWidth={1.6} />
       </button>
       {abierto && posicion && createPortal(
         <div
