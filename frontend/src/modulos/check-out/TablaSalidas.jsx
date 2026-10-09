@@ -3,9 +3,9 @@ import { Button } from "../../componentes/Button";
 import { Table } from "../../componentes/Table";
 import { documentoEnmascarado } from "../../lib/documento";
 import { formatearDiaSemanaMes } from "../../lib/fechas";
-import { iniciales } from "../../lib/formatosReserva";
+import { etiquetaPax, iniciales } from "../../lib/formatosReserva";
 import { codigoPais, nombrePais } from "../../lib/paises";
-import { avisoSalida, tipoHabitaciones, totalPax } from "./listadoCheckOut.helpers";
+import { avisoSalida, tipoHabitaciones } from "./listadoCheckOut.helpers";
 
 const COLUMNAS = ["Huésped", "Habitación", "Estadía", "Pax", "Plan", "Acción"];
 
@@ -83,7 +83,7 @@ export function TablaSalidas({ vista, filas, cargando, hoy, busqueda = "", puede
                 <AvisoSalida aviso={aviso} />
               </div>
             </td>
-            <td className="whitespace-nowrap px-3 py-4 text-[13px] text-tinta">{totalPax(r)}</td>
+            <td className="whitespace-nowrap px-3 py-4 text-[13px] text-tinta">{etiquetaPax(r)}</td>
             <td className="px-3 py-4">
               <div className="text-[13px] text-tinta">{r.planTarifario?.nombre ?? "—"}</div>
               {r.planTarifario?.reembolsable === false && (

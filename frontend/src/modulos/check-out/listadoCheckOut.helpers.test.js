@@ -7,7 +7,6 @@ import {
   filtrarPorVista,
   ordenarSalidas,
   tipoHabitaciones,
-  totalPax,
   vistaPorDefecto,
   vistaValida,
 } from "./listadoCheckOut.helpers";
@@ -94,15 +93,14 @@ describe("avisoSalida", () => {
   });
 });
 
-describe("pax y tipos", () => {
-  it("suma adultos y menores de todas las habitaciones", () => {
+describe("tipos de habitación", () => {
+  it("agrupa el tipo de varias habitaciones", () => {
     const x = r(1, "2026-10-09", {
       habitaciones: [
         { numero: "1", tipo: "Doble", adultos: 2, menores: 1 },
         { numero: "2", tipo: "Doble", adultos: 2, menores: 0 },
       ],
     });
-    expect(totalPax(x)).toBe(5);
     expect(tipoHabitaciones(x)).toBe("2 × Doble");
   });
 });

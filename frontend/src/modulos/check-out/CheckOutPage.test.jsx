@@ -96,6 +96,7 @@ describe("CheckOutPage", () => {
     expect(screen.getAllByText(/DNI •••• 4127/).length).toBeGreaterThan(0);
     expect(screen.queryByText(/30124127/)).not.toBeInTheDocument();
     expect(screen.getByText("No reembolsable")).toBeInTheDocument();
+    expect(screen.getAllByText("2 ad · 1 men").length).toBe(4);
     expect(screen.getByText("quedan 3 noches")).toBeInTheDocument();
   });
 

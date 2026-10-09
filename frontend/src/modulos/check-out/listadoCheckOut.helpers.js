@@ -70,9 +70,5 @@ export function avisoSalida(reserva, hoy) {
   return { tipo: "quedan", texto: `quedan ${plural(nochesEntre(hoy, reserva.fechaHasta), "noche", "noches")}` };
 }
 
-// Total de personas (adultos + menores) de todas las habitaciones.
-export const totalPax = (reserva) =>
-  (reserva.habitaciones ?? []).reduce((n, h) => n + (h.adultos ?? 0) + (h.menores ?? 0), 0);
-
 // "2 × Doble" / "Doble" / "3 habitaciones".
 export const tipoHabitaciones = (reserva) => resumenHabitaciones(reserva).detalle;
