@@ -80,6 +80,13 @@ async function explicarHabitacionesNoLibres(habitacionIds) {
   return new ErrorDeNegocio("Otra operación tomó la misma habitación al mismo tiempo. Actualizá la pantalla y volvé a intentar.", 409);
 }
 
+// El operador viene de la sesión (controlador); si falta es un error interno, no un valor inventado.
+function operadorObligatorio(operador) {
+  const quien = String(operador ?? "").trim();
+  if (!quien) throw new Error("Falta el operador de la sesión.");
+  return quien;
+}
+
 // Dos operaciones simultáneas sobre las mismas habitaciones (por ejemplo, un doble envío): si
 // MySQL corta una por deadlock o conflicto de escritura (P2034), es el mismo caso que una
 // habitación tomada por otra reserva: 409 con un mensaje para recepción. Lo mismo si la habitación ya
@@ -663,7 +670,7 @@ async function registrarCheckInWalkIn({
           });
           await tx.notificacion.createMany({ data: [notificacion] });
 
-          await escribirOcupantes(tx, { reservaId: reserva.id, fichas: lote.fichas, huespedes, operador: String(operador ?? "").trim() || "Recepción" });
+          await escribirOcupantes(tx, { reservaId: reserva.id, fichas: lote.fichas, huespedes, operador: operadorObligatorio(operador) });
           return reserva.id;
         },
         OPCIONES_TRANSACCION_LARGA

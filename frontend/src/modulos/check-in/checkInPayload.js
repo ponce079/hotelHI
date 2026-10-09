@@ -40,9 +40,8 @@ export function personasParaEnviar(estado, contexto) {
 }
 
 // POST /api/check-in/:id/confirmar (con reserva).
-export function cuerpoConfirmarReserva(estado, contexto, { operador, totalEsperado }) {
+export function cuerpoConfirmarReserva(estado, contexto, { totalEsperado }) {
   return {
-    operador,
     habitaciones: estado.habitaciones.map((h) => ({
       habitacionIdAnterior: h.habitacionIdAnterior,
       habitacionId: h.habitacionId,
@@ -59,9 +58,8 @@ export function cuerpoConfirmarReserva(estado, contexto, { operador, totalEspera
 }
 
 // POST /api/check-in/walk-in. Sin `huesped`: el backend lo arma con el titular de la primera habitación.
-export function cuerpoWalkin(estado, contexto, { operador, planTarifarioId, totalEsperado }) {
+export function cuerpoWalkin(estado, contexto, { planTarifarioId, totalEsperado }) {
   return {
-    operador,
     fechaHasta: String(contexto.fechaHasta).slice(0, 10),
     habitaciones: estado.habitaciones.map((h) => ({ habitacionId: h.habitacionId, adultos: h.adultos, menores: h.menores })),
     planTarifarioId,

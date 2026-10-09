@@ -1,6 +1,5 @@
 import { useReducer, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useSesion } from "../../../lib/sesion";
 import { formatearDiaCorto } from "../../../lib/fechas";
 import { reintentarLecturaEstadia } from "../../estadia/recuperacionEstadia";
 import { buscarReservaParaCheckIn, confirmarCheckInConReserva, listarOcupantes } from "../checkIn.api";
@@ -16,7 +15,6 @@ import { ResumenReserva } from "./ResumenReserva";
 import { Tarjeta } from "../ui";
 
 function FormularioReserva({ reserva, ocupantes, senia, onExito }) {
-  const { usuario } = useSesion();
   const [estado, dispatch] = useReducer(reducer, null, () => estadoInicialReserva(reserva, ocupantes));
   const contexto = { fechaDesde: reserva.fechaDesde, fechaHasta: reserva.fechaHasta, huespedReserva: reserva.huesped };
   const { confirmar, panel, enviando } = useConfirmacionCheckIn({
@@ -24,7 +22,7 @@ function FormularioReserva({ reserva, ocupantes, senia, onExito }) {
     dispatch,
     onExito: (confirmada) => onExito({ reserva: confirmada, huespedes: estado.filas.length }),
     enviar: (totalEsperado) =>
-      confirmarCheckInConReserva(reserva.id, cuerpoConfirmarReserva(estado, contexto, { operador: usuario, totalEsperado })),
+      confirmarCheckInConReserva(reserva.id, cuerpoConfirmarReserva(estado, contexto, { totalEsperado })),
   });
 
   const faltantes = faltantesParaConfirmar(estado, contexto);

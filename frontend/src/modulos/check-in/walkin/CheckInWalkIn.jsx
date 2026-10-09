@@ -1,6 +1,5 @@
 import { useEffect, useReducer, useRef, useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
-import { useSesion } from "../../../lib/sesion";
 import { formatearDiaCorto, hoyEnHoraLocal, sumarDiasISO } from "../../../lib/fechas";
 import { cotizarReserva } from "../../reservas/reservas.api";
 import { listarHabitacionesLibresAhora, registrarCheckInWalkIn } from "../checkIn.api";
@@ -19,7 +18,6 @@ import { HabitacionTarifa } from "./HabitacionTarifa";
 // El total sale de /reservas/cotizar con todas las habitaciones (es el totalEsperado) y se envía
 // sin huésped: el backend lo arma con el titular de la primera habitación.
 export function CheckInWalkIn({ habitacionPreseleccionada = "" }) {
-  const { usuario } = useSesion();
   const hoy = hoyEnHoraLocal();
   const [estado, dispatch] = useReducer(reducer, null, estadoInicialWalkin);
   const [confirmado, setConfirmado] = useState(null);
@@ -74,7 +72,6 @@ export function CheckInWalkIn({ habitacionPreseleccionada = "" }) {
     enviar: (totalEsperado) =>
       registrarCheckInWalkIn(
         cuerpoWalkin(estado, contexto, {
-          operador: usuario,
           planTarifarioId: planCotizado.planTarifarioId,
           totalEsperado: totalEsperado ?? planCotizado.total,
         }),

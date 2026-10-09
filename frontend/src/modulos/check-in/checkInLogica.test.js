@@ -149,7 +149,7 @@ describe("faltantes y edades", () => {
     expect(faltantesParaConfirmar(e, CONTEXTO).map((f) => f.texto)).toContain("Falta el motivo del titular distinto");
     e = reducer(e, { tipo: "motivo", valor: "Reservó un familiar" });
     expect(faltantesParaConfirmar(e, CONTEXTO).map((f) => f.texto)).not.toContain("Falta el motivo del titular distinto");
-    expect(cuerpoConfirmarReserva(e, CONTEXTO, { operador: "x" }).motivoTitularDistinto).toBe("Reservó un familiar");
+    expect(cuerpoConfirmarReserva(e, CONTEXTO, {}).motivoTitularDistinto).toBe("Reservó un familiar");
   });
 
   it("al quitar al responsable de un menor, el menor vuelve al titular de la habitación", () => {

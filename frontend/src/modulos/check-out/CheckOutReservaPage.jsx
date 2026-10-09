@@ -65,7 +65,7 @@ function Fila({ etiqueta, valor, fuerte = false }) {
 
 export function CheckOutReservaPage() {
   const { reservaId } = useParams();
-  const { puede, usuario } = useSesion();
+  const { puede } = useSesion();
   const puedeVer = puede("verCheckOut");
   // Admin ve la ficha completa pero no opera (re-auditoría del 2026-09-21,
   // mismo criterio que Habitaciones/Mantenimiento) — condiciona cada botón
@@ -121,7 +121,6 @@ export function CheckOutReservaPage() {
         await registrarVerificacion(reservaId, {
           habitacionId: habitacion.habitacionId,
           tipo: TIPO_VERIFICACION_SIN_NOVEDADES,
-          registradoPor: usuario,
         });
       }
     },
