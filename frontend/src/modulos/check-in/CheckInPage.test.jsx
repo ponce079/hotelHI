@@ -86,8 +86,15 @@ function llegadaDe(reserva, senia = { registrada: false, importe: 0, medios: [] 
   };
 }
 
-function prepararReserva(reserva, ocupantes, { senia, anteriores = 0 } = {}) {
-  api.listarLlegadas.mockResolvedValue({ fecha: hoy, anterioresPendientes: anteriores, reservas: [llegadaDe(reserva, senia)] });
+function prepararReserva(reserva, ocupantes, { senia, anteriores = 0, pendientesNoShow = 0, atrasadas = [], ingresadasHoy = [] } = {}) {
+  api.listarLlegadas.mockResolvedValue({
+    fecha: hoy,
+    anterioresPendientes: anteriores,
+    pendientesNoShow,
+    reservas: [llegadaDe(reserva, senia)],
+    atrasadas,
+    ingresadasHoy,
+  });
   api.buscarReservaParaCheckIn.mockResolvedValue({ reserva, puedeIniciarCheckIn: true, motivoBloqueo: null });
   api.listarOcupantes.mockResolvedValue(ocupantes);
 }
@@ -139,18 +146,24 @@ beforeEach(() => {
 });
 
 describe("Llegadas de hoy", () => {
-  it("muestra la tabla con seña tal cual, sin seña, el aviso de anteriores y formatos de pantalla", async () => {
+  it("muestra la tabla con el prepago tal cual, el aviso de no-show y formatos de pantalla", async () => {
     const reserva = reservaDe({ habitaciones: [HAB_270] });
     prepararReserva(reserva, [fichaTitular()], {
-      senia: { registrada: true, importe: 58800, medios: [{ medioPago: "Tarjeta crédito", importe: 58800, referencia: "VISA ****4242 · aut. 5521" }] },
+      senia: { registrada: true, concepto: "Pago anticipado", importe: 58800, medios: [{ medioPago: "Tarjeta crédito", importe: 58800, referencia: "VISA ****4242 · aut. 5521" }] },
       anteriores: 2,
+      pendientesNoShow: 2,
     });
     renderizar();
     expect(await screen.findByText("VISA ****4242 · aut. 5521")).toBeInTheDocument();
-    expect(screen.getByText("Hay 2 reservas de días anteriores sin ingreso (posible no-show). Se gestiona desde Reservas.")).toBeInTheDocument();
-    expect(screen.getByRole("tab", { name: /Llegadas de hoy/ })).toHaveTextContent("1");
-    expect(screen.getByText(/→ .* · 3 noches/)).toHaveTextContent(/^[a-zñáéíóú]{3} \d{2}\/\d{2} → [a-zñáéíóú]{3} \d{2}\/\d{2} · 3 noches$/);
-    expect(document.body.textContent).not.toMatch(/\bHU\b|HU-\d|\d{4}-\d{2}-\d{2}/);
+    expect(screen.getByText("Prepagada")).toBeInTheDocument();
+    expect(screen.getByText("$ 58.800")).toBeInTheDocument();
+    expect(
+      screen.getByText("2 reservas de días anteriores siguen sin ingreso y sin marcar como no presentadas. Las de ayer están en Atrasadas y todavía se pueden ingresar."),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /Pendientes de hoy/ })).toHaveTextContent("1");
+    expect(screen.getByText(/^[a-zñáéíóú]{3} \d{1,2} [a-z]{3} → /)).toHaveTextContent(/^[a-zñáéíóú]{3} \d{1,2} [a-z]{3} → [a-zñáéíóú]{3} \d{1,2} [a-z]{3}$/);
+    expect(screen.getByText(/3 noches/)).toHaveTextContent("3 noches · Tarifa flexible");
+    expect(document.body.textContent).not.toMatch(/HU|HU-d|d{4}-d{2}-d{2}/);
   });
 
   it("Enter sobre una fila abre el check-in debajo", async () => {
@@ -623,7 +636,7 @@ describe("Walk-in", () => {
   });
 
   it("2 habitaciones de distinto tipo con una tarifa: excluir, ocupación hasta la capacidad, total del cotizador y 201", async () => {
-    api.listarLlegadas.mockResolvedValue({ fecha: hoy, anterioresPendientes: 0, reservas: [] });
+    api.listarLlegadas.mockResolvedValue({ fecha: hoy, anterioresPendientes: 0, pendientesNoShow: 0, reservas: [], atrasadas: [], ingresadasHoy: [] });
     const D315 = libre(315, "315", "Doble", 1, 3, [98000, 83300]);
     const T204 = libre(204, "204", "Twin", 2, 2, [92000, 78200]);
     api.listarHabitacionesLibresAhora.mockImplementation(async ({ excluir }) => {
@@ -633,7 +646,7 @@ describe("Walk-in", () => {
     cotizarReserva.mockResolvedValue({ planes: [{ codigo: "BAR", planTarifarioId: 1, total: 190000 }, { codigo: "NRF", planTarifarioId: 2, total: 161500 }] });
     api.registrarCheckInWalkIn.mockResolvedValue({ id: 99, fechaHasta: iso(1), habitaciones: [{ numero: "315" }, { numero: "204" }] });
     renderizar();
-    fireEvent.click(screen.getByRole("tab", { name: "Walk-in" }));
+    fireEvent.click(screen.getByRole("button", { name: "Walk-in" }));
     fireEvent.click(await screen.findByRole("button", { name: "＋ Agregar habitación" }));
     fireEvent.click(await screen.findByRole("button", { name: "Elegir la habitación 315 para la habitación 1" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Elegir la habitación 315 para la habitación 2" })).not.toBeInTheDocument());
