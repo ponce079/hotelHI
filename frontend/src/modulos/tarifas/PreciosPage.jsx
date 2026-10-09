@@ -4,6 +4,7 @@ import { Pencil, SlidersHorizontal } from "lucide-react";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { Toast } from "../../componentes/Toast";
 import { Button } from "../../componentes/Button";
+import { ChipNivel } from "../../componentes/ChipNivel";
 import { PageHeader } from "../../componentes/PageHeader";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
@@ -17,18 +18,6 @@ import { prepararFilasMatriz, textoAdicionalMatriz, textoPrecioMatriz } from "./
 // Con más tipos que estos la matriz deja de entrar en 1366 px: las columnas toman un ancho mínimo y la tarjeta
 // scrollea por dentro (la columna de temporada queda fija).
 const MAX_TIPOS_SIN_SCROLL = 4;
-
-function ChipNivel({ nivel }) {
-  const clave = nivel.toLowerCase();
-  return (
-    <span
-      className="inline-flex items-center rounded-sm px-2 py-px text-[11px] font-semibold tracking-[0.04em]"
-      style={{ backgroundColor: `var(--nivel-${clave}-bg)`, color: `var(--nivel-${clave}-texto)` }}
-    >
-      {nivel}
-    </span>
-  );
-}
 
 function fechasDeTemporada(temporada) {
   if (temporada.nivel === "BASE" || !temporada.fechaDesde || !temporada.fechaHasta) return "Resto de las fechas";

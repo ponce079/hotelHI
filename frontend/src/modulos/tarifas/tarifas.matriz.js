@@ -40,3 +40,55 @@ export function textoAdicionalMatriz(tarifa) {
   const monto = Number(tarifa.adicionalAdultoExtra);
   return monto > 0 ? `+${formatearPrecio(monto)} adulto extra` : null;
 }
+
+// ---------- Lista de temporadas (pestaña Temporadas) ----------
+
+// Filas de la lista: las activas vigentes/futuras ordenadas y, al final, las atenuadas que se pidieron
+// (terminadas y/o dadas de baja). Una fila lleva `pasada` y `baja` para atenuarla y rotularla.
+export function prepararFilasTemporadas(temporadas, hoy, { mostrarPasadas = false, mostrarBajas = false } = {}) {
+  const filas = ordenarTemporadas(temporadas).map((temporada) => ({
+    temporada,
+    pasada: esTemporadaPasada(temporada, hoy),
+    baja: temporada.activa === false,
+  }));
+  const visibles = filas.filter((f) => (!f.pasada || mostrarPasadas) && (!f.baja || mostrarBajas));
+  return [...visibles.filter((f) => !f.pasada && !f.baja), ...visibles.filter((f) => f.pasada || f.baja)];
+}
+
+const DIAS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+function partesDia(valor) {
+  const [anio, mes, d] = dia(valor).split("-").map(Number);
+  return { anio, mes, d, semana: new Date(Date.UTC(anio, mes - 1, d)).getUTCDay() };
+}
+
+const tieneFechas = (t) => t.nivel !== "BASE" && dia(t.fechaDesde) && dia(t.fechaHasta);
+
+// "dom 20 dic → dom 31 ene 2027". El año (solo al final) aparece si no es el actual o si los extremos caen en
+// años distintos. La Base no tiene fechas.
+export function textoRangoTemporada(temporada, hoy) {
+  if (!tieneFechas(temporada)) return "Resto de las fechas";
+  const desde = partesDia(temporada.fechaDesde);
+  const hasta = partesDia(temporada.fechaHasta);
+  const conAnio = desde.anio !== hasta.anio || hasta.anio !== Number(hoy.slice(0, 4));
+  const corto = (p) => `${DIAS[p.semana]} ${p.d} ${MESES[p.mes - 1]}`;
+  return `${corto(desde)} → ${corto(hasta)}${conAnio ? ` ${hasta.anio}` : ""}`;
+}
+
+// "12 días" (ambos extremos incluidos); null para la Base.
+export function textoDiasTemporada(temporada) {
+  if (!tieneFechas(temporada)) return null;
+  const desde = partesDia(temporada.fechaDesde);
+  const hasta = partesDia(temporada.fechaHasta);
+  const dias = Math.round((Date.UTC(hasta.anio, hasta.mes - 1, hasta.d) - Date.UTC(desde.anio, desde.mes - 1, desde.d)) / 86400000) + 1;
+  return `${dias} ${dias === 1 ? "día" : "días"}`;
+}
+
+// "Mín. 3 noches · Cierre a llegadas": solo lo que exista; sin restricciones, cadena vacía.
+export function textoRestriccionesTemporada(temporada) {
+  const partes = [];
+  if (temporada.estadiaMinima > 0) partes.push(`Mín. ${temporada.estadiaMinima} ${temporada.estadiaMinima === 1 ? "noche" : "noches"}`);
+  if (temporada.cierreLlegada) partes.push("Cierre a llegadas");
+  return partes.join(" · ");
+}
