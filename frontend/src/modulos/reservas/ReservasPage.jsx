@@ -428,7 +428,7 @@ export function ReservasPage() {
                       </td>
                       <td className="px-3 py-4 text-right">
                         <div className="flex justify-end">
-                          <MenuAcciones acciones={acciones} etiqueta={`Acciones de la reserva ${reserva.codigoConfirmacion}`} />
+                          <MenuAcciones grande acciones={acciones} etiqueta={`Acciones de la reserva ${reserva.codigoConfirmacion}`} />
                         </div>
                       </td>
                     </tr>

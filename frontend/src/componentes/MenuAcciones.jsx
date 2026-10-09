@@ -12,8 +12,9 @@ import { MoreVertical } from "lucide-react";
 // Cada acción es { label, onClick, disabled?, variante?, separador? }: `separador` pinta una línea
 // antes de esa acción. `etiqueta` es el nombre accesible del botón (por defecto "Más acciones"; en
 // una tabla conviene decir de quién, p. ej. "Acciones de Ana Pérez"). El menú se abre hacia arriba;
-// si arriba no hay lugar, se abre hacia abajo para no quedar cortado.
-export function MenuAcciones({ acciones, etiqueta = "Más acciones" }) {
+// si arriba no hay lugar, se abre hacia abajo para no quedar cortado. `grande` (opt-in, default false) lleva el botón
+// a 36 px, el tamaño de los listados rediseñados (Reservas); sin él queda en 28 px como siempre.
+export function MenuAcciones({ acciones, etiqueta = "Más acciones", grande = false }) {
   const [abierto, setAbierto] = useState(false);
   const [posicion, setPosicion] = useState(null);
   const contenedorRef = useRef(null);
@@ -59,9 +60,9 @@ export function MenuAcciones({ acciones, etiqueta = "Más acciones" }) {
           setAbierto((v) => !v);
         }}
         aria-label={etiqueta}
-        className="flex h-9 w-9 flex-none cursor-pointer items-center justify-center rounded-md text-piedra transition-colors hover:bg-hueso hover:text-tinta"
+        className={`flex ${grande ? "h-9 w-9" : "h-7 w-7"} flex-none cursor-pointer items-center justify-center rounded-md text-piedra transition-colors hover:bg-hueso hover:text-tinta`}
       >
-        <MoreVertical size={18} strokeWidth={1.6} />
+        <MoreVertical size={grande ? 18 : 16} strokeWidth={1.6} />
       </button>
       {abierto && posicion && createPortal(
         <div
