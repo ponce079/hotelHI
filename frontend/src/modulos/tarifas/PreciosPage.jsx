@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { SlidersHorizontal } from "lucide-react";
+import { Pencil, SlidersHorizontal } from "lucide-react";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { Toast } from "../../componentes/Toast";
 import { Button } from "../../componentes/Button";
@@ -149,17 +149,18 @@ export function PreciosPage() {
                             const vigente = celdaPorClave.get(`${tipo.id}-${temporada.id}`)?.tarifaVigente;
                             const adicional = vigente ? textoAdicionalMatriz(vigente) : null;
                             return (
-                              <td key={tipo.id} className="p-0 align-top">
+                              <td key={tipo.id} className="h-px p-0 align-top">
                                 <button
                                   type="button"
                                   aria-label={`${tipo.nombre}, ${temporada.nombre}`}
                                   onClick={() => setCeldaAbierta({ tipo, temporada })}
-                                  className="block w-full cursor-pointer px-4 py-3 text-left hover:bg-hueso"
+                                  className="group block h-full w-full cursor-pointer px-4 py-3 text-left hover:bg-hueso"
                                 >
                                   {vigente ? (
                                     <>
-                                      <span className={`block font-mono text-[15px] font-semibold ${pasada ? "text-[var(--text-3)]" : "text-tinta"}`}>
+                                      <span className={`flex items-center gap-2 font-mono text-[15px] font-semibold ${pasada ? "text-[var(--text-3)]" : "text-tinta"}`}>
                                         {textoPrecioMatriz(vigente)}
+                                        <Pencil size={13} aria-hidden="true" className="text-[var(--text-3)] group-hover:text-[var(--primary)]" />
                                       </span>
                                       {adicional && <span className="mt-0.5 block text-[12px] text-[var(--text-3)]">{adicional}</span>}
                                     </>
@@ -167,6 +168,7 @@ export function PreciosPage() {
                                     <span className="flex items-center gap-2 text-[15px] text-[var(--text-3)]">
                                       —
                                       {puedeGestionar && <span className="text-[13px] font-semibold text-[var(--primary)] underline">Cargar</span>}
+                                      <Pencil size={13} aria-hidden="true" className="group-hover:text-[var(--primary)]" />
                                     </span>
                                   )}
                                 </button>
