@@ -6,6 +6,7 @@ import { validarOcupante, pendientesParaIngreso } from "../estadia/validarOcupan
 import { edadEnFecha, ddMmAaaaAISO } from "../../lib/fechas";
 import { nombrePais } from "../../lib/paises";
 import { requiereAutorizacion } from "../../lib/vinculos";
+import { mismoNombreCompleto } from "../../lib/identificacion/ficha";
 import {
   EDAD_ADULTO_OCUPACION,
   MAYORIA_EDAD,
@@ -225,6 +226,13 @@ export function revisarFila(estado, fila, contexto) {
     } else agregar(campo);
   }
   if (texto(fila.campos.fechaNacimiento) && !ddMmAaaaAISO(fila.campos.fechaNacimiento)) agregar("fechaNacimiento", "una fecha de nacimiento válida");
+  // Ficha vieja: separar el nombre no es cambiarlo. Nombres + apellido tienen que formar el mismo nombre de la ficha
+  // (otro nombre lo corrige un administrador desde la ficha del huésped).
+  if (fichaSinNombreSeparado(fila) && texto(fila.campos.nombre) && texto(fila.campos.apellido)) {
+    const completo = fila.ficha.original.nombreCompleto;
+    if (completo && !mismoNombreCompleto(fila.campos.nombre, fila.campos.apellido, completo))
+      agregar("apellido", `nombre y apellido que formen «${completo}», como en la ficha`);
+  }
 
   // Reglas propias de la pantalla.
   if (fila.tipo === "adulto" && !texto(fila.campos.paisDocumento)) agregar("paisDocumento");
@@ -279,12 +287,20 @@ export function camposObligatorios(estado, fila, contexto) {
 }
 
 export const AVISO_NOMBRE_COMPLETO = "El nombre viene completo desde la reserva: separá nombre y apellido según el documento.";
+export const AVISO_NOMBRE_FICHA =
+  "La ficha tiene el nombre completo en un solo campo: separá nombre y apellido según el documento. Al confirmar se guarda en la ficha.";
+
+// Ficha vieja (nombre completo en un solo campo): la recepción puede separarlo según el documento.
+export const fichaSinNombreSeparado = (fila) => fila.ficha?.original?.nombreSeparado === false;
+// Nombres y Apellido son de la ficha y no se editan desde acá, salvo para separar el de una ficha vieja.
+export const nombreEditable = (fila) => !fila.ficha || fichaSinNombreSeparado(fila);
 
 // Avisos informativos de la fila (no bloquean).
 export function avisosDeFila(fila) {
   const avisos = [];
-  if (fila.precargada && !texto(fila.campos.apellido) && /\s/.test(texto(fila.campos.nombre)))
-    avisos.push(AVISO_NOMBRE_COMPLETO);
+  const sinSeparar = !texto(fila.campos.apellido) && /\s/.test(texto(fila.campos.nombre));
+  if (sinSeparar && fichaSinNombreSeparado(fila)) avisos.push(AVISO_NOMBRE_FICHA);
+  else if (sinSeparar && fila.precargada) avisos.push(AVISO_NOMBRE_COMPLETO);
   if (fila.alojadaEnOtra) avisos.push("Esta persona figura alojada en otra estadía.");
   return avisos;
 }

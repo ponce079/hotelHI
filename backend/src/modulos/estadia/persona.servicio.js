@@ -92,14 +92,29 @@ function nombresDeFicha(persona) {
   if (nombres && apellido) return { nombre: `${nombres} ${apellido}`, nombres, apellido };
   return { nombre: `${nombres} ${apellido}`.trim() };
 }
+// Ficha vieja (el nombre completo en `nombre`, sin nombres ni apellido): si la persona trae nombres y apellido que forman
+// EL MISMO nombre completo, la recepción lo separó según el documento. No es un cambio de nombre (la regla 2.3 sigue
+// intacta: autorizarCambioDeNombre no lo ve como distinto), así que se guardan nombres y apellido en la ficha.
+// Devuelve { nombre, nombres, apellido } para guardar, o null si no corresponde. Nunca parte un nombre por su cuenta.
+function separacionDeNombre(ficha, persona) {
+  if (!ficha || (String(ficha.nombres ?? "").trim() && String(ficha.apellido ?? "").trim())) return null;
+  const datos = nombresDeFicha(persona);
+  if (!datos.apellido) return null;
+  return claveNombre(ficha.nombre) === claveNombre(datos.nombre) ? datos : null;
+}
 // Toda edición o alta de ficha sincroniza nombres y apellido en Huesped (si la ficha los tiene) — SOLO si el
-// cambio está autorizado (regla 2.3): un nombre distinto del de la ficha existente se rechaza.
+// cambio está autorizado (regla 2.3): un nombre distinto del de la ficha existente se rechaza. Una ficha vieja
+// con el nombre sin separar guarda la separación (separacionDeNombre).
 async function sincronizarNombres(tx, huespedId, persona, permiso = {}) {
   const datos = nombresDeFicha(persona);
   if (!huespedId || !datos.apellido) return;
   const ficha = await tx.huesped.findUnique({ where: { id: huespedId } });
   if (!ficha) return;
-  if (!autorizarCambioDeNombre(ficha, persona, permiso)) return;
+  if (!autorizarCambioDeNombre(ficha, persona, permiso)) {
+    const separacion = separacionDeNombre(ficha, persona);
+    if (separacion) await tx.huesped.update({ where: { id: huespedId }, data: separacion });
+    return;
+  }
   await tx.huesped.update({ where: { id: huespedId }, data: datos });
   await registrarCambioDeNombre(tx, ficha, persona, permiso);
 }
@@ -292,6 +307,7 @@ async function actualizarResidencia(tx, huespedId, residencia, { sobrescribir = 
 
 module.exports = {
   nombresDeFicha,
+  separacionDeNombre,
   sincronizarNombres,
   claveDocumento,
   ErrorDocumento,

@@ -165,3 +165,38 @@ test("un P2002 del índice único de identidadActiva se reconoce (y uno de otra 
   expect(esDuplicadoDeIdentidadActiva({ code: "P2002", message: "Unique constraint failed on the constraint: `codigoConfirmacion`" })).toBe(false);
   expect(esDuplicadoDeIdentidadActiva(new Error("otra cosa"))).toBe(false);
 });
+
+describe("fichas viejas con el nombre completo en un solo campo", () => {
+  // Una persona que vuelve: su ficha existe por documento pero tiene "Nombre1 Apellido1" en `nombre`, sin separar.
+  async function conFichaVieja({ titular = false } = {}) {
+    const { reserva, personas } = escenario(1);
+    const persona = personas[0];
+    const identidad = require("../estadia/persona.servicio").claveDocumento(persona);
+    const vieja = { id: 4321, nombre: "Nombre1 Apellido1", nombres: null, apellido: null, tipoDocumento: "DNI", paisDocumento: "AR", numeroDocumento: persona.numeroDocumento, identidadDocumento: identidad, contacto: null };
+    if (titular) reserva.huesped = vieja;
+    const previo = doble();
+    previo.huespedes.push(vieja);
+    const lote = await prepararLote(previo.cliente, reserva, personas);
+    const tx = doble();
+    tx.huespedes.push(vieja);
+    const sentencias = [];
+    tx.cliente.$executeRaw = (sql) => { sentencias.push(sql); return Promise.resolve(1); };
+    await escribirLote(tx.cliente, { reserva, reservaId: reserva.id, fichas: lote.fichas, identidades: lote.identidades, huespedesExistentes: lote.huespedesExistentes, renombres: lote.renombres, extras: lote.extras, operador: "x" });
+    return { lote, sentencias, tx };
+  }
+
+  test("la separación que hizo la recepción (mismo nombre completo) se guarda en la ficha, sin pedir administrador", async () => {
+    const { lote, sentencias } = await conFichaVieja();
+    expect(lote.renombres).toHaveLength(0);
+    const renombre = sentencias.find((s) => /SET nombre = CASE/.test(s.sql));
+    expect(renombre).toBeDefined();
+    expect(renombre.values).toEqual(expect.arrayContaining([4321, "Nombre1 Apellido1", "Nombre1", "Apellido1"]));
+  });
+
+  test("también cuando la ficha vieja es la del titular de la reserva", async () => {
+    const { sentencias, tx } = await conFichaVieja({ titular: true });
+    const renombre = sentencias.find((s) => /SET nombre = CASE/.test(s.sql));
+    expect(renombre?.values).toEqual(expect.arrayContaining([4321, "Nombre1", "Apellido1"]));
+    expect(tx.llamadas).not.toContain("huesped.update");
+  });
+});
