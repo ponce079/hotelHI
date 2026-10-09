@@ -13,7 +13,9 @@ import { useRef } from "react";
 // `cantidad` puede ser undefined/null (cargando): no se dibuja la píldora. El contenido que cambia con la pestaña va
 // en un elemento con role="tabpanel" y aria-labelledby={idPestana(idBase, valor)}.
 // Teclado: ←/→ mueven el foco (con vuelta), Inicio/Fin saltan a la primera/última, Enter o Espacio activan.
-// Solo la pestaña activa entra con Tab. Estilos en estilos/shell.css (.pestana).
+// Solo la pestaña activa entra con Tab. Estilos en estilos/shell.css (.pestana). El divisor inferior es una sombra interior
+// (no un borde) para que el subrayado de la pestaña activa quede entero dentro del contenedor: con `overflow-y: hidden`
+// y un margen negativo, en pantallas con zoom o escala fraccionaria se recortaba y la línea desaparecía.
 export const idPestana = (idBase, valor) => `${idBase}-tab-${String(valor || "todas").replace(/\s+/g, "-").toLowerCase()}`;
 
 export function Pestanas({ pestanas, activa, onCambiar, etiqueta, idBase = "pestanas", className = "" }) {
@@ -36,7 +38,7 @@ export function Pestanas({ pestanas, activa, onCambiar, etiqueta, idBase = "pest
     <div
       role="tablist"
       aria-label={etiqueta}
-      className={`flex gap-6 overflow-x-auto overflow-y-hidden border-b border-[var(--divisor-fila)] px-5 ${className}`}
+      className={`flex gap-6 overflow-x-auto overflow-y-hidden px-5 shadow-[inset_0_-1px_0_var(--divisor-fila)] ${className}`}
     >
       {pestanas.map((p, indice) => {
         const seleccionada = p.valor === activa;

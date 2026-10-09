@@ -609,26 +609,39 @@ async function accion(reservaId, ocupanteId, data) {
     return { ok: true };
   }, OPCIONES_TRANSACCION);
 }
+// Búsqueda de "Huéspedes en casa": nombre, apellido y documento de la persona, el número EXACTO de la habitación
+// donde está alojada ahora (asignación sin `hasta`) y el código de la reserva (contiene). Todo con OR.
 async function alojados(q = "") {
+  const texto = String(q ?? "").trim();
+  let condiciones = null;
+  if (texto) {
+    condiciones = [
+      { nombre: { contains: texto } },
+      { apellido: { contains: texto } },
+      { numeroDocumento: { contains: texto } },
+      { reserva: { codigoConfirmacion: { contains: texto } } },
+    ];
+    // Habitacion.numero es String @unique: coincidencia exacta, una sola fila como máximo.
+    const habitacion = await prisma.habitacion.findUnique({ where: { numero: texto }, select: { id: true } });
+    if (habitacion) condiciones.push({ asignaciones: { some: { habitacionId: habitacion.id, hasta: null } } });
+  }
   const personas = await prisma.ocupanteReserva.findMany({
-    where: {
-      estado: "Alojado",
-      ...(q
-        ? {
-            OR: [{ nombre: { contains: q } }, { apellido: { contains: q } }, { numeroDocumento: { contains: q } }],
-          }
-        : {}),
-    },
+    where: { estado: "Alojado", ...(condiciones ? { OR: condiciones } : {}) },
     include: {
       ...includePersona,
       reserva: {
         select: {
+          id: true,
           codigoConfirmacion: true,
-          reservaHabitaciones: { include: { habitacion: true } },
+          fechaDesde: true,
+          fechaHasta: true,
+          reservaHabitaciones: {
+            include: { habitacion: { include: { tipoHabitacion: { select: { id: true, codigo: true, nombre: true } } } } },
+          },
         },
       },
     },
-    orderBy: { apellido: "asc" },
+    orderBy: [{ apellido: "asc" }, { id: "asc" }],
     take: 500,
   });
   return personas.map(conResidencia);

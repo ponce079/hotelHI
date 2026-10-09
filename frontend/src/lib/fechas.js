@@ -201,3 +201,30 @@ export function formatearFechaHora(valor) {
   );
   return `${partes.day}/${partes.month}/${partes.year} ${partes.hour}:${partes.minute}`;
 }
+
+const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+// "jue 8 oct": día de la semana, día sin cero y mes. Para fechas-solo-día ("2026-10-08" o "2026-10-08T00:00:00.000Z"
+// del backend): se lee en UTC, nunca en la zona del navegador.
+export function formatearDiaSemanaMes(valor) {
+  if (!valor) return "";
+  const d = comoFecha(String(valor).length > 10 ? String(valor).slice(0, 10) : valor);
+  return `${DIAS_CORTOS[d.getUTCDay()]} ${d.getUTCDate()} ${MESES_CORTOS[d.getUTCMonth()]}`;
+}
+
+// YYYY-MM-DD de un timestamp real, en hora argentina (el día que lo vivió el huésped, no el UTC).
+export function fechaArgentina(timestamp) {
+  return new Date(timestamp).toLocaleDateString("en-CA", { timeZone: ZONA_ARGENTINA });
+}
+
+// Timestamp real -> { dia: "vie 2 oct", hora: "10:17 h" }, en hora argentina.
+export function formatearIngreso(timestamp) {
+  if (!timestamp) return null;
+  const hora = new Date(timestamp).toLocaleTimeString("es-AR", {
+    timeZone: ZONA_ARGENTINA,
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+  return { dia: formatearDiaSemanaMes(fechaArgentina(timestamp)), hora: `${hora} h` };
+}

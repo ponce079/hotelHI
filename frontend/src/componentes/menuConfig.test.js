@@ -17,6 +17,8 @@ describe("menuConfig — mismos permisos que el menú anterior (HU-71)", () => {
     // Único ítem nuevo: "Disponibilidad" (la vista que abre "Ver disponibilidad" de Reservas), con los mismos
     // roles que Reservas. Aparece para quien ya veía /reservas y para nadie más.
     if (esperado.has("/reservas")) esperado.add("/reservas/disponibilidad");
+    // "Huéspedes en casa" (solo lectura) también lo ve el gerente.
+    if (rol === "gerente") esperado.add("/personas-alojadas");
     const reales = rutasVisibles(rol);
     expect(new Set(reales)).toEqual(esperado);
     expect(reales).toHaveLength(esperado.size); // sin ítems repetidos

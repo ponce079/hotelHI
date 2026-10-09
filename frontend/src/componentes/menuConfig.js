@@ -58,7 +58,7 @@ export const MENU = [
       { to: "/check-in", label: "Check-in", icon: DoorOpen, roles: ["admin", "recepcionista"] },
       { to: "/check-out", label: "Check-out", icon: DoorClosed, roles: ["admin", "recepcionista"] },
       // Antes "Personas alojadas".
-      { to: "/personas-alojadas", label: "Huéspedes en casa", icon: Users, roles: ["admin", "recepcionista"] },
+      { to: "/personas-alojadas", label: "Huéspedes en casa", icon: Users, roles: ["admin", "recepcionista", "gerente"] },
     ],
   },
   {
