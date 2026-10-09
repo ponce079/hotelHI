@@ -27,7 +27,7 @@ export function ListaImpresion({ grupos, indicadores }) {
 
   return (
     <section aria-label="Lista para imprimir" className="hidden print:block">
-      <h1 className="m-0 text-[20px] font-bold text-black">Huéspedes en casa — Holiday Inn Salta</h1>
+      <h1 className="m-0 text-[20px] text-black">Huéspedes en casa — Holiday Inn Salta</h1>
       <p ref={marcaRef} className="mb-4 mt-1 text-[12px] text-black" />
       <table className="w-full border-collapse text-[12px] text-black">
         <thead>
@@ -40,7 +40,7 @@ export function ListaImpresion({ grupos, indicadores }) {
         <tbody>
           {grupos.map((g) => (
             <tr key={g.clave} className="break-inside-avoid border-b border-neutral-400 align-top">
-              <td className="whitespace-nowrap py-1.5 pr-3 font-bold">{g.numero ?? SIN_HABITACION}</td>
+              <td className="whitespace-nowrap py-1.5 pr-3">{g.numero ?? SIN_HABITACION}</td>
               <td className="py-1.5 pr-3">
                 {g.ocupantes.map((p) => (
                   <div key={p.id}>
@@ -59,7 +59,7 @@ export function ListaImpresion({ grupos, indicadores }) {
           ))}
         </tbody>
       </table>
-      <p className="mt-4 break-inside-avoid text-[12px] font-bold text-black">
+      <p className="mt-4 break-inside-avoid text-[12px] text-black">
         Total: {plural(indicadores.habitaciones, "habitación", "habitaciones")} ocupadas ·{" "}
         {plural(indicadores.huespedes, "huésped", "huéspedes")} ({plural(indicadores.adultos, "adulto", "adultos")} ·{" "}
         {plural(indicadores.menores, "menor", "menores")})

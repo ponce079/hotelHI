@@ -42,14 +42,14 @@ const consultarAlojados = (q) =>
 function AvisoSalida({ estado }) {
   if (estado.tipo === "hoy") {
     return (
-      <span className="inline-block rounded-full bg-[var(--aviso-bg)] px-2.5 py-0.5 text-xs font-semibold text-[var(--aviso-texto)]">
+      <span className="inline-block rounded-full bg-[var(--aviso-bg)] px-2.5 py-0.5 text-xs text-[var(--aviso-texto)]">
         {estado.texto}
       </span>
     );
   }
   if (estado.tipo === "vencida") {
     return (
-      <span className="inline-block rounded-full bg-[var(--aviso-texto)] px-2.5 py-0.5 text-xs font-semibold text-white">
+      <span className="inline-block rounded-full bg-[var(--aviso-texto)] px-2.5 py-0.5 text-xs text-white">
         {estado.texto}
       </span>
     );
@@ -61,7 +61,7 @@ function EtiquetaOcupante({ children, tono = "neutro" }) {
   const clase =
     tono === "titular" ? "bg-pino-100 text-pino-700" : "bg-laton-100 text-laton-700";
   return (
-    <span className={`rounded-sm px-1.5 py-px text-[10.5px] font-bold uppercase tracking-[0.06em] ${clase}`}>
+    <span className={`rounded-sm px-1.5 py-px text-[10.5px] uppercase tracking-[0.06em] ${clase}`}>
       {children}
     </span>
   );
@@ -74,13 +74,13 @@ function Ocupante({ persona, grupo, porId }) {
     <li className="flex items-start gap-3 py-1.5">
       <span
         aria-hidden="true"
-        className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-borde bg-hueso text-[11.5px] font-bold text-tinta"
+        className="flex h-8 w-8 flex-none items-center justify-center rounded-full border border-borde bg-hueso text-[11.5px] text-tinta"
       >
         {iniciales(persona)}
       </span>
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-          <span className="text-[13.5px] font-semibold text-tinta">
+          <span className="text-[13.5px] text-tinta">
             {persona.nombre} {persona.apellido}
           </span>
           {persona.esTitular && <EtiquetaOcupante tono="titular">TITULAR</EtiquetaOcupante>}
@@ -297,10 +297,10 @@ export function AlojadosPage() {
                       <tr key={g.clave}>
                         <td className="px-3 py-3.5 align-top">
                           {sinHabitacion ? (
-                            <span className="text-[13.5px] font-semibold text-tinta">{SIN_HABITACION}</span>
+                            <span className="text-[13.5px] text-tinta">{SIN_HABITACION}</span>
                           ) : (
                             <>
-                              <div className="font-mono text-[22px] font-semibold leading-none text-tinta">
+                              <div className="font-mono text-[22px] leading-none text-tinta">
                                 {g.numero}
                               </div>
                               {g.tipo && <div className="mt-1 text-xs text-piedra">{g.tipo}</div>}
@@ -317,7 +317,7 @@ export function AlojadosPage() {
                         <td className="whitespace-nowrap px-3 py-3.5 align-top">
                           {ingreso ? (
                             <>
-                              <div className="text-[13.5px] font-semibold text-tinta">{ingreso.dia}</div>
+                              <div className="text-[13.5px] text-tinta">{ingreso.dia}</div>
                               <div className="text-xs text-piedra">{ingreso.hora}</div>
                             </>
                           ) : (
@@ -325,7 +325,7 @@ export function AlojadosPage() {
                           )}
                         </td>
                         <td className="whitespace-nowrap px-3 py-3.5 align-top">
-                          <div className="mb-1 text-[13.5px] font-semibold text-tinta">
+                          <div className="mb-1 text-[13.5px] text-tinta">
                             {formatearDiaSemanaMes(g.salida) || "—"}
                           </div>
                           <AvisoSalida estado={g.estadoSalida} />
@@ -333,7 +333,7 @@ export function AlojadosPage() {
                         <td className="px-3 py-3.5 align-top">
                           <Link
                             to={`/reservas/${g.reservaId}`}
-                            className="font-mono text-[13px] font-semibold text-pino hover:underline"
+                            className="font-mono text-[13px] text-pino hover:underline"
                           >
                             {g.codigo}
                           </Link>
