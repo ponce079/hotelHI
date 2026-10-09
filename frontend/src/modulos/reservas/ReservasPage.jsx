@@ -1,41 +1,67 @@
 import { useState } from "react";
 import { keepPreviousData, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMutacionUnica } from "../../lib/useMutacionUnica";
-import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { Plus, Search, Ban, Eye, UserX } from "lucide-react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Ban, CalendarSearch, Plus, Search, UserX, Users } from "lucide-react";
 import { Badge } from "../../componentes/Badge";
 import { Button } from "../../componentes/Button";
-import { Cifra } from "../../componentes/Cifra";
-import { CodigoClave } from "../../componentes/CodigoClave";
 import { ConfirmDialog } from "../../componentes/ConfirmDialog";
 import { FilterBar } from "../../componentes/FilterBar";
-import { Input } from "../../componentes/Input";
 import { MenuAcciones } from "../../componentes/MenuAcciones";
-import { MiniPasos } from "../../componentes/MiniPasos";
 import { PageHeader } from "../../componentes/PageHeader";
 import { Modal } from "../../componentes/Modal";
-import { NombreClave } from "../../componentes/NombreClave";
-import { Select } from "../../componentes/Select";
+import { Paginacion } from "../../componentes/Paginacion";
+import { idPestana, Pestanas } from "../../componentes/Pestanas";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { Table } from "../../componentes/Table";
+import { TarjetaIndicador } from "../../componentes/TarjetaIndicador";
 import { Toast } from "../../componentes/Toast";
-import { formatearFechaDdMmAaaa } from "../../lib/fechas";
+import { documentoEnmascarado } from "../../lib/documento";
+import { hoyEnHoraLocal } from "../../lib/fechas";
+import {
+  avisoEstadia,
+  etiquetaNoches,
+  etiquetaPax,
+  formatearDiaConSemana,
+  formatearTotal,
+  iniciales,
+  resumenHabitaciones,
+} from "../../lib/formatosReserva";
+import { codigoPais, nombrePais } from "../../lib/paises";
+import { useContadoresRecepcion } from "../../lib/useContadoresRecepcion";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { CierrePrevio } from "../garantias/CierrePrevio";
 import { ReservaWizard } from "./ReservaWizard";
 import { cancelarReserva, listarReservas } from "./reservas.api";
-import {
-  construirPasosReserva,
-  ESTADO_RESERVA,
-  ESTADOS_RESERVA,
-  ESTADO_RESERVA_BADGE,
-  ESTADO_RESERVA_COLOR,
-  etiquetaEstadoReserva,
-  LIMITES_RESERVA,
-} from "./reservas.constantes";
+import { ESTADO_RESERVA, ESTADOS_RESERVA, etiquetaEstadoReserva, LIMITES_RESERVA } from "./reservas.constantes";
 
 const TAMANO_PAGINA = 50;
+
+// "Todas" no incluye Cancelada ni No presentada (tienen su propia pestaña), salvo que haya texto de búsqueda.
+const ESTADOS_TODAS = [ESTADO_RESERVA.CONFIRMADA, ESTADO_RESERVA.EN_CURSO, ESTADO_RESERVA.CERRADA];
+
+const PESTANAS = [
+  { valor: "", etiqueta: "Todas" },
+  { valor: ESTADO_RESERVA.CONFIRMADA, etiqueta: "Confirmadas" },
+  { valor: ESTADO_RESERVA.EN_CURSO, etiqueta: "En curso" },
+  { valor: ESTADO_RESERVA.CERRADA, etiqueta: "Cerradas" },
+  { valor: ESTADO_RESERVA.CANCELADA, etiqueta: "Canceladas" },
+  { valor: ESTADO_RESERVA.NO_SHOW, etiqueta: "No presentadas" },
+];
+
+// Tono del chip de estado (Badge `tono`).
+const TONO_ESTADO = {
+  [ESTADO_RESERVA.CONFIRMADA]: "confirmada",
+  [ESTADO_RESERVA.EN_CURSO]: "en-curso",
+  [ESTADO_RESERVA.CERRADA]: "cerrada",
+  [ESTADO_RESERVA.CANCELADA]: "cancelada",
+  [ESTADO_RESERVA.NO_SHOW]: "no-presentada",
+};
+
+const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+const CLASE_CAMPO =
+  "h-10 rounded-md border border-borde bg-white px-3 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-pino/40";
 
 export function ReservasPage() {
   const { puede } = useSesion();
@@ -49,9 +75,17 @@ export function ReservasPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const location = useLocation();
+  // Mismos pedidos (y misma caché) que los badges del menú lateral: las tarjetas de operación no hacen otra llamada.
+  const contadores = useContadoresRecepcion({
+    puedeVerCheckIn: puede("gestionarCheckIn"),
+    puedeVerCheckOut: puede("verCheckOut"),
+    puedeVerReservas: puedeVer,
+  });
 
   const q = searchParams.get("q") ?? "";
-  const estado = searchParams.get("estado") ?? "";
+  // La pestaña activa vive en la URL (?estado=); "Todas" no lleva parámetro. Un valor desconocido cuenta como "Todas".
+  const estadoUrl = searchParams.get("estado") ?? "";
+  const estado = ESTADOS_RESERVA.includes(estadoUrl) ? estadoUrl : "";
   const desde = searchParams.get("desde") ?? "";
   const hasta = searchParams.get("hasta") ?? "";
 
@@ -60,7 +94,8 @@ export function ReservasPage() {
   // Pagina de a 50 en el servidor (con los mismos filtros): ya no se trae la lista entera.
   const filtros = {
     q: q || undefined,
-    estado: estado || undefined,
+    // Sin pestaña ni búsqueda: solo los estados "vivos". Con búsqueda se busca en todos (para hallar una cancelada).
+    estado: estado || (q ? undefined : ESTADOS_TODAS.join(",")),
     desde: desde || undefined,
     hasta: hasta || undefined,
     pagina,
@@ -91,6 +126,13 @@ export function ReservasPage() {
     placeholderData: keepPreviousData,
   });
 
+  // Tras crear, modificar o cancelar una reserva se refrescan la lista, las tarjetas de operación (llegadas y salidas
+  // salen de ["check-in"] y ["reservas"]) y los contadores del menú.
+  function refrescarContadores() {
+    queryClient.invalidateQueries({ queryKey: ["reservas"] });
+    queryClient.invalidateQueries({ queryKey: ["check-in"] });
+  }
+
   const mutacionCancelar = useMutacionUnica({
     mutationFn: ({ id, motivoCancelacion }) => cancelarReserva(id, motivoCancelacion),
     onSuccess: (reserva) => {
@@ -98,7 +140,7 @@ export function ReservasPage() {
       // rechaza con 400). Se descartan antes de refrescar para que la pantalla no las vuelva a pedir.
       queryClient.removeQueries({ queryKey: ["reservas", "penalidad"] });
       queryClient.removeQueries({ queryKey: ["reservas", "cierre-previo"] });
-      queryClient.invalidateQueries({ queryKey: ["reservas"] });
+      refrescarContadores();
       mostrarToast(`Reserva ${reserva.codigoConfirmacion} cancelada. ${reserva.penalidad?.mensaje ?? ""}`.trim());
       setACancelar(null);
       setMotivo("");
@@ -119,188 +161,294 @@ export function ReservasPage() {
 
   if (!puedeVer) return <SinPermiso />;
 
-  // La página ya viene del servidor en orden de creación (id desc, la última cargada primero). Las tarjetas de
-  // resumen cuentan TODAS las reservas (no solo las filtradas): si no, tocar una tarjeta de estado dejaría las demás
-  // en cero; el servidor las cuenta con una sola consulta agrupada.
+  // La página ya viene del servidor en orden de creación (id desc, la última cargada primero). Los contadores de las
+  // pestañas cuentan TODAS las reservas (no solo las filtradas): si no, tocar una pestaña dejaría las demás en cero.
   const reservas = reservasQuery.data?.reservas ?? [];
-  const conteoPorEstado = reservasQuery.data?.conteoPorEstado ?? {};
+  const conteoPorEstado = reservasQuery.data?.conteoPorEstado;
   const totalFiltradas = reservasQuery.data?.total ?? 0;
   const paginas = reservasQuery.data?.paginas ?? 1;
-  const hayFiltros = Boolean(q || estado || desde || hasta);
+  const hayFiltros = Boolean(q || desde || hasta);
+  const hoy = hoyEnHoraLocal();
+
+  const cantidadPestana = (valor) => {
+    if (!conteoPorEstado) return undefined;
+    if (valor === "") return ESTADOS_TODAS.reduce((suma, e) => suma + (conteoPorEstado[e] ?? 0), 0);
+    return conteoPorEstado[valor] ?? 0;
+  };
+  const pestanas = PESTANAS.map((p) => ({ ...p, cantidad: cantidadPestana(p.valor) }));
+
+  const textoCantidad = q
+    ? plural(totalFiltradas, "resultado", "resultados")
+    : estado === ""
+    ? `${plural(totalFiltradas, "reserva", "reservas")} (sin canceladas ni no presentadas)`
+    : plural(totalFiltradas, "reserva", "reservas");
+
+  // Tarjetas de operación. Si una llamada falla, la tarjeta muestra "—".
+  const enCurso = conteoPorEstado ? (conteoPorEstado[ESTADO_RESERVA.EN_CURSO] ?? 0) : null;
+  const confirmadas = conteoPorEstado ? (conteoPorEstado[ESTADO_RESERVA.CONFIRMADA] ?? 0) : null;
+  const terracotaOscuro = "font-semibold text-[var(--aviso-texto)]";
+  const enlacePestana = (valor) => `/reservas?estado=${encodeURIComponent(valor)}`;
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader titulo="Reservas" subtitulo="Alta individual y grupal, disponibilidad, huéspedes y confirmación" />
+    <div className="flex min-w-0 flex-col gap-6">
+      <PageHeader
+        titulo="Reservas"
+        acciones={
+          <>
+            <Link to="/reservas/disponibilidad" className="enlace-discreto">
+              <CalendarSearch size={16} strokeWidth={1.6} aria-hidden="true" />
+              Disponibilidad
+            </Link>
+            <Link to="/personas-alojadas" className="enlace-discreto">
+              <Users size={16} strokeWidth={1.6} aria-hidden="true" />
+              Huéspedes en casa
+            </Link>
+            {puedeGestionar && (
+              <Link to="/reservas/no-show" className="enlace-discreto">
+                <UserX size={16} strokeWidth={1.6} aria-hidden="true" />
+                Gestionar no-show
+              </Link>
+            )}
+            {puedeGestionar && (
+              <Button icono={Plus} className="!h-11 !px-5" onClick={() => setModal({ tipo: "alta" })}>
+                Nueva reserva
+              </Button>
+            )}
+          </>
+        }
+      />
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        {ESTADOS_RESERVA.map((valor) => {
-          const cantidad = conteoPorEstado[valor] ?? 0;
-          const color = ESTADO_RESERVA_COLOR[valor];
-          const activo = estado === valor;
-          return (
+      <section aria-labelledby="operacion-hoy" className="flex flex-col gap-3">
+        <h2 id="operacion-hoy" className="sobretitulo">
+          Operación de hoy
+        </h2>
+        <div className="grilla-indicadores">
+          <TarjetaIndicador
+            color="var(--terracota)"
+            etiqueta="Llegadas hoy"
+            valor={contadores.llegadasHoy}
+            enlace={puede("gestionarCheckIn") ? { texto: "Check-in →", to: "/check-in" } : undefined}
+            secundaria={
+              <>
+                pendientes de ingreso
+                {contadores.llegadasAnteriores > 0 && (
+                  <span className={terracotaOscuro}> · {contadores.llegadasAnteriores} de días anteriores</span>
+                )}
+              </>
+            }
+          />
+          <TarjetaIndicador
+            color="var(--chip-confirmada-texto)"
+            etiqueta="Salidas hoy"
+            valor={contadores.salidasHoy}
+            enlace={puede("verCheckOut") ? { texto: "Check-out →", to: "/check-out" } : undefined}
+            secundaria={
+              <>
+                a liberar hoy
+                {contadores.salidasVencidas > 0 && (
+                  <span className={terracotaOscuro}> · {contadores.salidasVencidas} vencidas sin cerrar</span>
+                )}
+              </>
+            }
+          />
+          <TarjetaIndicador
+            color="var(--primary)"
+            etiqueta="En casa"
+            valor={enCurso}
+            enlace={{ texto: "Ver →", to: enlacePestana(ESTADO_RESERVA.EN_CURSO) }}
+            secundaria={
+              contadores.enCasa
+                ? `estadías en curso · ${plural(contadores.enCasa.habitaciones, "habitación", "habitaciones")} · ${plural(
+                    contadores.enCasa.huespedes,
+                    "huésped",
+                    "huéspedes"
+                  )}`
+                : "estadías en curso"
+            }
+          />
+          <TarjetaIndicador
+            color="var(--accent)"
+            etiqueta="Próximas confirmadas"
+            valor={confirmadas}
+            enlace={{ texto: "Ver →", to: enlacePestana(ESTADO_RESERVA.CONFIRMADA) }}
+            secundaria="reservas confirmadas a futuro"
+          />
+        </div>
+      </section>
+
+      <div className="min-w-0 overflow-hidden rounded-lg border border-borde bg-white">
+        <Pestanas
+          etiqueta="Estado de las reservas"
+          idBase="reservas"
+          pestanas={pestanas}
+          activa={estado}
+          onCambiar={(valor) => actualizarFiltro("estado", valor)}
+        />
+
+        <FilterBar incrustada>
+          <div className="relative min-w-[240px] flex-1">
+            <Search size={15} strokeWidth={1.6} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-piedra" />
+            <input
+              type="search"
+              aria-label="Buscar reservas"
+              value={q}
+              onChange={(e) => actualizarFiltro("q", e.target.value)}
+              placeholder="Buscar por código, huésped, documento o habitación…"
+              className={`${CLASE_CAMPO} w-full pl-8`}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2" role="group" aria-labelledby="rotulo-estadia">
+            <span id="rotulo-estadia" className="text-[12.5px] font-semibold text-piedra">
+              Estadía entre
+            </span>
+            <input
+              aria-label="Estadía desde"
+              type="date"
+              value={desde}
+              onChange={(e) => actualizarFiltro("desde", e.target.value)}
+              className={`${CLASE_CAMPO} min-w-[140px]`}
+            />
+            <span aria-hidden="true" className="text-piedra">
+              →
+            </span>
+            <input
+              aria-label="Estadía hasta"
+              type="date"
+              value={hasta}
+              onChange={(e) => actualizarFiltro("hasta", e.target.value)}
+              className={`${CLASE_CAMPO} min-w-[140px]`}
+            />
+          </div>
+          {hayFiltros && (
             <button
               type="button"
-              key={valor}
-              onClick={() => actualizarFiltro("estado", activo ? "" : valor)}
-              style={{ backgroundColor: color.fondo, color: color.texto, borderColor: activo ? color.texto : color.borde }}
-              className={`stat-chip cursor-pointer rounded-lg border p-4 text-center ${activo ? "ring-2 ring-offset-1" : ""}`}
+              className="cursor-pointer border-0 bg-transparent px-1 text-[13px] font-semibold text-piedra underline-offset-2 hover:text-tinta hover:underline"
+              onClick={() => {
+                const params = new URLSearchParams(searchParams);
+                ["q", "desde", "hasta", "pagina"].forEach((clave) => params.delete(clave));
+                setSearchParams(params);
+              }}
             >
-              <div className="text-[11px] font-semibold uppercase tracking-[0.03em]">{etiquetaEstadoReserva(valor)}</div>
-              <Cifra tamano={30} className="mt-1">
-                {cantidad}
-              </Cifra>
+              Limpiar filtros
             </button>
-          );
-        })}
+          )}
+          <span className="ml-auto text-[13px] font-semibold text-piedra" aria-live="polite">
+            {reservasQuery.data ? textoCantidad : ""}
+          </span>
+        </FilterBar>
+
+        <div role="tabpanel" id="reservas-panel" aria-labelledby={idPestana("reservas", estado)}>
+          {reservasQuery.isError ? (
+            <p className="px-5 py-10 text-center text-sm text-error-texto">No se pudieron cargar las reservas.</p>
+          ) : (
+            <div className={`transition-opacity ${reservasQuery.isPlaceholderData ? "opacity-60" : ""}`}>
+              <Table
+                cargando={reservasQuery.isLoading}
+                columnas={["Huésped", "Estadía", "Habitación", "Pax", "Plan tarifario", "Total estimado", "Estado", ""]}
+                columnasDerecha={["Total estimado", ""]}
+                filas={reservas}
+                vacioTitulo="Sin reservas en esta vista"
+                vacioDescripcion="Probá cambiando de estado o ampliando el rango de fechas."
+                onRowClick={(reserva) => navigate(`/reservas/${reserva.id}`)}
+                claseFila={(reserva) =>
+                  reserva.estado === ESTADO_RESERVA.CANCELADA || reserva.estado === ESTADO_RESERVA.NO_SHOW
+                    ? "tabla-sgh-fila-atenuada"
+                    : ""
+                }
+                renderFila={(reserva) => {
+                  const acciones = [{ label: "Ver detalle", onClick: () => navigate(`/reservas/${reserva.id}`) }];
+                  if (puedeGestionar && reserva.estado === ESTADO_RESERVA.CONFIRMADA) {
+                    acciones.push({ label: "Modificar", onClick: () => setModal({ tipo: "edicion", reserva }) });
+                    acciones.push({
+                      label: "Cancelar reserva",
+                      variante: "destructivo",
+                      onClick: () => {
+                        setMotivo("");
+                        setACancelar(reserva);
+                      },
+                    });
+                  }
+
+                  const huesped = reserva.huesped;
+                  const pais = huesped?.paisDocumento ? (nombrePais(codigoPais(huesped.paisDocumento)) ?? huesped.paisDocumento) : "";
+                  const documento = [documentoEnmascarado(huesped?.tipoDocumento, huesped?.numeroDocumento), pais]
+                    .filter(Boolean)
+                    .join(" · ");
+                  const aviso = avisoEstadia(reserva, hoy);
+                  const { numeros, detalle } = resumenHabitaciones(reserva);
+
+                  return (
+                    <tr key={reserva.id} className="h-[84px]">
+                      <td className="px-3 py-4">
+                        <div className="flex items-center gap-3">
+                          <span className="avatar-iniciales" aria-hidden="true">
+                            {iniciales(huesped?.nombre)}
+                          </span>
+                          <div className="min-w-0">
+                            <Link
+                              to={`/reservas/${reserva.id}`}
+                              className="block max-w-[240px] truncate text-[15px] font-semibold text-tinta hover:underline"
+                              title={huesped?.nombre}
+                            >
+                              {huesped?.nombre ?? "—"}
+                            </Link>
+                            <div className="text-[12px] text-piedra">{documento}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="px-3 py-4">
+                        <div className="whitespace-nowrap text-[13.5px] font-medium text-tinta">
+                          {formatearDiaConSemana(reserva.fechaDesde)} → {formatearDiaConSemana(reserva.fechaHasta)}
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-piedra">
+                          <span>{etiquetaNoches(reserva)}</span>
+                          {aviso && <span className="aviso-pildora">{aviso}</span>}
+                        </div>
+                      </td>
+                      <td className="px-3 py-4">
+                        <div className="font-mono text-[13px] font-medium text-tinta">{numeros}</div>
+                        {detalle && <div className="mt-1 text-[12px] text-piedra">{detalle}</div>}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-[13px] text-tinta">{etiquetaPax(reserva)}</td>
+                      <td className="px-3 py-4">
+                        <div className="text-[13px] text-tinta">{reserva.planTarifario?.nombre ?? "—"}</div>
+                        {reserva.planTarifario?.reembolsable === false && (
+                          <span className="etiqueta-plan mt-1">No reembolsable</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-4 text-right font-mono text-[13px] font-medium text-tinta">
+                        {formatearTotal(reserva.totalEstimadoAlojamiento)}
+                      </td>
+                      <td className="px-3 py-4">
+                        <Badge tono={TONO_ESTADO[reserva.estado]} variante="neutro">
+                          {etiquetaEstadoReserva(reserva.estado)}
+                        </Badge>
+                        <div className="mt-1.5 font-mono text-[11px] text-[var(--text-3)]">{reserva.codigoConfirmacion}</div>
+                      </td>
+                      <td className="px-3 py-4 text-right">
+                        <div className="flex justify-end">
+                          <MenuAcciones acciones={acciones} etiqueta={`Acciones de la reserva ${reserva.codigoConfirmacion}`} />
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }}
+              />
+            </div>
+          )}
+        </div>
+
+        {!reservasQuery.isError && (
+          <Paginacion
+            pagina={pagina}
+            paginas={paginas}
+            total={totalFiltradas}
+            tamano={TAMANO_PAGINA}
+            nombre="reservas"
+            onCambiar={(n) => actualizarFiltro("pagina", String(n))}
+          />
+        )}
       </div>
-
-      <FilterBar onClear={() => setSearchParams({})}>
-        <div className="relative min-w-[240px] flex-1">
-          <Search size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-piedra" />
-          <input
-            value={q}
-            onChange={(e) => actualizarFiltro("q", e.target.value)}
-            placeholder="Buscar por código, huésped, documento o habitación…"
-            className="w-full rounded-md border border-borde bg-white py-2 pl-8 pr-3 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-pino/40"
-          />
-        </div>
-        <Select
-          aria-label="Filtrar por estado"
-          value={estado}
-          onChange={(e) => actualizarFiltro("estado", e.target.value)}
-          className="min-w-[165px]"
-        >
-          <option value="">Estado: todos</option>
-          {ESTADOS_RESERVA.map((opcion) => (
-            <option key={opcion} value={opcion}>
-              {etiquetaEstadoReserva(opcion)}
-            </option>
-          ))}
-        </Select>
-        <Input
-          aria-label="Desde"
-          type="date"
-          value={desde}
-          onChange={(e) => actualizarFiltro("desde", e.target.value)}
-          className="min-w-[150px]"
-        />
-        <Input
-          aria-label="Hasta"
-          type="date"
-          value={hasta}
-          onChange={(e) => actualizarFiltro("hasta", e.target.value)}
-          className="min-w-[150px]"
-        />
-        <div className="ml-auto flex items-center gap-2.5">
-          <Button variante="secundario" onClick={() => navigate("/personas-alojadas")}>
-            Personas alojadas
-          </Button>
-          <Button variante="secundario" icono={Eye} onClick={() => navigate("/reservas/disponibilidad")}>
-            Ver disponibilidad
-          </Button>
-          {puedeGestionar && (
-            <Button variante="secundario" icono={UserX} onClick={() => navigate("/reservas/no-show")}>
-              Llegadas no presentadas
-            </Button>
-          )}
-          {puedeGestionar && (
-            <Button icono={Plus} onClick={() => setModal({ tipo: "alta" })}>
-              Nueva reserva
-            </Button>
-          )}
-        </div>
-      </FilterBar>
-
-      {reservasQuery.isLoading && <p className="text-sm text-piedra">Cargando reservas…</p>}
-      {reservasQuery.isError && <p className="text-sm text-error-texto">No se pudieron cargar las reservas.</p>}
-
-      {!reservasQuery.isLoading && !reservasQuery.isError && (
-        <div className="rounded-lg border border-borde bg-white p-5">
-          <Table
-            columnas={["Código", "Huésped", "Habitaciones", "Estadía", "Noches", "Estado", ""]}
-            filas={reservas}
-            columnasDerecha={["Noches", ""]}
-            vacio={hayFiltros ? "Ninguna reserva coincide con los filtros." : "Todavía no hay reservas cargadas."}
-            renderFila={(reserva) => {
-              const { pasos, pasoActual } = construirPasosReserva(reserva);
-              // Cancelada y No presentada: la fila se ve apagada y no tiene acciones (solo Ver detalle).
-              const cancelada = reserva.estado === ESTADO_RESERVA.CANCELADA || reserva.estado === ESTADO_RESERVA.NO_SHOW;
-              const acciones = [{ label: "Ver detalle", onClick: () => navigate(`/reservas/${reserva.id}`) }];
-              if (puedeGestionar && reserva.estado === ESTADO_RESERVA.CONFIRMADA) {
-                acciones.push({ label: "Modificar", onClick: () => setModal({ tipo: "edicion", reserva }) });
-                acciones.push({
-                  label: "Cancelar reserva",
-                  variante: "destructivo",
-                  onClick: () => {
-                    setMotivo("");
-                    setACancelar(reserva);
-                  },
-                });
-              }
-
-              return (
-                <tr
-                  key={reserva.id}
-                  onClick={() => navigate(`/reservas/${reserva.id}`)}
-                  className={`h-16 cursor-pointer border-b border-borde last:border-0 hover:bg-hueso ${
-                    cancelada ? "text-piedra" : ""
-                  }`}
-                >
-                  <td className="px-3 py-2.5">
-                    <CodigoClave>{reserva.codigoConfirmacion}</CodigoClave>
-                    <div className="mt-1">
-                      <MiniPasos pasos={pasos} pasoActual={pasoActual} ultimoPasoRequiereLlegada={false} />
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <NombreClave className="block max-w-[220px] truncate" title={reserva.huesped?.nombre}>
-                      {reserva.huesped?.nombre ?? "—"}
-                    </NombreClave>
-                    <div className="text-[11px] text-piedra">
-                      {reserva.huesped?.tipoDocumento} {reserva.huesped?.numeroDocumento}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <div className="flex flex-wrap items-center gap-1">
-                      <span className="font-mono text-[12.5px]">
-                        {reserva.habitaciones.map((h) => h.numero).join(", ") || "—"}
-                      </span>
-                      {reserva.cantidadHabitaciones > 1 && <Badge variante="info">Grupal</Badge>}
-                    </div>
-                  </td>
-                  <td className="px-3 py-2.5 text-[13px]">
-                    {formatearFechaDdMmAaaa(reserva.fechaDesde)} → {formatearFechaDdMmAaaa(reserva.fechaHasta)}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-mono text-xs">{reserva.noches}</td>
-                  <td className="px-3 py-2.5">
-                    <Badge variante={ESTADO_RESERVA_BADGE[reserva.estado]}>{etiquetaEstadoReserva(reserva.estado)}</Badge>
-                  </td>
-                  <td className="px-3 py-2.5 text-right">
-                    <div className="flex justify-end">
-                      <MenuAcciones acciones={acciones} />
-                    </div>
-                  </td>
-                </tr>
-              );
-            }}
-          />
-          {paginas > 1 && (
-            <nav aria-label="Paginación de reservas" className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[13px] text-piedra">
-              <span>
-                {totalFiltradas} {totalFiltradas === 1 ? "reserva" : "reservas"} · página {pagina} de {paginas}
-              </span>
-              <div className="flex gap-2">
-                <Button variante="secundario" tamano="fila" disabled={pagina <= 1} onClick={() => actualizarFiltro("pagina", String(pagina - 1))}>
-                  Anterior
-                </Button>
-                <Button variante="secundario" tamano="fila" disabled={pagina >= paginas} onClick={() => actualizarFiltro("pagina", String(pagina + 1))}>
-                  Siguiente
-                </Button>
-              </div>
-            </nav>
-          )}
-        </div>
-      )}
 
       {modalVisible?.tipo === "alta" && (
         <Modal titulo="Nueva reserva" onClose={cerrarModal} ancho="max-w-4xl">
@@ -309,6 +457,7 @@ export function ReservasPage() {
             onCancelar={cerrarModal}
             onExito={(reserva) => {
               setModal(null);
+              refrescarContadores();
               mostrarToast(
                 reserva.confirmacionEmail?.enviado
                   ? `Reserva ${reserva.codigoConfirmacion} confirmada y enviada por correo.`
@@ -334,6 +483,7 @@ export function ReservasPage() {
             onCancelar={cerrarModal}
             onExito={(reserva) => {
               setModal(null);
+              refrescarContadores();
               mostrarToast(`Reserva ${reserva.codigoConfirmacion} actualizada.`);
             }}
           />
@@ -376,4 +526,3 @@ export function ReservasPage() {
     </div>
   );
 }
-
