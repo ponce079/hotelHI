@@ -23,10 +23,10 @@ export function ActualizacionesPage() {
   const [loteAAnular, setLoteAAnular] = useState(null);
   const [motivoAnulacion, setMotivoAnulacion] = useState("");
 
-  if (!puede("verTarifas")) return <SinPermiso />;
   const puedeGestionar = puede("gestionarTarifas");
 
   const { data: lotes, isLoading, isError } = useQuery({
+    enabled: puede("verTarifas"),
     queryKey: ["tarifas", "lotes"],
     queryFn: listarLotesActualizacion,
   });
@@ -48,6 +48,7 @@ export function ActualizacionesPage() {
     mostrarToast(mensaje);
   }
 
+  if (!puede("verTarifas")) return <SinPermiso />;
   return (
     <div className="flex flex-col gap-6">
       <TarifasTabs activa="/tarifas/actualizaciones" />

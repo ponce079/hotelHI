@@ -43,9 +43,9 @@ export function CalendarioPage() {
   const { puede } = useSesion();
   const [anio, setAnio] = useState(Number(hoyEnHoraLocal().slice(0, 4)));
 
-  if (!puede("verTarifas")) return <SinPermiso />;
 
   const { data, isLoading, isError } = useQuery({
+    enabled: puede("verTarifas"),
     queryKey: ["tarifas", "calendario", anio],
     queryFn: () => obtenerCalendario(`${anio}-01-01`, `${anio}-12-31`),
   });
@@ -57,6 +57,7 @@ export function CalendarioPage() {
     return mapa;
   }, [data]);
 
+  if (!puede("verTarifas")) return <SinPermiso />;
   return (
     <div className="flex flex-col gap-6">
       <TarifasTabs activa="/tarifas/calendario" />
