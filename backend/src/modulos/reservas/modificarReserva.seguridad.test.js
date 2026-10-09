@@ -1,4 +1,4 @@
-// modificarReserva: reserva releída bajo bloqueo, control de totalEsperado y parche de tarifa no reembolsable (HU-96).
+// modificarReserva: reserva releída bajo bloqueo, control de totalEsperado y regla de tarifa no reembolsable: el total no baja (HU-96, provisoria hasta HU-118).
 // Cliente doble (no es `prisma`): se ejecuta directo, sin transacción real.
 jest.mock("../../lib/prisma", () => ({}));
 jest.mock("../tarifas/cotizacion.servicio", () => ({
@@ -127,19 +127,31 @@ describe("totalEsperado", () => {
   });
 });
 
-describe("tarifa no reembolsable: no se quitan ni cambian habitaciones", () => {
-  const MENSAJE = /no admiten quitar ni cambiar habitaciones/;
+describe("tarifa no reembolsable: el total de la estadía no puede bajar", () => {
+  const MENSAJE = /el total de la estadía no puede bajar \(antes \$400,00, ahora \$/;
 
-  test("quitar una habitación falla, también en la vista previa", async () => {
+  test("reemplazar por una habitación del mismo valor o más cara se permite", async () => {
+    const cliente = clienteDoble([reserva({ reembolsable: false })]);
+    const igual = await modificarReserva(1, { habitaciones: ocupacion(10, 12), soloPrevia: true }, cliente);
+    expect(igual.totalNuevo).toBe(400);
+    // Las habitaciones nuevas se cotizan a 120 por noche: 100×2 (la que queda) + 120×2.
+    cotizarConPrecioPorNoche(120);
+    const mejor = await modificarReserva(1, { habitaciones: ocupacion(10, 12), soloPrevia: true }, cliente);
+    expect(mejor.totalNuevo).toBeGreaterThanOrEqual(400);
+  });
+
+  test("reemplazar por una más barata falla, en la vista previa y al confirmar", async () => {
+    cotizarConPrecioPorNoche(30);
+    const cliente = clienteDoble([reserva({ reembolsable: false })]);
+    await expect(modificarReserva(1, { habitaciones: ocupacion(12, 13), soloPrevia: true }, cliente)).rejects.toThrow(MENSAJE);
+    await expect(modificarReserva(1, { habitaciones: ocupacion(12, 13) }, cliente)).rejects.toThrow(MENSAJE);
+    expect(cliente.reserva.update).not.toHaveBeenCalled();
+  });
+
+  test("quitar una habitación de una reserva con varias falla", async () => {
     const cliente = clienteDoble([reserva({ reembolsable: false })]);
     await expect(modificarReserva(1, { habitaciones: ocupacion(10), soloPrevia: true }, cliente)).rejects.toThrow(MENSAJE);
     await expect(modificarReserva(1, { habitaciones: ocupacion(10) }, cliente)).rejects.toThrow(MENSAJE);
-    expect(cotizacion.cotizarReserva).not.toHaveBeenCalled();
-  });
-
-  test("reemplazar una habitación por otra falla", async () => {
-    const cliente = clienteDoble([reserva({ reembolsable: false })]);
-    await expect(modificarReserva(1, { habitaciones: ocupacion(10, 12), soloPrevia: true }, cliente)).rejects.toThrow(MENSAJE);
   });
 
   test("agregar una habitación se permite y se cotiza entera", async () => {
