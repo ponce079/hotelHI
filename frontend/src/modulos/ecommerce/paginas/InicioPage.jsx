@@ -9,7 +9,7 @@ import { ErrorConReintento } from "../componentes/ErrorConReintento";
 import { VENTANA_VENTA_DIAS, busquedaComoQueryWeb, capacidadMaximaDeTipos } from "../busquedaWeb";
 import { obtenerTipos } from "../ecommerce.api";
 import { HOTEL } from "../ecommerce.config";
-import { ACCESOS_INICIO, DISTANCIAS_HOTEL, PROMOCIONES_WEB, SERVICIOS_HOTEL } from "../ecommerce.contenido";
+import { ACCESOS_INICIO, DISTANCIAS_HOTEL, FOTOS_SERVICIOS, PROMOCIONES_WEB, SERVICIOS_HOTEL } from "../ecommerce.contenido";
 import { useProcesoCompra } from "../ProcesoCompraContext";
 import { usePrecioReferencia } from "../usePrecioReferencia";
 import { useRevelar } from "../useRevelar";
@@ -139,6 +139,14 @@ export function InicioPage() {
               </span>
               <span className="ec-servicio__nombre">{nombre}</span>
               <span className="ec-servicio__texto">{texto}</span>
+            </li>
+          ))}
+        </ul>
+        <ul className="ec-galeria-servicios" aria-label="Fotos del hotel">
+          {FOTOS_SERVICIOS.map(({ nombre, foto }, i) => (
+            <li key={foto} className="ec-galeria-servicios__foto ec-revelar" style={{ transitionDelay: `${i * 80}ms` }}>
+              <FotoWeb nombre={foto} alt={nombre} />
+              <span className="ec-galeria-servicios__nombre">{nombre}</span>
             </li>
           ))}
         </ul>

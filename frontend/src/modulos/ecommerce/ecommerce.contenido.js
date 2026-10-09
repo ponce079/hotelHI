@@ -1,6 +1,6 @@
 // Contenido estático por tipo de habitación, indexado por el NOMBRE del tipo
-// (el que devuelve /api/web/tipos). Las fotos son placeholders, como en el
-// mockup, hasta tener fotos reales. Sin número de habitación ni piso.
+// (el que devuelve /api/web/tipos). `fotos` son los textos alternativos de la
+// galería; las imágenes salen de imagenesDeTipo. Sin número de habitación ni piso.
 import {
   AirVent,
   Bath,
@@ -83,7 +83,7 @@ export function contenidoDeTipo(nombre) {
 }
 
 // --- Rediseño "Holiday Inn Salta" (modelo HTML del equipo) ---------------------
-// Fotos del modelo, servidas desde frontend/public/web/fotos.
+// Fotos de Pexels (licencia libre), achicadas y servidas desde frontend/public/web/fotos.
 const FOTOS = "/web/fotos";
 export const fotoWeb = (nombre) => `${FOTOS}/${nombre}.jpg`;
 
@@ -113,6 +113,15 @@ export const SERVICIOS_HOTEL = [
   { nombre: "Spa", texto: "Relax y bienestar", Icono: Flower2 },
 ];
 
+// Galería "Conocé el hotel" del Inicio, debajo de los servicios.
+export const FOTOS_SERVICIOS = [
+  { nombre: "Piscina", foto: "s-piscina" },
+  { nombre: "Restaurante", foto: "s-restaurante" },
+  { nombre: "Spa", foto: "s-spa" },
+  { nombre: "Gimnasio", foto: "s-gimnasio" },
+  { nombre: "Estacionamiento", foto: "s-estacionamiento" },
+];
+
 // Promociones del modelo: contenido de difusión. El precio final siempre lo
 // calcula el motor de reservas con la tarifa vigente.
 export const PROMOCIONES_WEB = [
@@ -139,7 +148,7 @@ export const DISTANCIAS_HOTEL = [
 // Fotos de la galería de un tipo: su foto principal primero y después el resto del hotel.
 export function imagenesDeTipo(nombre) {
   const principal = fotoDeTipo(nombre);
-  return [principal, ...["det", "pre", "std", "sui", "hab"].map(fotoWeb).filter((src) => src !== principal)];
+  return [principal, ...["hab-vista", "det", "pre", "std", "sui", "hab", "e1"].map(fotoWeb).filter((src) => src !== principal)];
 }
 
 // Franja de confianza: lo que el sitio realmente ofrece (precio final, confirmación,
@@ -151,9 +160,10 @@ export const CONFIANZA_WEB = [
   { titulo: "Pago seguro", texto: "Conexión cifrada" },
 ];
 
-// Excursiones y paseos (página Experiencias). Fotos libres de Wikimedia Commons: el
-// crédito de autor y licencia se muestra en cada tarjeta, como piden las licencias CC.
+// Excursiones y paseos (página Experiencias). Fotos libres de Wikimedia Commons y
+// Pexels: el crédito de autor y licencia se muestra en cada tarjeta, como piden las licencias CC.
 const COMMONS = "https://commons.wikimedia.org/wiki/File:";
+const PEXELS = "https://www.pexels.com/photo/";
 export const EXCURSIONES_SALTA = [
   {
     nombre: "Quebrada de las Conchas",
@@ -201,7 +211,7 @@ export const EXCURSIONES_SALTA = [
     duracion: "2 a 3 horas",
     texto: "Subí al cerro en teleférico y mirá todo el valle de Lerma desde arriba.",
     foto: "x-sanbernardo",
-    credito: { autor: "Adam Jones", licencia: "CC BY-SA 3.0", pagina: `${COMMONS}Cable_Car_to_the_Cerro_San_Bernardo_-_Salta_-_Argentina.jpg` },
+    credito: { autor: "Héctor Pérez", licencia: "Licencia Pexels", pagina: `${PEXELS}4062592/` },
   },
 ];
 
