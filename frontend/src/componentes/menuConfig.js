@@ -1,5 +1,5 @@
 import {
-  Home,
+  LayoutDashboard,
   Package,
   Warehouse,
   Truck,
@@ -15,6 +15,7 @@ import {
   Tag,
   BedDouble,
   CalendarCheck,
+  CalendarSearch,
   DoorOpen,
   Utensils,
   DoorClosed,
@@ -23,175 +24,145 @@ import {
   ArrowLeftRight,
   DollarSign,
   Users,
+  UserCog,
+  Banknote,
 } from "lucide-react";
 
-// Menu por rol, calcado de MENUS del prototipo (y de lo que dice cada
-// tarjeta de rol en el login): admin ve articulos+depositos+movs, deposito
-// suma recepciones, compras ve depositos+minmax+alertas, gerente ve
-// depositos+alertas+reporte. Kardex y el viejo "Control de Stock" (HU-6,
-// la consulta plana) no son items de menu en el prototipo — Kardex se
-// entra desde una fila del detalle de deposito, y "depositos" ya cubre
-// esa consulta fusionada con stock. Sus rutas siguen andando por URL
-// directa, solo se sacaron del sidebar.
+// HU-117 — Definición ÚNICA del menú lateral: grupo, ítem, ruta, ícono y roles.
 //
-// "Inicio" va suelto (fuera de cualquier grupo, siempre visible, sin
-// acordeon). El resto esta agrupado en categorias colapsables — cada
-// grupo se filtra por rol en Layout.jsx antes de renderizar, asi que un
-// grupo con 0 items visibles para el rol logueado directamente no
-// aparece (ver el .filter en Layout.jsx).
-export const MENU_ITEM_SUELTO = { to: "/", label: "Inicio", icon: Home, end: true };
-
-export const MENU_GRUPOS = [
+// Filtro por rol (HU-71, sin cambios): cada ítem conserva el array `roles` que
+// ya tenía y se muestra solo si `item.roles.includes(rol)`; un ítem sin `roles`
+// lo ve cualquier usuario con sesión. Un grupo sin ítems visibles no se
+// muestra (lo resuelve filtrarMenuPorRol). El bloqueo por URL sigue en cada
+// pantalla (puede(...) / SinPermiso): este archivo solo decide qué se ve.
+//
+// El orden y la agrupación son nuevos; los roles de cada ítem son los de
+// siempre (ver menuConfig.test.js, que compara contra el menú anterior).
+// Rutas fuera del menú (Kardex, Stock plano, Cuenta Corriente y No-show no
+// tuvieron nunca entrada de menú) siguen andando por URL directa o desde
+// adentro de otras pantallas.
+//
+// `grupo: null` es el bloque sin título de arriba (Panel del día).
+export const MENU = [
   {
-    grupo: "Operación Hotelera",
+    grupo: null,
+    items: [{ to: "/", label: "Panel del día", icon: LayoutDashboard, end: true }],
+  },
+  {
+    grupo: "Recepción",
     items: [
-      { to: "/personas-alojadas", label: "Personas alojadas", icon: Users, roles: ["admin", "recepcionista"] },
-      {
-        to: "/habitaciones",
-        label: "Habitaciones",
-        icon: BedDouble,
-        roles: ["admin", "recepcionista", "housekeeping"],
-      },
-      // HU-33/34 (corrección): antes era el botón "Historial" en el header
-      // del Panel de Habitaciones, abría un modal — ahora es su propia
-      // pantalla y entrada de menú. Mismos roles que "Habitaciones"
-      // (verHabitaciones): admin de solo lectura, Housekeeping y
-      // Recepcionista reportan/resuelven desde ahí.
-      {
-        to: "/historial-mantenimiento",
-        label: "Historial de Mantenimiento",
-        icon: Wrench,
-        roles: ["admin", "recepcionista", "housekeeping"],
-      },
-      // HU-89 — Catálogo de Tipos de Habitación (Etapa 1 de tarifas por
-      // temporada). Mismos roles que verTiposHabitacion (sesion.jsx):
-      // admin gestiona, recepcionista y gerente ven de solo lectura.
-      {
-        to: "/tipos-habitacion",
-        label: "Tipos de Habitación",
-        icon: Tag,
-        roles: ["admin", "recepcionista", "gerente"],
-      },
-      // Etapa 2 de tarifas por temporada (HU-90 a HU-93). Mismos roles que
-      // verTarifas (sesion.jsx): admin y recepcionista consultan, gerente
-      // además gestiona (verTarifas alcanza para mostrar el ítem; el botón
-      // de escritura de cada pantalla ya se gatea con gestionarTarifas).
-      {
-        to: "/tarifas",
-        label: "Tarifas",
-        icon: DollarSign,
-        roles: ["admin", "recepcionista", "gerente"],
-      },
-      // Sprint 3 académico — Reservas (HU-36 a 42). La web vieja (/disponibilidad y /reservar) se retiró: redirige
-      // a /web, que tampoco entra al menú (es del huésped, fuera de la sesión de staff). Etapa 4B (HU-97):
-      // gerente se suma (ver sesion.jsx:verReservas) — necesita llegar a la
-      // ficha de una reserva para ajustarle el precio.
-      {
-        to: "/reservas",
-        label: "Reservas",
-        icon: CalendarCheck,
-        roles: ["admin", "recepcionista", "gerente"],
-      },
-      // Sprint 3 académico — Check-in (HU-43 a 47).
-      {
-        to: "/check-in",
-        label: "Check-in",
-        icon: DoorOpen,
-        roles: ["admin", "recepcionista"],
-      },
-      // Sprint 3 académico — Servicios Adicionales (HU-61 a 64). El rol
-      // "Personal de Servicios" se eliminó del sistema: Recepcionista
-      // registra el consumo (HU-61) y consulta los cargos acumulados
-      // (HU-63), mismo criterio que ya tiene con Reservas y Check-in.
-      {
-        to: "/servicios-adicionales",
-        label: "Servicios Adicionales",
-        icon: Utensils,
-        roles: ["admin", "recepcionista"],
-      },
-      { 
-        to: "/check-out", 
-        label: "Check-out", 
-        icon: DoorClosed, 
-        roles: ["admin", "recepcionista"] 
-      },
-      {
-        to: "/comprobantes-estadia",
-        label: "Comprobantes de Huésped",
-        icon: Receipt,
-        roles: ["admin", "recepcionista"]
-      },
-      // HU-88 — todos los PagoEstadia de todas las reservas (seña, garantía,
-      // pago final), mismo criterio de acceso que Comprobantes de Huésped:
-      // solo lectura para los dos roles, sin alta/anulación desde acá.
-      {
-        to: "/movimientos-pago",
-        label: "Movimientos de Pago",
-        icon: ArrowLeftRight,
-        roles: ["admin", "recepcionista"],
-      },
+      { to: "/reservas", label: "Reservas", icon: CalendarCheck, roles: ["admin", "recepcionista", "gerente"] },
+      // Es la vista que abre el botón "Ver disponibilidad" de Reservas: mismo
+      // acceso que Reservas (verReservas). Único ítem nuevo respecto del menú anterior.
+      { to: "/reservas/disponibilidad", label: "Disponibilidad", icon: CalendarSearch, roles: ["admin", "recepcionista", "gerente"] },
+      { to: "/check-in", label: "Check-in", icon: DoorOpen, roles: ["admin", "recepcionista"] },
+      { to: "/check-out", label: "Check-out", icon: DoorClosed, roles: ["admin", "recepcionista"] },
+      // Antes "Personas alojadas".
+      { to: "/personas-alojadas", label: "Huéspedes en casa", icon: Users, roles: ["admin", "recepcionista"] },
     ],
   },
   {
-    grupo: "Stock y Depósitos",
+    grupo: "Caja y facturación",
     items: [
+      { to: "/reporte-caja-diaria", label: "Caja diaria", icon: Banknote, roles: ["gerente"] },
+      { to: "/comprobantes-estadia", label: "Comprobantes de huésped", icon: Receipt, roles: ["admin", "recepcionista"] },
+      // HU-88 — todos los PagoEstadia, solo lectura.
+      { to: "/movimientos-pago", label: "Movimientos de pago", icon: ArrowLeftRight, roles: ["admin", "recepcionista"] },
+    ],
+  },
+  {
+    grupo: "Habitaciones",
+    items: [
+      { to: "/habitaciones", label: "Estado de habitaciones", icon: BedDouble, roles: ["admin", "recepcionista", "housekeeping"] },
+      // Antes "Historial de Mantenimiento" (HU-33/34).
+      { to: "/historial-mantenimiento", label: "Mantenimiento", icon: Wrench, roles: ["admin", "recepcionista", "housekeeping"] },
+      { to: "/tipos-habitacion", label: "Tipos de habitación", icon: Tag, roles: ["admin", "recepcionista", "gerente"] },
+    ],
+  },
+  {
+    grupo: "Comercial",
+    items: [
+      { to: "/tarifas", label: "Tarifas", icon: DollarSign, roles: ["admin", "recepcionista", "gerente"] },
+      { to: "/servicios-adicionales", label: "Servicios adicionales", icon: Utensils, roles: ["admin", "recepcionista"] },
+    ],
+  },
+  {
+    grupo: "Stock",
+    items: [
+      { to: "/depositos", label: "Stock y depósitos", icon: Warehouse },
       { to: "/articulos", label: "Artículos", icon: Package, roles: ["admin", "deposito"] },
-      { to: "/depositos", label: "Depósitos y Stock", icon: Warehouse },
-      // Re-auditoría del 2026-09-23: el permiso "param" ya incluía admin
-      // (la propia descripción del rol dice "parámetros del sistema") — el
-      // menú no lo mostraba, así que quien podía editarlo no tenía cómo
-      // llegar sin tipear la URL a mano. Se suma acá para que código y
-      // menú digan lo mismo.
-      { to: "/stock/minmax", label: "Stock mín. / máx.", icon: SlidersHorizontal, roles: ["compras", "admin"] },
-      { to: "/alertas", label: "Alertas de Stock", icon: TriangleAlert, roles: ["compras", "gerente"] },
-      { to: "/movimientos", label: "Movimientos de Stock", icon: Truck, roles: ["admin", "deposito"] },
-      // Re-auditoría del 2026-09-23: verRecepciones (sesion.jsx) ya incluía
-      // admin/compras/gerente a propósito (admin confirma transferencias
-      // igual que depósito; compras/gerente ven el panorama completo de
-      // solo lectura) — el menú solo mostraba depósito. Se suman los 3
-      // roles para que código y menú digan lo mismo; "Historial de
-      // Recepciones" no es un ítem de menú aparte (se linkea desde adentro
-      // de esta misma pantalla), así que hereda el mismo acceso sin tocar
-      // nada más acá.
+      { to: "/movimientos", label: "Movimientos de stock", icon: Truck, roles: ["admin", "deposito"] },
       { to: "/recepciones", label: "Recepciones", icon: PackageCheck, roles: ["deposito", "admin", "compras", "gerente"] },
+      { to: "/alertas", label: "Alertas de stock", icon: TriangleAlert, roles: ["compras", "gerente"] },
+      { to: "/stock/minmax", label: "Stock mín. / máx.", icon: SlidersHorizontal, roles: ["compras", "admin"] },
+      { to: "/reporte", label: "Reporte de consumo", icon: BarChart3, roles: ["gerente"] },
+      { to: "/tipos-movimiento", label: "Tipos de movimiento", icon: Tag, roles: ["admin"] },
     ],
   },
   {
-    // Compras y Pagos (HU-18 a 25, 76 a 86): todo el ciclo de compra, de
-    // Proveedores/Requerimientos/Presupuestos a OC → Comprobantes → Pagos.
-    // Cuenta Corriente no es una entrada propia: es una pestaña dentro de
-    // Pagos a Proveedores (mismo rol). Gerente entra a ambas de solo
-    // lectura (HU-78/HU-80, corregido en la re-auditoria de Sprint 2 del
-    // 2026-09-16) — ver verPagos/verCuentaCorriente en sesion.jsx.
-    grupo: "Compras y Pagos",
+    grupo: "Compras",
     items: [
       { to: "/proveedores", label: "Proveedores", icon: Building2, roles: ["compras", "admin"] },
       { to: "/requerimientos", label: "Requerimientos", icon: ClipboardList, roles: ["compras", "deposito"] },
       { to: "/presupuestos", label: "Presupuestos", icon: FileText, roles: ["compras", "gerente"] },
-      { to: "/ordenes-compra", label: "Órdenes de Compra", icon: ShoppingCart, roles: ["compras", "gerente", "deposito"] },
+      { to: "/ordenes-compra", label: "Órdenes de compra", icon: ShoppingCart, roles: ["compras", "gerente", "deposito"] },
       { to: "/comprobantes", label: "Comprobantes", icon: FileText, roles: ["compras"] },
-      { to: "/pagos", label: "Pagos a Proveedores", icon: Wallet, roles: ["compras", "gerente"] },
+      { to: "/pagos", label: "Pagos", icon: Wallet, roles: ["compras", "gerente"] },
     ],
   },
   {
-    // Reportes: un solo item por ahora (HU-9), con lugar para crecer
-    // cuando el Sprint de Reporting y Dashboard sume mas pantallas aca.
-    grupo: "Reportes",
-    items: [
-      { to: "/reporte", label: "Reporte de Consumo", icon: BarChart3, roles: ["gerente"] },
-      { to: "/reporte-caja-diaria", label: "Caja Diaria", icon: BarChart3, roles: ["gerente"] },
-    ], 
-  },
-  {
-    // Administracion: catalogos maestros de configuracion, exclusivos de
-    // admin (HU-10/HU-11) — a diferencia de "Stock y Depositos", que es
-    // operacion diaria compartida con deposito.
     grupo: "Administración",
     items: [
-      // Usuarios y Seguridad: alta de usuarios, roles y acceso — solo admin
-      // (ver gestionarUsuarios en sesion.jsx).
-      { to: "/usuarios", label: "Usuarios", icon: Users, roles: ["admin"] },
-      { to: "/tipos-movimiento", label: "Tipos de Movimiento", icon: Tag, roles: ["admin"] },
+      { to: "/usuarios", label: "Usuarios y roles", icon: UserCog, roles: ["admin"] },
     ],
   },
 ];
+
+// Pantallas fuera del menú que igual tienen un nombre para la miga de pan de la
+// barra superior. `grupo` es el grupo del menú al que pertenecen.
+export const RUTAS_FUERA_DEL_MENU = [
+  { to: "/mi-perfil", grupo: "Cuenta", label: "Mi perfil" },
+  { to: "/reservas/no-show", grupo: "Recepción", label: "Llegadas no presentadas" },
+  { to: "/kardex", grupo: "Stock", label: "Kardex" },
+  { to: "/stock", grupo: "Stock", label: "Control de stock" },
+  { to: "/cuenta-corriente", grupo: "Compras", label: "Cuenta corriente" },
+];
+
+// Grupos con ítems visibles para el rol, en el orden de MENU.
+export function filtrarMenuPorRol(rol, menu = MENU) {
+  return menu
+    .map((bloque) => ({
+      ...bloque,
+      items: bloque.items.filter((item) => !item.roles || item.roles.includes(rol)),
+    }))
+    .filter((bloque) => bloque.items.length > 0);
+}
+
+function coincide(pathname, to) {
+  if (to === "/") return pathname === "/";
+  return pathname === to || pathname.startsWith(`${to}/`);
+}
+
+// Ítem activo para una ruta: el de coincidencia más larga entre los visibles
+// (así /reservas/disponibilidad marca "Disponibilidad" y no "Reservas", y
+// /tarifas/temporadas o /habitaciones/7 marcan su ítem padre).
+export function buscarActivo(bloques, pathname) {
+  let mejor = null;
+  for (const bloque of bloques) {
+    for (const item of bloque.items) {
+      if (coincide(pathname, item.to) && (!mejor || item.to.length > mejor.item.to.length)) {
+        mejor = { grupo: bloque.grupo, item };
+      }
+    }
+  }
+  return mejor;
+}
+
+// Miga de pan "Grupo / Pantalla" para cualquier ruta (aunque el rol no vea el ítem).
+export function buscarMiga(pathname) {
+  const exacta = RUTAS_FUERA_DEL_MENU.filter((r) => coincide(pathname, r.to)).sort((a, b) => b.to.length - a.to.length)[0];
+  const enMenu = buscarActivo(MENU, pathname);
+  if (exacta && (!enMenu || exacta.to.length >= enMenu.item.to.length)) return { grupo: exacta.grupo, pantalla: exacta.label };
+  if (enMenu) return { grupo: enMenu.grupo, pantalla: enMenu.item.label };
+  return null;
+}

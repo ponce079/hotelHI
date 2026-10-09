@@ -4,6 +4,7 @@ import { AlertTriangle, SlidersHorizontal } from "lucide-react";
 import { SinPermiso } from "../../componentes/SinPermiso";
 import { Toast } from "../../componentes/Toast";
 import { Button } from "../../componentes/Button";
+import { PageHeader } from "../../componentes/PageHeader";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { formatearMonto } from "../../lib/moneda";
@@ -32,17 +33,17 @@ export function PreciosPage() {
     <div className="flex flex-col gap-6">
       <TarifasTabs activa="/tarifas" />
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-heading text-2xl font-semibold">Tarifas</h1>
-          <p className="text-sm text-piedra">Precio vigente hoy por tipo de habitación × temporada, plan BAR.</p>
-        </div>
-        {puedeGestionar && (
-          <Button variante="secundario" icono={SlidersHorizontal} onClick={() => setModificadoresAbiertos(true)}>
-            Modificadores por día
-          </Button>
-        )}
-      </div>
+      <PageHeader
+        titulo="Tarifas"
+        subtitulo="Precio vigente hoy por tipo de habitación × temporada, plan BAR."
+        acciones={
+          puedeGestionar && (
+            <Button variante="secundario" icono={SlidersHorizontal} onClick={() => setModificadoresAbiertos(true)}>
+              Modificadores por día
+            </Button>
+          )
+        }
+      />
 
       {isLoading && <p className="py-8 text-center text-sm text-piedra">Cargando…</p>}
       {isError && <p className="py-8 text-center text-sm text-error">No se pudo calcular la grilla de tarifas.</p>}

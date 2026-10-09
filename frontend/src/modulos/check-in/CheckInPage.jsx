@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { SinPermiso } from "../../componentes/SinPermiso";
+import { PageHeader } from "../../componentes/PageHeader";
 import { useSesion } from "../../lib/sesion";
 import { formatearFechaOperacion, hoyEnHoraLocal } from "../../lib/fechas";
 import { buscarReservaParaCheckIn, listarLlegadas } from "./checkIn.api";
@@ -54,10 +55,7 @@ export function CheckInPage() {
 
   return (
     <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-end justify-between gap-3 rounded-lg bg-pino px-6 py-5 text-hueso">
-        <h1 className="font-heading text-[34px] font-semibold">Check-in</h1>
-        <p className="font-body text-[14px] text-hueso/80">{formatearFechaOperacion(hoyEnHoraLocal())} · Recepción</p>
-      </div>
+      <PageHeader titulo="Check-in" subtitulo={`${formatearFechaOperacion(hoyEnHoraLocal())} · Recepción`} />
 
       <div role="tablist" aria-label="Tipo de check-in" className="inline-flex w-fit gap-1 rounded-full bg-white p-1">
         <button type="button" role="tab" id="tab-llegadas" aria-selected={pestana === "llegadas"} aria-controls="panel-llegadas" onClick={() => setPestana("llegadas")} className={pestanaClase(pestana === "llegadas")}>

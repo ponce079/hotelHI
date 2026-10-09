@@ -38,10 +38,7 @@ const VARIANTES = {
   secundario: "border-borde bg-transparent text-tinta hover:bg-hueso",
 };
 
-// El .btn base del prototipo (heredado del sistema "organic" que usa como
-// libreria de componentes) define font-family: var(--font-heading) — o sea
-// Fraunces, no Sora. No es un capricho nuestro: es el .btn real que
-// heredan .btn-entrada/.btn-salida/etc en el dc.html. "normal" 13-14px;
+// HU-117: los botones usan la sans de la interfaz (Manrope), no la serif de marca. "normal" 13-14px;
 // "fila" 12.5px con padding 5px 13px, para acciones dentro de una fila de
 // tabla; "campo" 14px con padding 11px 20px, para un botón al lado de un
 // input de altura fija (11px + el 1px de borde del input = misma altura
@@ -72,7 +69,7 @@ export function Button({ variante = "ok", tamano = "normal", icono: Icono, carga
     <button
       disabled={disabled || cargando}
       aria-busy={cargando || undefined}
-      className={`inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-md border font-heading font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${TAMANOS[tamano]} ${VARIANTES[variante]} ${className}`}
+      className={`inline-flex cursor-pointer items-center gap-2 whitespace-nowrap rounded-md border font-body font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${TAMANOS[tamano]} ${VARIANTES[variante]} ${className}`}
       {...props}
     >
       {cargando ? (
