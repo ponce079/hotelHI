@@ -12,6 +12,7 @@ import { formatearFechaSinHora, hoyEnHoraLocal } from "../../lib/fechas";
 import { useSesion } from "../../lib/sesion";
 import { listarReservas } from "../reservas/reservas.api";
 import { ESTADO_RESERVA } from "../reservas/reservas.constantes";
+import { GarantiasARevisar } from "./GarantiasARevisar";
 
 // Punto de entrada del check-out: las reservas que hoy tienen al huésped
 // alojado ("En curso"). Elegir una lleva al flujo completo de esa reserva
@@ -41,6 +42,8 @@ export function CheckOutPage() {
           Cuenta consolidada, verificación de la habitación, pago y cierre
         </p>
       </div>
+
+      <GarantiasARevisar habilitado={puedeVer} />
 
       <FilterBar onClear={q ? () => setQ("") : undefined}>
         <div className="relative min-w-[240px] flex-1">
