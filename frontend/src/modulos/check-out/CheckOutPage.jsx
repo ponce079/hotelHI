@@ -1,101 +1,129 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { Search } from "lucide-react";
-import { Badge } from "../../componentes/Badge";
-import { CodigoClave } from "../../componentes/CodigoClave";
+import { Button } from "../../componentes/Button";
 import { FilterBar } from "../../componentes/FilterBar";
-import { NombreClave } from "../../componentes/NombreClave";
+import { PageHeader } from "../../componentes/PageHeader";
+import { idPestana, Pestanas } from "../../componentes/Pestanas";
 import { SinPermiso } from "../../componentes/SinPermiso";
-import { Table } from "../../componentes/Table";
-import { formatearFechaSinHora, hoyEnHoraLocal } from "../../lib/fechas";
+import { hoyEnHoraLocal } from "../../lib/fechas";
+import { useDebounce } from "../../lib/identificacion/useIdentificarPersona";
 import { useSesion } from "../../lib/sesion";
 import { listarReservas } from "../reservas/reservas.api";
 import { ESTADO_RESERVA } from "../reservas/reservas.constantes";
 import { GarantiasARevisar } from "./GarantiasARevisar";
+import { IndicadoresSalidas } from "./IndicadoresSalidas";
+import {
+  calcularIndicadores,
+  filtrarPorVista,
+  ordenarSalidas,
+  VISTAS,
+  vistaPorDefecto,
+  vistaValida,
+} from "./listadoCheckOut.helpers";
+import { TablaSalidas } from "./TablaSalidas";
 
-// Punto de entrada del check-out: las reservas que hoy tienen al huésped
-// alojado ("En curso"). Elegir una lleva al flujo completo de esa reserva
-// (/check-out/:reservaId).
+const DEMORA_BUSQUEDA_MS = 300;
+const plural = (n, uno, varios) => `${n} ${n === 1 ? uno : varios}`;
+const CLASE_BUSCADOR =
+  "h-10 w-full rounded-md border border-borde bg-white pl-8 pr-3 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-pino/40";
+
+// Punto de entrada del check-out: las reservas que hoy tienen al huésped alojado ("En curso"). Elegir una lleva al
+// flujo completo de esa reserva (/check-out/:reservaId).
+//   ?vista=hoy|vencidas|todas  pestaña activa (por defecto Vencidas si hay, si no Salen hoy).
 export function CheckOutPage() {
   const { puede } = useSesion();
   const puedeVer = puede("verCheckOut");
-  const navigate = useNavigate();
-  const [q, setQ] = useState("");
+  const puedeGestionar = puede("gestionarCheckOut");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [busqueda, setBusqueda] = useState("");
+  const q = useDebounce(busqueda.trim(), DEMORA_BUSQUEDA_MS);
+  const hoy = hoyEnHoraLocal();
 
-  const reservasQuery = useQuery({
-    queryKey: ["reservas", "check-out", q],
-    queryFn: () => listarReservas({ estado: ESTADO_RESERVA.EN_CURSO, q: q.trim() || undefined }),
+  // Sin búsqueda: es la misma consulta (y la misma caché) que el contador del menú. Los indicadores y los
+  // contadores de las pestañas salen siempre de ella.
+  const todas = useQuery({
+    queryKey: ["reservas", "check-out", ""],
+    queryFn: () => listarReservas({ estado: ESTADO_RESERVA.EN_CURSO }),
     enabled: puedeVer,
   });
+  const filtradas = useQuery({
+    queryKey: ["reservas", "check-out", q],
+    queryFn: () => listarReservas({ estado: ESTADO_RESERVA.EN_CURSO, q }),
+    enabled: puedeVer && Boolean(q),
+  });
+  const consulta = q ? filtradas : todas;
+
+  const indicadores = useMemo(() => calcularIndicadores(todas.data, hoy), [todas.data, hoy]);
+  const vista = vistaValida(searchParams.get("vista")) ?? vistaPorDefecto(indicadores?.vencidas ?? 0);
+  const filas = useMemo(
+    () => (consulta.data ? filtrarPorVista(ordenarSalidas(consulta.data, hoy), vista, hoy) : []),
+    [consulta.data, vista, hoy],
+  );
 
   if (!puedeVer) return <SinPermiso />;
 
-  const hoy = hoyEnHoraLocal();
-  const reservas = reservasQuery.data ?? [];
+  const pestanas = VISTAS.map((v) => ({
+    ...v,
+    cantidad: indicadores ? { hoy: indicadores.salenHoy, vencidas: indicadores.vencidas, todas: indicadores.enCasa }[v.valor] : undefined,
+  }));
+
+  function cambiarVista(valor) {
+    const params = new URLSearchParams(searchParams);
+    params.set("vista", valor);
+    setSearchParams(params, { replace: true });
+  }
 
   return (
-    <div className="flex flex-col gap-6">
-      <div className="rounded-lg bg-pino px-6 py-5 text-hueso">
-        <h1 className="font-heading text-[34px] font-semibold">Check-out</h1>
-        <p className="mt-1.5 font-mono text-[11px] text-hueso/65">
-          Cuenta consolidada, verificación de la habitación, pago y cierre
-        </p>
-      </div>
+    <div className="flex min-w-0 flex-col gap-6">
+      <PageHeader titulo="Check-out" subtitulo="Salidas del día, vencidas y estadías en curso." />
+
+      <IndicadoresSalidas indicadores={indicadores} />
 
       <GarantiasARevisar habilitado={puedeVer} />
 
-      <FilterBar onClear={q ? () => setQ("") : undefined}>
-        <div className="relative min-w-[240px] flex-1">
-          <Search size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-piedra" />
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Código, huésped, documento o habitación"
-            className="w-full rounded-md border border-borde bg-white py-2 pl-8 pr-3 text-[13.5px] focus:outline-none focus:ring-2 focus:ring-pino/40"
-          />
-        </div>
-      </FilterBar>
+      <div className="min-w-0 overflow-hidden rounded-lg border border-borde bg-white">
+        <Pestanas etiqueta="Salidas" idBase="checkout" pestanas={pestanas} activa={vista} onCambiar={cambiarVista} />
 
-      <div className="rounded-lg border border-borde bg-white p-5">
-        <h2 className="mb-4 font-heading text-[19px] font-semibold">Huéspedes alojados</h2>
-        {reservasQuery.isLoading ? (
-          <p className="text-sm text-piedra">Cargando reservas…</p>
-        ) : reservasQuery.isError ? (
-          <p className="text-sm text-error-texto">
-            {reservasQuery.error?.response?.data?.error ?? "No se pudieron cargar las reservas."}
-          </p>
-        ) : (
-          <Table
-            columnas={["Código", "Huésped", "Habitaciones", "Entrada", "Salida"]}
-            filas={reservas}
-            vacio={q ? "Ninguna reserva en curso coincide con la búsqueda." : "No hay huéspedes alojados en este momento."}
-            renderFila={(r) => {
-              const salida = r.fechaHasta.slice(0, 10);
-              return (
-                <tr
-                  key={r.id}
-                  onClick={() => navigate(`/check-out/${r.id}`)}
-                  className="h-12 cursor-pointer border-b border-borde last:border-0 hover:bg-hueso"
-                >
-                  <td className="px-3 py-2.5">
-                    <CodigoClave>{r.codigoConfirmacion}</CodigoClave>
-                  </td>
-                  <td className="px-3 py-2.5">
-                    <NombreClave>{r.huesped?.nombre}</NombreClave>
-                  </td>
-                  <td className="px-3 py-2.5 font-mono text-[13px]">{r.habitaciones.map((h) => h.numero).join(", ")}</td>
-                  <td className="px-3 py-2.5 text-[12.5px]">{formatearFechaSinHora(r.fechaDesde)}</td>
-                  <td className="px-3 py-2.5 text-[12.5px]">
-                    <span className="mr-2">{formatearFechaSinHora(r.fechaHasta)}</span>
-                    {salida === hoy && <Badge variante="alerta">Sale hoy</Badge>}
-                    {salida < hoy && <Badge variante="error">Salida vencida</Badge>}
-                  </td>
-                </tr>
-              );
-            }}
-          />
-        )}
+        <FilterBar incrustada>
+          <div className="relative min-w-[240px] flex-1">
+            <Search size={15} strokeWidth={1.6} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-piedra" />
+            <input
+              type="search"
+              aria-label="Buscar estadías"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Código, huésped, documento o habitación"
+              className={CLASE_BUSCADOR}
+            />
+          </div>
+          <span className="ml-auto text-[13px] font-semibold text-piedra" aria-live="polite">
+            {consulta.data ? plural(filas.length, "estadía", "estadías") : ""}
+          </span>
+        </FilterBar>
+
+        <div role="tabpanel" id="checkout-panel" aria-labelledby={idPestana("checkout", vista)}>
+          {consulta.isError ? (
+            <div role="alert" className="flex flex-col items-center gap-3 px-5 py-10 text-center">
+              <p className="m-0 text-sm text-error-texto">
+                {consulta.error?.response?.data?.error ?? "No se pudieron cargar las estadías en curso."}
+              </p>
+              <Button variante="secundario" onClick={() => consulta.refetch()}>
+                Reintentar
+              </Button>
+            </div>
+          ) : (
+            <TablaSalidas
+              vista={vista}
+              filas={filas}
+              cargando={consulta.isLoading}
+              hoy={hoy}
+              busqueda={q}
+              puedeGestionar={puedeGestionar}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
