@@ -41,6 +41,21 @@ describe("contarLlegadas", () => {
     expect(contarLlegadas({ reservas: [] })).toBe(0);
   });
 
+  it("suma las atrasadas (llegaban ayer) a las de hoy", () => {
+    expect(contarLlegadas({ reservas: [llegada(1), llegada(2)], atrasadas: [llegada(3)] })).toBe(3);
+    expect(contarLlegadas({ reservas: [], atrasadas: [llegada(3), llegada(4)] })).toBe(2);
+  });
+
+  it("no cuenta las candidatas a no-show ni las ingresadas hoy", () => {
+    expect(contarLlegadas({ reservas: [llegada(1)], pendientesNoShow: 9, ingresadasHoy: [llegada(2), llegada(3)] })).toBe(1);
+  });
+
+  it("si cualquiera de las dos listas llegó al tope devuelve 0", () => {
+    const tope = Array.from({ length: TOPE_LLEGADAS }, (_, i) => llegada(i + 1));
+    expect(contarLlegadas({ reservas: [llegada(1)], atrasadas: tope })).toBe(0);
+    expect(contarLlegadas({ reservas: tope, atrasadas: [llegada(1)] })).toBe(0);
+  });
+
   it("si el endpoint llegó a su tope no se muestra un número que podría ser falso", () => {
     const tope = Array.from({ length: TOPE_LLEGADAS }, (_, i) => llegada(i + 1));
     expect(contarLlegadas({ reservas: tope })).toBe(0);
@@ -175,6 +190,37 @@ describe("useContadoresRecepcion", () => {
     document.dispatchEvent(new Event("visibilitychange"));
     await vi.advanceTimersByTimeAsync(10 * 60 * 1000);
     expect(listarLlegadas).toHaveBeenCalledTimes(2);
+  });
+
+  it("el badge de Check-in suma las atrasadas y se exponen llegadasAtrasadas y pendientesNoShow; llegadasHoy y llegadasAnteriores no cambian", async () => {
+    listarLlegadas.mockResolvedValue({
+      reservas: [llegada(1), llegada(2)],
+      atrasadas: [llegada(3)],
+      anterioresPendientes: 4,
+      pendientesNoShow: 3,
+    });
+    const { Envoltorio } = envoltorio();
+    const { result } = renderHook(() => useContadoresRecepcion({ puedeVerCheckIn: true, puedeVerCheckOut: false }), {
+      wrapper: Envoltorio,
+    });
+    await waitFor(() => expect(result.current.llegadas).toBe(3));
+    expect(result.current).toMatchObject({
+      llegadasHoy: 2,
+      llegadasAnteriores: 4,
+      llegadasAtrasadas: 1,
+      pendientesNoShow: 3,
+    });
+  });
+
+  it("con una respuesta sin los campos nuevos, llegadasAtrasadas y pendientesNoShow quedan en null", async () => {
+    listarLlegadas.mockResolvedValue({ reservas: [llegada(1)], anterioresPendientes: 1 });
+    const { Envoltorio } = envoltorio();
+    const { result } = renderHook(() => useContadoresRecepcion({ puedeVerCheckIn: true, puedeVerCheckOut: false }), {
+      wrapper: Envoltorio,
+    });
+    await waitFor(() => expect(result.current.llegadas).toBe(1));
+    expect(result.current.llegadasAtrasadas).toBeNull();
+    expect(result.current.pendientesNoShow).toBeNull();
   });
 
   it("expone por separado llegadas de hoy y anteriores, salidas de hoy y vencidas, y lo que hay en casa", async () => {

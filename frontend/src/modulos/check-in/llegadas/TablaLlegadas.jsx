@@ -1,143 +1,216 @@
-import { Search } from "lucide-react";
-import { formatearDiaCorto } from "../../../lib/fechas";
-import { formatearPrecio } from "../../../lib/moneda";
-import { etiquetaOcupacion } from "../checkInReglas";
-import { Chip, Tarjeta } from "../ui";
+import { Clock } from "lucide-react";
+import { Link, useNavigate } from "react-router-dom";
+import { Badge } from "../../../componentes/Badge";
+import { Button } from "../../../componentes/Button";
+import { Table } from "../../../componentes/Table";
+import { documentoEnmascarado } from "../../../lib/documento";
+import { formatearIngreso } from "../../../lib/fechas";
+import { etiquetaNoches, etiquetaPax, formatearDiaConSemana, iniciales, resumenHabitaciones } from "../../../lib/formatosReserva";
+import { codigoPais, nombrePais } from "../../../lib/paises";
+import { Chip } from "../ui";
+import {
+  avisoAtrasada,
+  chipHabitaciones,
+  garantiaDeLlegada,
+  llegabaAntes,
+  notasDeLlegada,
+  TEXTO_NOMBRE_WEB_DISTINTO,
+} from "./llegadasHelpers";
 
-// Reserva web con el documento de una ficha existente pero otro nombre declarado (regla 2.6).
-export const TEXTO_NOMBRE_WEB_DISTINTO = "El nombre declarado en la web no coincide con la ficha: verificar el documento en el check-in";
+const COLUMNAS = ["Titular", "Habitación", "Estadía y plan", "Pax", "Garantía", ""];
 
-export function textoSenia(senia) {
-  const medios = senia?.medios ?? [];
-  if (!senia?.registrada || medios.length === 0) return null;
-  return medios.map((m) => m.referencia || `${m.medioPago} · ${formatearPrecio(m.importe)}`).join(" · ");
+const VACIOS = {
+  pendientes: { titulo: "No hay llegadas pendientes para hoy", busqueda: "No hay llegadas de hoy que coincidan con la búsqueda." },
+  atrasadas: { titulo: "No hay llegadas atrasadas", busqueda: "No hay llegadas atrasadas que coincidan con la búsqueda." },
+  ingresadas: { titulo: "Todavía no hubo ingresos hoy", busqueda: "No hay ingresos de hoy que coincidan con la búsqueda." },
+};
+
+// Tonos del chip de estado de la habitación (los colores salen de las variables del tema).
+const CLASE_TONO = {
+  limpieza: "inline-flex items-center whitespace-nowrap rounded-full bg-[var(--aviso-bg)] px-2.5 py-0.5 text-[12px] font-semibold text-[var(--aviso-texto)]",
+  bloqueada: "inline-flex items-center whitespace-nowrap rounded-full bg-[var(--aviso-texto)] px-2.5 py-0.5 text-[12px] font-semibold text-white",
+};
+
+function ChipHabitacion({ chip }) {
+  if (chip.tono === "lista") return <Badge variante="ok">{chip.texto}</Badge>;
+  if (chip.tono === "neutro") return <Badge variante="neutro">{chip.texto}</Badge>;
+  return <span className={CLASE_TONO[chip.tono]}>{chip.texto}</span>;
 }
 
-const estadia = (r) => `${formatearDiaCorto(r.fechaDesde)} → ${formatearDiaCorto(r.fechaHasta)} · ${r.noches} ${r.noches === 1 ? "noche" : "noches"}`;
-
-// Llegadas de hoy: un clic (o Enter) abre el check-in debajo. Flechas arriba/abajo recorren la lista.
-export function TablaLlegadas({ busqueda, onBuscar, consulta, seleccionadaId, onSeleccionar }) {
-  const reservas = consulta.data?.reservas ?? [];
-  const anteriores = consulta.data?.anterioresPendientes ?? 0;
-  const moverFoco = (e, paso) => {
-    const filas = [...e.currentTarget.parentElement.querySelectorAll("tr[data-reserva]")];
-    const indice = filas.indexOf(e.currentTarget);
-    filas[indice + paso]?.focus();
-  };
+function CeldaTitular({ r }) {
+  const t = r.titular ?? {};
+  const pais = t.paisDocumento ? (nombrePais(codigoPais(t.paisDocumento)) ?? t.paisDocumento) : "";
+  const documento = documentoEnmascarado(t.tipoDocumento, t.numeroDocumento);
+  const notas = notasDeLlegada(r);
+  const hora = r.horaEstimadaLlegada;
   return (
-    <Tarjeta
-      titulo="Llegadas de hoy"
-      accion={
-        <label className="flex min-w-[320px] items-center gap-2 rounded-md border border-borde bg-white px-3 py-2 focus-within:ring-2 focus-within:ring-pino/40">
-          <Search size={16} className="text-piedra" aria-hidden="true" />
-          <span className="sr-only">Buscar por código, nombre o documento</span>
-          <input
-            value={busqueda}
-            onChange={(e) => onBuscar(e.target.value)}
-            placeholder="Código, nombre o documento"
-            className="w-full bg-transparent text-[14px] focus:outline-none"
-          />
-        </label>
-      }
-    >
-      {anteriores > 0 && (
-        <p role="note" className="mb-3 rounded-md border border-laton-300 bg-laton-100 px-4 py-2 text-[13.5px] text-laton-700">
-          Hay {anteriores} {anteriores === 1 ? "reserva" : "reservas"} de días anteriores sin ingreso (posible no-show). Se gestiona desde Reservas.
-        </p>
-      )}
-      <div className="overflow-x-auto">
-        <table className="w-full border-collapse text-[14.5px]">
-          <thead>
-            <tr>
-              {["Código", "Titular", "Habitación", "Estadía", "Ocupación", "Garantía", "Estado"].map((t) => (
-                <th key={t} scope="col" className="border-b border-borde px-2.5 py-2 text-left text-[12px] font-semibold uppercase tracking-[0.06em] text-piedra">
-                  {t}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {consulta.isLoading && (
-              <tr>
-                <td colSpan={7} className="px-2.5 py-3 text-[13px] text-piedra">
-                  Buscando llegadas…
-                </td>
-              </tr>
+    <div className="flex items-start gap-3">
+      <span className="avatar-iniciales" aria-hidden="true">
+        {iniciales(t.nombre)}
+      </span>
+      <div className="min-w-0">
+        <div className="max-w-[260px] truncate text-[15px] font-semibold text-tinta" title={t.nombre ?? undefined}>
+          {t.nombre ?? "—"}
+        </div>
+        <div className="text-[12px] text-piedra">
+          <span className="font-mono font-medium text-tinta">{r.codigoConfirmacion}</span>
+          {documento && <> · {documento}</>}
+          {pais && <> · {pais}</>}
+        </div>
+        {(r.esWeb || hora) && (
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            {r.esWeb && <span className="etiqueta-plan">Web</span>}
+            {hora && (
+              <span className="inline-flex items-center gap-1 text-[12px] text-piedra">
+                <Clock size={12} strokeWidth={1.8} aria-hidden="true" />
+                Llega {hora}
+              </span>
             )}
-            {!consulta.isLoading && reservas.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-2.5 py-3 text-[13px] text-piedra">
-                  {busqueda ? `No hay llegadas de hoy que coincidan con “${busqueda}”.` : "No hay llegadas pendientes para hoy."}
-                </td>
-              </tr>
-            )}
-            {reservas.map((r) => {
-              const adultos = r.habitaciones.reduce((a, h) => a + h.adultos, 0);
-              const menores = r.habitaciones.reduce((a, h) => a + h.menores, 0);
-              const senia = textoSenia(r.senia);
-              const seleccionada = r.id === seleccionadaId;
-              return (
-                <tr
-                  key={r.id}
-                  data-reserva={r.id}
-                  tabIndex={0}
-                  aria-selected={seleccionada}
-                  onClick={() => onSeleccionar(r)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") onSeleccionar(r);
-                    if (e.key === "ArrowDown") {
-                      e.preventDefault();
-                      moverFoco(e, 1);
-                    }
-                    if (e.key === "ArrowUp") {
-                      e.preventDefault();
-                      moverFoco(e, -1);
-                    }
-                  }}
-                  className={`cursor-pointer align-top focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-pino ${seleccionada ? "bg-pino-100" : "hover:bg-hueso"}`}
-                >
-                  <td className="whitespace-nowrap border-b border-borde px-2.5 py-[11px] font-mono font-semibold">{r.codigoConfirmacion}</td>
-                  <td className="border-b border-borde px-2.5 py-[11px]">
-                    {r.titular?.nombre}
-                    {r.nombreWebDistinto && (
-                      <div className="mt-1">
-                        <Chip variante="aviso" envolver>
-                          {TEXTO_NOMBRE_WEB_DISTINTO}
-                        </Chip>
-                      </div>
-                    )}
-                  </td>
-                  <td className="border-b border-borde px-2.5 py-[11px]">{r.habitaciones.map((h) => `${h.numero} ${h.tipo}`).join(" + ")}</td>
-                  <td className="whitespace-nowrap border-b border-borde px-2.5 py-[11px]">{estadia(r)}</td>
-                  <td className="border-b border-borde px-2.5 py-[11px]">{etiquetaOcupacion(adultos, menores)}</td>
-                  <td className="border-b border-borde px-2.5 py-[11px]">
-                    <div className="flex flex-col items-start gap-1">
-                      {r.garantia && (
-                        <Chip variante="ok" envolver>
-                          Tarjeta en garantía · {r.garantia.marca} ****{r.garantia.ultimos4}
-                        </Chip>
-                      )}
-                      {senia && (
-                        <Chip variante="ok" envolver>
-                          {senia}
-                        </Chip>
-                      )}
-                      {!r.garantia && !senia && (
-                        <Chip variante="aviso" envolver>
-                          Sin garantía · tomar al ingreso
-                        </Chip>
-                      )}
-                    </div>
-                  </td>
-                  <td className="border-b border-borde px-2.5 py-[11px]">
-                    <Chip variante="ok">Por llegar</Chip>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+          </div>
+        )}
+        {notas.length > 0 && (
+          <div className="mt-1.5 max-w-[320px] rounded-md border border-[var(--etiqueta-borde)] bg-[var(--banda-filtros)] px-2.5 py-1.5 text-[12px] leading-snug text-tinta">
+            {notas.map((n) => (
+              <p key={n.completo} className="m-0" title={n.completo}>
+                {n.texto}
+              </p>
+            ))}
+          </div>
+        )}
+        {r.nombreWebDistinto && (
+          <div className="mt-1.5">
+            <Chip variante="aviso" envolver>
+              {TEXTO_NOMBRE_WEB_DISTINTO}
+            </Chip>
+          </div>
+        )}
       </div>
-    </Tarjeta>
+    </div>
+  );
+}
+
+// En Ingresadas hoy la garantía de la reserva ya cumplió su papel en el check-in: sin ninguna, no hay nada que tomar al
+// ingreso y se muestra un guion (con tarjeta o pago anticipado se muestra igual que antes).
+function CeldaGarantia({ r, ingresada }) {
+  const { sinGarantia, bloques } = garantiaDeLlegada(r);
+  if (ingresada && sinGarantia) return <span className="relative text-piedra" title="Sin garantía de la reserva">
+        —<span className="sr-only">Sin garantía de la reserva</span>
+      </span>;
+  return (
+    <div className="flex flex-col gap-1.5">
+      {bloques.map((b) => (
+        <div key={b.clave}>
+          <div className={sinGarantia ? "text-[13px] font-bold text-[var(--aviso-texto)]" : "text-[13px] font-semibold text-tinta"}>{b.tipo}</div>
+          {b.detalle.map((linea) => (
+            <div key={linea} className="text-[12px] text-piedra">
+              {linea}
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Lista de llegadas de una vista (Pendientes de hoy, Atrasadas o Ingresadas hoy). Un clic en la fila, Enter o el botón
+// abren el check-in debajo (las ingresadas llevan al detalle de la reserva). Flechas arriba/abajo recorren la lista.
+export function TablaLlegadas({ vista, filas, cargando, hoy, busqueda = "", seleccionadaId, onSeleccionar }) {
+  const navigate = useNavigate();
+  const ingresadas = vista === "ingresadas";
+  const abrir = (r) => (ingresadas ? navigate(`/reservas/${r.id}`) : onSeleccionar(r));
+  const moverFoco = (e, paso) => {
+    const trs = [...e.currentTarget.parentElement.querySelectorAll("tr[data-reserva]")];
+    trs[trs.indexOf(e.currentTarget) + paso]?.focus();
+  };
+  const vacio = VACIOS[vista] ?? VACIOS.pendientes;
+
+  return (
+    <Table
+      cargando={cargando}
+      columnas={COLUMNAS}
+      columnasDerecha={[""]}
+      filas={filas}
+      vacioTitulo={busqueda ? "Sin resultados" : vacio.titulo}
+      vacioDescripcion={busqueda ? vacio.busqueda : undefined}
+      onRowClick={abrir}
+      claseFila={(r) => (r.id === seleccionadaId ? "bg-pino-100" : "")}
+      renderFila={(r) => {
+        const { numeros, detalle } = resumenHabitaciones(r);
+        const chip = chipHabitaciones(r.habitaciones, { ingresada: ingresadas });
+        const aviso = vista === "atrasadas" ? avisoAtrasada(r, hoy) : ingresadas && llegabaAntes(r, hoy) ? avisoAtrasada(r, hoy) : null;
+        const ingreso = ingresadas ? formatearIngreso(r.horaIngreso) : null;
+        return (
+          <tr
+            key={r.id}
+            data-reserva={r.id}
+            tabIndex={0}
+            aria-selected={r.id === seleccionadaId}
+            onKeyDown={(e) => {
+              if (e.target !== e.currentTarget) return;
+              if (e.key === "Enter") abrir(r);
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                moverFoco(e, 1);
+              }
+              if (e.key === "ArrowUp") {
+                e.preventDefault();
+                moverFoco(e, -1);
+              }
+            }}
+            className="align-top focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-pino"
+          >
+            <td className="px-3 py-4">
+              <CeldaTitular r={r} />
+            </td>
+            <td className="px-3 py-4">
+              <div className="font-mono text-[13px] font-medium text-tinta">{numeros}</div>
+              {detalle && <div className="mt-0.5 text-[12px] text-piedra">{detalle}</div>}
+              <div className="mt-1.5">
+                <ChipHabitacion chip={chip} />
+              </div>
+            </td>
+            <td className="px-3 py-4">
+              <div className="whitespace-nowrap text-[13.5px] font-medium text-tinta">
+                {formatearDiaConSemana(r.fechaDesde)} → {formatearDiaConSemana(r.fechaHasta)}
+              </div>
+              <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-piedra">
+                <span>
+                  {etiquetaNoches(r)}
+                  {r.plan?.nombre ? ` · ${r.plan.nombre}` : ""}
+                </span>
+                {r.plan?.reembolsable === false && <span className="etiqueta-plan">No reembolsable</span>}
+              </div>
+              {aviso && (
+                <div className="mt-1.5">
+                  <span className="aviso-pildora">{aviso}</span>
+                </div>
+              )}
+            </td>
+            <td className="whitespace-nowrap px-3 py-4 text-[13px] text-tinta">{etiquetaPax(r)}</td>
+            <td className="px-3 py-4">
+              <CeldaGarantia r={r} ingresada={ingresadas} />
+            </td>
+            <td className="px-3 py-4 text-right">
+              {ingresadas ? (
+                <div className="flex flex-col items-end gap-1.5">
+                  <Badge variante="ok" punto>
+                    {ingreso ? `Ingresó ${ingreso.hora}` : "Ingresó"}
+                  </Badge>
+                  <Link to={`/reservas/${r.id}`} className="text-[13px] font-semibold text-pino hover:underline">
+                    Ver reserva
+                  </Link>
+                </div>
+              ) : (
+                <div className="flex justify-end">
+                  <Button type="button" tamano="fila" onClick={() => onSeleccionar(r)} aria-label={`Iniciar check-in de la reserva ${r.codigoConfirmacion}`}>
+                    Iniciar check-in
+                  </Button>
+                </div>
+              )}
+            </td>
+          </tr>
+        );
+      }}
+    />
   );
 }
