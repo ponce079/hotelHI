@@ -11,7 +11,8 @@ import { SinPermiso } from "../../componentes/SinPermiso";
 import { Table } from "../../componentes/Table";
 import { Toast } from "../../componentes/Toast";
 import { formatearFechaSinHora, formatearTimestamp } from "../../lib/fechas";
-import { formatearMonto } from "../../lib/moneda";
+import { DesgloseIva } from "./DesgloseIva";
+import { moneda } from "./moneda";
 import { useSesion } from "../../lib/sesion";
 import { useToast } from "../../lib/useToast";
 import { useVolver } from "../../lib/useVolver";
@@ -20,7 +21,6 @@ import { TIPO_COMPROBANTE_BADGE } from "./comprobanteEstadia.constantes";
 import { NotaCreditoModal } from "./NotaCreditoModal";
 import { HOTEL } from "../ecommerce/ecommerce.config";
 
-const moneda = (n) => `$ ${formatearMonto(n)}`;
 const centavos = (n) => Math.round(Number(n || 0) * 100);
 
 function Dato({ etiqueta, children }) {
@@ -151,6 +151,8 @@ export function ComprobanteEstadiaDetallePage() {
 
   const c = comprobanteQuery.data;
   const esNota = c.tipo === "Nota de Crédito";
+  // La nota de crédito sigue el criterio del comprobante al que corresponde.
+  const esEmpresa = Boolean(esNota ? c.comprobanteRelacionado?.cuitTercero : c.cuitTercero);
   const notasVigentes = (c.ajustes ?? []).filter((n) => !n.anulado);
   const acreditado = notasVigentes.reduce((acc, n) => acc + Number(n.importeTotal), 0);
   const disponible = (centavos(c.importeTotal) - centavos(acreditado)) / 100;
@@ -295,16 +297,7 @@ export function ComprobanteEstadiaDetallePage() {
         )}
 
         <div className="mt-6 flex flex-wrap items-end justify-between gap-6 border-t border-borde pt-4">
-          <div className="flex min-w-65 flex-col gap-1.5">
-            <div className="flex items-baseline justify-between gap-6 text-[12.5px] text-piedra">
-              <span>Importe neto</span>
-              <span className="font-mono text-[13px] text-tinta">{moneda(c.importeNeto)}</span>
-            </div>
-            <div className="flex items-baseline justify-between gap-6 text-[12.5px] text-piedra">
-              <span>IVA {String(Number(c.alicuotaIVA)).replace(".", ",")} %</span>
-              <span className="font-mono text-[13px] text-tinta">{moneda(c.importeIVA)}</span>
-            </div>
-          </div>
+          <DesgloseIva importeNeto={c.importeNeto} importeIVA={c.importeIVA} alicuotaIVA={c.alicuotaIVA} esEmpresa={esEmpresa} className="min-w-65" />
           <div>
             <p className="text-[11px] uppercase tracking-wide text-piedra">{esNota ? "Total acreditado" : "Total"}</p>
             <Cifra tamano={28}>

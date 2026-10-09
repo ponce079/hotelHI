@@ -5,11 +5,11 @@ import { Button } from "../../componentes/Button";
 import { Cifra } from "../../componentes/Cifra";
 import { Modal } from "../../componentes/Modal";
 import { MoneyInput } from "../../componentes/MoneyInput";
-import { formatearMonto } from "../../lib/moneda";
+import { DesgloseIva } from "./DesgloseIva";
+import { moneda } from "./moneda";
 import { crearNotaCredito } from "./comprobanteEstadia.api";
 import { desglosarTotalConIva, MOTIVO_NOTA_CREDITO_MAX_LENGTH } from "./comprobanteEstadia.constantes";
 
-const moneda = (n) => `$ ${formatearMonto(n)}`;
 
 // Comparar en centavos (enteros), como el backend.
 const centavos = (n) => Math.round(Number(n || 0) * 100);
@@ -73,16 +73,7 @@ export function NotaCreditoModal({ comprobante, disponible, onClose, onExito }) 
         </div>
 
         <div className="flex flex-wrap items-end gap-6 rounded-lg border border-borde bg-white px-5 py-4">
-          <div className="flex min-w-50 flex-col gap-1.5">
-            <div className="flex items-baseline justify-between gap-6 text-[12.5px] text-piedra">
-              <span>Importe neto</span>
-              <span className="font-mono text-[13px] text-tinta">{moneda(desglose.neto)}</span>
-            </div>
-            <div className="flex items-baseline justify-between gap-6 text-[12.5px] text-piedra">
-              <span>IVA {String(alicuota).replace(".", ",")} % (el del original)</span>
-              <span className="font-mono text-[13px] text-tinta">{moneda(desglose.iva)}</span>
-            </div>
-          </div>
+          <DesgloseIva importeNeto={desglose.neto} importeIVA={desglose.iva} alicuotaIVA={alicuota} esEmpresa={Boolean(comprobante.cuitTercero)} className="min-w-50" />
           <div>
             <p className="text-[11px] uppercase tracking-wide text-piedra">Total a acreditar</p>
             <Cifra tamano={26} className={excede ? "text-error-texto" : ""}>
